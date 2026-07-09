@@ -22,10 +22,29 @@
         return 'offline';
       }
 
+      function archivedRow() {
+        var archived = App.store.archivedConversations();
+        if (!archived.length) return;
+        var totalUnread = 0;
+        archived.forEach(function (c) { totalUnread += c.unread || 0; });
+        var row = App.util.el('div', 'menu-item archived-row',
+          '📁 Archived chats (' + archived.length + ')' +
+          (totalUnread ? ' •' : ''));
+        row.setAttribute('nav-selectable', 'true');
+        row.setAttribute('data-id', '__archived');
+        list.appendChild(row);
+      }
+
       function render() {
         list.textContent = '';
         var convs = App.store.conversations();
         if (!convs.length) {
+          if (App.store.archivedConversations().length) {
+            archivedRow();
+            nav.refresh();
+            App.softkeys.set('Options', 'Open', 'New chat');
+            return;
+          }
           list.appendChild(App.util.el('div', 'empty',
             'No conversations yet.\n' +
             'Message history builds up as messages arrive.\n' +
@@ -47,6 +66,7 @@
           var main = App.util.el('div', 'conv-main');
           var top = App.util.el('div', 'conv-top');
           top.appendChild(App.util.el('span', 'conv-name', conv.name || conv.id));
+          if (conv.muted) top.appendChild(App.util.el('span', 'muted-icon', '🔇'));
           top.appendChild(App.util.el('span', 'conv-time', App.util.fmtTime(conv.lastTs)));
           main.appendChild(top);
 
@@ -63,30 +83,53 @@
           row.appendChild(main);
           list.appendChild(row);
         });
+        archivedRow();
         nav.refresh();
         App.softkeys.set('Options', 'Open', 'New chat');
       }
 
       function openOptionsMenu() {
-        App.router.push(App.screens.menu.create({
-          title: 'Options',
-          items: [
-            {
-              label: 'Search messages',
-              onSelect: function () {
-                App.router.replace(App.screens.search.create());
-                return 'keep'; // replace() already removed this menu
-              }
-            },
-            {
-              label: 'Settings',
-              onSelect: function () {
-                App.router.replace(App.screens.settings.create());
-                return 'keep';
-              }
+        var items = [];
+
+        // Actions on the currently highlighted conversation.
+        var sel = nav.selected();
+        var convId = sel && sel.getAttribute('data-id');
+        var conv = convId && convId !== '__archived'
+          ? App.store.conversation(convId) : null;
+        if (conv) {
+          items.push({
+            label: 'Archive chat',
+            hint: conv.name,
+            onSelect: function () {
+              App.store.setArchived(conv.id, true);
+              App.toast('Archived — new messages bring it back');
             }
-          ]
-        }));
+          });
+          items.push({
+            label: conv.muted ? 'Unmute chat' : 'Mute chat',
+            hint: conv.muted ? 'Notifications are off' : 'Stop notifications',
+            onSelect: function () {
+              App.store.setMuted(conv.id, !conv.muted);
+            }
+          });
+        }
+
+        items.push({
+          label: 'Search messages',
+          onSelect: function () {
+            App.router.replace(App.screens.search.create());
+            return 'keep'; // replace() already removed this menu
+          }
+        });
+        items.push({
+          label: 'Settings',
+          onSelect: function () {
+            App.router.replace(App.screens.settings.create());
+            return 'keep';
+          }
+        });
+
+        App.router.push(App.screens.menu.create({ title: 'Options', items: items }));
       }
 
       var paused = false;
@@ -137,8 +180,12 @@
           switch (evt.key) {
             case 'Enter': {
               var sel = nav.selected();
-              if (sel) {
-                App.router.push(App.screens.chat.create(sel.getAttribute('data-id')));
+              if (!sel) return true;
+              var id = sel.getAttribute('data-id');
+              if (id === '__archived') {
+                App.router.push(App.screens.archived.create());
+              } else {
+                App.router.push(App.screens.chat.create(id));
               }
               return true;
             }

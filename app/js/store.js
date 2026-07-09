@@ -116,6 +116,7 @@
   }
 
   function notify(conv, rec) {
+    if (conv.muted) return;
     if (!document.hidden) return;
     if (typeof Notification === 'undefined') return;
     try {
@@ -149,6 +150,7 @@
 
     conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
     conv.lastPreview = previewOf(ev);
+    conv.archived = false; // new activity brings a chat out of the archive
     if (ev.incoming && openConvId !== conv.id) conv.unread = (conv.unread || 0) + 1;
     if (typingMap[conv.id]) {
       delete typingMap[conv.id];
@@ -399,6 +401,7 @@
     App.db.putMessage(rec);
     conv.lastTs = rec.timestamp;
     conv.lastPreview = preview;
+    conv.archived = false; // sending also unarchives
     persistConv(conv);
     emit('message', rec);
     emit('conversations');
@@ -660,8 +663,30 @@
 
     conversations: function () {
       return Object.keys(convs).map(function (k) { return convs[k]; })
-        .filter(function (c) { return c.lastTs > 0; })
+        .filter(function (c) { return c.lastTs > 0 && !c.archived; })
         .sort(function (a, b) { return b.lastTs - a.lastTs; });
+    },
+
+    archivedConversations: function () {
+      return Object.keys(convs).map(function (k) { return convs[k]; })
+        .filter(function (c) { return c.lastTs > 0 && c.archived; })
+        .sort(function (a, b) { return b.lastTs - a.lastTs; });
+    },
+
+    setArchived: function (convId, val) {
+      var conv = convs[convId];
+      if (!conv) return;
+      conv.archived = !!val;
+      persistConv(conv);
+      emit('conversations');
+    },
+
+    setMuted: function (convId, val) {
+      var conv = convs[convId];
+      if (!conv) return;
+      conv.muted = !!val;
+      persistConv(conv);
+      emit('conversations');
     },
 
     conversation: function (id) { return convs[id]; },

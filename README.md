@@ -23,6 +23,10 @@ Vanilla JS, zero build step, packaged as a **privileged** KaiOS app
 - **Real profile photos** for contacts and groups (fetched once, cached)
 - Full contact-name resolution (address book → nickname → profile → username)
 - **Local message search** across all stored history
+- **Archived chats** (hidden behind an "Archived chats" row; any new message
+  brings a chat back) and **muted chats** (badge stays, notifications stop) —
+  both local to the phone, since the REST API does not expose Signal's synced
+  chat-list state
 - Colored initial avatars as fallback
 - Message history persisted on the phone (IndexedDB) — the REST API has no
   history endpoint, so history accrues from the moment you start using the app
