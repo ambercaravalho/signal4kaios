@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "name": "signal4kaios",
+  "description": "a very early, very broken signal client-ish for KaiOS",
+  "type": "web",
+  "launch_path": "/index.html",
+  "icons": {
+    "56": "/assets/icons/kaios_56.png",
+    "112": "/assets/icons/kaios_112.png"
+  },
+  "developer": {
+    "name": "Amber Caravalho",
+    "url": "https://github.com/ambercaravalho/signal4kaios"
+  },
+  "locales": {
+    "en-US": {
+      "name": "signal4kaios",
+      "subtitle": "very broken signal client",
+      "description": "a very early, very broken signal client-ish for KaiOS"
+    }
+  },
+  "default_locale": "en-US"
+}
