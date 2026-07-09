@@ -15,10 +15,15 @@ Vanilla JS, zero build step, packaged as a **privileged** KaiOS app
 - Reactions (Signal's six defaults), read receipts, typing indicators
 - Quote/reply, copy to composer, delete for everyone, retry failed sends
 - **Edit sent messages**, and see edits made by others (or by you on the phone)
-- **View photo attachments** (downloaded on demand, cached offline in IndexedDB)
+- **Inline photo thumbnails** in chat (small images auto-download; all cached
+  offline in IndexedDB) plus a full-screen viewer
 - **Send photos** from the gallery (picked via MozActivity, downscaled on-device)
+- **Voice messages / audio attachments** play in the viewer; any attachment can
+  be **saved to the phone** (gallery/music/files via DeviceStorage)
+- **Real profile photos** for contacts and groups (fetched once, cached)
+- Full contact-name resolution (address book → nickname → profile → username)
 - **Local message search** across all stored history
-- Colored initial avatars
+- Colored initial avatars as fallback
 - Message history persisted on the phone (IndexedDB) — the REST API has no
   history endpoint, so history accrues from the moment you start using the app
 - Start new chats from your contact/group list
@@ -90,14 +95,14 @@ http.js:   mozSystem XHR (privileged, CORS-free) with desktop fallback
 
 | Feature | Notes for implementation |
 |---|---|
-| Inline image thumbnails | render cached attachment blobs directly in chat bubbles (memory-capped) |
-| Real contact/group avatars | `GET /v1/contacts/{number}/{uuid}/avatar` binary fetch, cached like attachments |
-| Non-image attachments | save-to-device via DeviceStorage API; audio playback via `<audio>` |
-| Group management | create/update/leave via `/v1/groups/*` endpoints |
-| Profile editing | `PUT /v1/profile/{number}` |
-| Contact management | `PUT /v1/contacts/{number}` + `/sync` |
+| Group info & management | show members/description (`GET /v1/groups/{number}/{groupid}`); create/update/leave |
+| Safety numbers | list & verify via `/v1/identities/{number}` |
+| Profile editing | set own name/avatar via `PUT /v1/profiles/{number}` |
+| Polls | render incoming polls; create/vote via `/v1/polls/{number}` |
+| Sticker packs | render incoming stickers; manage via `/v1/sticker-packs/{number}` |
+| Registered-number check | `GET /v1/search` to validate manually entered numbers in New chat |
+| Contact management | rename via `PUT /v1/contacts/{number}` + `/sync` |
 | Jump-to-message from search | pass a target timestamp to the chat screen and page until reached |
 | History backfill | no REST API for history — would need a companion export/import script on the server |
-| Polls / stickers | render from `dataMessage` first; `/v1/polls` for voting |
 | Multi-account | per-account IndexedDB database + account switcher in Settings |
 | Reconnect hardening | `alarms` permission to wake the app and reconnect the WebSocket |

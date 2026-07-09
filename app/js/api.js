@@ -21,14 +21,21 @@
       return App.http.get('/v1/groups/' + num());
     },
 
-    profile: function () {
-      return App.http.get('/v1/profile/' + num());
-    },
-
     /* Binary download of a received attachment; resolves to a Blob. */
     attachment: function (id) {
       return App.http.get('/v1/attachments/' + encodeURIComponent(id),
         { binary: true, timeout: 60000 });
+    },
+
+    contactAvatar: function (uuid) {
+      return App.http.get('/v1/contacts/' + num() + '/' +
+        encodeURIComponent(uuid) + '/avatar', { binary: true, timeout: 20000 });
+    },
+
+    /* groupId is the send id ("group.…"). */
+    groupAvatar: function (groupId) {
+      return App.http.get('/v1/groups/' + num() + '/' +
+        encodeURIComponent(groupId) + '/avatar', { binary: true, timeout: 20000 });
     },
 
     /* payload: { recipients: [..], message, quote_timestamp?, quote_author?,

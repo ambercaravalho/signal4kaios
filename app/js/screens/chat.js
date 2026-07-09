@@ -3,6 +3,7 @@
 
   var PAGE = 50;
   var DOM_CAP = 120; // max message nodes kept in the DOM at once
+  var AUTO_DL = 400 * 1024; // auto-download images up to this size for inline view
 
   App.screens.chat = {
     create: function (convId) {
@@ -12,6 +13,7 @@
       var hasMore = false;
       var pendingQuote = null;
       var editTarget = null;
+      var thumbUrls = {}; // attachment id -> object URL (revoked on destroy)
       var lastTypingSent = 0;
       var typingIdleTimer = null;
 
@@ -102,8 +104,13 @@
         }
 
         if (!rec.deleted && rec.attachments && rec.attachments.length) {
-          node.appendChild(App.util.el('div', 'msg-attach',
-            App.store.attachmentLabel(rec.attachments)));
+          var att = rec.attachments[0];
+          var label = App.store.attachmentLabel(rec.attachments);
+          if (att.size) label += ' (' + Math.max(1, Math.round(att.size / 1024)) + ' KB)';
+          node.appendChild(App.util.el('div', 'msg-attach', label));
+          if ((att.contentType || '').indexOf('image/') === 0 && att.id) {
+            node.appendChild(App.util.el('img', 'msg-thumb hidden'));
+          }
         }
 
         var bodyText = rec.deleted ? 'Message deleted' : rec.body;
@@ -119,7 +126,48 @@
           if (t) meta.appendChild(App.util.el('span', t.cls, ' ' + t.text));
         }
         node.appendChild(meta);
+        hydrateThumb(node, rec);
         return node;
+      }
+
+      /* Show an inline thumbnail: from cache immediately, else auto-download
+         small images. Large ones keep the chip (Enter → View photo). */
+      function hydrateThumb(node, rec) {
+        var att = rec.attachments && rec.attachments[0];
+        if (!att || !att.id || rec.deleted) return;
+        if ((att.contentType || '').indexOf('image/') !== 0) return;
+        var img = node.querySelector('.msg-thumb');
+        if (!img) return;
+
+        function show(url) {
+          img.src = url;
+          img.onload = function () {
+            // Keep the view pinned to the bottom while thumbs pop in.
+            if (nav.selected() === ta) scrollToBottom();
+          };
+          img.classList.remove('hidden');
+          var chip = node.querySelector('.msg-attach');
+          if (chip) chip.classList.add('hidden');
+        }
+
+        if (thumbUrls[att.id]) {
+          show(thumbUrls[att.id]);
+          return;
+        }
+        App.db.getAttachment(att.id).then(function (row) {
+          if (row && row.blob) return row.blob;
+          if (att.size && att.size > AUTO_DL) return null;
+          return App.api.attachment(att.id).then(function (blob) {
+            App.db.putAttachment(att.id, blob, att.contentType).then(function () {
+              return App.db.pruneAttachments(40);
+            });
+            return blob;
+          });
+        }).then(function (blob) {
+          if (!blob) return;
+          thumbUrls[att.id] = URL.createObjectURL(blob);
+          show(thumbUrls[att.id]);
+        })['catch'](function () { /* chip stays; View photo still works */ });
       }
 
       function scrollToBottom() {
@@ -380,6 +428,9 @@
         },
         destroy: function () {
           sendTypingStop();
+          Object.keys(thumbUrls).forEach(function (k) {
+            URL.revokeObjectURL(thumbUrls[k]);
+          });
           App.store.setOpenConv(null);
           App.store.off('message', onMessage);
           App.store.off('message-updated', onMessageUpdated);

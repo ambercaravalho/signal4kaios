@@ -16,19 +16,21 @@
 
       var nav = new App.Nav(el, { scrollEl: list });
 
-      function row(name, kind, id) {
+      function row(name, hint, kind, id, avatarConv) {
         var r = App.util.el('div', 'conv-row');
         r.setAttribute('nav-selectable', 'true');
         r.setAttribute('data-id', kind + ':' + id);
-        r.appendChild(App.util.el('div',
-          'avatar ' + App.util.colorClass(name), App.util.initials(name)));
+        var avatarEl = App.util.el('div',
+          'avatar ' + App.util.colorClass(name), App.util.initials(name));
+        r.appendChild(avatarEl);
+        if (avatarConv) App.avatars.apply(avatarEl, avatarConv);
         var main = App.util.el('div', 'conv-main');
         var top = App.util.el('div', 'conv-top');
         top.appendChild(App.util.el('span', 'conv-name', name));
         main.appendChild(top);
-        if (kind === 'g') {
+        if (hint) {
           var bottom = App.util.el('div', 'conv-bottom');
-          bottom.appendChild(App.util.el('span', 'conv-preview', 'Group'));
+          bottom.appendChild(App.util.el('span', 'conv-preview', hint));
           main.appendChild(bottom);
         }
         r.appendChild(main);
@@ -47,10 +49,15 @@
         }
         contacts.forEach(function (c) {
           if (!c.number && !c.uuid) return;
-          row(c.name || c.number || c.uuid, 'c', c.id);
+          var name = c.name || c.number || c.uuid;
+          // Show the number when it isn't already the display name.
+          var hint = c.number && c.number !== name ? c.number : '';
+          row(name, hint, 'c', c.id,
+            { id: c.number || c.uuid, type: 'direct' });
         });
         groups.forEach(function (g) {
-          row(g.name, 'g', g.internal_id);
+          row(g.name, 'Group', 'g', g.internal_id,
+            { id: 'g:' + g.internal_id, type: 'group', sendId: g.id });
         });
         nav.select(0);
       }

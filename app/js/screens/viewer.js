@@ -2,9 +2,27 @@
   'use strict';
 
   /* Full-screen attachment viewer. Downloads via systemXHR, caches the blob
-     in IndexedDB (LRU, ~40 entries) so re-viewing works offline. */
+     in IndexedDB (LRU, ~40 entries). Images display inline, audio plays
+     with the center key, and anything downloaded can be saved to the phone
+     via DeviceStorage (SoftLeft). */
 
   var CACHE_KEEP = 40;
+
+  function storageFor(type) {
+    if (type.indexOf('image/') === 0) return 'pictures';
+    if (type.indexOf('audio/') === 0) return 'music';
+    if (type.indexOf('video/') === 0) return 'videos';
+    return 'sdcard';
+  }
+
+  function extFor(type) {
+    var map = {
+      'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif',
+      'audio/aac': '.aac', 'audio/mpeg': '.mp3', 'audio/ogg': '.ogg',
+      'video/mp4': '.mp4'
+    };
+    return map[type] || '';
+  }
 
   App.screens.viewer = {
     create: function (att) {
@@ -19,26 +37,47 @@
       el.appendChild(box);
 
       var objectUrl = null;
-      var isImage = (att.contentType || '').indexOf('image/') === 0;
+      var loadedBlob = null;
+      var audio = null;
+
+      function type() {
+        return (loadedBlob && loadedBlob.type) || att.contentType || '';
+      }
+
+      function setStatus(text, cls) {
+        status.classList.remove('hidden');
+        status.textContent = text;
+        status.className = 'viewer-status' + (cls ? ' ' + cls : '');
+      }
+
+      function updateSoftkeys() {
+        var center = type().indexOf('audio/') === 0 ? 'Play' : '';
+        App.softkeys.set(loadedBlob ? 'Save' : '', center, 'Back');
+      }
 
       function show(blob) {
-        status.classList.add('hidden');
-        if (!isImage && (blob.type || '').indexOf('image/') !== 0) {
-          status.classList.remove('hidden');
-          status.textContent = 'Downloaded (' + Math.round(blob.size / 1024) +
-            ' KB), but this file type cannot be shown here: ' +
-            (att.contentType || 'unknown');
-          return;
-        }
+        loadedBlob = blob;
+        var t = type();
         objectUrl = URL.createObjectURL(blob);
-        var img = App.util.el('img');
-        img.src = objectUrl;
-        box.appendChild(img);
+        if (t.indexOf('image/') === 0) {
+          status.classList.add('hidden');
+          var img = App.util.el('img');
+          img.src = objectUrl;
+          box.appendChild(img);
+        } else if (t.indexOf('audio/') === 0) {
+          setStatus('♪ ' + (att.filename || 'Voice message') +
+            '\nPress the center key to play.');
+          audio = new Audio(objectUrl);
+          audio.onended = function () { setStatus('♪ Finished. Center key replays.'); };
+        } else {
+          setStatus('Downloaded ' + Math.round(blob.size / 1024) + ' KB (' +
+            (t || 'unknown type') + ').\nPress Save to store it on the phone.');
+        }
+        updateSoftkeys();
       }
 
       function fail(err) {
-        status.textContent = 'Could not load attachment: ' + err.message;
-        status.classList.add('bad');
+        setStatus('Could not load attachment: ' + err.message, 'bad');
       }
 
       function load() {
@@ -60,21 +99,65 @@
         })['catch'](fail);
       }
 
+      function save() {
+        if (!loadedBlob) return;
+        if (!navigator.getDeviceStorage) {
+          App.toast('Saving only works on the phone');
+          return;
+        }
+        var storage = navigator.getDeviceStorage(storageFor(type()));
+        if (!storage) {
+          App.toast('No storage available');
+          return;
+        }
+        var name = att.filename ||
+          ('signal_' + Date.now() + extFor(type()));
+        var req = storage.addNamed(loadedBlob, name);
+        req.onsuccess = function () { App.toast('Saved as ' + this.result); };
+        req.onerror = function () {
+          App.toast('Save failed: ' + (this.error && this.error.name === 'NoModificationAllowedError'
+            ? 'file already exists' : (this.error ? this.error.name : 'unknown')));
+        };
+      }
+
+      function togglePlay() {
+        if (!audio) return;
+        if (audio.paused) {
+          audio.play();
+          setStatus('♪ Playing… center key pauses.');
+        } else {
+          audio.pause();
+          setStatus('♪ Paused. Center key resumes.');
+        }
+      }
+
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('', '', 'Back');
+          updateSoftkeys();
           load();
         },
         destroy: function () {
+          if (audio) {
+            audio.pause();
+            audio = null;
+          }
           if (objectUrl) URL.revokeObjectURL(objectUrl);
         },
         onKey: function (evt) {
-          if (evt.key === 'SoftRight') {
-            App.router.pop();
-            return true;
+          switch (evt.key) {
+            case 'SoftLeft':
+              save();
+              return true;
+            case 'Enter':
+              togglePlay();
+              return true;
+            case 'SoftRight':
+              App.router.pop();
+              return true;
+            default:
+              return false;
           }
-          return false;
         }
       };
     }

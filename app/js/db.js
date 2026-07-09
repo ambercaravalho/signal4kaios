@@ -169,9 +169,14 @@
       return tx('attachments', 'readonly', function (s) { return reqValue(s.get(id)); });
     },
 
-    /* Keep only the `keep` most recently cached attachment blobs. */
+    /* Keep only the `keep` most recently cached attachment blobs.
+       Avatar cache entries ('avatar:*') are exempt — they are small and
+       bounded by the contact list. */
     pruneAttachments: function (keep) {
       return getAll('attachments').then(function (rows) {
+        rows = rows.filter(function (r) {
+          return String(r.id).indexOf('avatar:') !== 0;
+        });
         if (rows.length <= keep) return;
         rows.sort(function (a, b) { return b.ts - a.ts; });
         var drop = rows.slice(keep);

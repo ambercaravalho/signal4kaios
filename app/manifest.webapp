@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "name": "Signal4KaiOS",
   "description": "Signal messenger client for KaiOS 2.5, powered by signal-cli-rest-api",
   "type": "privileged",
@@ -18,6 +18,22 @@
     },
     "desktop-notification": {
       "description": "Show notifications for new Signal messages"
+    },
+    "device-storage:pictures": {
+      "access": "readcreate",
+      "description": "Save received photos to the gallery"
+    },
+    "device-storage:music": {
+      "access": "readcreate",
+      "description": "Save received voice messages and audio"
+    },
+    "device-storage:videos": {
+      "access": "readcreate",
+      "description": "Save received videos"
+    },
+    "device-storage:sdcard": {
+      "access": "readcreate",
+      "description": "Save received files"
     }
   },
   "cursor": false,

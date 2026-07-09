@@ -321,6 +321,21 @@
     events.forEach(applyEvent);
   }
 
+  /* Best display name across the many places Signal keeps names:
+     address-book name → nickname → profile name → username → number. */
+  function contactName(c) {
+    if (c.name) return c.name;
+    var nick = c.nickname || {};
+    if (nick.name) return nick.name;
+    var nn = [nick.given_name, nick.family_name].filter(Boolean).join(' ');
+    if (nn) return nn;
+    if (c.profile_name) return c.profile_name;
+    var p = c.profile || {};
+    var pn = [p.given_name, p.lastname].filter(Boolean).join(' ');
+    if (pn) return pn;
+    return c.username || c.number || c.uuid;
+  }
+
   function refreshDirectory() {
     if (!App.config.isConfigured()) return Promise.resolve();
     return Promise.all([App.api.contacts(), App.api.groups()]).then(function (res) {
@@ -333,7 +348,8 @@
           id: c.uuid || c.number,
           number: c.number || '',
           uuid: c.uuid || '',
-          name: c.name || c.profile_name || c.username || c.number || c.uuid
+          name: contactName(c),
+          hasAvatar: c.profile ? !!c.profile.has_avatar : undefined
         };
         if (!rec.id) return;
         records.push(rec);
@@ -671,6 +687,7 @@
     },
 
     displayName: displayName,
+    contactByKey: contactOf,
 
     typing: function (convId) {
       var t = typingMap[convId];
