@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "name": "Signal4KaiOS",
+  "description": "Signal messenger client for KaiOS 2.5, powered by signal-cli-rest-api",
+  "type": "privileged",
+  "launch_path": "/index.html",
+  "icons": {
+    "56": "/assets/icons/kaios_56.png",
+    "112": "/assets/icons/kaios_112.png"
+  },
+  "developer": {
+    "name": "Amber Caravalho",
+    "url": "https://github.com/ambercaravalho/signal4kaios"
+  },
+  "permissions": {
+    "systemXHR": {
+      "description": "Communicate with the signal-cli-rest-api server on the local network"
+    },
+    "desktop-notification": {
+      "description": "Show notifications for new Signal messages"
+    }
+  },
+  "cursor": false,
+  "locales": {
+    "en-US": {
+      "name": "Signal4KaiOS",
+      "subtitle": "Signal client",
+      "description": "Signal messenger client for KaiOS 2.5, powered by signal-cli-rest-api"
+    }
+  },
+  "default_locale": "en-US"
+}

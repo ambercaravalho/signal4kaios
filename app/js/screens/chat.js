@@ -1,0 +1,368 @@
+(function () {
+  'use strict';
+
+  var PAGE = 50;
+  var DOM_CAP = 120; // max message nodes kept in the DOM at once
+
+  App.screens.chat = {
+    create: function (convId) {
+      var conv = App.store.conversation(convId);
+      var msgById = {};
+      var oldestTs = 9007199254740991;
+      var hasMore = false;
+      var pendingQuote = null;
+      var lastTypingSent = 0;
+      var typingIdleTimer = null;
+
+      var el = App.util.el('div', 'screen');
+      var hdr = App.util.el('div', 'hdr');
+      var title = App.util.el('span', 'hdr-title', conv ? conv.name : convId);
+      var sub = App.util.el('span', 'hdr-sub', '');
+      hdr.appendChild(title);
+      hdr.appendChild(sub);
+      el.appendChild(hdr);
+
+      var list = App.util.el('div', 'chat-list');
+      el.appendChild(list);
+
+      var typingLine = App.util.el('div', 'typing-line hidden');
+      el.appendChild(typingLine);
+
+      var composer = App.util.el('div', 'composer');
+      var quoteBar = App.util.el('div', 'quote-bar hidden');
+      var ta = App.util.el('textarea');
+      ta.setAttribute('nav-selectable', 'true');
+      ta.setAttribute('data-id', '__composer');
+      composer.appendChild(quoteBar);
+      composer.appendChild(ta);
+      el.appendChild(composer);
+
+      var loadMore = App.util.el('div', 'load-more hidden', 'Load older messages');
+      loadMore.setAttribute('data-id', '__more');
+      list.appendChild(loadMore);
+
+      var nav = new App.Nav(el, {
+        scrollEl: list,
+        wrap: false,
+        onChange: updateSoftkeys
+      });
+
+      function updateSoftkeys() {
+        var sel = nav.selected();
+        if (sel === ta) {
+          App.softkeys.set(pendingQuote ? 'Cancel reply' : '', 'Send', '');
+        } else if (sel === loadMore) {
+          App.softkeys.set('', 'Load', '');
+        } else {
+          App.softkeys.set('', 'Options', '');
+        }
+      }
+
+      function ticksFor(rec) {
+        switch (rec.status) {
+          case 'pending': return { text: '…', cls: 'ticks' };
+          case 'sent': return { text: '✓', cls: 'ticks' };
+          case 'delivered': return { text: '✓✓', cls: 'ticks' };
+          case 'read': return { text: '✓✓', cls: 'ticks read' };
+          case 'failed': return { text: '! failed', cls: 'failed' };
+          default: return null;
+        }
+      }
+
+      function reactionSummary(reactions) {
+        var counts = {};
+        Object.keys(reactions || {}).forEach(function (who) {
+          var e = reactions[who];
+          counts[e] = (counts[e] || 0) + 1;
+        });
+        return Object.keys(counts).map(function (e) {
+          return counts[e] > 1 ? e + '×' + counts[e] : e;
+        }).join(' ');
+      }
+
+      function renderMsgNode(rec) {
+        var node = App.util.el('div',
+          'msg ' + (rec.incoming ? 'in' : 'out') + (rec.deleted ? ' deleted' : ''));
+        node.setAttribute('nav-selectable', 'true');
+        node.setAttribute('data-id', rec.id);
+
+        if (rec.incoming && conv && conv.type === 'group') {
+          node.appendChild(App.util.el('div', 'msg-author',
+            rec.authorName || App.store.displayName(rec.author)));
+        }
+
+        if (rec.quote && !rec.deleted) {
+          var q = App.util.el('div', 'msg-quote');
+          q.appendChild(App.util.el('div', 'msg-quote-author',
+            App.store.displayName(rec.quote.author)));
+          q.appendChild(App.util.el('div', null, (rec.quote.text || '').slice(0, 80)));
+          node.appendChild(q);
+        }
+
+        var bodyText = rec.deleted
+          ? 'Message deleted'
+          : (rec.body || (rec.attachmentsCount ? '[attachment – not supported yet]' : ''));
+        node.appendChild(App.util.el('div', 'msg-body', bodyText));
+
+        var rs = reactionSummary(rec.reactions);
+        if (rs) node.appendChild(App.util.el('div', 'msg-reactions', rs));
+
+        var meta = App.util.el('div', 'msg-meta', App.util.fmtTime(rec.timestamp));
+        if (!rec.incoming) {
+          var t = ticksFor(rec);
+          if (t) meta.appendChild(App.util.el('span', t.cls, ' ' + t.text));
+        }
+        node.appendChild(meta);
+        return node;
+      }
+
+      function scrollToBottom() {
+        list.scrollTop = list.scrollHeight;
+      }
+
+      function trimDom() {
+        var nodes = list.querySelectorAll('.msg');
+        var excess = nodes.length - DOM_CAP;
+        for (var i = 0; i < excess; i++) {
+          delete msgById[nodes[i].getAttribute('data-id')];
+          list.removeChild(nodes[i]);
+        }
+        if (excess > 0) {
+          hasMore = true;
+          loadMore.classList.remove('hidden');
+          var first = list.querySelector('.msg');
+          if (first) {
+            var firstRec = msgById[first.getAttribute('data-id')];
+            if (firstRec) oldestTs = firstRec.timestamp;
+          }
+        }
+      }
+
+      function loadInitial() {
+        App.db.getMessagesPage(convId, oldestTs, PAGE).then(function (rows) {
+          hasMore = rows.length === PAGE;
+          loadMore.classList.toggle('hidden', !hasMore);
+          rows.forEach(function (rec) {
+            msgById[rec.id] = rec;
+            list.appendChild(renderMsgNode(rec));
+          });
+          if (rows.length) oldestTs = rows[0].timestamp;
+          nav.selectLast(); // the composer
+          scrollToBottom();
+          updateSoftkeys();
+        });
+      }
+
+      function loadOlder() {
+        App.db.getMessagesPage(convId, oldestTs, PAGE).then(function (rows) {
+          if (!rows.length) {
+            hasMore = false;
+            loadMore.classList.add('hidden');
+            return;
+          }
+          var prevHeight = list.scrollHeight;
+          var anchor = loadMore.nextSibling;
+          rows.forEach(function (rec) {
+            msgById[rec.id] = rec;
+            list.insertBefore(renderMsgNode(rec), anchor);
+          });
+          oldestTs = rows[0].timestamp;
+          hasMore = rows.length === PAGE;
+          loadMore.classList.toggle('hidden', !hasMore);
+          list.scrollTop += list.scrollHeight - prevHeight;
+        });
+      }
+
+      function nodeFor(id) {
+        var nodes = list.querySelectorAll('.msg');
+        for (var i = 0; i < nodes.length; i++) {
+          if (nodes[i].getAttribute('data-id') === id) return nodes[i];
+        }
+        return null;
+      }
+
+      /* ---- store listeners ---- */
+
+      function onMessage(rec) {
+        if (rec.convId !== convId) return;
+        msgById[rec.id] = rec;
+        var wasAtComposer = nav.selected() === ta;
+        list.appendChild(renderMsgNode(rec));
+        trimDom();
+        if (wasAtComposer || !rec.incoming) scrollToBottom();
+      }
+
+      function onMessageUpdated(rec, oldId) {
+        if (rec.convId !== convId) return;
+        var key = oldId || rec.id;
+        var node = nodeFor(key) || nodeFor(rec.id);
+        if (!node) return;
+        if (oldId && oldId !== rec.id) {
+          delete msgById[oldId];
+          if (nav.activeId === oldId) nav.activeId = rec.id;
+        }
+        msgById[rec.id] = rec;
+        list.replaceChild(renderMsgNode(rec), node);
+        nav.refresh();
+      }
+
+      function onMessageRemoved(rec) {
+        if (rec.convId !== convId) return;
+        var node = nodeFor(rec.id);
+        if (node) list.removeChild(node);
+        delete msgById[rec.id];
+      }
+
+      function onTyping(cid) {
+        if (cid !== convId) return;
+        var t = App.store.typing(convId);
+        if (t) {
+          typingLine.textContent = (conv && conv.type === 'group'
+            ? App.store.displayName(t.author) + ' is typing…'
+            : 'typing…');
+          typingLine.classList.remove('hidden');
+        } else {
+          typingLine.classList.add('hidden');
+        }
+      }
+
+      function onConnection(state) {
+        sub.textContent = state === 'open' ? '' : (state === 'connecting' ? 'connecting…' : 'offline');
+      }
+
+      /* ---- composing ---- */
+
+      function sendTypingStop() {
+        if (typingIdleTimer) {
+          clearTimeout(typingIdleTimer);
+          typingIdleTimer = null;
+        }
+        if (lastTypingSent && conv && conv.sendId) {
+          lastTypingSent = 0;
+          App.api.typingStop(conv.sendId)['catch'](function () { /* best effort */ });
+        }
+      }
+
+      function onInput() {
+        if (!conv || !conv.sendId) return;
+        var now = Date.now();
+        if (now - lastTypingSent > 10000) {
+          lastTypingSent = now;
+          App.api.typingStart(conv.sendId)['catch'](function () { /* best effort */ });
+        }
+        if (typingIdleTimer) clearTimeout(typingIdleTimer);
+        typingIdleTimer = setTimeout(sendTypingStop, 5000);
+      }
+
+      function setQuote(q) {
+        pendingQuote = q;
+        if (q) {
+          quoteBar.textContent = 'Reply to ' + App.store.displayName(q.author) +
+            ': ' + (q.text || '').slice(0, 40);
+          quoteBar.classList.remove('hidden');
+        } else {
+          quoteBar.textContent = '';
+          quoteBar.classList.add('hidden');
+        }
+        updateSoftkeys();
+      }
+
+      function send() {
+        var text = ta.value.replace(/^\s+|\s+$/g, '');
+        if (!text) return;
+        var quote = pendingQuote;
+        ta.value = '';
+        setQuote(null);
+        sendTypingStop();
+        App.store.sendText(convId, text, quote)['catch'](function (err) {
+          App.toast('Send failed: ' + err.message);
+        });
+      }
+
+      function openOptions(rec) {
+        App.router.push(App.screens.msgopts.create(rec, {
+          reply: function (r) {
+            setQuote({
+              timestamp: r.timestamp,
+              author: r.incoming ? r.author : App.store.selfNumber(),
+              text: r.body
+            });
+            nav.selectLast();
+          },
+          copy: function (r) {
+            ta.value = ta.value ? ta.value + ' ' + r.body : r.body;
+            nav.selectLast();
+          }
+        }));
+      }
+
+      ta.addEventListener('input', onInput);
+
+      return {
+        el: el,
+        enter: function () {
+          App.store.on('message', onMessage);
+          App.store.on('message-updated', onMessageUpdated);
+          App.store.on('message-removed', onMessageRemoved);
+          App.store.on('typing', onTyping);
+          App.store.on('connection', onConnection);
+          App.store.setOpenConv(convId);
+          App.store.markRead(convId);
+          onConnection(App.store.connectionState());
+          onTyping(convId);
+          loadInitial();
+        },
+        resume: function () {
+          App.store.setOpenConv(convId);
+          App.store.markRead(convId);
+          nav.refresh();
+          updateSoftkeys();
+        },
+        destroy: function () {
+          sendTypingStop();
+          App.store.setOpenConv(null);
+          App.store.off('message', onMessage);
+          App.store.off('message-updated', onMessageUpdated);
+          App.store.off('message-removed', onMessageRemoved);
+          App.store.off('typing', onTyping);
+          App.store.off('connection', onConnection);
+        },
+        onKey: function (evt) {
+          var inComposer = document.activeElement === ta;
+
+          if (inComposer) {
+            if (evt.key === 'Enter') {
+              send();
+              return true;
+            }
+            if (evt.key === 'SoftLeft' && pendingQuote) {
+              setQuote(null);
+              return true;
+            }
+            if (evt.key === 'ArrowUp') {
+              if (ta.selectionStart > 0) return false; // move text cursor
+              return nav.move(-1);
+            }
+            // ArrowDown / character keys edit the textarea.
+            return false;
+          }
+
+          if (nav.handleKey(evt)) return true;
+
+          if (evt.key === 'Enter') {
+            var sel = nav.selected();
+            if (!sel) return true;
+            if (sel === loadMore) {
+              loadOlder();
+              return true;
+            }
+            var rec = msgById[sel.getAttribute('data-id')];
+            if (rec) openOptions(rec);
+            return true;
+          }
+          return false;
+        }
+      };
+    }
+  };
+})();

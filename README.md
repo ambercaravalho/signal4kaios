@@ -1,2 +1,98 @@
 # signal4kaios
-a very early, very broken signal client-ish for KaiOS
+
+A Signal messenger client for **KaiOS 2.5** feature phones, powered by a
+[signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server
+running on your home network.
+
+Vanilla JS, zero build step, packaged as a **privileged** KaiOS app
+(needed for `systemXHR`, which lets the app talk to your server without CORS).
+
+## Features
+
+- Conversation list with unread badges, typing dots, and live connection status
+- 1:1 and group chats with contact/group names from the server
+- Send & receive text messages in real time (WebSocket, json-rpc mode)
+- Reactions (Signal's six defaults), read receipts, typing indicators
+- Quote/reply, copy to composer, delete for everyone, retry failed sends
+- Message history persisted on the phone (IndexedDB) — the REST API has no
+  history endpoint, so history accrues from the moment you start using the app
+- Start new chats from your contact/group list
+- Notifications when the app is in the background
+- Configurable server URL and account number (Settings)
+
+## Requirements
+
+- A phone running KaiOS 2.5 (Gecko 48) with the debug menu enabled
+- signal-cli-rest-api running in **json-rpc** mode (`MODE=json-rpc`), already
+  registered/linked to your Signal account, reachable from the phone's Wi-Fi
+  (e.g. `http://192.168.1.100:4329`)
+
+## Install (sideload)
+
+1. `tools/package.sh` — checks the code for Gecko-48-incompatible syntax and
+   produces `dist/signal4kaios.zip` (or point WebIDE at the `app/` directory
+   directly).
+2. On the phone, enable debug mode: dial `*#*#33284#*#*` (a bug icon appears).
+3. Connect USB, then `adb forward tcp:6000 localfilesystem:/data/local/debugger-socket`.
+4. In an old Firefox (52–59) open **WebIDE** → Remote Runtime → `localhost:6000`.
+5. *Open Packaged App* → select the `app/` folder → Install & Run.
+6. First run opens Settings: enter your server URL and Signal number, hit
+   **Test connection**, then **Save**.
+
+## Keys
+
+| Key | Conversations | Chat |
+|---|---|---|
+| Up/Down | Move selection | Move through messages / composer |
+| Center | Open chat | Send (composer) / message options (message) |
+| SoftLeft | Settings | Cancel reply (while replying) |
+| SoftRight | New chat | — |
+| Back | Exit app | Back to list |
+
+## Development on the desktop
+
+The HTTP layer falls back to a plain XHR when `mozSystem` is unavailable, so
+you can develop in a desktop browser:
+
+```sh
+# serve the app
+cd app && python3 -m http.server 8000
+# proxy the API to add CORS headers (websocket passes through fine)
+npx local-cors-proxy --proxyUrl http://192.168.1.100:4329 --port 4330
+```
+
+Then set the in-app server URL to the proxy. Note the desktop browser will not
+enforce the privileged-app CSP (`default-src 'self'`) — keep scripts/styles
+local and inline-free, and verify in the KaiOS simulator (kaiosrt via WebIDE)
+before shipping to the phone.
+
+**Gecko 48 rules** (enforced by `tools/package.sh`): no `async`/`await`, no
+spread/rest `...`, no `padStart`, no CSS grid, no ES modules, no inline event
+handlers.
+
+## Architecture
+
+```
+ws.js ──▶ normalize.js ──▶ store.js ──▶ IndexedDB (db.js)
+ (receive)   (envelope→events)   │
+                                 └──▶ emits events ──▶ screens/* patch the DOM
+router.js: screen stack + single global keydown dispatcher
+nav.js:    D-pad selection via nav-selectable / nav-selected attributes
+http.js:   mozSystem XHR (privileged, CORS-free) with desktop fallback
+```
+
+## Roadmap (not yet implemented)
+
+| Feature | Notes for implementation |
+|---|---|
+| View image attachments | binary `GET /v1/attachments/{id}` via systemXHR → blob URL, LRU cache in IndexedDB |
+| Send attachments | `MozActivity` picker → canvas downscale → `base64_attachments` on `/v2/send` |
+| Contact/group avatars | `GET /v1/contacts/{number}/{uuid}/avatar` binary fetch, cached |
+| Group management | create/update/leave via `/v1/groups/*` endpoints |
+| Profile editing | `PUT /v1/profile/{number}` |
+| Contact management | `PUT /v1/contacts/{number}` + `/sync` |
+| Local message search | IndexedDB scan (no server-side content search exists) |
+| History backfill | no REST API for history — would need a companion export/import script on the server |
+| Polls / stickers | render from `dataMessage` first; `/v1/polls` for voting |
+| Multi-account | per-account IndexedDB database + account switcher in Settings |
+| Reconnect hardening | `alarms` permission to wake the app and reconnect the WebSocket |

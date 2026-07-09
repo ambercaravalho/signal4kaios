@@ -1,0 +1,175 @@
+(function () {
+  'use strict';
+
+  /* IndexedDB persistence. signal-cli-rest-api has no message-history API,
+     so this database IS the message history: everything received over the
+     websocket (and everything sent) is stored here.
+
+     Stores:
+       messages       keyPath 'id' = convId + '|' + timestamp + '|' + author
+                      index 'conv' on [convId, timestamp]
+       conversations  keyPath 'id' (peer number/uuid, or 'g:' + internal_id)
+       contacts       keyPath 'id' (uuid preferred, else number)
+       kv             keyPath 'k'
+  */
+
+  var DB_NAME = 'signal4kaios';
+  var DB_VERSION = 1;
+  var opened = null;
+
+  function open() {
+    if (opened) return opened;
+    opened = new Promise(function (resolve, reject) {
+      var req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = function (e) {
+        var db = e.target.result;
+        if (!db.objectStoreNames.contains('messages')) {
+          var msgs = db.createObjectStore('messages', { keyPath: 'id' });
+          msgs.createIndex('conv', ['convId', 'timestamp'], { unique: false });
+        }
+        if (!db.objectStoreNames.contains('conversations')) {
+          db.createObjectStore('conversations', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('contacts')) {
+          db.createObjectStore('contacts', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('kv')) {
+          db.createObjectStore('kv', { keyPath: 'k' });
+        }
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+    return opened;
+  }
+
+  function tx(storeName, mode, work) {
+    return open().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var t = db.transaction(storeName, mode);
+        var store = t.objectStore(storeName);
+        var result = work(store);
+        t.oncomplete = function () { resolve(result && result.value); };
+        t.onerror = function () { reject(t.error); };
+        t.onabort = function () { reject(t.error); };
+      });
+    });
+  }
+
+  function reqValue(request) {
+    var out = { value: undefined };
+    request.onsuccess = function () { out.value = request.result; };
+    return out;
+  }
+
+  function getAll(storeName) {
+    return tx(storeName, 'readonly', function (store) {
+      var out = { value: [] };
+      store.openCursor().onsuccess = function (e) {
+        var cur = e.target.result;
+        if (cur) {
+          out.value.push(cur.value);
+          cur['continue']();
+        }
+      };
+      return out;
+    });
+  }
+
+  App.db = {
+    putMessage: function (rec) {
+      return tx('messages', 'readwrite', function (s) { s.put(rec); });
+    },
+
+    getMessage: function (id) {
+      return tx('messages', 'readonly', function (s) { return reqValue(s.get(id)); });
+    },
+
+    deleteMessage: function (id) {
+      return tx('messages', 'readwrite', function (s) { s['delete'](id); });
+    },
+
+    /* Newest `limit` messages in convId strictly older than beforeTs
+       (pass Infinity-like large number for the first page). Resolves
+       oldest-first for easy DOM append. */
+    getMessagesPage: function (convId, beforeTs, limit) {
+      return tx('messages', 'readonly', function (s) {
+        var out = { value: [] };
+        var range = IDBKeyRange.bound([convId, 0], [convId, beforeTs], false, true);
+        s.index('conv').openCursor(range, 'prev').onsuccess = function (e) {
+          var cur = e.target.result;
+          if (cur && out.value.length < limit) {
+            out.value.push(cur.value);
+            cur['continue']();
+          }
+        };
+        return out;
+      }).then(function (rows) {
+        rows.reverse();
+        return rows;
+      });
+    },
+
+    countMessages: function (convId) {
+      return tx('messages', 'readonly', function (s) {
+        var range = IDBKeyRange.bound([convId, 0], [convId, 9007199254740991]);
+        return reqValue(s.index('conv').count(range));
+      });
+    },
+
+    /* Keep only the newest `keep` messages of a conversation. */
+    pruneConversation: function (convId, keep) {
+      return tx('messages', 'readwrite', function (s) {
+        var seen = { value: 0 };
+        var range = IDBKeyRange.bound([convId, 0], [convId, 9007199254740991]);
+        s.index('conv').openCursor(range, 'prev').onsuccess = function (e) {
+          var cur = e.target.result;
+          if (!cur) return;
+          seen.value += 1;
+          if (seen.value > keep) cur['delete']();
+          cur['continue']();
+        };
+        return seen;
+      });
+    },
+
+    putConversation: function (conv) {
+      return tx('conversations', 'readwrite', function (s) { s.put(conv); });
+    },
+
+    deleteConversation: function (id) {
+      return tx('conversations', 'readwrite', function (s) { s['delete'](id); });
+    },
+
+    allConversations: function () { return getAll('conversations'); },
+
+    putContacts: function (list) {
+      return tx('contacts', 'readwrite', function (s) {
+        list.forEach(function (c) { s.put(c); });
+      });
+    },
+
+    allContacts: function () { return getAll('contacts'); },
+
+    kvSet: function (k, v) {
+      return tx('kv', 'readwrite', function (s) { s.put({ k: k, v: v }); });
+    },
+
+    kvGet: function (k) {
+      return tx('kv', 'readonly', function (s) { return reqValue(s.get(k)); })
+        .then(function (row) { return row ? row.v : undefined; });
+    },
+
+    wipe: function () {
+      return open().then(function (db) {
+        db.close();
+        opened = null;
+        return new Promise(function (resolve, reject) {
+          var req = indexedDB.deleteDatabase(DB_NAME);
+          req.onsuccess = function () { resolve(); };
+          req.onerror = function () { reject(req.error); };
+        });
+      });
+    }
+  };
+})();
