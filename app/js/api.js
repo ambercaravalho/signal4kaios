@@ -25,6 +25,12 @@
       return App.http.get('/v1/profile/' + num());
     },
 
+    /* Binary download of a received attachment; resolves to a Blob. */
+    attachment: function (id) {
+      return App.http.get('/v1/attachments/' + encodeURIComponent(id),
+        { binary: true, timeout: 60000 });
+    },
+
     /* payload: { recipients: [..], message, quote_timestamp?, quote_author?,
        quote_message? } — response: { timestamp } */
     send: function (payload) {

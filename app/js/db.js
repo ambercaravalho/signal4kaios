@@ -11,10 +11,11 @@
        conversations  keyPath 'id' (peer number/uuid, or 'g:' + internal_id)
        contacts       keyPath 'id' (uuid preferred, else number)
        kv             keyPath 'k'
+       attachments    keyPath 'id' (v2) — LRU blob cache for viewed media
   */
 
   var DB_NAME = 'signal4kaios';
-  var DB_VERSION = 1;
+  var DB_VERSION = 2;
   var opened = null;
 
   function open() {
@@ -35,6 +36,9 @@
         }
         if (!db.objectStoreNames.contains('kv')) {
           db.createObjectStore('kv', { keyPath: 'k' });
+        }
+        if (!db.objectStoreNames.contains('attachments')) {
+          db.createObjectStore('attachments', { keyPath: 'id' });
         }
       };
       req.onsuccess = function () { resolve(req.result); };
@@ -130,6 +134,50 @@
           cur['continue']();
         };
         return seen;
+      });
+    },
+
+    /* Case-insensitive substring search over all message bodies.
+       Full-store scan — fine for the pruned volumes this app keeps. */
+    searchMessages: function (query, limit) {
+      var q = query.toLowerCase();
+      return tx('messages', 'readonly', function (s) {
+        var out = { value: [] };
+        s.openCursor().onsuccess = function (e) {
+          var cur = e.target.result;
+          if (!cur) return;
+          var rec = cur.value;
+          if (!rec.deleted && rec.body && rec.body.toLowerCase().indexOf(q) >= 0) {
+            out.value.push(rec);
+          }
+          cur['continue']();
+        };
+        return out;
+      }).then(function (rows) {
+        rows.sort(function (a, b) { return b.timestamp - a.timestamp; });
+        return rows.slice(0, limit || 50);
+      });
+    },
+
+    putAttachment: function (id, blob, type) {
+      return tx('attachments', 'readwrite', function (s) {
+        s.put({ id: id, blob: blob, type: type || '', ts: Date.now() });
+      });
+    },
+
+    getAttachment: function (id) {
+      return tx('attachments', 'readonly', function (s) { return reqValue(s.get(id)); });
+    },
+
+    /* Keep only the `keep` most recently cached attachment blobs. */
+    pruneAttachments: function (keep) {
+      return getAll('attachments').then(function (rows) {
+        if (rows.length <= keep) return;
+        rows.sort(function (a, b) { return b.ts - a.ts; });
+        var drop = rows.slice(keep);
+        return tx('attachments', 'readwrite', function (s) {
+          drop.forEach(function (r) { s['delete'](r.id); });
+        });
       });
     },
 

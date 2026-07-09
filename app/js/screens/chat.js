@@ -11,6 +11,7 @@
       var oldestTs = 9007199254740991;
       var hasMore = false;
       var pendingQuote = null;
+      var editTarget = null;
       var lastTypingSent = 0;
       var typingIdleTimer = null;
 
@@ -50,7 +51,8 @@
       function updateSoftkeys() {
         var sel = nav.selected();
         if (sel === ta) {
-          App.softkeys.set(pendingQuote ? 'Cancel reply' : '', 'Send', '');
+          var left = editTarget ? 'Cancel edit' : (pendingQuote ? 'Cancel reply' : '');
+          App.softkeys.set(left, 'Send', editTarget ? '' : 'Attach');
         } else if (sel === loadMore) {
           App.softkeys.set('', 'Load', '');
         } else {
@@ -99,15 +101,19 @@
           node.appendChild(q);
         }
 
-        var bodyText = rec.deleted
-          ? 'Message deleted'
-          : (rec.body || (rec.attachmentsCount ? '[attachment – not supported yet]' : ''));
-        node.appendChild(App.util.el('div', 'msg-body', bodyText));
+        if (!rec.deleted && rec.attachments && rec.attachments.length) {
+          node.appendChild(App.util.el('div', 'msg-attach',
+            App.store.attachmentLabel(rec.attachments)));
+        }
+
+        var bodyText = rec.deleted ? 'Message deleted' : rec.body;
+        if (bodyText) node.appendChild(App.util.el('div', 'msg-body', bodyText));
 
         var rs = reactionSummary(rec.reactions);
         if (rs) node.appendChild(App.util.el('div', 'msg-reactions', rs));
 
-        var meta = App.util.el('div', 'msg-meta', App.util.fmtTime(rec.timestamp));
+        var meta = App.util.el('div', 'msg-meta',
+          (rec.edited ? '(edited) ' : '') + App.util.fmtTime(rec.timestamp));
         if (!rec.incoming) {
           var t = ticksFor(rec);
           if (t) meta.appendChild(App.util.el('span', t.cls, ' ' + t.text));
@@ -257,6 +263,7 @@
       function setQuote(q) {
         pendingQuote = q;
         if (q) {
+          editTarget = null;
           quoteBar.textContent = 'Reply to ' + App.store.displayName(q.author) +
             ': ' + (q.text || '').slice(0, 40);
           quoteBar.classList.remove('hidden');
@@ -267,16 +274,65 @@
         updateSoftkeys();
       }
 
+      function setEditing(rec) {
+        editTarget = rec;
+        if (rec) {
+          pendingQuote = null;
+          ta.value = rec.body;
+          quoteBar.textContent = 'Editing message';
+          quoteBar.classList.remove('hidden');
+        } else {
+          ta.value = '';
+          quoteBar.textContent = '';
+          quoteBar.classList.add('hidden');
+        }
+        updateSoftkeys();
+      }
+
       function send() {
         var text = ta.value.replace(/^\s+|\s+$/g, '');
         if (!text) return;
+        sendTypingStop();
+
+        if (editTarget) {
+          var target = editTarget;
+          setEditing(null);
+          App.store.sendEdit(target, text)['catch'](function (err) {
+            App.toast('Edit failed: ' + err.message);
+          });
+          return;
+        }
+
         var quote = pendingQuote;
         ta.value = '';
         setQuote(null);
-        sendTypingStop();
         App.store.sendText(convId, text, quote)['catch'](function (err) {
           App.toast('Send failed: ' + err.message);
         });
+      }
+
+      function attach() {
+        if (typeof MozActivity === 'undefined') {
+          App.toast('Attaching photos only works on the phone');
+          return;
+        }
+        var pick = new MozActivity({
+          name: 'pick',
+          data: { type: ['image/jpeg', 'image/png', 'image/gif'] }
+        });
+        pick.onsuccess = function () {
+          var blob = this.result.blob;
+          if (!blob) return;
+          App.toast('Preparing photo…');
+          App.util.scaleImage(blob, 1024).then(function (dataUri) {
+            var caption = ta.value.replace(/^\s+|\s+$/g, '');
+            ta.value = '';
+            return App.store.sendAttachment(convId, dataUri, caption);
+          })['catch'](function (err) {
+            App.toast('Photo failed: ' + err.message);
+          });
+        };
+        pick.onerror = function () { /* user cancelled the picker */ };
       }
 
       function openOptions(rec) {
@@ -291,6 +347,10 @@
           },
           copy: function (r) {
             ta.value = ta.value ? ta.value + ' ' + r.body : r.body;
+            nav.selectLast();
+          },
+          edit: function (r) {
+            setEditing(r);
             nav.selectLast();
           }
         }));
@@ -335,8 +395,16 @@
               send();
               return true;
             }
+            if (evt.key === 'SoftLeft' && editTarget) {
+              setEditing(null);
+              return true;
+            }
             if (evt.key === 'SoftLeft' && pendingQuote) {
               setQuote(null);
+              return true;
+            }
+            if (evt.key === 'SoftRight' && !editTarget) {
+              attach();
               return true;
             }
             if (evt.key === 'ArrowUp') {

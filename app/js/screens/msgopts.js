@@ -2,11 +2,23 @@
   'use strict';
 
   /* Per-message actions menu, built on the generic menu screen.
-     callbacks: { reply(rec), copy(rec) } — provided by the chat screen. */
+     callbacks: { reply(rec), copy(rec), edit(rec) } — provided by the chat
+     screen. */
 
   App.screens.msgopts = {
     create: function (rec, callbacks) {
       var items = [];
+
+      if (!rec.deleted && rec.attachments && rec.attachments.length && rec.attachments[0].id) {
+        items.push({
+          label: 'View ' + ((rec.attachments[0].contentType || '').indexOf('image/') === 0
+            ? 'photo' : 'attachment'),
+          onSelect: function () {
+            App.router.replace(App.screens.viewer.create(rec.attachments[0]));
+            return 'keep'; // replace() already removed this menu
+          }
+        });
+      }
 
       if (!rec.deleted) {
         items.push({
@@ -26,6 +38,14 @@
             onSelect: function () { callbacks.copy(rec); }
           });
         }
+      }
+
+      if (!rec.incoming && !rec.deleted && rec.body &&
+        (rec.status === 'sent' || rec.status === 'delivered' || rec.status === 'read')) {
+        items.push({
+          label: 'Edit message',
+          onSelect: function () { callbacks.edit(rec); }
+        });
       }
 
       if (rec.status === 'failed') {

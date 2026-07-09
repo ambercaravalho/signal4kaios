@@ -115,6 +115,17 @@ html, body {
   margin-right: 6px;
 }
 
+/* Deterministic avatar colors (inline styles are blocked by the privileged
+   CSP, so the hash maps to one of these classes). */
+.avatar-c0 { background: #d0021b; }
+.avatar-c1 { background: #d97b12; }
+.avatar-c2 { background: #7b9b1a; }
+.avatar-c3 { background: #1a9b6c; }
+.avatar-c4 { background: #1a7f9b; }
+.avatar-c5 { background: #5b5fd3; }
+.avatar-c6 { background: #9b1a9b; }
+.avatar-c7 { background: #c23a6b; }
+
 .conv-main {
   flex: 1;
   min-width: 0;
@@ -258,6 +269,15 @@ html, body {
 
 .msg-body {
   white-space: pre-wrap;
+}
+
+.msg-attach {
+  font-size: 12px;
+  color: #b8c6e6;
+  border: 1px dashed #4a5a7a;
+  border-radius: 4px;
+  padding: 3px 5px;
+  margin-bottom: 2px;
 }
 
 .msg.deleted .msg-body {
@@ -433,6 +453,32 @@ html, body {
 .react-remove[nav-selected="true"] {
   background: #3a76f0;
   color: #fff;
+}
+
+/* ---- Attachment viewer ---- */
+.viewer {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  overflow: hidden;
+}
+
+.viewer img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.viewer-status {
+  color: #9a9a9e;
+  font-size: 12px;
+  padding: 12px;
+  text-align: center;
+}
+
+.viewer-status.bad {
+  color: #ff7070;
 }
 
 /* ---- Debug log ---- */

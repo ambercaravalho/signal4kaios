@@ -30,7 +30,7 @@
             'No conversations yet.\n' +
             'Message history builds up as messages arrive.\n' +
             'Press the right softkey to start a new chat.'));
-          App.softkeys.set('Settings', '', 'New chat');
+          App.softkeys.set('Options', '', 'New chat');
           return;
         }
         convs.forEach(function (conv) {
@@ -38,7 +38,9 @@
           row.setAttribute('nav-selectable', 'true');
           row.setAttribute('data-id', conv.id);
 
-          row.appendChild(App.util.el('div', 'avatar', App.util.initials(conv.name)));
+          row.appendChild(App.util.el('div',
+            'avatar ' + App.util.colorClass(conv.name || conv.id),
+            App.util.initials(conv.name)));
 
           var main = App.util.el('div', 'conv-main');
           var top = App.util.el('div', 'conv-top');
@@ -60,7 +62,29 @@
           list.appendChild(row);
         });
         nav.refresh();
-        App.softkeys.set('Settings', 'Open', 'New chat');
+        App.softkeys.set('Options', 'Open', 'New chat');
+      }
+
+      function openOptionsMenu() {
+        App.router.push(App.screens.menu.create({
+          title: 'Options',
+          items: [
+            {
+              label: 'Search messages',
+              onSelect: function () {
+                App.router.replace(App.screens.search.create());
+                return 'keep'; // replace() already removed this menu
+              }
+            },
+            {
+              label: 'Settings',
+              onSelect: function () {
+                App.router.replace(App.screens.settings.create());
+                return 'keep';
+              }
+            }
+          ]
+        }));
       }
 
       var paused = false;
@@ -117,7 +141,7 @@
               return true;
             }
             case 'SoftLeft':
-              App.router.push(App.screens.settings.create());
+              openOptionsMenu();
               return true;
             case 'SoftRight':
               App.router.push(App.screens.newchat.create());

@@ -103,10 +103,16 @@
     return conv;
   }
 
+  function attachmentLabel(attachments) {
+    if (!attachments || !attachments.length) return '';
+    var a = attachments[0];
+    if ((a.contentType || '').indexOf('image/') === 0) return '📷 Photo';
+    return '📎 ' + (a.filename || 'File');
+  }
+
   function previewOf(ev) {
     if (ev.body) return ev.body;
-    if (ev.attachmentsCount) return '[attachment]';
-    return '';
+    return attachmentLabel(ev.attachments) || '';
   }
 
   function notify(conv, rec) {
@@ -133,10 +139,11 @@
       timestamp: ev.timestamp,
       body: ev.body || '',
       quote: ev.quote || null,
-      attachmentsCount: ev.attachmentsCount || 0,
+      attachments: ev.attachments || [],
       reactions: {},
       status: ev.incoming ? 'received' : 'sent',
-      deleted: false
+      deleted: false,
+      edited: false
     };
     App.db.putMessage(rec);
 
@@ -224,6 +231,28 @@
     });
   }
 
+  function applyEdit(ev) {
+    var candidates = [ev.author, altKeyOf(ev.author), self()];
+    enqueueMutation(function () {
+      return findMessage(ev.convId, ev.targetTimestamp, candidates).then(function (rec) {
+        if (!rec) {
+          App.util.dbg('edit target not found', ev);
+          return;
+        }
+        rec.body = ev.newBody;
+        rec.edited = true;
+        emit('message-updated', rec);
+        var conv = convs[ev.convId];
+        if (conv && conv.lastTs === rec.timestamp) {
+          conv.lastPreview = ev.newBody;
+          persistConv(conv);
+          emit('conversations');
+        }
+        return App.db.putMessage(rec);
+      });
+    });
+  }
+
   function applyTyping(ev) {
     if (!ev.convId) return;
     if (ev.started) {
@@ -279,6 +308,7 @@
       case 'message': return applyMessage(ev);
       case 'reaction': return applyReaction(ev);
       case 'remoteDelete': return applyRemoteDelete(ev);
+      case 'edit': return applyEdit(ev);
       case 'typing': return applyTyping(ev);
       case 'receipt': return applyReceipt(ev);
       default:
@@ -347,40 +377,17 @@
     });
   }
 
-  function sendText(convId, text, quote) {
-    var conv = convs[convId];
-    if (!conv) return Promise.reject(new Error('Unknown conversation'));
-    if (!conv.sendId) return Promise.reject(new Error('No send address for this group yet'));
-
-    var ts = Date.now();
-    var rec = {
-      id: msgId(conv.id, ts, self()),
-      convId: conv.id,
-      incoming: false,
-      author: self(),
-      authorName: '',
-      timestamp: ts,
-      body: text,
-      quote: quote || null,
-      attachmentsCount: 0,
-      reactions: {},
-      status: 'pending',
-      deleted: false
-    };
+  /* Shared optimistic-send core: write a pending record, call /v2/send,
+     re-key to the server timestamp, mark sent/failed. */
+  function sendCore(conv, rec, payload, preview) {
     App.db.putMessage(rec);
-    conv.lastTs = ts;
-    conv.lastPreview = text;
+    conv.lastTs = rec.timestamp;
+    conv.lastPreview = preview;
     persistConv(conv);
     emit('message', rec);
     emit('conversations');
 
-    var payload = { recipients: [conv.sendId], message: text };
-    if (quote) {
-      payload.quote_timestamp = quote.timestamp;
-      payload.quote_author = quote.author;
-      payload.quote_message = quote.text;
-    }
-
+    var ts = rec.timestamp;
     return App.api.send(payload).then(function (res) {
       var newTs = res && res.timestamp ? parseInt(res.timestamp, 10) : ts;
       var oldId = rec.id;
@@ -401,6 +408,86 @@
       emit('message-updated', rec);
       App.util.dbg('send failed: ' + err.message);
       throw err;
+    });
+  }
+
+  function newOutgoingRec(conv, extras) {
+    var ts = Date.now();
+    return Object.assign({
+      id: msgId(conv.id, ts, self()),
+      convId: conv.id,
+      incoming: false,
+      author: self(),
+      authorName: '',
+      timestamp: ts,
+      body: '',
+      quote: null,
+      attachments: [],
+      reactions: {},
+      status: 'pending',
+      deleted: false,
+      edited: false
+    }, extras || {});
+  }
+
+  function convForSend(convId) {
+    var conv = convs[convId];
+    if (!conv) throw new Error('Unknown conversation');
+    if (!conv.sendId) throw new Error('No send address for this group yet');
+    return conv;
+  }
+
+  function sendText(convId, text, quote) {
+    var conv;
+    try { conv = convForSend(convId); } catch (e) { return Promise.reject(e); }
+
+    var rec = newOutgoingRec(conv, { body: text, quote: quote || null });
+    var payload = { recipients: [conv.sendId], message: text };
+    if (quote) {
+      payload.quote_timestamp = quote.timestamp;
+      payload.quote_author = quote.author;
+      payload.quote_message = quote.text;
+    }
+    return sendCore(conv, rec, payload, text);
+  }
+
+  /* dataUri: "data:image/jpeg;base64,…" (produced by util.scaleImage). */
+  function sendAttachment(convId, dataUri, caption) {
+    var conv;
+    try { conv = convForSend(convId); } catch (e) { return Promise.reject(e); }
+
+    var rec = newOutgoingRec(conv, {
+      body: caption || '',
+      attachments: [{ id: '', contentType: 'image/jpeg', filename: 'photo.jpg', size: 0 }]
+    });
+    var payload = {
+      recipients: [conv.sendId],
+      message: caption || '',
+      base64_attachments: [dataUri]
+    };
+    return sendCore(conv, rec, payload, caption || '📷 Photo');
+  }
+
+  /* Edit a previously sent message via /v2/send edit_timestamp. */
+  function sendEdit(rec, newText) {
+    var conv;
+    try { conv = convForSend(rec.convId); } catch (e) { return Promise.reject(e); }
+
+    return App.api.send({
+      recipients: [conv.sendId],
+      message: newText,
+      edit_timestamp: rec.timestamp
+    }).then(function () {
+      rec.body = newText;
+      rec.edited = true;
+      App.db.putMessage(rec);
+      emit('message-updated', rec);
+      if (conv.lastTs === rec.timestamp) {
+        conv.lastPreview = newText;
+        persistConv(conv);
+        emit('conversations');
+      }
+      return rec;
     });
   }
 
@@ -545,9 +632,12 @@
     ingestRaw: ingestRaw,
     refreshDirectory: refreshDirectory,
     sendText: sendText,
+    sendAttachment: sendAttachment,
+    sendEdit: sendEdit,
     retryMessage: retryMessage,
     reactTo: reactTo,
     deleteForEveryone: deleteForEveryone,
+    attachmentLabel: attachmentLabel,
     markRead: markRead,
     openConversationWith: openConversationWith,
     openGroupConversation: openGroupConversation,

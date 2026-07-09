@@ -20,7 +20,8 @@
         var r = App.util.el('div', 'conv-row');
         r.setAttribute('nav-selectable', 'true');
         r.setAttribute('data-id', kind + ':' + id);
-        r.appendChild(App.util.el('div', 'avatar', App.util.initials(name)));
+        r.appendChild(App.util.el('div',
+          'avatar ' + App.util.colorClass(name), App.util.initials(name)));
         var main = App.util.el('div', 'conv-main');
         var top = App.util.el('div', 'conv-top');
         top.appendChild(App.util.el('span', 'conv-name', name));

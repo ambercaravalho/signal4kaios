@@ -14,6 +14,11 @@ Vanilla JS, zero build step, packaged as a **privileged** KaiOS app
 - Send & receive text messages in real time (WebSocket, json-rpc mode)
 - Reactions (Signal's six defaults), read receipts, typing indicators
 - Quote/reply, copy to composer, delete for everyone, retry failed sends
+- **Edit sent messages**, and see edits made by others (or by you on the phone)
+- **View photo attachments** (downloaded on demand, cached offline in IndexedDB)
+- **Send photos** from the gallery (picked via MozActivity, downscaled on-device)
+- **Local message search** across all stored history
+- Colored initial avatars
 - Message history persisted on the phone (IndexedDB) — the REST API has no
   history endpoint, so history accrues from the moment you start using the app
 - Start new chats from your contact/group list
@@ -45,8 +50,8 @@ Vanilla JS, zero build step, packaged as a **privileged** KaiOS app
 |---|---|---|
 | Up/Down | Move selection | Move through messages / composer |
 | Center | Open chat | Send (composer) / message options (message) |
-| SoftLeft | Settings | Cancel reply (while replying) |
-| SoftRight | New chat | — |
+| SoftLeft | Options (search, settings) | Cancel reply / cancel edit |
+| SoftRight | New chat | Attach photo |
 | Back | Exit app | Back to list |
 
 ## Development on the desktop
@@ -85,13 +90,13 @@ http.js:   mozSystem XHR (privileged, CORS-free) with desktop fallback
 
 | Feature | Notes for implementation |
 |---|---|
-| View image attachments | binary `GET /v1/attachments/{id}` via systemXHR → blob URL, LRU cache in IndexedDB |
-| Send attachments | `MozActivity` picker → canvas downscale → `base64_attachments` on `/v2/send` |
-| Contact/group avatars | `GET /v1/contacts/{number}/{uuid}/avatar` binary fetch, cached |
+| Inline image thumbnails | render cached attachment blobs directly in chat bubbles (memory-capped) |
+| Real contact/group avatars | `GET /v1/contacts/{number}/{uuid}/avatar` binary fetch, cached like attachments |
+| Non-image attachments | save-to-device via DeviceStorage API; audio playback via `<audio>` |
 | Group management | create/update/leave via `/v1/groups/*` endpoints |
 | Profile editing | `PUT /v1/profile/{number}` |
 | Contact management | `PUT /v1/contacts/{number}` + `/sync` |
-| Local message search | IndexedDB scan (no server-side content search exists) |
+| Jump-to-message from search | pass a target timestamp to the chat screen and page until reached |
 | History backfill | no REST API for history — would need a companion export/import script on the server |
 | Polls / stickers | render from `dataMessage` first; `/v1/polls` for voting |
 | Multi-account | per-account IndexedDB database + account switcher in Settings |

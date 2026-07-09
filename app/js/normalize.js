@@ -8,7 +8,8 @@
 
      Emitted event types:
        message      { convId, groupInternalId?, incoming, author, authorName,
-                      timestamp, body, quote?, attachmentsCount, expiresAt? }
+                      timestamp, body, quote?, attachments, expiresAt? }
+       edit         { convId, author, targetTimestamp, newBody, timestamp }
        reaction     { convId, reactor, emoji, remove, targetAuthor, targetTimestamp }
        remoteDelete { convId, author, targetTimestamp }
        typing       { convId, author, started }
@@ -86,12 +87,36 @@
       author: author,
       authorName: env.sourceName || '',
       timestamp: dm.timestamp || env.timestamp,
-      body: body || (attachments.length ? '' : ''),
+      body: body || '',
       quote: quoteOf(dm),
-      attachmentsCount: attachments.length,
+      attachments: attachments.map(function (a) {
+        return {
+          id: a.id || '',
+          contentType: a.contentType || '',
+          filename: a.filename || '',
+          size: a.size || 0
+        };
+      }),
       expiresInSeconds: dm.expiresInSeconds || 0
     });
     return events;
+  }
+
+  function editEvent(env, edit, author, convOverride) {
+    var dm = edit.dataMessage || {};
+    var conv = convOverride || convFor(env, dm);
+    if (!conv.convId) {
+      App.util.dbg('normalize: no conversation for editMessage', edit);
+      return [];
+    }
+    return [{
+      type: 'edit',
+      convId: conv.convId,
+      author: author,
+      targetTimestamp: edit.targetSentTimestamp || edit.targetTimestamp || 0,
+      newBody: dm.message || '',
+      timestamp: dm.timestamp || env.timestamp
+    }];
   }
 
   function parse(frame, selfNumber) {
@@ -104,6 +129,10 @@
 
     if (env.dataMessage) {
       return dataMessageEvents(env, env.dataMessage, true);
+    }
+
+    if (env.editMessage) {
+      return editEvent(env, env.editMessage, peerKey(env));
     }
 
     if (env.typingMessage) {
@@ -138,6 +167,10 @@
         var conv = sent.groupInfo && sent.groupInfo.groupId
           ? { convId: 'g:' + sent.groupInfo.groupId, groupInternalId: sent.groupInfo.groupId }
           : { convId: dest, groupInternalId: null };
+        if (sent.editMessage) {
+          // An edit we made on another linked device.
+          return editEvent(env, sent.editMessage, selfNumber, conv);
+        }
         return dataMessageEvents(env, sent, false, selfNumber, conv);
       }
       if (sm.readMessages) {
