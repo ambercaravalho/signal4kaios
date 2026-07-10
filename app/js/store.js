@@ -150,7 +150,9 @@
 
     conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
     conv.lastPreview = previewOf(ev);
-    conv.archived = false; // new activity brings a chat out of the archive
+    // New activity brings a chat out of the archive — unless it's muted,
+    // matching Signal: muted archived chats stay archived.
+    if (!conv.muted) conv.archived = false;
     if (ev.incoming && openConvId !== conv.id) conv.unread = (conv.unread || 0) + 1;
     if (typingMap[conv.id]) {
       delete typingMap[conv.id];
@@ -401,7 +403,8 @@
     App.db.putMessage(rec);
     conv.lastTs = rec.timestamp;
     conv.lastPreview = preview;
-    conv.archived = false; // sending also unarchives
+    // Sending also unarchives — unless muted, matching Signal.
+    if (!conv.muted) conv.archived = false;
     persistConv(conv);
     emit('message', rec);
     emit('conversations');

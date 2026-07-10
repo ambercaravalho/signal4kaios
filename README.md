@@ -33,9 +33,9 @@ to your server across origins without CORS.
 **Organization**
 
 - Conversation list with unread badges, typing dots, and connection status
-- Archived chats — hidden behind an "Archived chats" row; any new message
-  brings a chat back (local to the phone: the REST API does not expose
-  Signal's synced chat-list state)
+- Archived chats — hidden behind an "Archived chats" row; a new message
+  brings a chat back, unless it's also muted (matches Signal — local to the
+  phone: the REST API does not expose Signal's synced chat-list state)
 - Muted chats — unread badge keeps counting, notifications stop (🔇)
 - Local message search across all stored history
 - Start new chats from your contact and group list
