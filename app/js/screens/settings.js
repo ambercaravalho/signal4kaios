@@ -34,6 +34,9 @@
         'leave blank if not needed');
       var authPassInput = field('Reverse proxy password', cfg.authPass,
         '', 'password');
+      list.appendChild(App.util.el('div', 'field-note',
+        'Only secures the API. Live updates need the /v1/receive path ' +
+        'exempted from proxy auth — see README.'));
 
       var status = App.util.el('div', 'status-line', '');
       list.appendChild(status);

@@ -433,6 +433,13 @@ html, body {
   border-color: #3a76f0;
 }
 
+.field-note {
+  padding: 0 8px 6px;
+  font-size: 10px;
+  color: #9a9a9e;
+  line-height: 1.4;
+}
+
 .status-line {
   padding: 4px 8px;
   font-size: 11px;

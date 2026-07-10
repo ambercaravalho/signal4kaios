@@ -5,23 +5,28 @@
      Reconnects with exponential backoff + jitter; also reconnects when the
      app returns to the foreground.
 
-     Basic-auth caveat: browsers refuse both custom WebSocket handshake
-     headers and userinfo (user:pass@) in ws:// URLs, so there is no way for
-     this code to attach an Authorization header to the handshake directly.
-     What does work: once an XHR to the same origin succeeds with HTTP
-     Basic Auth, Gecko's own HTTP auth cache remembers the credentials for
-     that origin and attaches them automatically to every later request —
-     including the WebSocket handshake, which is a plain HTTP request before
-     it upgrades. So when basic auth is configured, connect() fires one
-     priming request (http.js's /v1/about call, which already sends the
-     header) and only opens the socket after it settles. */
+     Basic-auth limitation (no client-side fix exists): browsers refuse both
+     custom WebSocket handshake headers and userinfo (user:pass@) in ws://
+     URLs, so this code can never attach an Authorization header to the
+     handshake. An earlier version of this file tried to work around that by
+     priming Gecko's HTTP auth cache with a prior XHR, on the theory that the
+     cache would carry over to the handshake — confirmed by testing against a
+     Traefik-based proxy (Pangolin's "header auth") that it does not. Basic
+     Auth middlewares are typically stateless and check every single request
+     independently, including the WS upgrade request, and there is no
+     browser API that lets a WebSocket client satisfy that. If auth is
+     failing only for the socket while plain HTTP calls succeed, the fix has
+     to happen on the proxy: exempt the /v1/receive path from Basic Auth
+     (e.g. a separate Pangolin resource/rule for it), and if it still needs
+     protection, use a network-level control instead (IP allowlist, or the
+     fact that it's already behind the tunnel) — see the README. */
 
   var sock = null;
   var attempts = 0;
   var reconnectTimer = null;
   var wanted = false;
-  var authPrimed = false;
-  var priming = false;
+  var opened = false;
+  var warnedAuth = false;
 
   function state() {
     if (sock && sock.readyState === WebSocket.OPEN) return 'open';
@@ -31,7 +36,7 @@
 
   function connect() {
     wanted = true;
-    if (!App.config.isConfigured() || priming) return;
+    if (!App.config.isConfigured()) return;
     if (sock && (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING)) {
       return;
     }
@@ -40,29 +45,13 @@
       reconnectTimer = null;
     }
 
-    if (App.config.hasBasicAuth() && !authPrimed) {
-      priming = true;
-      App.util.dbg('ws: priming HTTP auth cache before connecting');
-      App.api.about().then(function () {
-        authPrimed = true;
-      })['catch'](function (e) {
-        App.util.dbg('ws: auth priming request failed — ' + e.message);
-        // Try the socket anyway; some setups may not need this.
-      }).then(function () {
-        priming = false;
-        if (wanted) openSocket();
-      });
-      return;
-    }
-
-    openSocket();
-  }
-
-  function openSocket() {
     var url = App.config.wsUrl() + '/v1/receive/' +
       encodeURIComponent(App.config.number());
     App.util.dbg('ws: connecting ' + url);
     App.store.setConnection('connecting');
+
+    var startedAt = Date.now();
+    opened = false;
 
     try {
       sock = new WebSocket(url);
@@ -73,7 +62,9 @@
     }
 
     sock.onopen = function () {
+      opened = true;
       attempts = 0;
+      warnedAuth = false;
       App.util.dbg('ws: open');
       App.store.setConnection('open');
     };
@@ -89,10 +80,24 @@
       App.store.ingestRaw(frame);
     };
 
-    sock.onclose = function () {
-      App.util.dbg('ws: closed');
+    sock.onclose = function (evt) {
+      App.util.dbg('ws: closed (code ' + evt.code + ')');
       App.store.setConnection('closed');
       sock = null;
+
+      // A handshake that's rejected (e.g. a 401 from Basic Auth) closes
+      // immediately without ever opening — that pattern, with Basic Auth
+      // configured, is the one thing the app can actually detect here.
+      if (!opened && App.config.hasBasicAuth() && Date.now() - startedAt < 5000) {
+        App.util.dbg('ws: closed before opening with Basic Auth configured — ' +
+          'the proxy is likely rejecting the handshake (see README: ' +
+          'Basic Auth cannot authenticate a WebSocket in any browser)');
+        if (!warnedAuth) {
+          warnedAuth = true;
+          App.toast('Live updates blocked by the proxy auth — see Debug log');
+        }
+      }
+
       if (wanted) scheduleReconnect();
     };
 
@@ -131,7 +136,7 @@
   function restart() {
     stop();
     attempts = 0;
-    authPrimed = false; // server URL or credentials may have just changed
+    warnedAuth = false;
     connect();
   }
 
