@@ -1,5 +1,5 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "name": "Signal4KaiOS",
   "description": "Signal messenger client for KaiOS 2.5, powered by signal-cli-rest-api",
   "type": "privileged",

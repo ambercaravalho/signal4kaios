@@ -52,8 +52,36 @@ LRU cache.
 
 - A phone running KaiOS 2.5 (Gecko 48) with the debug menu enabled
 - signal-cli-rest-api running in **json-rpc** mode (`MODE=json-rpc`), already
-  registered or linked to your Signal account, reachable from the phone's
-  Wi-Fi (e.g. `http://192.168.1.100:4329`)
+  registered or linked to your Signal account, reachable from the phone —
+  either directly on your Wi-Fi (e.g. `http://192.168.1.100:4329`) or through
+  a reverse proxy for access away from home (see below)
+
+## Away from home: reverse proxy + HTTP Basic Auth
+
+Settings has two optional fields, **Reverse proxy username** and **password**,
+for putting the server behind something like
+[Pangolin](https://github.com/fosrl/pangolin)'s "header auth" (standard HTTP
+Basic Auth — the same credentials you'd type into
+`https://username:password@resource.example.com`). Point **Server URL** at
+the public `https://` address, fill in those two fields, then **Save**.
+
+This needed two different mechanisms, because HTTP requests and WebSocket
+connections handle auth differently in a browser:
+
+- **HTTP calls** (`http.js`) send an explicit `Authorization: Basic …` header
+  on every request, so they authenticate on the first try.
+- **The WebSocket receive connection** can't do that — browsers refuse both
+  custom WebSocket handshake headers and `user:pass@` in `ws://` URLs from
+  JavaScript, no exceptions. What does work: passing credentials through
+  `xhr.open()` also teaches Gecko's own HTTP auth cache for that origin, and
+  the cache attaches them automatically to *every* later request to it —
+  including the WebSocket handshake, which is a plain HTTP request before it
+  upgrades. So `ws.js` fires one priming HTTP request and only opens the
+  socket once that settles.
+
+If messages stop arriving after enabling this, check Settings → Debug log for
+`ws:` lines — a `401`-flavored failure there usually means the username or
+password doesn't match what the proxy expects.
 
 ## Install (sideload)
 
@@ -118,7 +146,10 @@ ws.js ──▶ normalize.js ──▶ store.js ──▶ IndexedDB (db.js)
 - `router.js` — screen stack with a single global keydown dispatcher
   (unhandled Backspace pops; KaiOS's Back key sends Backspace)
 - `nav.js` — D-pad selection via `nav-selectable` / `nav-selected` attributes
-- `http.js` — mozSystem XHR (privileged, CORS-free) with desktop fallback
+- `http.js` — mozSystem XHR (privileged, CORS-free) with desktop fallback;
+  attaches HTTP Basic Auth when configured
+- `ws.js` — WebSocket receive with backoff/reconnect; primes the HTTP auth
+  cache before connecting when Basic Auth is configured (see above)
 - `api.js` — thin wrappers over the REST endpoints
 - `store.js` — state hub: applies normalized events, persists, emits;
   serializes read-modify-write message updates so concurrent receipts and

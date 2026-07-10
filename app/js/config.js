@@ -27,6 +27,18 @@
       return read().number || '';
     },
 
+    authUser: function () {
+      return read().authUser || '';
+    },
+
+    authPass: function () {
+      return read().authPass || '';
+    },
+
+    hasBasicAuth: function () {
+      return !!App.config.authUser();
+    },
+
     isConfigured: function () {
       return !!(App.config.serverUrl() && App.config.number());
     },

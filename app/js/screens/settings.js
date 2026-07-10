@@ -14,11 +14,11 @@
 
       var cfg = App.config.get();
 
-      function field(labelText, value, placeholder) {
+      function field(labelText, value, placeholder, type) {
         var wrap = App.util.el('div', 'field');
         var label = App.util.el('label', null, labelText);
         var input = App.util.el('input');
-        input.type = 'text';
+        input.type = type || 'text';
         input.value = value || '';
         input.placeholder = placeholder || '';
         input.setAttribute('nav-selectable', 'true');
@@ -30,6 +30,10 @@
 
       var urlInput = field('Server URL', cfg.serverUrl, 'http://192.168.1.100:4329');
       var numInput = field('My Signal number', cfg.number, '+15551234567');
+      var authUserInput = field('Reverse proxy username (optional)', cfg.authUser,
+        'leave blank if not needed');
+      var authPassInput = field('Reverse proxy password', cfg.authPass,
+        '', 'password');
 
       var status = App.util.el('div', 'status-line', '');
       list.appendChild(status);
@@ -73,7 +77,12 @@
           setStatus('Number must look like +15551234567', 'bad');
           return;
         }
-        App.config.set({ serverUrl: url, number: n });
+        App.config.set({
+          serverUrl: url,
+          number: n,
+          authUser: authUserInput.value.trim(),
+          authPass: authPassInput.value
+        });
         setStatus('Saved.', 'ok');
         App.toast('Settings saved');
         App.ws.restart();
@@ -87,7 +96,9 @@
         // Use current field values so testing works before saving.
         App.config.set({
           serverUrl: urlInput.value.trim().replace(/\/+$/, ''),
-          number: normalizedNumber()
+          number: normalizedNumber(),
+          authUser: authUserInput.value.trim(),
+          authPass: authPassInput.value
         });
         setStatus('Testing…');
         App.api.about().then(function (info) {

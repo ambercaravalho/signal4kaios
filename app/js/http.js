@@ -16,6 +16,25 @@
     }
   }
 
+  /* HTTP Basic Auth for reverse proxies (e.g. Pangolin "header auth") in
+     front of the signal-cli-rest-api server. Two things happen together:
+     - The Authorization header is set explicitly, so this request is
+       authenticated on the first try (no dependency on a 401 challenge).
+     - Passing the same username/password to xhr.open() teaches Gecko's own
+       HTTP auth cache for this origin, which is what lets the WebSocket
+       handshake (an HTTP request the app cannot attach headers to) ride
+       along on cached credentials — see ws.js's auth-priming step. */
+  function basicAuthHeader() {
+    var user = App.config.authUser();
+    if (!user) return null;
+    try {
+      return 'Basic ' + btoa(user + ':' + App.config.authPass());
+    } catch (e) {
+      App.util.dbg('basic auth: could not encode credentials — ' + e.message);
+      return null;
+    }
+  }
+
   function request(method, path, body, opts) {
     opts = opts || {};
     return new Promise(function (resolve, reject) {
@@ -25,9 +44,15 @@
         return;
       }
       var xhr = makeXhr();
-      xhr.open(method, base + path, true);
+      var authHeader = basicAuthHeader();
+      if (authHeader) {
+        xhr.open(method, base + path, true, App.config.authUser(), App.config.authPass());
+      } else {
+        xhr.open(method, base + path, true);
+      }
       xhr.timeout = opts.timeout || 15000;
       if (opts.binary) xhr.responseType = 'blob';
+      if (authHeader) xhr.setRequestHeader('Authorization', authHeader);
 
       xhr.onload = function () {
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -47,6 +72,9 @@
           }
         } else {
           var msg = 'HTTP ' + xhr.status;
+          if (xhr.status === 401) {
+            msg += ' — check the auth username/password in Settings';
+          }
           try {
             var parsed = JSON.parse(xhr.responseText);
             if (parsed && parsed.error) msg += ': ' + parsed.error;
