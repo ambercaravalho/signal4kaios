@@ -167,8 +167,8 @@ on screen.
 
 Settings is grouped into sections so it's easy to scan:
 
-- **Server** — server URL, your Signal number, optional reverse-proxy
-  credentials, plus **Save** and **Test connection**.
+- **Server** — opens **Server & connection**: server URL, your Signal number,
+  optional reverse-proxy credentials, plus **Save** and **Test connection**.
 - **Privacy** — the read-receipts toggle.
 - **Profile** — edit your Signal name / about.
 - **Accounts** — switch between or add accounts.

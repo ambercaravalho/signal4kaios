@@ -20,7 +20,7 @@
     if (App.config.isConfigured()) {
       App.router.push(App.screens.conversations.create());
     } else {
-      App.router.push(App.screens.settings.create({ firstRun: true }));
+      App.router.push(App.screens.serversettings.create({ firstRun: true }));
     }
 
     App.store.init().then(function () {

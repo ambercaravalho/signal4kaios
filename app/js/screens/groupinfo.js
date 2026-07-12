@@ -25,6 +25,50 @@
         });
       }
 
+      /* Members can number in the hundreds, so they get their own scrollable
+         screen instead of a giant text blob on the info screen. */
+      function membersScreen(names) {
+        var mel = App.util.el('div', 'screen');
+        var mhdr = App.util.el('div', 'hdr');
+        mhdr.appendChild(App.util.el('span', 'hdr-title',
+          'Members (' + names.length + ')'));
+        mel.appendChild(mhdr);
+        var mlist = App.util.el('div', 'list');
+        mel.appendChild(mlist);
+        if (!names.length) {
+          mlist.appendChild(App.util.el('div', 'empty', 'No members.'));
+        } else {
+          names.forEach(function (name, i) {
+            var row = App.util.el('div', 'conv-row');
+            row.setAttribute('nav-selectable', 'true');
+            row.setAttribute('data-id', String(i));
+            var main = App.util.el('div', 'conv-main');
+            var top = App.util.el('div', 'conv-top');
+            top.appendChild(App.util.el('span', 'conv-name', name));
+            main.appendChild(top);
+            row.appendChild(main);
+            mlist.appendChild(row);
+          });
+        }
+        var mnav = new App.Nav(mel, { scrollEl: mlist });
+        return {
+          el: mel,
+          enter: function () {
+            App.softkeys.set('', '', '');
+            mnav.select(0);
+          },
+          resume: function () { App.softkeys.set('', '', ''); },
+          onKey: function (evt) { return mnav.handleKey(evt); }
+        };
+      }
+
+      function viewMembers() {
+        var names = memberNames(detail && detail.members).sort(function (a, b) {
+          return a.localeCompare(b);
+        });
+        App.router.push(membersScreen(names));
+      }
+
       function action(label, hint, id) {
         var row = App.util.el('div', 'menu-item', label);
         row.setAttribute('nav-selectable', 'true');
@@ -44,9 +88,9 @@
             list.appendChild(App.util.el('div', 'field-note',
               'Description: ' + detail.description));
           }
-          var names = memberNames(detail.members);
-          list.appendChild(App.util.el('div', 'field-note',
-            'Members (' + names.length + '): ' + names.join(', ')));
+          var count = (detail.members || []).length;
+          action('View members', count + (count === 1 ? ' member' : ' members'),
+            '__members');
         }
 
         list.appendChild(App.util.sectionHeader('Manage'));
@@ -151,7 +195,8 @@
             var sel = nav.selected();
             if (!sel) return true;
             var id = sel.getAttribute('data-id');
-            if (id === '__rename') rename();
+            if (id === '__members') viewMembers();
+            else if (id === '__rename') rename();
             else if (id === '__desc') editDescription();
             else if (id === '__leave') leave();
             return true;

@@ -3,7 +3,9 @@
 
   /* Generic vertical menu screen.
      create({ title, items: [{ label, hint, onSelect }] })
-     onSelect returning 'keep' leaves the menu open; anything else pops. */
+     After onSelect the menu pops, so you return to the previous screen — unless
+     onSelect returns 'keep' or pushes another screen onto the stack (detected by
+     a growth in router depth), in which case the menu stays underneath it. */
 
   App.screens.menu = {
     create: function (opts) {
@@ -41,7 +43,13 @@
             if (!sel) return true;
             var item = opts.items[parseInt(sel.getAttribute('data-id'), 10)];
             if (item && item.onSelect) {
-              if (item.onSelect() !== 'keep') App.router.pop();
+              var before = App.router.depth();
+              var res = item.onSelect();
+              // Keep the menu open if asked, or if the handler layered a new
+              // screen on top (otherwise we'd immediately pop that new screen).
+              if (res !== 'keep' && App.router.depth() <= before) {
+                App.router.pop();
+              }
             }
             return true;
           }
