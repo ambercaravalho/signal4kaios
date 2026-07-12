@@ -40,6 +40,12 @@ privileged-app CSP or the runtime — you must uphold these manually:
 When in doubt, run `sh tools/package.sh` — if it passes the syntax gate you are
 clear on the automated checks.
 
+The gate scans only first-party code (`app/js`, `app/css`). Vendored third-party
+libraries live in `app/vendor/` (outside the gate) — that's where a prebuilt
+file that can't meet the style rules (e.g. the `jsQR` QR decoder) belongs. Keep
+your own code in `app/js` so it stays gated; don't move first-party code into
+`vendor/` to dodge the checks.
+
 ## Architecture at a glance
 
 ```

@@ -190,6 +190,62 @@ html, body {
   opacity: 0.8;
 }
 
+.pin-icon {
+  flex: none;
+  font-size: 10px;
+  margin-left: 3px;
+  opacity: 0.85;
+}
+
+.pinned-bar {
+  flex: none;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #cdd6ee;
+  background: #26314a;
+  border-bottom: 1px solid #33405e;
+}
+
+.pinned-bar[nav-selected="true"] {
+  background: #3a76f0;
+  color: #fff;
+}
+
+.msg-pin {
+  font-size: 10px;
+  color: #f0c060;
+  margin-bottom: 1px;
+}
+
+.qr-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+.qr-img {
+  width: 180px;
+  height: 180px;
+  background: #fff;
+  padding: 6px;
+  border-radius: 4px;
+  image-rendering: pixelated;
+}
+
+.qr-caption {
+  margin-top: 8px;
+  font-size: 10px;
+  color: #9a9a9e;
+  text-align: center;
+  word-break: break-all;
+}
+
+.qr-caption .link {
+  color: #6aa0ff;
+}
+
 .archived-row {
   color: #9a9a9e;
   font-size: 12px;

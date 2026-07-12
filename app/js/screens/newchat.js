@@ -138,18 +138,35 @@
         App.router.replace(App.screens.chat.create(conv.id));
       }
 
+      /* Scanned QR data is usually a signal.me / username link we can't resolve
+         to a recipient, so pull out a phone number if present and otherwise
+         drop the raw text into the field for the user to review. */
+      function onScan(text) {
+        if (!text) return;
+        var m = String(text).match(/\+?\d[\d\s()-]{5,}/);
+        input.value = m ? m[0] : text;
+        render();
+        nav.selectById('__query');
+        App.toast('Scanned — press Open to start');
+      }
+
+      function openScan() {
+        App.router.push(App.screens.scanqr.create(onScan));
+      }
+
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('', 'Open', '');
+          App.softkeys.set('Scan', 'Open', '');
           render();
           nav.selectById('__query');
         },
         resume: function () {
-          App.softkeys.set('', 'Open', '');
+          App.softkeys.set('Scan', 'Open', '');
           render();
         },
         onKey: function (evt) {
+          if (evt.key === 'SoftLeft') { openScan(); return true; }
           var inInput = document.activeElement === input;
           if (inInput && (evt.key === 'ArrowLeft' || evt.key === 'ArrowRight')) {
             return false; // move the text cursor

@@ -43,6 +43,16 @@
       return !!App.config.authUser();
     },
 
+    /* Signal username and its shareable link (from the set-username endpoint).
+       Cached here because the REST API has no GET for the current username. */
+    username: function () {
+      return read().username || '';
+    },
+
+    usernameLink: function () {
+      return read().usernameLink || '';
+    },
+
     /* Feature flags. Boolean flags default to their most common value when the
        key is absent so existing installs keep their current behavior. */
     sendReadReceipts: function () {
@@ -52,6 +62,17 @@
     /* Interpret *bold* / _italic_ style markers when sending. On by default. */
     styledText: function () {
       return read().styledText !== false;
+    },
+
+    /* Send typing indicators while composing. On by default. */
+    typingIndicators: function () {
+      return read().typingIndicators !== false;
+    },
+
+    /* Keep muted chats archived when new activity arrives (matches Signal).
+       On by default; when off, muted chats unarchive like any other chat. */
+    keepMutedArchived: function () {
+      return read().keepMutedArchived !== false;
     },
 
     isConfigured: function () {

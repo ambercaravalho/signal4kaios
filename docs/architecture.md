@@ -71,11 +71,11 @@ load after everything it depends on.
 |---|---|
 | [`polyfills.js`](../app/js/polyfills.js) | Tiny Gecko-48 shims; creates `window.App` |
 | [`util.js`](../app/js/util.js) | `el`, time/format helpers, `initials`, `colorClass`, `debounce`, `scaleImage`, and the `dbg` ring buffer |
-| [`config.js`](../app/js/config.js) | Settings in `localStorage` (server URL, number, proxy auth); feature flags (e.g. read receipts) and the multi-account list; URL/WS-URL helpers |
+| [`config.js`](../app/js/config.js) | Settings in `localStorage` (server URL, number, proxy auth); feature flags (read receipts, typing indicators, keep-muted-archived, styled text); cached Signal username + link; the multi-account list; URL/WS-URL helpers |
 | [`toast.js`](../app/js/toast.js) | `App.toast` transient message bar |
 | [`http.js`](../app/js/http.js) | Promise wrapper over `mozSystem` XHR (CORS-free, privileged); desktop XHR fallback; attaches Basic Auth |
-| [`api.js`](../app/js/api.js) | Thin wrappers over the signal-cli-rest-api endpoints |
-| [`db.js`](../app/js/db.js) | IndexedDB persistence — the message history itself |
+| [`api.js`](../app/js/api.js) | Thin wrappers over the signal-cli-rest-api endpoints (send, reactions, receipts, contacts/groups, group member/admin/permission/link/block management, group message pin/unpin, set-username, disappearing-timer set) |
+| [`db.js`](../app/js/db.js) | IndexedDB persistence — the message history itself; includes the expired-message sweep and the pinned-message query |
 | [`normalize.js`](../app/js/normalize.js) | Envelope → typed events (the only parser) |
 | [`ws.js`](../app/js/ws.js) | Receive WebSocket with backoff/reconnect; foreground + heartbeat + alarm wake, directory resync on reconnect; Basic-Auth failure detection |
 | [`store.js`](../app/js/store.js) | State hub: apply events, persist, emit; optimistic send; serialized mutations |
@@ -85,6 +85,16 @@ load after everything it depends on.
 | [`router.js`](../app/js/router.js) | Screen stack + one global keydown dispatcher |
 | [`main.js`](../app/js/main.js) | Boot: init router + store, push first screen, background prune |
 | [`screens/*.js`](../app/js/screens) | Individual screens (see below) |
+
+**Vendored libraries** live in [`app/vendor/`](../app/vendor), deliberately
+outside `app/js`: `qrcode.js` (an ES5 QR **encoder**, for showing your profile
+QR) and `jsQR.js` (a QR **decoder**, for scanning). Keeping them out of `app/js`
+means the packaging syntax gate only ever scans first-party code, so the gate
+stays meaningful even though these third-party files aren't authored to the same
+Gecko-48 style rules. They attach plain globals (`qrcode`, `jsQR`) and are loaded
+by `<script>` tags like everything else. QR scanning and voice recording depend
+on camera / microphone APIs whose support varies on Gecko 48, so both are
+best-effort with graceful fallbacks.
 
 ## Screens and the router
 
@@ -102,9 +112,11 @@ A screen is an object with this contract:
 
 Screens live in [`app/js/screens/`](../app/js/screens): conversations, archived,
 chat, newchat, msgopts (message options), msgview (full-message reader),
-reactions and emojipicker (emoji grids), viewer (attachment), search, settings,
-profile, contactinfo, groupinfo, safety (safety numbers), debuglog, a generic
-`menu`, and a generic single-field `textinput`. The simplest one to copy is
+reactions and emojipicker (emoji grids), viewer (attachment), voicerecord (voice
+message capture), qrcode (show your profile QR) and scanqr (camera QR scanner),
+search, settings, profile, contactinfo, groupinfo, blocked (read-only blocked
+list), safety (safety numbers), debuglog, a generic `menu`, and a generic
+single-field `textinput`. The simplest one to copy is
 [`screens/menu.js`](../app/js/screens/menu.js); `textinput` and `menu` are the
 reusable building blocks the smaller screens compose from. See
 [Development → Adding a screen](development.md#adding-a-screen).
@@ -119,8 +131,8 @@ history survives the upgrade.
 
 | Store | Key | Notes |
 |---|---|---|
-| `messages` | `id` = `convId\|timestamp\|author` | Index `conv` on `[convId, timestamp]` for paging; pruned to ~500/conv |
-| `conversations` | `id` (peer number/uuid, or `g:` + internal group id) | One record per chat |
+| `messages` | `id` = `convId\|timestamp\|author` | Index `conv` on `[convId, timestamp]` for paging; pruned to ~500/conv; carries optional `pinned` and disappearing-message `expiresAt` used by the pinned-message query and the expiry sweep |
+| `conversations` | `id` (peer number/uuid, or `g:` + internal group id) | One record per chat; holds local-only `pinned` and the last-known disappearing-timer (`expireTimer`) |
 | `contacts` | `id` (uuid preferred, else number) | Address-book / profile directory |
 | `attachments` | `id` | LRU blob cache for viewed media; `avatar:*` entries are exempt from pruning |
 | `kv` | `k` | Small key/value store (e.g. cached groups map) |
@@ -139,10 +151,19 @@ message      { convId, groupInternalId?, incoming, author, authorName,
 edit         { convId, author, targetTimestamp, newBody, newStyles, timestamp }
 reaction     { convId, reactor, emoji, remove, targetAuthor, targetTimestamp }
 remoteDelete { convId, author, targetTimestamp }
+pin / unpin  { convId, targetAuthor, targetTimestamp }
 typing       { convId, author, started }
 receipt      { peer, kind: 'delivery' | 'read', timestamps: [..] }
 readSync     { entries: [{ sender, timestamp }] }
 ```
+
+`pin` / `unpin` come from group pinned-message updates (body-less
+`dataMessage`s), so `normalize.js` checks for them before the empty-dataMessage
+early-return; the store flips the `pinned` flag on the target message. Group
+message pins therefore sync in both directions. Disappearing messages carry
+`expiresInSeconds`; the store records an absolute `expiresAt` and a periodic
+sweep (`db.deleteExpired`, also run on chat open) removes messages past it,
+emitting `message-removed`.
 
 Messages sent from another of your linked devices arrive as `syncMessage`
 envelopes and are normalized into the same `message` / `edit` events with
@@ -169,7 +190,9 @@ A **message** record (as stored) looks like:
   raw,                       // outgoing only: the text as typed (with markers)
   reactions,                 // { reactorKey: emoji }
   status,                    // pending | sent | delivered | read | received | failed
-  deleted, edited
+  deleted, edited,
+  pinned?,                   // group message pin (synced)
+  expireSecs?, expiresAt?    // disappearing-message timer + absolute deadline
 }
 ```
 
@@ -186,6 +209,7 @@ A **conversation** record:
   groupInternalId?,          // groups only
   name, lastTs, lastPreview,
   unread, lastReadTs,
-  archived?, muted?          // local-only flags (not synced from Signal)
+  archived?, muted?, pinned?, // local-only flags (not synced from Signal)
+  expireTimer?               // last-known disappearing-message interval (seconds)
 }
 ```

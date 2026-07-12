@@ -14,6 +14,7 @@
   var openConvId = null;
   var connection = 'closed';
   var ready = false; // true once IndexedDB history has loaded on startup
+  var purgeTimer = null; // periodic disappearing-message sweep
 
   var STATUS_RANK = { pending: 0, failed: 0, sent: 1, delivered: 2, read: 3 };
 
@@ -161,13 +162,25 @@
       deleted: false,
       edited: false
     };
+    // Disappearing messages: remember the timer on the record so a background
+    // sweep can delete it, and track the conversation's current interval so
+    // outgoing messages inherit it.
+    if (ev.expiresInSeconds) {
+      rec.expireSecs = ev.expiresInSeconds;
+      rec.expiresAt = Date.now() + ev.expiresInSeconds * 1000;
+    }
+    if (ev.expiresInSeconds != null &&
+        (conv.expireTimer || 0) !== ev.expiresInSeconds) {
+      conv.expireTimer = ev.expiresInSeconds;
+    }
     App.db.putMessage(rec);
 
     conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
     conv.lastPreview = previewOf(ev);
-    // New activity brings a chat out of the archive — unless it's muted,
-    // matching Signal: muted archived chats stay archived.
-    if (!conv.muted) conv.archived = false;
+    // New activity brings a chat out of the archive. By default (matching
+    // Signal) muted archived chats stay archived; when the user turns that
+    // option off, muted chats unarchive like any other.
+    if (!App.config.keepMutedArchived() || !conv.muted) conv.archived = false;
     if (ev.incoming && openConvId !== conv.id) conv.unread = (conv.unread || 0) + 1;
     if (typingMap[conv.id]) {
       delete typingMap[conv.id];
@@ -273,6 +286,21 @@
     });
   }
 
+  function applyPin(ev, pinned) {
+    var candidates = [ev.targetAuthor, altKeyOf(ev.targetAuthor), self()];
+    enqueueMutation(function () {
+      return findMessage(ev.convId, ev.targetTimestamp, candidates).then(function (rec) {
+        if (!rec) {
+          App.util.dbg('pin target not found', ev);
+          return;
+        }
+        rec.pinned = pinned;
+        emit('message-updated', rec);
+        return App.db.putMessage(rec);
+      });
+    });
+  }
+
   function applyTyping(ev) {
     if (!ev.convId) return;
     if (ev.started) {
@@ -348,6 +376,8 @@
       case 'reaction': return applyReaction(ev);
       case 'remoteDelete': return applyRemoteDelete(ev);
       case 'edit': return applyEdit(ev);
+      case 'pin': return applyPin(ev, true);
+      case 'unpin': return applyPin(ev, false);
       case 'typing': return applyTyping(ev);
       case 'receipt': return applyReceipt(ev);
       case 'readSync': return applyReadSync(ev);
@@ -439,8 +469,8 @@
     App.db.putMessage(rec);
     conv.lastTs = rec.timestamp;
     conv.lastPreview = preview;
-    // Sending also unarchives — unless muted, matching Signal.
-    if (!conv.muted) conv.archived = false;
+    // Sending also unarchives — unless muted and "keep muted archived" is on.
+    if (!App.config.keepMutedArchived() || !conv.muted) conv.archived = false;
     persistConv(conv);
     emit('message', rec);
     emit('conversations');
@@ -471,7 +501,7 @@
 
   function newOutgoingRec(conv, extras) {
     var ts = Date.now();
-    return Object.assign({
+    var base = {
       id: msgId(conv.id, ts, self()),
       convId: conv.id,
       incoming: false,
@@ -486,7 +516,28 @@
       status: 'pending',
       deleted: false,
       edited: false
-    }, extras || {});
+    };
+    // Inherit the conversation's disappearing-message timer so our own copy
+    // is swept on the same schedule the recipient's will be.
+    if (conv.expireTimer) {
+      base.expireSecs = conv.expireTimer;
+      base.expiresAt = ts + conv.expireTimer * 1000;
+    }
+    return Object.assign(base, extras || {});
+  }
+
+  /* Delete messages whose disappearing-message deadline has passed and notify
+     open screens. Runs on startup, on a timer, and when a chat is opened. */
+  function purgeExpired() {
+    return App.db.deleteExpired(Date.now()).then(function (removed) {
+      (removed || []).forEach(function (r) {
+        emit('message-removed', { id: r.id, convId: r.convId, timestamp: r.timestamp });
+      });
+      if (removed && removed.length) emit('conversations');
+      return removed;
+    })['catch'](function (e) {
+      App.util.dbg('purge expired failed: ' + e.message);
+    });
   }
 
   function convForSend(convId) {
@@ -527,15 +578,22 @@
     return sendCore(conv, rec, payload, st.body);
   }
 
-  /* dataUri: "data:image/jpeg;base64,…" (produced by util.scaleImage). */
-  function sendAttachment(convId, dataUri, caption) {
+  /* dataUri: "data:<mime>;base64,…" (a scaled photo, a picked file, or a
+     recorded voice note). meta: optional { contentType, filename, size } used
+     for the optimistic local record and preview. */
+  function sendAttachment(convId, dataUri, caption, meta) {
     var conv;
     try { conv = convForSend(convId); } catch (e) { return Promise.reject(e); }
+
+    meta = meta || {};
+    var contentType = meta.contentType || 'image/jpeg';
+    var filename = meta.filename || 'photo.jpg';
 
     var st = styledSend(caption || '');
     var rec = newOutgoingRec(conv, {
       body: st.body, styles: st.styles, raw: caption || '',
-      attachments: [{ id: '', contentType: 'image/jpeg', filename: 'photo.jpg', size: 0 }]
+      attachments: [{ id: '', contentType: contentType, filename: filename,
+        size: meta.size || 0 }]
     });
     var payload = {
       recipients: [conv.sendId],
@@ -543,7 +601,10 @@
       base64_attachments: [dataUri]
     };
     if (st.textMode) payload.text_mode = st.textMode;
-    return sendCore(conv, rec, payload, st.body || '📷 Photo');
+    var preview = st.body ||
+      (contentType.indexOf('image/') === 0 ? '📷 Photo'
+        : attachmentLabel([{ contentType: contentType, filename: filename }]));
+    return sendCore(conv, rec, payload, preview);
   }
 
   /* Edit a previously sent message via /v2/send edit_timestamp. */
@@ -612,6 +673,30 @@
       rec.body = '';
       App.db.putMessage(rec);
       emit('message-updated', rec);
+    });
+  }
+
+  /* Pin/unpin a group message. Optimistically flip the flag, then call the
+     group pin-message endpoint; revert on failure. Signal only supports pinned
+     messages in groups. */
+  function setPinned(rec, pinned) {
+    var conv = convs[rec.convId];
+    if (!conv || !conv.sendId) return Promise.reject(new Error('Cannot pin here'));
+    if (conv.type !== 'group') {
+      return Promise.reject(new Error('Pinning works in groups only'));
+    }
+    var target = rec.incoming ? rec.author : self();
+    rec.pinned = pinned;
+    App.db.putMessage(rec);
+    emit('message-updated', rec);
+    var call = pinned
+      ? App.api.pinMessage(conv.sendId, target, rec.timestamp)
+      : App.api.unpinMessage(conv.sendId, target, rec.timestamp);
+    return call['catch'](function (err) {
+      rec.pinned = !pinned;
+      App.db.putMessage(rec);
+      emit('message-updated', rec);
+      throw err;
     });
   }
 
@@ -701,6 +786,8 @@
       rows.forEach(function (c) { convs[c.id] = c; });
       ready = true;
       emit('conversations');
+      purgeExpired();
+      if (!purgeTimer) purgeTimer = setInterval(purgeExpired, 30000);
       if (App.config.isConfigured()) {
         refreshDirectory()['catch'](function (e) {
           App.util.dbg('directory refresh failed: ' + e.message);
@@ -735,7 +822,11 @@
     conversations: function () {
       return Object.keys(convs).map(function (k) { return convs[k]; })
         .filter(function (c) { return c.lastTs > 0 && !c.archived; })
-        .sort(function (a, b) { return b.lastTs - a.lastTs; });
+        .sort(function (a, b) {
+          // Pinned conversations float to the top, then most-recent-first.
+          if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+          return b.lastTs - a.lastTs;
+        });
     },
 
     archivedConversations: function () {
@@ -759,6 +850,34 @@
       persistConv(conv);
       emit('conversations');
     },
+
+    /* Record the conversation's disappearing-message interval (seconds) so new
+       outgoing messages inherit it. The server-side change is done by the
+       caller via updateContact / updateGroup. */
+    setConvExpire: function (convId, secs) {
+      var conv = convs[convId];
+      if (!conv) return;
+      conv.expireTimer = secs || 0;
+      persistConv(conv);
+    },
+
+    convExpire: function (convId) {
+      var conv = convs[convId];
+      return (conv && conv.expireTimer) || 0;
+    },
+
+    /* Pin/unpin a conversation to the top of the list. Local only — Signal has
+       no REST endpoint for conversation pins, so this does not sync. */
+    setConvPinned: function (convId, val) {
+      var conv = convs[convId];
+      if (!conv) return;
+      conv.pinned = !!val;
+      persistConv(conv);
+      emit('conversations');
+    },
+
+    setPinned: setPinned,
+    purgeExpired: purgeExpired,
 
     conversation: function (id) { return convs[id]; },
 

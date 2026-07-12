@@ -35,6 +35,7 @@
       var thumbUrls = {}; // attachment id -> object URL (revoked on destroy)
       var lastTypingSent = 0;
       var typingIdleTimer = null;
+      var pinnedRecs = []; // pinned messages in this conversation
 
       var el = App.util.el('div', 'screen');
       el.setAttribute('data-conv-id', convId);
@@ -44,6 +45,12 @@
       hdr.appendChild(title);
       hdr.appendChild(sub);
       el.appendChild(hdr);
+
+      // Tapping this bar lists pinned messages and jumps to one. It only
+      // becomes nav-selectable while there is something pinned.
+      var pinnedBar = App.util.el('div', 'pinned-bar hidden');
+      pinnedBar.setAttribute('data-id', '__pins');
+      el.appendChild(pinnedBar);
 
       var list = App.util.el('div', 'chat-list');
       el.appendChild(list);
@@ -77,6 +84,8 @@
           App.softkeys.set(left, 'Send', editTarget ? '' : 'Attach');
         } else if (sel === loadMore) {
           App.softkeys.set('', 'Load', '');
+        } else if (sel === pinnedBar) {
+          App.softkeys.set('', 'View pinned', '');
         } else {
           App.softkeys.set('', 'Options', '');
         }
@@ -109,6 +118,10 @@
           'msg ' + (rec.incoming ? 'in' : 'out') + (rec.deleted ? ' deleted' : ''));
         node.setAttribute('nav-selectable', 'true');
         node.setAttribute('data-id', rec.id);
+
+        if (rec.pinned && !rec.deleted) {
+          node.appendChild(App.util.el('div', 'msg-pin', '📌 Pinned'));
+        }
 
         if (rec.incoming && conv && conv.type === 'group') {
           node.appendChild(App.util.el('div', 'msg-author', authorLabel(rec)));
@@ -287,6 +300,49 @@
         return null;
       }
 
+      /* Refresh the "N pinned" bar from the database. The bar is only made
+         nav-selectable while it is visible (nav.items() does not skip hidden
+         elements). */
+      function updatePinnedBar() {
+        App.db.getPinned(convId).then(function (rows) {
+          pinnedRecs = rows || [];
+          if (pinnedRecs.length) {
+            pinnedBar.textContent = '📌 ' + pinnedRecs.length +
+              (pinnedRecs.length === 1 ? ' pinned message' : ' pinned messages');
+            pinnedBar.classList.remove('hidden');
+            pinnedBar.setAttribute('nav-selectable', 'true');
+          } else {
+            pinnedBar.classList.add('hidden');
+            pinnedBar.removeAttribute('nav-selectable');
+          }
+          nav.refresh();
+        })['catch'](function () { /* leave the bar as-is */ });
+      }
+
+      /* Select a message by timestamp, paging older history if needed. */
+      function jumpTo(ts) {
+        targetTs = ts;
+        loadUntilTarget();
+      }
+
+      function openPinnedList() {
+        if (!pinnedRecs.length) return;
+        var items = pinnedRecs.slice().sort(function (a, b) {
+          return b.timestamp - a.timestamp;
+        }).map(function (r) {
+          var preview = r.body || App.store.attachmentLabel(r.attachments) || 'Message';
+          return {
+            label: preview.slice(0, 40),
+            hint: App.store.displayName(r.author) + ' · ' + App.util.fmtTime(r.timestamp),
+            onSelect: function () {
+              // Run after this menu pops so the chat is visible for scrolling.
+              setTimeout(function () { jumpTo(r.timestamp); }, 0);
+            }
+          };
+        });
+        App.router.push(App.screens.menu.create({ title: 'Pinned messages', items: items }));
+      }
+
       /* ---- store listeners ---- */
 
       function onMessage(rec) {
@@ -300,6 +356,7 @@
 
       function onMessageUpdated(rec, oldId) {
         if (rec.convId !== convId) return;
+        updatePinnedBar();
         var key = oldId || rec.id;
         var node = nodeFor(key) || nodeFor(rec.id);
         if (!node) return;
@@ -317,6 +374,7 @@
         var node = nodeFor(rec.id);
         if (node) list.removeChild(node);
         delete msgById[rec.id];
+        updatePinnedBar();
       }
 
       function onTyping(cid) {
@@ -351,6 +409,7 @@
 
       function onInput() {
         if (!conv || !conv.sendId) return;
+        if (!App.config.typingIndicators()) return;
         var now = Date.now();
         if (now - lastTypingSent > 10000) {
           lastTypingSent = now;
@@ -413,7 +472,13 @@
         });
       }
 
-      function attach() {
+      function currentCaption() {
+        var caption = ta.value.replace(/^\s+|\s+$/g, '');
+        ta.value = '';
+        return caption;
+      }
+
+      function pickPhoto() {
         if (typeof MozActivity === 'undefined') {
           App.toast('Attaching photos only works on the phone');
           return;
@@ -427,14 +492,67 @@
           if (!blob) return;
           App.toast('Preparing photo…');
           App.util.scaleImage(blob, 1024).then(function (dataUri) {
-            var caption = ta.value.replace(/^\s+|\s+$/g, '');
-            ta.value = '';
-            return App.store.sendAttachment(convId, dataUri, caption);
+            return App.store.sendAttachment(convId, dataUri, currentCaption());
           })['catch'](function (err) {
             App.toast('Photo failed: ' + err.message);
           });
         };
         pick.onerror = function () { /* user cancelled the picker */ };
+      }
+
+      /* Embed a filename in a data URI so signal-cli keeps it (the format the
+         REST API documents: data:<mime>;filename=<name>;base64,<data>). */
+      function withFilename(dataUri, name) {
+        if (!name) return dataUri;
+        var safe = String(name).replace(/[;,]/g, '_');
+        return dataUri.replace(/^data:([^;,]*);base64,/,
+          'data:$1;filename=' + safe + ';base64,');
+      }
+
+      function pickFile() {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.addEventListener('change', function () {
+          var file = input.files && input.files[0];
+          if (input.parentNode) input.parentNode.removeChild(input);
+          if (!file) return;
+          App.toast('Preparing file…');
+          var caption = currentCaption();
+          var reader = new FileReader();
+          reader.onload = function () {
+            var type = file.type || 'application/octet-stream';
+            var dataUri = withFilename(reader.result, file.name);
+            App.store.sendAttachment(convId, dataUri, caption, {
+              contentType: type, filename: file.name, size: file.size
+            })['catch'](function (err) {
+              App.toast('Send failed: ' + err.message);
+            });
+          };
+          reader.onerror = function () { App.toast('Could not read file'); };
+          reader.readAsDataURL(file);
+        });
+        input.click();
+      }
+
+      function recordVoice() {
+        App.router.replace(App.screens.voicerecord.create(convId, {
+          caption: currentCaption(),
+          fallback: pickFile
+        }));
+      }
+
+      function attach() {
+        App.router.push(App.screens.menu.create({
+          title: 'Attach',
+          items: [
+            { label: 'Photo', hint: 'From the gallery', onSelect: pickPhoto },
+            { label: 'File', hint: 'Pick any file', onSelect: pickFile },
+            { label: 'Voice message', hint: 'Record and send',
+              onSelect: function () { recordVoice(); return 'keep'; } }
+          ]
+        }));
       }
 
       function insertAtCursor(text) {
@@ -490,7 +608,8 @@
           App.store.markRead(convId);
           onConnection(App.store.connectionState());
           onTyping(convId);
-          loadInitial();
+          App.store.purgeExpired().then(loadInitial, loadInitial);
+          updatePinnedBar();
         },
         resume: function () {
           App.store.setOpenConv(convId);
@@ -549,6 +668,10 @@
             if (!sel) return true;
             if (sel === loadMore) {
               loadOlder();
+              return true;
+            }
+            if (sel === pinnedBar) {
+              openPinnedList();
               return true;
             }
             var rec = msgById[sel.getAttribute('data-id')];

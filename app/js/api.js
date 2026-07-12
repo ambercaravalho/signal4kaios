@@ -115,12 +115,14 @@
       return App.http.put('/v1/profiles/' + num(), body || {});
     },
 
-    /* Rename a saved contact. */
-    updateContact: function (recipient, name) {
-      return App.http.put('/v1/contacts/' + num(), {
-        recipient: recipient,
-        name: name
-      });
+    /* Rename a saved contact and/or set its disappearing-message timer.
+       Pass name === null to leave the name untouched, and
+       expirationInSeconds === null/undefined to leave the timer untouched. */
+    updateContact: function (recipient, name, expirationInSeconds) {
+      var body = { recipient: recipient };
+      if (name != null) body.name = name;
+      if (expirationInSeconds != null) body.expiration_in_seconds = expirationInSeconds;
+      return App.http.put('/v1/contacts/' + num(), body);
     },
 
     /* Push local contact changes to linked devices. */
@@ -151,6 +153,52 @@
     removeGroupMembers: function (groupId, members) {
       return App.http.del('/v1/groups/' + num() + '/' +
         encodeURIComponent(groupId) + '/members', { members: [].concat(members) });
+    },
+
+    /* Add members to a group. members: array of numbers/uuids. */
+    addGroupMembers: function (groupId, members) {
+      return App.http.post('/v1/groups/' + num() + '/' +
+        encodeURIComponent(groupId) + '/members', { members: [].concat(members) });
+    },
+
+    /* Promote members to admin. admins: array of numbers/uuids. */
+    addGroupAdmins: function (groupId, admins) {
+      return App.http.post('/v1/groups/' + num() + '/' +
+        encodeURIComponent(groupId) + '/admins', { admins: [].concat(admins) });
+    },
+
+    /* Demote group admins back to members. admins: array of numbers/uuids. */
+    removeGroupAdmins: function (groupId, admins) {
+      return App.http.del('/v1/groups/' + num() + '/' +
+        encodeURIComponent(groupId) + '/admins', { admins: [].concat(admins) });
+    },
+
+    /* Block a group: stop receiving its messages. */
+    blockGroup: function (groupId) {
+      return App.http.post('/v1/groups/' + num() + '/' +
+        encodeURIComponent(groupId) + '/block', {});
+    },
+
+    /* Pin a message in a group. Resolves to nothing on success. */
+    pinMessage: function (groupId, targetAuthor, timestamp, duration) {
+      var body = { target_author: targetAuthor, timestamp: timestamp };
+      if (duration != null) body.duration = duration;
+      return App.http.post('/v1/groups/' + num() + '/' +
+        encodeURIComponent(groupId) + '/pin-message', body);
+    },
+
+    /* Unpin a previously pinned group message. */
+    unpinMessage: function (groupId, targetAuthor, timestamp) {
+      return App.http.del('/v1/groups/' + num() + '/' +
+        encodeURIComponent(groupId) + '/pin-message',
+        { target_author: targetAuthor, timestamp: timestamp });
+    },
+
+    /* Set this account's Signal username. Resolves to
+       { username, username_link } — the link is what a QR code encodes. */
+    setUsername: function (username) {
+      return App.http.post('/v1/accounts/' + num() + '/username',
+        { username: username });
     }
   };
 })();

@@ -12,6 +12,7 @@
        edit         { convId, author, targetTimestamp, newBody, timestamp }
        reaction     { convId, reactor, emoji, remove, targetAuthor, targetTimestamp }
        remoteDelete { convId, author, targetTimestamp }
+       pin / unpin  { convId, targetAuthor, targetTimestamp }
        typing       { convId, author, started }
        receipt      { peer, kind: 'delivery'|'read', timestamps: [..] }
        readSync     { entries: [{ sender, timestamp }] }
@@ -154,6 +155,20 @@
         convId: conv.convId,
         author: author,
         targetTimestamp: dm.remoteDelete.timestamp || 0
+      });
+      return events;
+    }
+
+    // Pinned-message updates (groups) sync as body-less dataMessages, so they
+    // must be handled before the empty-dataMessage early-return below.
+    if (dm.pinMessage || dm.unpinMessage) {
+      var pin = dm.pinMessage || dm.unpinMessage;
+      events.push({
+        type: dm.pinMessage ? 'pin' : 'unpin',
+        convId: conv.convId,
+        targetAuthor: pin.targetAuthorNumber || pin.targetAuthorUuid ||
+          pin.targetAuthor || '',
+        targetTimestamp: pin.targetSentTimestamp || pin.timestamp || 0
       });
       return events;
     }

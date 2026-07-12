@@ -37,6 +37,38 @@
       pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
   }
 
+  /* Compact human duration ("45s", "5m", "1h", "2d", "1w") for countdowns. */
+  function fmtDuration(secs) {
+    secs = Math.max(0, Math.round(secs));
+    if (secs < 60) return secs + 's';
+    var mins = Math.round(secs / 60);
+    if (mins < 60) return mins + 'm';
+    var hrs = Math.round(mins / 60);
+    if (hrs < 24) return hrs + 'h';
+    var days = Math.round(hrs / 24);
+    if (days < 7) return days + 'd';
+    return Math.round(days / 7) + 'w';
+  }
+
+  /* Standard Signal disappearing-message intervals: { secs, label }. */
+  var EXPIRE_OPTIONS = [
+    { secs: 0, label: 'Off' },
+    { secs: 30, label: '30 seconds' },
+    { secs: 300, label: '5 minutes' },
+    { secs: 3600, label: '1 hour' },
+    { secs: 28800, label: '8 hours' },
+    { secs: 86400, label: '1 day' },
+    { secs: 604800, label: '1 week' },
+    { secs: 2419200, label: '4 weeks' }
+  ];
+
+  function expireLabel(secs) {
+    for (var i = 0; i < EXPIRE_OPTIONS.length; i++) {
+      if (EXPIRE_OPTIONS[i].secs === secs) return EXPIRE_OPTIONS[i].label;
+    }
+    return secs ? fmtDuration(secs) : 'Off';
+  }
+
   function initials(name) {
     if (!name) return '?';
     var parts = String(name).trim().split(/\s+/);
@@ -307,6 +339,9 @@
     scaleImage: scaleImage,
     fmtTime: fmtTime,
     fmtTimeFull: fmtTimeFull,
+    fmtDuration: fmtDuration,
+    expireLabel: expireLabel,
+    EXPIRE_OPTIONS: EXPIRE_OPTIONS,
     initials: initials,
     debounce: debounce,
     dbg: dbg,

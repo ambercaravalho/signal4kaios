@@ -13,20 +13,29 @@ your server across origins without CORS.
 
 - Real-time 1:1 and group chat (WebSocket receive, `json-rpc` mode) with
   reactions (a full emoji picker, plus a "who reacted" view), replies, edits,
-  read receipts, and typing indicators.
-- Compose with emoji, react with more than the usual six, and read receipts you
-  can switch off if you'd rather stay mysterious.
-- Inline photos, voice messages, and attachments — cached offline in IndexedDB,
-  saveable to the phone.
+  read receipts, and typing indicators — the last two switchable off if you'd
+  rather stay mysterious.
+- **Disappearing messages** — set the timer per chat, see the countdown in a
+  message's info, and watch messages delete themselves when they expire.
+- **Pinned messages** in groups (synced through the group pin endpoint) and
+  **pinned conversations** that float to the top of your list.
+- **Attachments**: send photos from the gallery, pick any file, or record a
+  voice message — all cached offline in IndexedDB and saveable to the phone.
+- **Full group management**: add/remove members, promote or demote admins, set
+  who can add members / edit the group / send messages, manage the invite link,
+  and block a group.
+- **QR codes**: share your Signal profile as a scannable code, and scan someone
+  else's (best-effort with the camera).
 - Find people fast: search-as-you-type in New chat, or start one by phone number
   or Signal username (with a "is this even registered?" check).
-- Manage the little things: edit your own profile, rename contacts, view and run
-  groups (members, description, rename, leave), and verify safety numbers.
+- Manage the little things: edit your own profile, rename contacts, verify
+  safety numbers, and review who you've blocked.
 - Juggle more than one number with multiple accounts, each with its own local
   history.
 - Jump straight from a search result to that message in the thread.
-- Archived and muted chats, unread badges, local message search, and a
-  reconnect that keeps trying (and wakes up) so you miss as little as possible.
+- Archived and muted chats (with an optional "keep muted chats archived"),
+  unread badges, local message search, and a reconnect that keeps trying (and
+  wakes up) so you miss as little as possible.
 - Fully keypad-driven, tuned for a 240×320 screen.
 
 ## Quickstart

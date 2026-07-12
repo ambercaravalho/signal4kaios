@@ -50,6 +50,12 @@ It runs the Gecko-48 syntax gate against `app/js` and `app/css`, then zips
 `app/` into `dist/signal4kaios.zip` (excluding `.DS_Store`). `dist/` is
 gitignored.
 
+The gate scans **only** first-party code (`app/js`, `app/css`). Third-party
+libraries you vendor go in [`app/vendor/`](../app/vendor) — outside the gate, so
+prebuilt files (e.g. the `jsQR` decoder) don't trip it — and are still zipped
+into the package and loaded via `<script>` tags. Keep your own code in `app/js`
+so it stays gated.
+
 Install/sideload instructions are in
 [Getting started → Install](getting-started.md#2-install-sideload). Re-sideload
 after any change to `manifest.webapp` permissions.

@@ -79,3 +79,12 @@ Common cases:
 - **Old messages are missing.** Expected: there is no server history API, so
   history only accrues from when you started using the app, and each
   conversation is pruned to ~500 messages.
+- **Messages vanished on their own.** If the chat has a disappearing-message
+  timer, messages are deleted once it elapses (enforced locally on a periodic
+  sweep and on chat open). Check the timer under **Contact/Group info →
+  Disappearing messages**.
+- **QR scanning or voice recording doesn't work.** Both rely on camera /
+  microphone APIs whose support varies on KaiOS 2.5, so they're best-effort; the
+  app falls back (to the file picker for voice) or backs out when unavailable.
+  Make sure the app was re-sideloaded after the `camera` / `audio-capture`
+  permissions were added.

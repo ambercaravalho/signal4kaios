@@ -123,6 +123,21 @@
       });
     },
 
+    /* All pinned (and not deleted) messages in a conversation, oldest-first. */
+    getPinned: function (convId) {
+      return tx('messages', 'readonly', function (s) {
+        var out = { value: [] };
+        var range = IDBKeyRange.bound([convId, 0], [convId, 9007199254740991]);
+        s.index('conv').openCursor(range).onsuccess = function (e) {
+          var cur = e.target.result;
+          if (!cur) return;
+          if (cur.value.pinned && !cur.value.deleted) out.value.push(cur.value);
+          cur['continue']();
+        };
+        return out;
+      });
+    },
+
     countMessages: function (convId) {
       return tx('messages', 'readonly', function (s) {
         var range = IDBKeyRange.bound([convId, 0], [convId, 9007199254740991]);
@@ -143,6 +158,26 @@
           cur['continue']();
         };
         return seen;
+      });
+    },
+
+    /* Delete every message whose disappearing-message deadline has passed.
+       Resolves to the list of removed { id, convId, timestamp } so the store
+       can update open chats and conversation previews. */
+    deleteExpired: function (now) {
+      return tx('messages', 'readwrite', function (s) {
+        var out = { value: [] };
+        s.openCursor().onsuccess = function (e) {
+          var cur = e.target.result;
+          if (!cur) return;
+          var rec = cur.value;
+          if (rec.expiresAt && rec.expiresAt <= now) {
+            out.value.push({ id: rec.id, convId: rec.convId, timestamp: rec.timestamp });
+            cur['delete']();
+          }
+          cur['continue']();
+        };
+        return out;
       });
     },
 

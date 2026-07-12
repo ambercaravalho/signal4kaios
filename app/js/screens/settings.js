@@ -44,6 +44,15 @@
       var receiptsRow = toggleAction('Read receipts', function () {
         return App.config.sendReadReceipts() ? 'On' : 'Off';
       });
+      var typingRow = toggleAction('Typing indicators', function () {
+        return App.config.typingIndicators() ? 'On' : 'Off';
+      });
+      action('Blocked', 'People and groups you have blocked');
+
+      list.appendChild(App.util.sectionHeader('Chats'));
+      var mutedArchiveRow = toggleAction('Keep muted chats archived', function () {
+        return App.config.keepMutedArchived() ? 'On' : 'Off';
+      });
 
       list.appendChild(App.util.sectionHeader('Composer'));
       var styledRow = toggleAction('Text formatting', function () {
@@ -104,10 +113,20 @@
             App.config.set({ sendReadReceipts: !App.config.sendReadReceipts() });
             refreshToggle(receiptsRow);
             return;
+          case 'Typing indicators':
+            App.config.set({ typingIndicators: !App.config.typingIndicators() });
+            refreshToggle(typingRow);
+            return;
+          case 'Keep muted chats archived':
+            App.config.set({ keepMutedArchived: !App.config.keepMutedArchived() });
+            refreshToggle(mutedArchiveRow);
+            return;
           case 'Text formatting':
             App.config.set({ styledText: !App.config.styledText() });
             refreshToggle(styledRow);
             return;
+          case 'Blocked':
+            return App.router.push(App.screens.blocked.create());
           case 'Edit profile':
             return App.router.push(App.screens.profile.create());
           case 'Switch account':
@@ -141,6 +160,8 @@
         resume: function () {
           App.softkeys.set('', 'Select', '');
           refreshToggle(receiptsRow);
+          refreshToggle(typingRow);
+          refreshToggle(mutedArchiveRow);
           refreshToggle(styledRow);
         },
         onKey: function (evt) {

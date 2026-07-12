@@ -34,6 +34,26 @@
         }));
       }
 
+      function disappearing() {
+        var current = App.store.convExpire(conv.id);
+        var items = App.util.EXPIRE_OPTIONS.map(function (opt) {
+          return {
+            label: opt.label + (opt.secs === current ? '  ✓' : ''),
+            onSelect: function () {
+              App.api.updateContact(recipient, null, opt.secs).then(function () {
+                App.store.setConvExpire(conv.id, opt.secs);
+                App.toast('Disappearing messages: ' + opt.label);
+              })['catch'](function (err) {
+                App.toast('Update failed: ' + err.message);
+              });
+            }
+          };
+        });
+        App.router.push(App.screens.menu.create({
+          title: 'Disappearing messages', items: items
+        }));
+      }
+
       return App.screens.menu.create({
         title: conv.name || 'Contact',
         items: [
@@ -41,6 +61,11 @@
             label: 'Rename contact',
             hint: conv.name || recipient,
             onSelect: rename
+          },
+          {
+            label: 'Disappearing messages',
+            hint: App.util.expireLabel(App.store.convExpire(conv.id)),
+            onSelect: disappearing
           },
           {
             label: 'Safety number',

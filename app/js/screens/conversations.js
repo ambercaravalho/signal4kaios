@@ -73,6 +73,7 @@
           var main = App.util.el('div', 'conv-main');
           var top = App.util.el('div', 'conv-top');
           top.appendChild(App.util.el('span', 'conv-name', conv.name || conv.id));
+          if (conv.pinned) top.appendChild(App.util.el('span', 'pin-icon', '📌'));
           if (conv.muted) top.appendChild(App.util.el('span', 'muted-icon', '🔇'));
           top.appendChild(App.util.el('span', 'conv-time', App.util.fmtTime(conv.lastTs)));
           main.appendChild(top);
@@ -114,6 +115,13 @@
                 App.router.replace(App.screens.contactinfo.create(conv));
               }
               return 'keep'; // replace() already removed this menu
+            }
+          });
+          items.push({
+            label: conv.pinned ? 'Unpin chat' : 'Pin chat',
+            hint: conv.pinned ? 'Remove from top' : 'Keep at the top',
+            onSelect: function () {
+              App.store.setConvPinned(conv.id, !conv.pinned);
             }
           });
           items.push({

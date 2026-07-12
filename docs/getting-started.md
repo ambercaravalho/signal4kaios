@@ -92,6 +92,8 @@ The app is a **privileged** app and declares these permissions in
 | `systemXHR` | Talk to the signal-cli-rest-api server cross-origin without CORS |
 | `desktop-notification` | Notify you of new messages when the app is backgrounded |
 | `alarms` | Wake periodically to reconnect the WebSocket and catch up |
+| `audio-capture` | Record voice messages |
+| `camera` | Scan another person's Signal QR code |
 | `device-storage:pictures` | Save received photos to the gallery |
 | `device-storage:music` | Save received voice messages and audio |
 | `device-storage:videos` | Save received videos |

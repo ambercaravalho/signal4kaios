@@ -14,6 +14,7 @@
   App.screens.msgopts = {
     create: function (rec, callbacks) {
       var items = [];
+      var conv = App.store.conversation(rec.convId);
 
       if (!rec.deleted && rec.attachments && rec.attachments.length && rec.attachments[0].id) {
         items.push({
@@ -75,6 +76,33 @@
             onSelect: function () { callbacks.copy(rec); }
           });
         }
+        // Pinned messages are a group-only Signal feature; they sync to the
+        // whole group via the pin-message endpoint.
+        if (conv && conv.type === 'group') {
+          if (rec.pinned) {
+            items.push({
+              label: 'Unpin message',
+              onSelect: function () {
+                App.store.setPinned(rec, false).then(function () {
+                  App.toast('Unpinned');
+                })['catch'](function (err) {
+                  App.toast('Unpin failed: ' + err.message);
+                });
+              }
+            });
+          } else {
+            items.push({
+              label: 'Pin message',
+              onSelect: function () {
+                App.store.setPinned(rec, true).then(function () {
+                  App.toast('Pinned for everyone');
+                })['catch'](function (err) {
+                  App.toast('Pin failed: ' + err.message);
+                });
+              }
+            });
+          }
+        }
       }
 
       if (!rec.incoming && !rec.deleted && rec.body &&
@@ -120,9 +148,14 @@
         });
       }
 
+      var infoHint = App.util.fmtTimeFull(rec.timestamp) + ' · ' + rec.status;
+      if (rec.expiresAt) {
+        var remain = (rec.expiresAt - Date.now()) / 1000;
+        infoHint += ' · disappears in ' + App.util.fmtDuration(remain);
+      }
       items.push({
         label: 'Info',
-        hint: App.util.fmtTimeFull(rec.timestamp) + ' · ' + rec.status,
+        hint: infoHint,
         onSelect: function () { return 'keep'; }
       });
 
