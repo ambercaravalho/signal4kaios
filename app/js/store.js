@@ -153,6 +153,7 @@
       authorName: ev.authorName || '',
       timestamp: ev.timestamp,
       body: ev.body || '',
+      styles: ev.styles || [],
       quote: ev.quote || null,
       attachments: ev.attachments || [],
       reactions: {},
@@ -258,6 +259,7 @@
           return;
         }
         rec.body = ev.newBody;
+        rec.styles = ev.newStyles || [];
         rec.edited = true;
         emit('message-updated', rec);
         var conv = convs[ev.convId];
@@ -477,6 +479,7 @@
       authorName: '',
       timestamp: ts,
       body: '',
+      styles: [],
       quote: null,
       attachments: [],
       reactions: {},
@@ -493,18 +496,35 @@
     return conv;
   }
 
+  /* When styled text is enabled, parse the markdown the user typed so our local
+     copy shows the same formatting the recipient will get (the server strips the
+     markers and sends body ranges), and flag the request so the server does that
+     conversion. The typed text is kept on the record as `raw` so retry/edit
+     re-send the markers, not the already-stripped body. */
+  function styledSend(text) {
+    if (App.config.styledText() && text) {
+      var parsed = App.util.parseStyledMarkdown(text);
+      return { body: parsed.body, styles: parsed.styles, textMode: 'styled' };
+    }
+    return { body: text || '', styles: [], textMode: null };
+  }
+
   function sendText(convId, text, quote) {
     var conv;
     try { conv = convForSend(convId); } catch (e) { return Promise.reject(e); }
 
-    var rec = newOutgoingRec(conv, { body: text, quote: quote || null });
+    var st = styledSend(text);
+    var rec = newOutgoingRec(conv, {
+      body: st.body, styles: st.styles, raw: text, quote: quote || null
+    });
     var payload = { recipients: [conv.sendId], message: text };
+    if (st.textMode) payload.text_mode = st.textMode;
     if (quote) {
       payload.quote_timestamp = quote.timestamp;
       payload.quote_author = quote.author;
       payload.quote_message = quote.text;
     }
-    return sendCore(conv, rec, payload, text);
+    return sendCore(conv, rec, payload, st.body);
   }
 
   /* dataUri: "data:image/jpeg;base64,…" (produced by util.scaleImage). */
@@ -512,8 +532,9 @@
     var conv;
     try { conv = convForSend(convId); } catch (e) { return Promise.reject(e); }
 
+    var st = styledSend(caption || '');
     var rec = newOutgoingRec(conv, {
-      body: caption || '',
+      body: st.body, styles: st.styles, raw: caption || '',
       attachments: [{ id: '', contentType: 'image/jpeg', filename: 'photo.jpg', size: 0 }]
     });
     var payload = {
@@ -521,7 +542,8 @@
       message: caption || '',
       base64_attachments: [dataUri]
     };
-    return sendCore(conv, rec, payload, caption || '📷 Photo');
+    if (st.textMode) payload.text_mode = st.textMode;
+    return sendCore(conv, rec, payload, st.body || '📷 Photo');
   }
 
   /* Edit a previously sent message via /v2/send edit_timestamp. */
@@ -529,17 +551,22 @@
     var conv;
     try { conv = convForSend(rec.convId); } catch (e) { return Promise.reject(e); }
 
-    return App.api.send({
+    var st = styledSend(newText);
+    var payload = {
       recipients: [conv.sendId],
       message: newText,
       edit_timestamp: rec.timestamp
-    }).then(function () {
-      rec.body = newText;
+    };
+    if (st.textMode) payload.text_mode = st.textMode;
+    return App.api.send(payload).then(function () {
+      rec.body = st.body;
+      rec.styles = st.styles;
+      rec.raw = newText;
       rec.edited = true;
       App.db.putMessage(rec);
       emit('message-updated', rec);
       if (conv.lastTs === rec.timestamp) {
-        conv.lastPreview = newText;
+        conv.lastPreview = st.body;
         persistConv(conv);
         emit('conversations');
       }
@@ -550,7 +577,8 @@
   function retryMessage(rec) {
     App.db.deleteMessage(rec.id);
     emit('message-removed', rec);
-    return sendText(rec.convId, rec.body, rec.quote);
+    // Re-send the originally typed text (with any markers) so styling survives.
+    return sendText(rec.convId, rec.raw != null ? rec.raw : rec.body, rec.quote);
   }
 
   function reactTo(rec, emoji) {

@@ -457,6 +457,35 @@ html, body {
   line-height: 1.4;
 }
 
+.field-note .link {
+  color: #6aa0ff;
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.field-note .link[nav-selected="true"] {
+  background: #3a76f0;
+  color: #fff;
+}
+
+/* Message text styles (Signal body ranges). */
+.fmt-b { font-weight: bold; }
+.fmt-i { font-style: italic; }
+.fmt-st { text-decoration: line-through; }
+.fmt-mono { font-family: monospace; }
+
+/* Spoiler: obscured until its message is highlighted (D-pad select reveals). */
+.fmt-spoiler {
+  background: #6a6a70;
+  color: #6a6a70;
+  border-radius: 3px;
+}
+
+.msg[nav-selected="true"] .fmt-spoiler {
+  background: transparent;
+  color: inherit;
+}
+
 .section-title {
   padding: 8px 8px 2px;
   font-size: 10px;

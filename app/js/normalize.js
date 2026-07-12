@@ -60,6 +60,61 @@
     return out;
   }
 
+  /* Map an offset in the original body (with U+FFFC mention placeholders) to the
+     corresponding offset after mentions are spliced into readable "@name" text,
+     mirroring applyMentions so style ranges stay aligned. */
+  function remapOffset(pos, mentions) {
+    if (!mentions || !mentions.length) return pos;
+    var sorted = mentions.slice().sort(function (a, b) {
+      return (a.start || 0) - (b.start || 0);
+    });
+    var shift = 0;
+    for (var i = 0; i < sorted.length; i++) {
+      var ms = sorted[i].start || 0;
+      var ml = sorted[i].length || 1;
+      var repl = ('@' + mentionName(sorted[i])).length;
+      if (pos >= ms + ml) shift += (repl - ml);
+      else if (pos > ms) return ms + shift; // inside a mention: clamp to its start
+    }
+    return pos + shift;
+  }
+
+  function parseStyleEntry(e) {
+    if (typeof e === 'string') {
+      var p = e.split(':');
+      return { start: parseInt(p[0], 10), length: parseInt(p[1], 10),
+        style: (p[2] || '').toUpperCase() };
+    }
+    if (e && typeof e === 'object') {
+      return { start: e.start | 0, length: e.length | 0,
+        style: (e.style || '').toUpperCase() };
+    }
+    return null;
+  }
+
+  /* Turn signal-cli textStyles (start:length:STYLE, in original-body coords)
+     into ranges aligned with the mention-applied body. Never throws: a bad
+     shape is logged and dropped so a malformed frame can't crash the app. */
+  function stylesOf(dm) {
+    var raw = dm.textStyles || dm.textStyle;
+    if (!raw) return [];
+    var out = [];
+    try {
+      var arr = [].concat(raw);
+      arr.forEach(function (e) {
+        var s = parseStyleEntry(e);
+        if (!s || !s.style || isNaN(s.start) || isNaN(s.length)) return;
+        var start = remapOffset(s.start, dm.mentions);
+        var end = remapOffset(s.start + s.length, dm.mentions);
+        if (end > start) out.push({ start: start, length: end - start, style: s.style });
+      });
+    } catch (err) {
+      App.util.dbg('normalize: bad textStyles', dm.textStyles || dm.textStyle);
+      return [];
+    }
+    return out;
+  }
+
   function quoteOf(dm) {
     var q = dm.quote;
     if (!q) return null;
@@ -120,6 +175,7 @@
       authorName: env.sourceName || '',
       timestamp: dm.timestamp || env.timestamp,
       body: applyMentions(body, dm.mentions),
+      styles: stylesOf(dm),
       quote: quoteOf(dm),
       attachments: attachments.map(function (a) {
         return {
@@ -146,7 +202,8 @@
       convId: conv.convId,
       author: author,
       targetTimestamp: edit.targetSentTimestamp || edit.targetTimestamp || 0,
-      newBody: dm.message || '',
+      newBody: applyMentions(dm.message || '', dm.mentions),
+      newStyles: stylesOf(dm),
       timestamp: dm.timestamp || env.timestamp
     }];
   }

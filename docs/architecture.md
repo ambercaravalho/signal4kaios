@@ -135,8 +135,8 @@ Conversation ids: direct chats use the peer's number or uuid; groups use
 
 ```
 message      { convId, groupInternalId?, incoming, author, authorName,
-               timestamp, body, quote?, attachments, expiresInSeconds? }
-edit         { convId, author, targetTimestamp, newBody, timestamp }
+               timestamp, body, styles, quote?, attachments, expiresInSeconds? }
+edit         { convId, author, targetTimestamp, newBody, newStyles, timestamp }
 reaction     { convId, reactor, emoji, remove, targetAuthor, targetTimestamp }
 remoteDelete { convId, author, targetTimestamp }
 typing       { convId, author, started }
@@ -150,6 +150,14 @@ envelopes and are normalized into the same `message` / `edit` events with
 device) becomes a `readSync` event, which clears the matching conversation's
 unread badge here.
 
+`styles` is an array of `{ start, length, style }` text-format ranges (Signal
+body ranges: `BOLD`, `ITALIC`, `STRIKETHROUGH`, `MONOSPACE`, `SPOILER`). On
+receive they're parsed from signal-cli `textStyles` and their offsets remapped
+to line up with the mention-substituted body; on send, `App.util.parseStyledMarkdown`
+turns the typed markers into the same shape for the local echo while the server
+does the real conversion via `text_mode: styled`. Rendering is shared in
+`App.util.renderStyledBody`.
+
 ## Conversation and message records
 
 A **message** record (as stored) looks like:
@@ -157,7 +165,8 @@ A **message** record (as stored) looks like:
 ```js
 {
   id, convId, incoming, author, authorName, timestamp,
-  body, quote, attachments,
+  body, styles, quote, attachments,
+  raw,                       // outgoing only: the text as typed (with markers)
   reactions,                 // { reactorKey: emoji }
   status,                    // pending | sent | delivered | read | received | failed
   deleted, edited

@@ -35,9 +35,10 @@ editing, when it becomes the cancel key instead.
 
 Context-specific keys:
 
-- **Message options menu** (Center on a message): view photo/attachment, react,
-  reply, copy to composer, edit, delete for everyone, retry, see who reacted,
-  and an info line (full timestamp + delivery status).
+- **Message options menu** (Center on a message): view photo/attachment, open
+  any links in it (they open in the browser), react, reply, copy to composer,
+  edit, delete for everyone, retry, see who reacted, and an info line (full
+  timestamp + delivery status).
 - **Attachment viewer**: Center plays/pauses audio; **SoftLeft** saves the file
   to the phone.
 - **Archived list**: its own **SoftLeft** menu (unarchive, mute).
@@ -86,6 +87,12 @@ Failed sends are marked so you can retry them from the message options menu.
   options to see exactly who reacted and with what.
 - **Read receipts and typing indicators** — and if you'd rather not send read
   receipts, switch them off in **Settings → Privacy** (you'll still see others').
+- **Formatted text** — type Signal's markers and they're sent as real
+  formatting: `**bold**`, `*italic*`, `~strikethrough~`, `` `monospace` ``, and
+  `||spoiler||` (highlight a message to reveal its spoilers). Prefix a marker
+  with `\` to type it literally. Underline isn't something Signal supports.
+  Formatting others send shows up here too; toggle sending in
+  **Settings → Composer → Text formatting**.
 - **Quote / reply**, **copy to composer**, and **delete for everyone**.
 - **Edit sent messages** — and see edits made by others, or by you on another
   linked device.
@@ -145,6 +152,10 @@ your display name or "about" text.
 **SoftLeft → Options → Group info** on a group chat shows its members and
 description, and lets you:
 
+- **View members** on their own scrollable screen — highlight anyone and press
+  Center to **start a direct chat** with them.
+- Open **links in the description** — highlight a URL and press Center to open it
+  in the browser.
 - **Rename the group** or **edit its description**.
 - **Leave the group** (it's archived here afterward).
 
@@ -170,6 +181,7 @@ Settings is grouped into sections so it's easy to scan:
 - **Server** — opens **Server & connection**: server URL, your Signal number,
   optional reverse-proxy credentials, plus **Save** and **Test connection**.
 - **Privacy** — the read-receipts toggle.
+- **Composer** — the text-formatting (markdown) toggle.
 - **Profile** — edit your Signal name / about.
 - **Accounts** — switch between or add accounts.
 - **Data** — refresh contacts & groups, the debug log, and **Clear local data**.

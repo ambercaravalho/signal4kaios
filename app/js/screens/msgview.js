@@ -18,7 +18,9 @@
       el.appendChild(hdr);
 
       var pane = App.util.el('div', 'msgview-pane');
-      pane.appendChild(App.util.el('div', 'msgview-body', rec.body || ''));
+      var bodyEl = App.util.el('div', 'msgview-body');
+      App.util.renderStyledBody(bodyEl, rec.body || '', rec.styles);
+      pane.appendChild(bodyEl);
       el.appendChild(pane);
 
       function scrollBy(dy) {

@@ -133,7 +133,11 @@
         }
 
         var bodyText = rec.deleted ? 'Message deleted' : rec.body;
-        if (bodyText) node.appendChild(App.util.el('div', 'msg-body', bodyText));
+        if (bodyText) {
+          var bodyEl = App.util.el('div', 'msg-body');
+          App.util.renderStyledBody(bodyEl, bodyText, rec.deleted ? null : rec.styles);
+          node.appendChild(bodyEl);
+        }
 
         var rs = reactionSummary(rec.reactions);
         if (rs) node.appendChild(App.util.el('div', 'msg-reactions', rs));
@@ -374,7 +378,9 @@
         editTarget = rec;
         if (rec) {
           pendingQuote = null;
-          ta.value = rec.body;
+          // Edit the originally typed text (with any style markers), not the
+          // stripped display body.
+          ta.value = rec.raw != null ? rec.raw : rec.body;
           quoteBar.textContent = 'Editing message';
           quoteBar.classList.remove('hidden');
         } else {

@@ -113,9 +113,195 @@
     return el('div', 'section-title', text);
   }
 
+  var URL_RE = /(https?:\/\/[^\s]+)/g;
+
+  /* Pull http(s) URLs out of free text, dropping trailing sentence punctuation
+     so "see http://x.com." doesn't capture the period. */
+  function extractUrls(text) {
+    var urls = [];
+    if (!text) return urls;
+    URL_RE.lastIndex = 0;
+    var m;
+    while ((m = URL_RE.exec(text)) !== null) {
+      urls.push(m[0].replace(/[.,;:!?)]+$/, ''));
+    }
+    return urls;
+  }
+
+  /* Append text to a container, turning URLs into selectable link spans
+     (mark them with nav-selectable; each carries the url on `.__url`). Callers
+     handle Enter by checking `selectedEl.__url` and passing it to openUrl. */
+  function linkify(container, text) {
+    if (!text) return;
+    URL_RE.lastIndex = 0;
+    var last = 0;
+    var m;
+    while ((m = URL_RE.exec(text)) !== null) {
+      if (m.index > last) {
+        container.appendChild(document.createTextNode(text.slice(last, m.index)));
+      }
+      var url = m[0].replace(/[.,;:!?)]+$/, '');
+      var span = el('span', 'link', url);
+      span.setAttribute('nav-selectable', 'true');
+      span.setAttribute('data-id', '__url');
+      span.__url = url;
+      container.appendChild(span);
+      last = m.index + url.length;
+    }
+    if (last < text.length) {
+      container.appendChild(document.createTextNode(text.slice(last)));
+    }
+  }
+
+  /* Open a URL in the phone browser via a KaiOS "view" web activity, falling
+     back to window.open on desktop. */
+  function openUrl(url) {
+    if (!url) return;
+    try {
+      if (typeof MozActivity !== 'undefined') {
+        var act = new MozActivity({ name: 'view', data: { type: 'url', url: url } });
+        act.onerror = function () {
+          if (App.toast) App.toast('Could not open link');
+        };
+      } else if (window.open) {
+        window.open(url, '_blank');
+      }
+    } catch (e) {
+      if (App.toast) App.toast('Could not open link');
+    }
+  }
+
+  /* ---- Text styling (bold/italic/etc.) ----
+     Signal carries formatting as body ranges { start, length, style } in UTF-16
+     units — which line up exactly with JS string indices, so no conversion is
+     needed. Supported styles match Signal's set (there is no underline). */
+  var STYLE_CLASS = {
+    BOLD: 'fmt-b',
+    ITALIC: 'fmt-i',
+    STRIKETHROUGH: 'fmt-st',
+    MONOSPACE: 'fmt-mono',
+    SPOILER: 'fmt-spoiler'
+  };
+
+  /* Markers understood by signal-cli-rest-api's "styled" text mode. Longer
+     openers are listed first so ** wins over *. */
+  var STYLE_MARKERS = [
+    { o: '||', c: '||', s: 'SPOILER' },
+    { o: '**', c: '**', s: 'BOLD' },
+    { o: '*', c: '*', s: 'ITALIC' },
+    { o: '~', c: '~', s: 'STRIKETHROUGH' },
+    { o: '`', c: '`', s: 'MONOSPACE' }
+  ];
+
+  function findClose(text, close, from) {
+    var clen = close.length;
+    var i = from;
+    while (i <= text.length - clen) {
+      if (text.charAt(i) === '\\') { i += 2; continue; }
+      if (text.substr(i, clen) === close) return i;
+      i += 1;
+    }
+    return -1;
+  }
+
+  function stripEscapes(s) {
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      if (s.charAt(i) === '\\' && i + 1 < s.length) {
+        out += s.charAt(i + 1);
+        i += 1;
+      } else {
+        out += s.charAt(i);
+      }
+    }
+    return out;
+  }
+
+  /* Parse markdown-style markers into a plain body plus a list of style ranges,
+     mirroring how the server interprets "styled" mode. Used for the local echo
+     of messages we send so our own bubbles show the same formatting the
+     recipient gets. Unmatched markers are left as literal text. */
+  function parseStyledMarkdown(text) {
+    var styles = [];
+    if (!text) return { body: '', styles: styles };
+    var out = '';
+    var i = 0;
+    var n = text.length;
+    while (i < n) {
+      var ch = text.charAt(i);
+      if (ch === '\\' && i + 1 < n) { out += text.charAt(i + 1); i += 2; continue; }
+      var matched = false;
+      for (var k = 0; k < STYLE_MARKERS.length; k++) {
+        var mk = STYLE_MARKERS[k];
+        if (text.substr(i, mk.o.length) !== mk.o) continue;
+        var innerStart = i + mk.o.length;
+        var closeIdx = findClose(text, mk.c, innerStart);
+        if (closeIdx < 0 || closeIdx === innerStart) continue;
+        var inner = stripEscapes(text.slice(innerStart, closeIdx));
+        styles.push({ start: out.length, length: inner.length, style: mk.s });
+        out += inner;
+        i = closeIdx + mk.c.length;
+        matched = true;
+        break;
+      }
+      if (!matched) { out += ch; i += 1; }
+    }
+    return { body: out, styles: styles };
+  }
+
+  /* Append text to a container, wrapping styled ranges in spans. Overlapping
+     ranges are handled by splitting on every range boundary and applying all
+     classes active over each segment. */
+  function renderStyledBody(container, text, styles) {
+    text = text || '';
+    if (!styles || !styles.length) {
+      container.appendChild(document.createTextNode(text));
+      return;
+    }
+    var valid = [];
+    var pts = { 0: 1 };
+    pts[text.length] = 1;
+    for (var i = 0; i < styles.length; i++) {
+      var a = Math.max(0, styles[i].start | 0);
+      var b = Math.min(text.length, a + (styles[i].length | 0));
+      if (b > a && STYLE_CLASS[styles[i].style]) {
+        valid.push({ a: a, b: b, cls: STYLE_CLASS[styles[i].style] });
+        pts[a] = 1;
+        pts[b] = 1;
+      }
+    }
+    if (!valid.length) {
+      container.appendChild(document.createTextNode(text));
+      return;
+    }
+    var bounds = Object.keys(pts).map(Number).sort(function (x, y) { return x - y; });
+    for (var s = 0; s < bounds.length - 1; s++) {
+      var segA = bounds[s];
+      var segB = bounds[s + 1];
+      if (segB <= segA) continue;
+      var seg = text.slice(segA, segB);
+      var classes = [];
+      valid.forEach(function (v) {
+        if (v.a <= segA && v.b >= segB && classes.indexOf(v.cls) === -1) {
+          classes.push(v.cls);
+        }
+      });
+      if (classes.length) {
+        container.appendChild(el('span', classes.join(' '), seg));
+      } else {
+        container.appendChild(document.createTextNode(seg));
+      }
+    }
+  }
+
   App.util = {
     el: el,
     sectionHeader: sectionHeader,
+    extractUrls: extractUrls,
+    linkify: linkify,
+    openUrl: openUrl,
+    parseStyledMarkdown: parseStyledMarkdown,
+    renderStyledBody: renderStyledBody,
     pad2: pad2,
     colorClass: colorClass,
     scaleImage: scaleImage,

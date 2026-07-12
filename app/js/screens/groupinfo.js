@@ -19,54 +19,81 @@
       var nav = new App.Nav(el, { scrollEl: list });
       var detail = null;
 
-      function memberNames(members) {
-        return (members || []).map(function (m) {
-          return App.store.displayName(m);
-        });
+      /* Start a 1:1 chat with a member. Member ids are either an E.164 number
+         or a UUID; route each to the right field so the conversation key is
+         consistent with the rest of the app. */
+      function messageMember(entry) {
+        var contact = entry.id.charAt(0) === '+'
+          ? { number: entry.id, name: entry.name }
+          : { uuid: entry.id, name: entry.name };
+        var conv = App.store.openConversationWith(contact);
+        App.router.push(App.screens.chat.create(conv.id));
       }
 
       /* Members can number in the hundreds, so they get their own scrollable
-         screen instead of a giant text blob on the info screen. */
-      function membersScreen(names) {
+         screen instead of a giant text blob on the info screen. Selecting one
+         opens a DM with them. */
+      function membersScreen(entries) {
         var mel = App.util.el('div', 'screen');
         var mhdr = App.util.el('div', 'hdr');
         mhdr.appendChild(App.util.el('span', 'hdr-title',
-          'Members (' + names.length + ')'));
+          'Members (' + entries.length + ')'));
         mel.appendChild(mhdr);
         var mlist = App.util.el('div', 'list');
         mel.appendChild(mlist);
-        if (!names.length) {
+        if (!entries.length) {
           mlist.appendChild(App.util.el('div', 'empty', 'No members.'));
         } else {
-          names.forEach(function (name, i) {
+          entries.forEach(function (entry, i) {
             var row = App.util.el('div', 'conv-row');
             row.setAttribute('nav-selectable', 'true');
             row.setAttribute('data-id', String(i));
+            var avatarEl = App.util.el('div',
+              'avatar ' + App.util.colorClass(entry.name),
+              App.util.initials(entry.name));
+            App.avatars.apply(avatarEl, { id: entry.id, type: 'direct' });
+            row.appendChild(avatarEl);
             var main = App.util.el('div', 'conv-main');
             var top = App.util.el('div', 'conv-top');
-            top.appendChild(App.util.el('span', 'conv-name', name));
+            top.appendChild(App.util.el('span', 'conv-name',
+              entry.name + (entry.self ? ' (You)' : '')));
             main.appendChild(top);
             row.appendChild(main);
             mlist.appendChild(row);
           });
         }
         var mnav = new App.Nav(mel, { scrollEl: mlist });
+
+        function softkeys() {
+          var sel = mnav.selected();
+          var entry = sel && entries[parseInt(sel.getAttribute('data-id'), 10)];
+          App.softkeys.set('', entry && !entry.self ? 'Message' : '', '');
+        }
+
         return {
           el: mel,
-          enter: function () {
-            App.softkeys.set('', '', '');
-            mnav.select(0);
-          },
-          resume: function () { App.softkeys.set('', '', ''); },
-          onKey: function (evt) { return mnav.handleKey(evt); }
+          enter: function () { mnav.select(0); softkeys(); },
+          resume: function () { softkeys(); },
+          onKey: function (evt) {
+            if (mnav.handleKey(evt)) { softkeys(); return true; }
+            if (evt.key === 'Enter') {
+              var sel = mnav.selected();
+              if (!sel) return true;
+              var entry = entries[parseInt(sel.getAttribute('data-id'), 10)];
+              if (entry && !entry.self) messageMember(entry);
+              return true;
+            }
+            return false;
+          }
         };
       }
 
       function viewMembers() {
-        var names = memberNames(detail && detail.members).sort(function (a, b) {
-          return a.localeCompare(b);
-        });
-        App.router.push(membersScreen(names));
+        var me = App.config.number();
+        var entries = ((detail && detail.members) || []).map(function (id) {
+          return { id: id, name: App.store.displayName(id), self: id === me };
+        }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+        App.router.push(membersScreen(entries));
       }
 
       function action(label, hint, id) {
@@ -85,8 +112,10 @@
           list.appendChild(App.util.el('div', 'field-note',
             'Name: ' + (detail.name || conv.name || '(unnamed)')));
           if (detail.description) {
-            list.appendChild(App.util.el('div', 'field-note',
-              'Description: ' + detail.description));
+            var dnote = App.util.el('div', 'field-note');
+            dnote.appendChild(document.createTextNode('Description: '));
+            App.util.linkify(dnote, detail.description);
+            list.appendChild(dnote);
           }
           var count = (detail.members || []).length;
           action('View members', count + (count === 1 ? ' member' : ' members'),
@@ -180,6 +209,11 @@
         }));
       }
 
+      function refreshSoftkeys() {
+        var sel = nav.selected();
+        App.softkeys.set('', sel && sel.__url ? 'Open' : 'Select', '');
+      }
+
       return {
         el: el,
         enter: function () {
@@ -190,10 +224,11 @@
           App.softkeys.set('', 'Select', '');
         },
         onKey: function (evt) {
-          if (nav.handleKey(evt)) return true;
+          if (nav.handleKey(evt)) { refreshSoftkeys(); return true; }
           if (evt.key === 'Enter') {
             var sel = nav.selected();
             if (!sel) return true;
+            if (sel.__url) { App.util.openUrl(sel.__url); return true; }
             var id = sel.getAttribute('data-id');
             if (id === '__members') viewMembers();
             else if (id === '__rename') rename();

@@ -45,6 +45,11 @@
         return App.config.sendReadReceipts() ? 'On' : 'Off';
       });
 
+      list.appendChild(App.util.sectionHeader('Composer'));
+      var styledRow = toggleAction('Text formatting', function () {
+        return App.config.styledText() ? 'On' : 'Off';
+      });
+
       list.appendChild(App.util.sectionHeader('Profile'));
       action('Edit profile', 'Set your Signal name');
 
@@ -99,6 +104,10 @@
             App.config.set({ sendReadReceipts: !App.config.sendReadReceipts() });
             refreshToggle(receiptsRow);
             return;
+          case 'Text formatting':
+            App.config.set({ styledText: !App.config.styledText() });
+            refreshToggle(styledRow);
+            return;
           case 'Edit profile':
             return App.router.push(App.screens.profile.create());
           case 'Switch account':
@@ -132,6 +141,7 @@
         resume: function () {
           App.softkeys.set('', 'Select', '');
           refreshToggle(receiptsRow);
+          refreshToggle(styledRow);
         },
         onKey: function (evt) {
           if (nav.handleKey(evt)) return true;

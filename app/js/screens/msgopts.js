@@ -5,6 +5,12 @@
      callbacks: { reply(rec), copy(rec), edit(rec) } — provided by the chat
      screen. */
 
+  /* Compact URL for a menu label/hint: drop the scheme and clip the length. */
+  function shortUrl(u) {
+    var s = u.replace(/^https?:\/\//, '');
+    return s.length > 38 ? s.slice(0, 37) + '…' : s;
+  }
+
   App.screens.msgopts = {
     create: function (rec, callbacks) {
       var items = [];
@@ -28,6 +34,27 @@
             return 'keep'; // replace() already removed this menu
           }
         });
+      }
+
+      // Any links in the body become "Open link" actions (they open in the
+      // browser). Messages are the D-pad unit in the chat list, so surfacing
+      // links here is how they become clickable.
+      if (!rec.deleted && rec.body) {
+        var urls = App.util.extractUrls(rec.body);
+        if (urls.length === 1) {
+          items.push({
+            label: 'Open link',
+            hint: shortUrl(urls[0]),
+            onSelect: function () { App.util.openUrl(urls[0]); }
+          });
+        } else {
+          urls.forEach(function (u) {
+            items.push({
+              label: 'Open ' + shortUrl(u),
+              onSelect: function () { App.util.openUrl(u); }
+            });
+          });
+        }
       }
 
       if (!rec.deleted) {

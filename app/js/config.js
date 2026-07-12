@@ -49,6 +49,11 @@
       return read().sendReadReceipts !== false;
     },
 
+    /* Interpret *bold* / _italic_ style markers when sending. On by default. */
+    styledText: function () {
+      return read().styledText !== false;
+    },
+
     isConfigured: function () {
       return !!(App.config.serverUrl() && App.config.number());
     },
