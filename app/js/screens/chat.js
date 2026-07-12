@@ -5,6 +5,25 @@
   var DOM_CAP = 120; // max message nodes kept in the DOM at once
   var AUTO_DL = 400 * 1024; // auto-download images up to this size for inline view
 
+  var lastDirRefresh = 0; // throttle background refreshes for unknown authors
+
+  /* Best label for a group message author: a saved contact (which already
+     resolves nickname -> profile -> username) wins over the sender's own
+     profile name, then the raw id. Unknown authors kick off a throttled
+     directory refresh so names fill in on later renders. */
+  function authorLabel(rec) {
+    var contact = App.store.contactByKey(rec.author);
+    if (contact && contact.name) return contact.name;
+    if (!contact) {
+      var now = Date.now();
+      if (now - lastDirRefresh > 60000) {
+        lastDirRefresh = now;
+        App.store.refreshDirectory()['catch'](function () { /* offline is fine */ });
+      }
+    }
+    return rec.authorName || App.store.displayName(rec.author);
+  }
+
   App.screens.chat = {
     create: function (convId) {
       var conv = App.store.conversation(convId);
@@ -18,6 +37,7 @@
       var typingIdleTimer = null;
 
       var el = App.util.el('div', 'screen');
+      el.setAttribute('data-conv-id', convId);
       var hdr = App.util.el('div', 'hdr');
       var title = App.util.el('span', 'hdr-title', conv ? conv.name : convId);
       var sub = App.util.el('span', 'hdr-sub', '');
@@ -91,8 +111,7 @@
         node.setAttribute('data-id', rec.id);
 
         if (rec.incoming && conv && conv.type === 'group') {
-          node.appendChild(App.util.el('div', 'msg-author',
-            rec.authorName || App.store.displayName(rec.author)));
+          node.appendChild(App.util.el('div', 'msg-author', authorLabel(rec)));
         }
 
         if (rec.quote && !rec.deleted) {

@@ -20,6 +20,16 @@
         });
       }
 
+      if (!rec.deleted && rec.body && rec.body.length > 200) {
+        items.push({
+          label: 'View full message',
+          onSelect: function () {
+            App.router.replace(App.screens.msgview.create(rec));
+            return 'keep'; // replace() already removed this menu
+          }
+        });
+      }
+
       if (!rec.deleted) {
         items.push({
           label: 'React',

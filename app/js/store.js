@@ -13,6 +13,7 @@
   var typingMap = {};        // convId -> { author, until }
   var openConvId = null;
   var connection = 'closed';
+  var ready = false; // true once IndexedDB history has loaded on startup
 
   var STATUS_RANK = { pending: 0, failed: 0, sent: 1, delivered: 2, read: 3 };
 
@@ -123,7 +124,20 @@
       var title = conv.name || 'Signal';
       var body = rec.body || '[attachment]';
       if (conv.type === 'group') body = displayName(rec.author) + ': ' + body;
-      new Notification(title, { body: body.slice(0, 100), tag: conv.id });
+      var n = new Notification(title, {
+        body: body.slice(0, 100),
+        tag: conv.id,
+        icon: '/assets/icons/kaios_112.png'
+      });
+      n.onclick = function () {
+        try {
+          window.focus();
+          if (App.openConversation) App.openConversation(conv.id);
+        } catch (e2) {
+          App.util.dbg('notify click failed ' + e2.message);
+        }
+        n.close();
+      };
     } catch (e) {
       App.util.dbg('notify failed ' + e.message);
     }
@@ -634,6 +648,7 @@
       return App.db.allConversations();
     }).then(function (rows) {
       rows.forEach(function (c) { convs[c.id] = c; });
+      ready = true;
       emit('conversations');
       if (App.config.isConfigured()) {
         refreshDirectory()['catch'](function (e) {
@@ -642,6 +657,8 @@
         App.ws.connect();
       }
     })['catch'](function (e) {
+      ready = true;
+      emit('conversations');
       App.util.dbg('store init failed: ' + e.message);
       App.toast('Storage error: ' + e.message);
     });
@@ -730,6 +747,8 @@
     },
 
     connectionState: function () { return connection; },
+
+    isReady: function () { return ready; },
 
     selfNumber: self
   };

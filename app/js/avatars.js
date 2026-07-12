@@ -8,10 +8,21 @@
 
   var memo = {}; // convId -> Promise<objectURL|null>
 
+  /* Reject anything that isn't a usable image so a proxy/error body
+     (e.g. an HTML 404 page returned with a non-zero length) never gets
+     cached and rendered as a broken <img>. */
+  function ensureImage(blob) {
+    if (!blob || !blob.size) throw new Error('empty avatar');
+    if ((blob.type || '').indexOf('image/') !== 0) {
+      throw new Error('not an image: ' + (blob.type || 'unknown'));
+    }
+    return blob;
+  }
+
   function fetchBlob(conv) {
     if (conv.type === 'group') {
       if (!conv.sendId) return Promise.reject(new Error('no group id yet'));
-      return App.api.groupAvatar(conv.sendId);
+      return App.api.groupAvatar(conv.sendId).then(ensureImage);
     }
     var contact = App.store.contactByKey(conv.id);
     if (contact && contact.hasAvatar === false) {
@@ -19,7 +30,7 @@
     }
     var uuid = contact && contact.uuid;
     if (!uuid) return Promise.reject(new Error('no uuid known'));
-    return App.api.contactAvatar(uuid);
+    return App.api.contactAvatar(uuid).then(ensureImage);
   }
 
   function load(conv) {
@@ -40,14 +51,22 @@
     return memo[conv.id];
   }
 
-  /* Swap an initials circle for the real photo once it is available. */
+  /* Swap an initials circle for the real photo once it is available.
+     The initials stay put until the image actually decodes; a decode
+     failure leaves them intact instead of showing a broken <img>. */
   function apply(avatarEl, conv) {
     load(conv).then(function (url) {
       if (!url || !avatarEl.parentNode) return;
-      avatarEl.textContent = '';
       var img = App.util.el('img', 'avatar-img');
+      img.onload = function () {
+        if (!avatarEl.parentNode) return;
+        avatarEl.textContent = '';
+        avatarEl.appendChild(img);
+      };
+      img.onerror = function () {
+        App.util.dbg('avatar decode failed for ' + conv.id);
+      };
       img.src = url;
-      avatarEl.appendChild(img);
     });
   }
 

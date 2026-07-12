@@ -3,6 +3,15 @@
 
   var PRUNE_KEEP = 500; // messages kept per conversation
 
+  /* Bring a conversation to the foreground — used by notification clicks.
+     No-op if that chat is already on top of the stack. */
+  App.openConversation = function (convId) {
+    if (!convId) return;
+    var cur = App.router.top();
+    if (cur && cur.el && cur.el.getAttribute('data-conv-id') === convId) return;
+    App.router.push(App.screens.chat.create(convId));
+  };
+
   function boot() {
     App.util.dbg('boot');
     App.router.init(document.getElementById('screens'));

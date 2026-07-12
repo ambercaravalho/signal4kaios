@@ -28,6 +28,37 @@
     return { convId: peerKey(env), groupInternalId: null };
   }
 
+  /* Signal delivers mentions out-of-band: the body carries a U+FFFC
+     object-replacement placeholder at each mention's offset (which renders
+     as a tofu box), and a parallel `mentions` array holds the identities.
+     Splice the readable "@name" back into the text. Offsets are UTF-16 code
+     units, matching JS string indexing. */
+  function mentionName(m) {
+    if (m.name) return m.name;
+    var key = m.number || m.uuid || '';
+    if (key && App.store && App.store.displayName) return App.store.displayName(key);
+    return key || 'unknown';
+  }
+
+  function applyMentions(body, mentions) {
+    if (!body || !mentions || !mentions.length) return body || '';
+    // Splice from the end so earlier offsets stay valid.
+    var sorted = mentions.slice().sort(function (a, b) {
+      return (b.start || 0) - (a.start || 0);
+    });
+    var out = body;
+    sorted.forEach(function (m) {
+      var start = m.start || 0;
+      var len = m.length || 1;
+      if (start < 0 || start > out.length) {
+        App.util.dbg('normalize: mention offset out of range', m);
+        return;
+      }
+      out = out.slice(0, start) + '@' + mentionName(m) + out.slice(start + len);
+    });
+    return out;
+  }
+
   function quoteOf(dm) {
     var q = dm.quote;
     if (!q) return null;
@@ -87,7 +118,7 @@
       author: author,
       authorName: env.sourceName || '',
       timestamp: dm.timestamp || env.timestamp,
-      body: body || '',
+      body: applyMentions(body, dm.mentions),
       quote: quoteOf(dm),
       attachments: attachments.map(function (a) {
         return {

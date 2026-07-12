@@ -45,6 +45,13 @@
             App.softkeys.set('Options', 'Open', 'New chat');
             return;
           }
+          // Still loading history from IndexedDB: don't flash the empty
+          // state before the store has finished its first read.
+          if (!App.store.isReady()) {
+            list.appendChild(App.util.el('div', 'empty', 'Loading…'));
+            App.softkeys.set('Options', '', 'New chat');
+            return;
+          }
           list.appendChild(App.util.el('div', 'empty',
             'No conversations yet.\n' +
             'Message history builds up as messages arrive.\n' +

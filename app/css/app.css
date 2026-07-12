@@ -288,6 +288,23 @@ html, body {
 
 .msg-body {
   white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* ---- Full-message reader ---- */
+.msgview-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.msgview-body {
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .msg-attach {

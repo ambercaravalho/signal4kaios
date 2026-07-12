@@ -27,6 +27,9 @@
   var wanted = false;
   var opened = false;
   var warnedAuth = false;
+  var everConnected = false; // have we had at least one successful open?
+  var lastCloseAt = 0;       // when the socket last dropped (for gap logging)
+  var framesThisSession = 0; // frames received since the current open
 
   function state() {
     if (sock && sock.readyState === WebSocket.OPEN) return 'open';
@@ -65,7 +68,17 @@
       opened = true;
       attempts = 0;
       warnedAuth = false;
-      App.util.dbg('ws: open');
+      framesThisSession = 0;
+      // Diagnostics for the "missed while disconnected" investigation: note
+      // whether this is a reconnect and how long the gap was, so the debug
+      // log shows whether signal-cli drains its queue on the fresh socket.
+      if (everConnected && lastCloseAt) {
+        App.util.dbg('ws: reconnected after ' + (Date.now() - lastCloseAt) +
+          'ms gap — any messages queued while offline should stream now');
+      } else {
+        App.util.dbg('ws: open');
+      }
+      everConnected = true;
       App.store.setConnection('open');
     };
 
@@ -77,11 +90,14 @@
         App.util.dbg('ws: non-JSON frame', evt.data);
         return;
       }
+      framesThisSession += 1;
       App.store.ingestRaw(frame);
     };
 
     sock.onclose = function (evt) {
-      App.util.dbg('ws: closed (code ' + evt.code + ')');
+      lastCloseAt = Date.now();
+      App.util.dbg('ws: closed (code ' + evt.code + ', ' +
+        framesThisSession + ' frames this session)');
       App.store.setConnection('closed');
       sock = null;
 
