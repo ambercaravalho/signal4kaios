@@ -82,6 +82,17 @@
         });
       }
 
+      var reactorKeys = rec.reactions ? Object.keys(rec.reactions) : [];
+      if (reactorKeys.length) {
+        items.push({
+          label: 'Reactions (' + reactorKeys.length + ')',
+          onSelect: function () {
+            App.router.replace(reactionsDetail(rec));
+            return 'keep'; // replace() already removed this menu
+          }
+        });
+      }
+
       items.push({
         label: 'Info',
         hint: App.util.fmtTimeFull(rec.timestamp) + ' · ' + rec.status,
@@ -91,4 +102,21 @@
       return App.screens.menu.create({ title: 'Message', items: items });
     }
   };
+
+  /* A read-only list of who reacted and with which emoji. */
+  function reactionsDetail(rec) {
+    var self = App.store.selfNumber();
+    var reactions = rec.reactions || {};
+    var items = Object.keys(reactions).map(function (reactor) {
+      var who = reactor === self ? 'You' : App.store.displayName(reactor);
+      return {
+        label: reactions[reactor] + '  ' + who,
+        onSelect: function () { return 'keep'; }
+      };
+    });
+    if (!items.length) {
+      items.push({ label: 'No reactions', onSelect: function () { return 'keep'; } });
+    }
+    return App.screens.menu.create({ title: 'Reactions', items: items });
+  }
 })();

@@ -25,7 +25,7 @@
   }
 
   App.screens.chat = {
-    create: function (convId) {
+    create: function (convId, targetTs) {
       var conv = App.store.conversation(convId);
       var msgById = {};
       var oldestTs = 9007199254740991;
@@ -73,7 +73,7 @@
       function updateSoftkeys() {
         var sel = nav.selected();
         if (sel === ta) {
-          var left = editTarget ? 'Cancel edit' : (pendingQuote ? 'Cancel reply' : '');
+          var left = editTarget ? 'Cancel edit' : (pendingQuote ? 'Cancel reply' : 'Emoji');
           App.softkeys.set(left, 'Send', editTarget ? '' : 'Attach');
         } else if (sel === loadMore) {
           App.softkeys.set('', 'Load', '');
@@ -220,14 +220,43 @@
             list.appendChild(renderMsgNode(rec));
           });
           if (rows.length) oldestTs = rows[0].timestamp;
-          nav.selectLast(); // the composer
-          scrollToBottom();
+          if (targetTs) {
+            loadUntilTarget();
+          } else {
+            nav.selectLast(); // the composer
+            scrollToBottom();
+          }
           updateSoftkeys();
         });
       }
 
+      /* Page older messages until the target timestamp is on screen, then
+         select and scroll to it. Used for "jump to message" from search. */
+      function jumpToTarget() {
+        var id = null;
+        Object.keys(msgById).forEach(function (k) {
+          if (msgById[k].timestamp === targetTs) id = k;
+        });
+        if (!id) return false;
+        var node = nodeFor(id);
+        if (!node) return false;
+        nav.selectById(id);
+        try { node.scrollIntoView(); } catch (e) { list.scrollTop = node.offsetTop; }
+        return true;
+      }
+
+      function loadUntilTarget() {
+        if (jumpToTarget()) return;
+        if (!hasMore) {
+          nav.selectLast();
+          scrollToBottom();
+          return;
+        }
+        loadOlder().then(loadUntilTarget);
+      }
+
       function loadOlder() {
-        App.db.getMessagesPage(convId, oldestTs, PAGE).then(function (rows) {
+        return App.db.getMessagesPage(convId, oldestTs, PAGE).then(function (rows) {
           if (!rows.length) {
             hasMore = false;
             loadMore.classList.add('hidden');
@@ -402,6 +431,24 @@
         pick.onerror = function () { /* user cancelled the picker */ };
       }
 
+      function insertAtCursor(text) {
+        var start = ta.selectionStart;
+        var end = ta.selectionEnd;
+        if (start == null) { start = ta.value.length; end = start; }
+        var v = ta.value;
+        ta.value = v.slice(0, start) + text + v.slice(end);
+        var pos = start + text.length;
+        ta.focus();
+        try { ta.selectionStart = ta.selectionEnd = pos; } catch (e) { /* ok */ }
+      }
+
+      function openEmoji() {
+        App.router.push(App.screens.emojipicker.create(function (emoji) {
+          nav.selectLast();
+          insertAtCursor(emoji);
+        }));
+      }
+
       function openOptions(rec) {
         App.router.push(App.screens.msgopts.create(rec, {
           reply: function (r) {
@@ -471,6 +518,10 @@
             }
             if (evt.key === 'SoftLeft' && pendingQuote) {
               setQuote(null);
+              return true;
+            }
+            if (evt.key === 'SoftLeft' && !editTarget && !pendingQuote) {
+              openEmoji();
               return true;
             }
             if (evt.key === 'SoftRight' && !editTarget) {

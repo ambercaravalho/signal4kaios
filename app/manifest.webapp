@@ -19,6 +19,9 @@
     "desktop-notification": {
       "description": "Show notifications for new Signal messages"
     },
+    "alarms": {
+      "description": "Periodically wake to reconnect and catch up on messages"
+    },
     "device-storage:pictures": {
       "access": "readcreate",
       "description": "Save received photos to the gallery"

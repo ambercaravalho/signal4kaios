@@ -321,6 +321,25 @@
     });
   }
 
+  /* A message was read on another linked device. Clear the unread badge for
+     the matching conversation(s) so this device stays in sync. */
+  function applyReadSync(ev) {
+    var changed = false;
+    (ev.entries || []).forEach(function (entry) {
+      var candidates = [entry.sender, altKeyOf(entry.sender)];
+      candidates.forEach(function (cid) {
+        var conv = cid ? convs[cid] : null;
+        if (!conv) return;
+        if (conv.unread > 0) { conv.unread = 0; changed = true; }
+        if (entry.timestamp > (conv.lastReadTs || 0)) {
+          conv.lastReadTs = entry.timestamp;
+        }
+        persistConv(conv);
+      });
+    });
+    if (changed) emit('conversations');
+  }
+
   function applyEvent(ev) {
     switch (ev.type) {
       case 'message': return applyMessage(ev);
@@ -329,6 +348,7 @@
       case 'edit': return applyEdit(ev);
       case 'typing': return applyTyping(ev);
       case 'receipt': return applyReceipt(ev);
+      case 'readSync': return applyReadSync(ev);
       default:
         App.util.dbg('unknown event type ' + ev.type);
     }
@@ -573,16 +593,19 @@
     var hadUnread = conv.unread > 0;
     conv.unread = 0;
 
-    // Send read receipts for incoming messages newer than lastReadTs.
+    // Send read receipts for incoming messages newer than lastReadTs, unless
+    // the user has disabled read receipts in Settings.
     App.db.getMessagesPage(convId, 9007199254740991, 25).then(function (rows) {
       var pending = rows.filter(function (r) {
         return r.incoming && r.timestamp > (conv.lastReadTs || 0);
       });
-      pending.slice(-10).forEach(function (r) {
-        App.api.readReceipt(r.author, r.timestamp)['catch'](function (e) {
-          App.util.dbg('receipt failed ' + e.message);
+      if (App.config.sendReadReceipts()) {
+        pending.slice(-10).forEach(function (r) {
+          App.api.readReceipt(r.author, r.timestamp)['catch'](function (e) {
+            App.util.dbg('receipt failed ' + e.message);
+          });
         });
-      });
+      }
       if (pending.length) {
         conv.lastReadTs = pending[pending.length - 1].timestamp;
       }
@@ -710,6 +733,14 @@
     },
 
     conversation: function (id) { return convs[id]; },
+
+    setConversationName: function (convId, name) {
+      var conv = convs[convId];
+      if (!conv || !name) return;
+      conv.name = name;
+      persistConv(conv);
+      emit('conversations');
+    },
 
     contactsList: function () {
       var seen = {};

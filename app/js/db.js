@@ -14,14 +14,23 @@
        attachments    keyPath 'id' (v2) — LRU blob cache for viewed media
   */
 
-  var DB_NAME = 'signal4kaios';
   var DB_VERSION = 2;
   var opened = null;
+
+  /* Each account gets its own database. The first (migrated) account keeps the
+     legacy un-suffixed name so existing history survives the upgrade. */
+  function dbName() {
+    if (App.config.activeUsesLegacyDb && App.config.activeUsesLegacyDb()) {
+      return 'signal4kaios';
+    }
+    var num = App.config.number();
+    return num ? 'signal4kaios:' + num : 'signal4kaios';
+  }
 
   function open() {
     if (opened) return opened;
     opened = new Promise(function (resolve, reject) {
-      var req = indexedDB.open(DB_NAME, DB_VERSION);
+      var req = indexedDB.open(dbName(), DB_VERSION);
       req.onupgradeneeded = function (e) {
         var db = e.target.result;
         if (!db.objectStoreNames.contains('messages')) {
@@ -218,7 +227,7 @@
         db.close();
         opened = null;
         return new Promise(function (resolve, reject) {
-          var req = indexedDB.deleteDatabase(DB_NAME);
+          var req = indexedDB.deleteDatabase(dbName());
           req.onsuccess = function () { resolve(); };
           req.onerror = function () { reject(req.error); };
         });

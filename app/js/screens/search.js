@@ -109,7 +109,7 @@
             if (sel) {
               var rec = results[parseInt(sel.getAttribute('data-id'), 10)];
               if (rec && App.store.conversation(rec.convId)) {
-                App.router.push(App.screens.chat.create(rec.convId));
+                App.router.push(App.screens.chat.create(rec.convId, rec.timestamp));
               }
               return true;
             }

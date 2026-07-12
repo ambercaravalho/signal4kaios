@@ -91,6 +91,7 @@ The app is a **privileged** app and declares these permissions in
 |---|---|
 | `systemXHR` | Talk to the signal-cli-rest-api server cross-origin without CORS |
 | `desktop-notification` | Notify you of new messages when the app is backgrounded |
+| `alarms` | Wake periodically to reconnect the WebSocket and catch up |
 | `device-storage:pictures` | Save received photos to the gallery |
 | `device-storage:music` | Save received voice messages and audio |
 | `device-storage:videos` | Save received videos |
@@ -116,6 +117,9 @@ Then:
 
 After that you land on the conversation list. History builds up from this point
 forward (there's no server-side history to import).
+
+Got more than one Signal number? You can add and switch between accounts later
+from **Settings → Accounts** — each keeps its own local history on the phone.
 
 ## Next steps
 

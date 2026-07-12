@@ -97,6 +97,9 @@ misses.
   never let an unrecognized shape throw — log it and move on.
 - Route message read-modify-write updates through `enqueueMutation` in
   [`store.js`](../app/js/store.js).
+- Add boolean feature flags to [`config.js`](../app/js/config.js) following the
+  `sendReadReceipts` pattern (an accessor with a sensible default when the key is
+  absent), then gate behavior on `App.config.<flag>()`.
 - Register every new `js/` file in [`app/index.html`](../app/index.html) in the
   correct load-order position.
 

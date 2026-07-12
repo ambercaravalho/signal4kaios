@@ -1,7 +1,7 @@
 # signal4kaios
 
-A Signal messenger client for **KaiOS 2.5** feature phones, powered by a
-self-hosted
+Real Signal, on a phone with actual buttons. **signal4kaios** is a Signal
+messenger client for **KaiOS 2.5** feature phones, powered by a self-hosted
 [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server on
 your network.
 
@@ -12,10 +12,21 @@ your server across origins without CORS.
 ## Highlights
 
 - Real-time 1:1 and group chat (WebSocket receive, `json-rpc` mode) with
-  reactions, replies, edits, read receipts, and typing indicators.
+  reactions (a full emoji picker, plus a "who reacted" view), replies, edits,
+  read receipts, and typing indicators.
+- Compose with emoji, react with more than the usual six, and read receipts you
+  can switch off if you'd rather stay mysterious.
 - Inline photos, voice messages, and attachments — cached offline in IndexedDB,
   saveable to the phone.
-- Archived and muted chats, unread badges, and local message search.
+- Find people fast: search-as-you-type in New chat, or start one by phone number
+  or Signal username (with a "is this even registered?" check).
+- Manage the little things: edit your own profile, rename contacts, view and run
+  groups (members, description, rename, leave), and verify safety numbers.
+- Juggle more than one number with multiple accounts, each with its own local
+  history.
+- Jump straight from a search result to that message in the thread.
+- Archived and muted chats, unread badges, local message search, and a
+  reconnect that keeps trying (and wakes up) so you miss as little as possible.
 - Fully keypad-driven, tuned for a 240×320 screen.
 
 ## Quickstart
@@ -42,7 +53,6 @@ The full wiki lives in **[`docs/`](docs/README.md)**:
   shapes.
 - **[Development](docs/development.md)** — Gecko 48 constraints, packaging,
   desktop dev, adding a screen.
-- **[Roadmap](docs/roadmap.md)** — what's not built yet.
 
 Contributing or using an AI agent on this repo? Read **[AGENTS.md](AGENTS.md)**
 for the condensed rules (Gecko 48 bans, conventions, definition of done).

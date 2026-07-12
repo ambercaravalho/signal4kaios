@@ -31,6 +31,10 @@
   var lastCloseAt = 0;       // when the socket last dropped (for gap logging)
   var framesThisSession = 0; // frames received since the current open
 
+  var HEARTBEAT_MS = 30000;  // safety-net poll for a silently-dead socket
+  var WAKE_ALARM_MS = 300000; // how far ahead to schedule the wake alarm
+  var heartbeatTimer = null;
+
   function state() {
     if (sock && sock.readyState === WebSocket.OPEN) return 'open';
     if (sock && sock.readyState === WebSocket.CONNECTING) return 'connecting';
@@ -39,6 +43,7 @@
 
   function connect() {
     wanted = true;
+    startHeartbeat();
     if (!App.config.isConfigured()) return;
     if (sock && (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING)) {
       return;
@@ -75,10 +80,16 @@
       if (everConnected && lastCloseAt) {
         App.util.dbg('ws: reconnected after ' + (Date.now() - lastCloseAt) +
           'ms gap — any messages queued while offline should stream now');
+        // Best-effort catch-up: signal-cli should stream queued messages on the
+        // fresh socket; refresh the directory so any new contacts/groups that
+        // appeared while we were offline resolve correctly. There is no history
+        // API, so already-delivered messages we missed cannot be backfilled.
+        resync();
       } else {
         App.util.dbg('ws: open');
       }
       everConnected = true;
+      scheduleWakeAlarm();
       App.store.setConnection('open');
     };
 
@@ -123,6 +134,42 @@
     };
   }
 
+  function resync() {
+    if (App.store && App.store.refreshDirectory) {
+      App.store.refreshDirectory()['catch'](function (e) {
+        App.util.dbg('ws: resync directory failed ' + e.message);
+      });
+    }
+  }
+
+  /* KaiOS can suspend a backgrounded app; a mozAlarm wakes it up so the socket
+     can be re-established and queued messages can drain. Feature-detected: on
+     desktop / the simulator without mozAlarms this is a no-op. Full delivery
+     while the app is fully killed also needs a system-message handler, which is
+     a separate (and largely unsupported) concern — this only helps while the
+     app is still resident but suspended. */
+  function scheduleWakeAlarm() {
+    try {
+      var alarms = navigator.mozAlarms;
+      if (!alarms || !alarms.add) return;
+      var when = new Date(Date.now() + WAKE_ALARM_MS);
+      alarms.add(when, 'honorTimezone', { type: 's4k-wake' });
+    } catch (e) {
+      App.util.dbg('ws: could not schedule wake alarm ' + e.message);
+    }
+  }
+
+  function startHeartbeat() {
+    if (heartbeatTimer) return;
+    heartbeatTimer = setInterval(function () {
+      if (wanted && state() === 'closed' && !reconnectTimer) {
+        App.util.dbg('ws: heartbeat found a dead socket — reconnecting');
+        attempts = 0;
+        connect();
+      }
+    }, HEARTBEAT_MS);
+  }
+
   function scheduleReconnect() {
     if (reconnectTimer) return;
     attempts += 1;
@@ -162,6 +209,25 @@
       connect();
     }
   });
+
+  // When a wake alarm fires, reconnect (if we still want a connection) and
+  // arm the next alarm. Feature-detected so it is harmless off-device.
+  try {
+    if (navigator.mozSetMessageHandler) {
+      navigator.mozSetMessageHandler('alarm', function (msg) {
+        var data = msg && msg.data;
+        if (data && data.type !== 's4k-wake') return;
+        App.util.dbg('ws: wake alarm fired');
+        if (wanted && state() === 'closed') {
+          attempts = 0;
+          connect();
+        }
+        scheduleWakeAlarm();
+      });
+    }
+  } catch (e) {
+    App.util.dbg('ws: alarm handler unavailable ' + e.message);
+  }
 
   App.ws = {
     connect: connect,

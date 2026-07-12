@@ -12,7 +12,9 @@
       var list = App.util.el('div', 'list');
       el.appendChild(list);
 
-      var cfg = App.config.get();
+      // In "add account" mode start with blank fields so a new account can be
+      // entered without clobbering the current one until Save.
+      var cfg = opts.addAccount ? {} : App.config.get();
 
       function field(labelText, value, placeholder, type) {
         var wrap = App.util.el('div', 'field');
@@ -28,19 +30,6 @@
         return input;
       }
 
-      var urlInput = field('Server URL', cfg.serverUrl, 'http://192.168.1.100:4329');
-      var numInput = field('My Signal number', cfg.number, '+15551234567');
-      var authUserInput = field('Reverse proxy username (optional)', cfg.authUser,
-        'leave blank if not needed');
-      var authPassInput = field('Reverse proxy password', cfg.authPass,
-        '', 'password');
-      list.appendChild(App.util.el('div', 'field-note',
-        'Only secures the API. Live updates need the /v1/receive path ' +
-        'exempted from proxy auth — see README.'));
-
-      var status = App.util.el('div', 'status-line', '');
-      list.appendChild(status);
-
       function setStatus(text, cls) {
         status.textContent = text;
         status.className = 'status-line' + (cls ? ' ' + cls : '');
@@ -55,8 +44,48 @@
         return row;
       }
 
+      /* A menu-item whose hint reflects a boolean; toggled in onAction. */
+      function toggleAction(label, hintFn) {
+        var row = action(label, hintFn());
+        row.__hintFn = hintFn;
+        return row;
+      }
+
+      function refreshToggle(row) {
+        if (!row || !row.__hintFn) return;
+        var hint = row.querySelector('.hint');
+        if (hint) hint.textContent = row.__hintFn();
+      }
+
+      list.appendChild(App.util.sectionHeader('Server'));
+      var urlInput = field('Server URL', cfg.serverUrl, 'http://192.168.1.100:4329');
+      var numInput = field('My Signal number', cfg.number, '+15551234567');
+      var authUserInput = field('Reverse proxy username (optional)', cfg.authUser,
+        'leave blank if not needed');
+      var authPassInput = field('Reverse proxy password', cfg.authPass,
+        '', 'password');
+      list.appendChild(App.util.el('div', 'field-note',
+        'Only secures the API. Live updates need the /v1/receive path ' +
+        'exempted from proxy auth — see README.'));
+
+      var status = App.util.el('div', 'status-line', '');
+      list.appendChild(status);
+
       action('Save', 'Store settings and reconnect');
       action('Test connection', 'Ping the signal-cli-rest-api server');
+
+      list.appendChild(App.util.sectionHeader('Privacy'));
+      var receiptsRow = toggleAction('Read receipts', function () {
+        return App.config.sendReadReceipts() ? 'On' : 'Off';
+      });
+
+      list.appendChild(App.util.sectionHeader('Profile'));
+      action('Edit profile', 'Set your Signal name');
+
+      list.appendChild(App.util.sectionHeader('Accounts'));
+      action('Switch account', 'Change or add a number');
+
+      list.appendChild(App.util.sectionHeader('Data'));
       action('Refresh contacts & groups');
       action('Debug log');
       action('Clear local data', 'Deletes cached messages on this phone');
@@ -80,19 +109,50 @@
           setStatus('Number must look like +15551234567', 'bad');
           return;
         }
+        var prevNumber = App.config.number();
         App.config.set({
           serverUrl: url,
           number: n,
           authUser: authUserInput.value.trim(),
           authPass: authPassInput.value
         });
+        App.config.saveActiveAccount();
         setStatus('Saved.', 'ok');
         App.toast('Settings saved');
+
+        // Switching to a different account (or first setup) changes which
+        // IndexedDB and WebSocket we use, so reload to reinitialize cleanly.
+        if (opts.addAccount || opts.firstRun || n !== prevNumber) {
+          location.reload();
+          return;
+        }
         App.ws.restart();
         App.store.refreshDirectory()['catch'](function () { /* offline is fine */ });
-        if (opts.firstRun) {
-          App.router.replace(App.screens.conversations.create());
-        }
+      }
+
+      function accountSwitcher() {
+        var accounts = App.config.accounts();
+        var active = App.config.number();
+        var items = accounts.map(function (a) {
+          return {
+            label: a.number + (a.number === active ? ' (current)' : ''),
+            hint: a.serverUrl,
+            onSelect: function () {
+              if (a.number === active) return;
+              App.config.switchAccount(a.number);
+              location.reload();
+            }
+          };
+        });
+        items.push({
+          label: 'Add account',
+          hint: 'Set up another number',
+          onSelect: function () {
+            App.router.replace(App.screens.settings.create({ addAccount: true }));
+            return 'keep'; // replace() already removed this menu
+          }
+        });
+        App.router.push(App.screens.menu.create({ title: 'Accounts', items: items }));
       }
 
       function testConnection() {
@@ -127,6 +187,14 @@
               setStatus(err.message, 'bad');
             });
             return;
+          case 'Read receipts':
+            App.config.set({ sendReadReceipts: !App.config.sendReadReceipts() });
+            refreshToggle(receiptsRow);
+            return;
+          case 'Edit profile':
+            return App.router.push(App.screens.profile.create());
+          case 'Switch account':
+            return accountSwitcher();
           case 'Debug log':
             return App.router.push(App.screens.debuglog.create());
           case 'Clear local data':
@@ -145,6 +213,8 @@
           App.softkeys.set('', 'Select', '');
           if (opts.firstRun) {
             setStatus('Welcome! Enter your signal-cli-rest-api server URL and number.');
+          } else if (opts.addAccount) {
+            setStatus('Enter the server URL and number for the new account.');
           }
           nav.select(0);
         },

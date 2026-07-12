@@ -1,11 +1,19 @@
 (function () {
   'use strict';
 
-  /* Emoji reaction picker: Signal's six defaults in a 3-column grid,
-     plus a "remove my reaction" row when applicable. */
+  /* Emoji reaction picker: a fuller grid of common, widely-rendered emoji
+     (KaiOS 2.5 / Gecko 48 has limited coverage, so this sticks to older,
+     broadly-supported glyphs), plus a "remove my reaction" row when
+     applicable. The list is shared with the composer emoji picker. */
 
-  var EMOJI = ['❤️', '👍', '👎',
-    '😂', '😮', '😢'];
+  var EMOJI = [
+    '❤️', '👍', '👎', '😂',
+    '😮', '😢', '😡', '😀',
+    '😁', '😅', '😆', '😉',
+    '😊', '😍', '😘', '😜',
+    '😳', '😴', '😭', '😱',
+    '👏', '🙏', '🔥', '💯'
+  ];
 
   App.screens.reactions = {
     create: function (rec) {
@@ -34,7 +42,7 @@
         body.appendChild(rm);
       }
 
-      var nav = new App.Nav(el, { scrollEl: body, cols: 3 });
+      var nav = new App.Nav(el, { scrollEl: body, cols: 4 });
 
       function pick(emojiOrNull) {
         App.store.reactTo(rec, emojiOrNull)['catch'](function (err) {
@@ -61,6 +69,7 @@
           return false;
         }
       };
-    }
+    },
+    EMOJI: EMOJI
   };
 })();

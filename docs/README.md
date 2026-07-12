@@ -26,8 +26,6 @@ doing.
   normalized event shapes.
 - **[Development](development.md)** — the Gecko 48 constraints, packaging,
   desktop development, code conventions, and how to add a new screen.
-- **[Roadmap](roadmap.md)** — features that aren't implemented yet, with
-  pointers for how each could be built.
 - **[AGENTS.md](../AGENTS.md)** — the condensed rules for AI coding agents (and a
   fast orientation for humans, too).
 
@@ -51,12 +49,11 @@ mode. The phone reaches it either directly over Wi-Fi or through a reverse proxy
 
 | I want to… | Go to |
 |---|---|
-| Install the app on my phone | [Getting started → Install](getting-started.md#install-sideload) |
+| Install the app on my phone | [Getting started → Install](getting-started.md#2-install-sideload) |
 | Learn the keys | [User guide → Keys](user-guide.md#keys) |
 | Use it away from home | [Remote access](remote-access.md) |
 | Understand the code | [Architecture](architecture.md) |
 | Make a change safely | [Development](development.md) |
-| See what's planned | [Roadmap](roadmap.md) |
 
 ## Troubleshooting
 

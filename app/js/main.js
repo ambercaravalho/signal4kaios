@@ -14,6 +14,7 @@
 
   function boot() {
     App.util.dbg('boot');
+    App.config.ensureAccounts();
     App.router.init(document.getElementById('screens'));
 
     if (App.config.isConfigured()) {

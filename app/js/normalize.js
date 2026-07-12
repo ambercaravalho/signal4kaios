@@ -14,6 +14,7 @@
        remoteDelete { convId, author, targetTimestamp }
        typing       { convId, author, started }
        receipt      { peer, kind: 'delivery'|'read', timestamps: [..] }
+       readSync     { entries: [{ sender, timestamp }] }
   */
 
   function peerKey(env) {
@@ -205,8 +206,19 @@
         return dataMessageEvents(env, sent, false, selfNumber, conv);
       }
       if (sm.readMessages) {
-        // Read on another device — could clear unread badges. Log for now.
-        App.util.dbg('normalize: syncMessage.readMessages', sm.readMessages);
+        // Messages we read on another linked device: clear unread locally.
+        var entries = [];
+        sm.readMessages.forEach(function (r) {
+          var sender = r.senderNumber || r.senderUuid || r.sender;
+          if (sender && r.timestamp) {
+            entries.push({ sender: sender, timestamp: r.timestamp });
+          }
+        });
+        if (entries.length) {
+          events.push({ type: 'readSync', entries: entries });
+        } else {
+          App.util.dbg('normalize: empty readMessages', sm.readMessages);
+        }
         return events;
       }
       App.util.dbg('normalize: unhandled syncMessage', Object.keys(sm));

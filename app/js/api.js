@@ -84,6 +84,73 @@
         receipt_type: 'read',
         timestamp: timestamp
       });
+    },
+
+    /* Check whether one or more numbers are registered with Signal.
+       Resolves to an array of { number, registered }. */
+    searchNumbers: function (numbers) {
+      var list = [].concat(numbers);
+      var query = [];
+      for (var i = 0; i < list.length; i++) {
+        query.push('numbers=' + encodeURIComponent(list[i]));
+      }
+      return App.http.get('/v1/search/' + num() + '?' + query.join('&'),
+        { timeout: 20000 });
+    },
+
+    /* Known identities (safety numbers / fingerprints) for this account. */
+    identities: function () {
+      return App.http.get('/v1/identities/' + num());
+    },
+
+    /* Trust a contact's identity. opts: { trust_all_known_keys?,
+       verified_safety_number? } */
+    trustIdentity: function (target, opts) {
+      return App.http.put('/v1/identities/' + num() + '/trust/' +
+        encodeURIComponent(target), opts || { trust_all_known_keys: true });
+    },
+
+    /* Update this account's profile. body: { name?, base64_avatar?, about? } */
+    updateProfile: function (body) {
+      return App.http.put('/v1/profiles/' + num(), body || {});
+    },
+
+    /* Rename a saved contact. */
+    updateContact: function (recipient, name) {
+      return App.http.put('/v1/contacts/' + num(), {
+        recipient: recipient,
+        name: name
+      });
+    },
+
+    /* Push local contact changes to linked devices. */
+    syncContacts: function () {
+      return App.http.post('/v1/contacts/' + num() + '/sync', {});
+    },
+
+    /* Full detail for one group (members, description, admins). groupId is the
+       send id ("group.…"). */
+    groupDetail: function (groupId) {
+      return App.http.get('/v1/groups/' + num() + '/' +
+        encodeURIComponent(groupId));
+    },
+
+    /* Update group metadata. body: { name?, description?, base64_avatar? } */
+    updateGroup: function (groupId, body) {
+      return App.http.put('/v1/groups/' + num() + '/' +
+        encodeURIComponent(groupId), body || {});
+    },
+
+    /* Leave a group. */
+    quitGroup: function (groupId) {
+      return App.http.post('/v1/groups/' + num() + '/' +
+        encodeURIComponent(groupId) + '/quit', {});
+    },
+
+    /* Remove members from a group. members: array of numbers/uuids. */
+    removeGroupMembers: function (groupId, members) {
+      return App.http.del('/v1/groups/' + num() + '/' +
+        encodeURIComponent(groupId) + '/members', { members: [].concat(members) });
     }
   };
 })();

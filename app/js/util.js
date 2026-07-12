@@ -107,8 +107,15 @@
     });
   }
 
+  /* Non-navigable divider used to group list items under a heading. It has no
+     nav-selectable attribute, so App.Nav skips over it. */
+  function sectionHeader(text) {
+    return el('div', 'section-title', text);
+  }
+
   App.util = {
     el: el,
+    sectionHeader: sectionHeader,
     pad2: pad2,
     colorClass: colorClass,
     scaleImage: scaleImage,

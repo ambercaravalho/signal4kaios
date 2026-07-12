@@ -457,6 +457,17 @@ html, body {
   line-height: 1.4;
 }
 
+.section-title {
+  padding: 8px 8px 2px;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #7f9cff;
+  border-bottom: 1px solid #2a2a2e;
+  margin-top: 4px;
+}
+
 .status-line {
   padding: 4px 8px;
   font-size: 11px;
@@ -480,13 +491,14 @@ html, body {
 }
 
 .react-cell {
-  width: 56px;
+  flex: 0 0 25%;
   height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 22px;
   border-radius: 6px;
+  box-sizing: border-box;
 }
 
 .react-cell[nav-selected="true"] {

@@ -32,8 +32,10 @@ they go through `App.store`.
 
 1. **[`ws.js`](../app/js/ws.js)** maintains the WebSocket to
    `ws(s)://<server>/v1/receive/<number>`, with exponential-backoff reconnect
-   (plus jitter) and a reconnect-on-foreground handler. Each frame's JSON is
-   parsed and handed to `App.store.ingestRaw`.
+   (plus jitter), a reconnect-on-foreground handler, a heartbeat that revives a
+   silently-dead socket, and a periodic wake alarm; after a reconnect it kicks
+   off a directory resync. Each frame's JSON is parsed and handed to
+   `App.store.ingestRaw`.
 2. **[`normalize.js`](../app/js/normalize.js)** is the single choke point that
    converts a raw signal-cli envelope into zero or more **typed events**.
    Envelope shapes vary across signal-cli versions, so **all** parsing lives
@@ -69,13 +71,13 @@ load after everything it depends on.
 |---|---|
 | [`polyfills.js`](../app/js/polyfills.js) | Tiny Gecko-48 shims; creates `window.App` |
 | [`util.js`](../app/js/util.js) | `el`, time/format helpers, `initials`, `colorClass`, `debounce`, `scaleImage`, and the `dbg` ring buffer |
-| [`config.js`](../app/js/config.js) | Settings in `localStorage` (server URL, number, proxy auth); URL/WS-URL helpers |
+| [`config.js`](../app/js/config.js) | Settings in `localStorage` (server URL, number, proxy auth); feature flags (e.g. read receipts) and the multi-account list; URL/WS-URL helpers |
 | [`toast.js`](../app/js/toast.js) | `App.toast` transient message bar |
 | [`http.js`](../app/js/http.js) | Promise wrapper over `mozSystem` XHR (CORS-free, privileged); desktop XHR fallback; attaches Basic Auth |
 | [`api.js`](../app/js/api.js) | Thin wrappers over the signal-cli-rest-api endpoints |
 | [`db.js`](../app/js/db.js) | IndexedDB persistence — the message history itself |
 | [`normalize.js`](../app/js/normalize.js) | Envelope → typed events (the only parser) |
-| [`ws.js`](../app/js/ws.js) | Receive WebSocket with backoff/reconnect; Basic-Auth failure detection |
+| [`ws.js`](../app/js/ws.js) | Receive WebSocket with backoff/reconnect; foreground + heartbeat + alarm wake, directory resync on reconnect; Basic-Auth failure detection |
 | [`store.js`](../app/js/store.js) | State hub: apply events, persist, emit; optimistic send; serialized mutations |
 | [`avatars.js`](../app/js/avatars.js) | Profile-photo fetch + cache with per-session memoization |
 | [`nav.js`](../app/js/nav.js) | D-pad selection via `nav-selectable` / `nav-selected` |
@@ -99,15 +101,21 @@ A screen is an object with this contract:
 ```
 
 Screens live in [`app/js/screens/`](../app/js/screens): conversations, archived,
-chat, newchat, msgopts (message options), reactions (picker), viewer
-(attachment), search, settings, debuglog, and a generic `menu`. The simplest one
-to copy is [`screens/menu.js`](../app/js/screens/menu.js). See
+chat, newchat, msgopts (message options), msgview (full-message reader),
+reactions and emojipicker (emoji grids), viewer (attachment), search, settings,
+profile, contactinfo, groupinfo, safety (safety numbers), debuglog, a generic
+`menu`, and a generic single-field `textinput`. The simplest one to copy is
+[`screens/menu.js`](../app/js/screens/menu.js); `textinput` and `menu` are the
+reusable building blocks the smaller screens compose from. See
 [Development → Adding a screen](development.md#adding-a-screen).
 
 ## IndexedDB schema
 
-Database `signal4kaios` (version 2), defined in [`db.js`](../app/js/db.js). Since
-the REST API has no history endpoint, **this database is the message history.**
+Database defined in [`db.js`](../app/js/db.js) (version 2). Since the REST API has
+no history endpoint, **this database is the message history.** Each account gets
+its own database, named `signal4kaios:<number>`; the first account that predates
+multi-account support keeps the original un-suffixed `signal4kaios` name so its
+history survives the upgrade.
 
 | Store | Key | Notes |
 |---|---|---|
@@ -133,11 +141,14 @@ reaction     { convId, reactor, emoji, remove, targetAuthor, targetTimestamp }
 remoteDelete { convId, author, targetTimestamp }
 typing       { convId, author, started }
 receipt      { peer, kind: 'delivery' | 'read', timestamps: [..] }
+readSync     { entries: [{ sender, timestamp }] }
 ```
 
 Messages sent from another of your linked devices arrive as `syncMessage`
 envelopes and are normalized into the same `message` / `edit` events with
-`incoming: false`.
+`incoming: false`. A `syncMessage.readMessages` (a chat you read on another
+device) becomes a `readSync` event, which clears the matching conversation's
+unread badge here.
 
 ## Conversation and message records
 

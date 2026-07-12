@@ -105,6 +105,18 @@
           ? App.store.conversation(convId) : null;
         if (conv) {
           items.push({
+            label: conv.type === 'group' ? 'Group info' : 'Contact info',
+            hint: conv.name,
+            onSelect: function () {
+              if (conv.type === 'group') {
+                App.router.replace(App.screens.groupinfo.create(conv));
+              } else {
+                App.router.replace(App.screens.contactinfo.create(conv));
+              }
+              return 'keep'; // replace() already removed this menu
+            }
+          });
+          items.push({
             label: 'Archive chat',
             hint: conv.name,
             onSelect: function () {
