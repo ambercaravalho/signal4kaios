@@ -70,7 +70,7 @@ load after everything it depends on.
 | File | Responsibility |
 |---|---|
 | [`polyfills.js`](../app/js/polyfills.js) | Tiny Gecko-48 shims; creates `window.App` |
-| [`util.js`](../app/js/util.js) | `el`, time/format helpers, `initials`, `colorClass`, `debounce`, `scaleImage`, and the `dbg` ring buffer |
+| [`util.js`](../app/js/util.js) | `el`, time/format helpers, `initials`, `colorClass`, `debounce`, and the `dbg` ring buffer |
 | [`config.js`](../app/js/config.js) | Settings in `localStorage` (server URL, number, proxy auth); feature flags (read receipts, typing indicators, keep-muted-archived, styled text); cached Signal username + link; the multi-account list; URL/WS-URL helpers |
 | [`toast.js`](../app/js/toast.js) | `App.toast` transient message bar |
 | [`http.js`](../app/js/http.js) | Promise wrapper over `mozSystem` XHR (CORS-free, privileged); desktop XHR fallback; attaches Basic Auth |
@@ -92,9 +92,11 @@ QR) and `jsQR.js` (a QR **decoder**, for scanning). Keeping them out of `app/js`
 means the packaging syntax gate only ever scans first-party code, so the gate
 stays meaningful even though these third-party files aren't authored to the same
 Gecko-48 style rules. They attach plain globals (`qrcode`, `jsQR`) and are loaded
-by `<script>` tags like everything else. QR scanning and voice recording depend
-on camera / microphone APIs whose support varies on Gecko 48, so both are
-best-effort with graceful fallbacks.
+by `<script>` tags like everything else. QR scanning needs camera access, which
+varies across KaiOS 2.5 builds: `scanqr` first tries a live `getUserMedia`
+preview (needs the `video-capture` permission) and, if a raw stream isn't
+granted, falls back to a MozActivity `pick` snapshot that it decodes with jsQR —
+so it works wherever the photo picker does.
 
 ## Screens and the router
 
@@ -112,8 +114,8 @@ A screen is an object with this contract:
 
 Screens live in [`app/js/screens/`](../app/js/screens): conversations, archived,
 chat, newchat, msgopts (message options), msgview (full-message reader),
-reactions and emojipicker (emoji grids), viewer (attachment), voicerecord (voice
-message capture), qrcode (show your profile QR) and scanqr (camera QR scanner),
+reactions and emojipicker (emoji grids), viewer (attachment),
+qrcode (show your profile QR) and scanqr (camera QR scanner),
 search, settings, profile, contactinfo, groupinfo, blocked (read-only blocked
 list), safety (safety numbers), debuglog, a generic `menu`, and a generic
 single-field `textinput`. The simplest one to copy is

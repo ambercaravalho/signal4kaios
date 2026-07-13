@@ -53,6 +53,17 @@
       return read().usernameLink || '';
     },
 
+    /* Profile name and about text. The REST API has no GET for your own
+       profile, so we remember what was last set here to pre-fill the editors
+       and to satisfy the API (which requires a name on every profile update). */
+    profileName: function () {
+      return read().profileName || '';
+    },
+
+    profileAbout: function () {
+      return read().profileAbout || '';
+    },
+
     /* Feature flags. Boolean flags default to their most common value when the
        key is absent so existing installs keep their current behavior. */
     sendReadReceipts: function () {

@@ -478,28 +478,6 @@
         return caption;
       }
 
-      function pickPhoto() {
-        if (typeof MozActivity === 'undefined') {
-          App.toast('Attaching photos only works on the phone');
-          return;
-        }
-        var pick = new MozActivity({
-          name: 'pick',
-          data: { type: ['image/jpeg', 'image/png', 'image/gif'] }
-        });
-        pick.onsuccess = function () {
-          var blob = this.result.blob;
-          if (!blob) return;
-          App.toast('Preparing photo…');
-          App.util.scaleImage(blob, 1024).then(function (dataUri) {
-            return App.store.sendAttachment(convId, dataUri, currentCaption());
-          })['catch'](function (err) {
-            App.toast('Photo failed: ' + err.message);
-          });
-        };
-        pick.onerror = function () { /* user cancelled the picker */ };
-      }
-
       /* Embed a filename in a data URI so signal-cli keeps it (the format the
          REST API documents: data:<mime>;filename=<name>;base64,<data>). */
       function withFilename(dataUri, name) {
@@ -509,7 +487,10 @@
           'data:$1;filename=' + safe + ';base64,');
       }
 
-      function pickFile() {
+      /* The OS file picker on real hardware already offers Camera, Recorder,
+         Gallery, Video, etc., so a single "attach a file" path covers photos and
+         voice notes without our own sub-menu. */
+      function attach() {
         var input = document.createElement('input');
         input.type = 'file';
         input.style.display = 'none';
@@ -534,25 +515,6 @@
           reader.readAsDataURL(file);
         });
         input.click();
-      }
-
-      function recordVoice() {
-        App.router.replace(App.screens.voicerecord.create(convId, {
-          caption: currentCaption(),
-          fallback: pickFile
-        }));
-      }
-
-      function attach() {
-        App.router.push(App.screens.menu.create({
-          title: 'Attach',
-          items: [
-            { label: 'Photo', hint: 'From the gallery', onSelect: pickPhoto },
-            { label: 'File', hint: 'Pick any file', onSelect: pickFile },
-            { label: 'Voice message', hint: 'Record and send',
-              onSelect: function () { recordVoice(); return 'keep'; } }
-          ]
-        }));
       }
 
       function insertAtCursor(text) {

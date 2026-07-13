@@ -83,8 +83,9 @@ Common cases:
   timer, messages are deleted once it elapses (enforced locally on a periodic
   sweep and on chat open). Check the timer under **Contact/Group info →
   Disappearing messages**.
-- **QR scanning or voice recording doesn't work.** Both rely on camera /
-  microphone APIs whose support varies on KaiOS 2.5, so they're best-effort; the
-  app falls back (to the file picker for voice) or backs out when unavailable.
-  Make sure the app was re-sideloaded after the `camera` / `audio-capture`
-  permissions were added.
+- **QR scanning doesn't work.** It first tries a live camera stream
+  (`getUserMedia`, gated by the `video-capture` permission) and, if the device
+  won't grant one, falls back to snapping a photo with the OS camera and
+  decoding that. Re-sideload after the `video-capture` permission was added; if
+  live preview never appears, the snapshot path still works wherever the photo
+  picker does.

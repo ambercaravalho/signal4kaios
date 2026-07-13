@@ -19,8 +19,9 @@ your server across origins without CORS.
   message's info, and watch messages delete themselves when they expire.
 - **Pinned messages** in groups (synced through the group pin endpoint) and
   **pinned conversations** that float to the top of your list.
-- **Attachments**: send photos from the gallery, pick any file, or record a
-  voice message — all cached offline in IndexedDB and saveable to the phone.
+- **Attachments**: attach any file through the KaiOS system picker (which itself
+  covers camera, recorder, gallery, and video) — all cached offline in IndexedDB
+  and saveable to the phone.
 - **Full group management**: add/remove members, promote or demote admins, set
   who can add members / edit the group / send messages, manage the invite link,
   and block a group.

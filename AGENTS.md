@@ -81,7 +81,7 @@ IndexedDB schema, and event shapes.
   primary debugging tool since there is no console on the phone.
 - **User-facing messages**: use `App.toast(msg)` for transient notices.
 - **Time / formatting helpers** live in [`util.js`](app/js/util.js)
-  (`fmtTime`, `initials`, `colorClass`, `debounce`, `scaleImage`, ...).
+  (`fmtTime`, `initials`, `colorClass`, `debounce`, ...).
 - **Config** (server URL, number, proxy auth) is in `localStorage` via
   [`config.js`](app/js/config.js). All persisted message/contact data is in
   IndexedDB via [`db.js`](app/js/db.js).

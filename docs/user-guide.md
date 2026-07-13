@@ -31,7 +31,7 @@ The app is fully keypad-driven. There is no touch requirement.
 | **Up / Down** | Move the selection | Move through messages / composer |
 | **Center** | Open chat (or the archived list) | Send (composer) · message options (on a message) · view pinned (on the pinned bar) |
 | **SoftLeft** | Options: info, pin, archive, mute, search, settings | Emoji picker (composer) · cancel reply / cancel edit |
-| **SoftRight** | New chat | Attach menu: photo / file / voice |
+| **SoftRight** | New chat | Attach a file (opens the system picker) |
 | **Back** | Exit app | Back to the list |
 
 In the composer, **SoftLeft** opens the emoji picker — until you're replying or
@@ -46,8 +46,8 @@ Context-specific keys:
   countdown when a timer is set).
 - **Attachment viewer**: Center plays/pauses audio; **SoftLeft** saves the file
   to the phone.
-- **Attach menu** (SoftRight in the composer): choose **Photo**, **File**, or
-  **Voice message**.
+- **Attach a file** (SoftRight in the composer): opens the KaiOS system picker,
+  which itself offers Camera, Recorder, Gallery, Video, and any file.
 - **New chat**: **SoftLeft** opens the **QR scanner**.
 - **Archived list**: its own **SoftLeft** menu (unarchive, mute).
 - **Reaction / emoji picker**: a grid of common emoji; Center picks the
@@ -153,14 +153,10 @@ Press **SoftRight** on the conversation list to open **New chat**. From there:
 
 ## Media and attachments
 
-Press **SoftRight** in the composer to open the **Attach** menu:
-
-- **Photo** — pick from the gallery via the system picker; images are downscaled
-  on-device before upload to keep memory in check.
-- **File** — pick any file; it's read and sent as-is, keeping its filename.
-- **Voice message** — record with the microphone and send as audio. Center
-  sends, Back cancels. If the phone's recording APIs aren't available, the app
-  says so and falls back to the file picker.
+Press **SoftRight** in the composer to **attach a file**. This opens the KaiOS
+system picker, which on real hardware offers Camera, Recorder, Gallery, Video,
+and any file on the device. The chosen file is read and sent as-is, keeping its
+original filename.
 
 Other media behavior:
 
@@ -216,6 +212,12 @@ chat lets you:
 To edit **your own** profile, go to **Settings → Profile → Edit profile** and set
 your display name or "about" text, or open **My QR code** to share your Signal
 link (see [QR codes](#qr-codes)).
+
+The REST API has no way to *read* your current profile back, so the editors are
+pre-filled from what you last set on this device (your name may also be seeded
+from this account's own directory entry when signal-cli provides it). Signal
+requires a name on every profile change, so set your **Name** before or together
+with your **About** — a name-only save won't erase an "about" you set elsewhere.
 
 ## Groups
 

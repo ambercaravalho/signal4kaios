@@ -22,11 +22,8 @@
     "alarms": {
       "description": "Periodically wake to reconnect and catch up on messages"
     },
-    "audio-capture": {
-      "description": "Record voice messages"
-    },
-    "camera": {
-      "description": "Scan another person's Signal QR code"
+    "video-capture": {
+      "description": "Use the camera to scan another person's Signal QR code"
     },
     "device-storage:pictures": {
       "access": "readcreate",
