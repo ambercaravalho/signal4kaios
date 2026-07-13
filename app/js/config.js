@@ -53,6 +53,15 @@
       return read().usernameLink || '';
     },
 
+    /* Optional access token appended to the receive WebSocket URL as a
+       ?p_token=<id>.<secret> query so a reverse proxy can authenticate the
+       /v1/receive path, which a browser WebSocket cannot do with Basic Auth.
+       For Pangolin this is a Resource Access Token (its default query param is
+       p_token). See docs/remote-access.md. */
+    receiveToken: function () {
+      return read().receiveToken || '';
+    },
+
     /* Profile name and about text. The REST API has no GET for your own
        profile, so we remember what was last set here to pre-fill the editors
        and to satisfy the API (which requires a name on every profile update). */
@@ -141,7 +150,8 @@
         number: c.number || '',
         serverUrl: c.serverUrl || '',
         authUser: c.authUser || '',
-        authPass: c.authPass || ''
+        authPass: c.authPass || '',
+        receiveToken: c.receiveToken || ''
       };
       var found = false;
       for (var i = 0; i < c.accounts.length; i++) {
@@ -167,6 +177,7 @@
           c.number = accounts[i].number || '';
           c.authUser = accounts[i].authUser || '';
           c.authPass = accounts[i].authPass || '';
+          c.receiveToken = accounts[i].receiveToken || '';
           write(c);
           return true;
         }

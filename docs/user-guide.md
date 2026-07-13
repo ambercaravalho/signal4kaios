@@ -44,8 +44,8 @@ Context-specific keys:
   pin/unpin (groups only), edit, delete for everyone, retry, see who reacted,
   and an info line (full timestamp + delivery status, plus the disappearing
   countdown when a timer is set).
-- **Attachment viewer**: Center plays/pauses audio; **SoftLeft** saves the file
-  to the phone.
+- **Attachment viewer**: Center plays/pauses audio and video; **SoftLeft** saves
+  the file to the phone.
 - **Attach a file** (SoftRight in the composer): opens the KaiOS system picker,
   which itself offers Camera, Recorder, Gallery, Video, and any file.
 - **New chat**: **SoftLeft** opens the **QR scanner**.
@@ -66,6 +66,9 @@ indicator, a 📌 **pinned** icon, and a 🔇 **muted** icon. Pinned chats sort 
 the top of the list.
 
 The header shows the connection status: `● online`, `connecting…`, or `offline`.
+
+A chat with your own number shows as **Note to Self** with a 📔 notebook icon,
+just like on other Signal clients — handy for jotting things to yourself.
 
 If any chats are archived, an **"📁 Archived chats"** row appears at the bottom;
 open it to see them.
@@ -163,7 +166,10 @@ Other media behavior:
 - **Inline photo thumbnails** in chat. Small images auto-download for inline
   view; all viewed media is cached offline in IndexedDB. A full-screen viewer is
   available from the message options.
-- **Voice messages and audio** play in the viewer.
+- **Voice messages, audio, and video** play in the viewer — open the message's
+  options and choose **Play video** / **Play audio**, then use the center key to
+  play/pause. (Video decoding depends on the device's codecs; H.264 MP4 is the
+  safe bet on KaiOS.)
 - **Save any attachment to the phone** (gallery / music / videos / files via
   DeviceStorage) with SoftLeft in the viewer — this works for any file type.
 - **Real profile photos** for contacts and groups, with a colored-initials
@@ -270,7 +276,8 @@ on screen.
 
 ## Settings
 
-Settings is grouped into sections so it's easy to scan:
+Settings is grouped into sections so it's easy to scan. **SoftLeft** anywhere in
+Settings jumps straight to **My QR code**:
 
 - **Server** — opens **Server & connection**: server URL, your Signal number,
   optional reverse-proxy credentials, plus **Save** and **Test connection**.

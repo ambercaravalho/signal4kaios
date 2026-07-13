@@ -64,11 +64,7 @@
           row.setAttribute('nav-selectable', 'true');
           row.setAttribute('data-id', conv.id);
 
-          var avatarEl = App.util.el('div',
-            'avatar ' + App.util.colorClass(conv.name || conv.id),
-            App.util.initials(conv.name));
-          row.appendChild(avatarEl);
-          App.avatars.apply(avatarEl, conv);
+          row.appendChild(App.avatars.el(conv));
 
           var main = App.util.el('div', 'conv-main');
           var top = App.util.el('div', 'conv-top');
@@ -105,6 +101,7 @@
         var conv = convId && convId !== '__archived'
           ? App.store.conversation(convId) : null;
         if (conv) {
+          items.push({ section: 'This chat' });
           items.push({
             label: conv.type === 'group' ? 'Group info' : 'Contact info',
             hint: conv.name,
@@ -141,6 +138,7 @@
           });
         }
 
+        if (conv) items.push({ section: 'App' });
         items.push({
           label: 'Search messages',
           onSelect: function () {

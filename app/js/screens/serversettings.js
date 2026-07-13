@@ -53,9 +53,14 @@
         'leave blank if not needed');
       var authPassInput = field('Reverse proxy password', cfg.authPass,
         '', 'password');
+      var recvTokenInput = field('Receive token (optional)', cfg.receiveToken,
+        'Pangolin access token: id.secret');
       list.appendChild(App.util.el('div', 'field-note',
-        'Only secures the API. Live updates need the /v1/receive path ' +
-        'exempted from proxy auth — see README.'));
+        'Basic Auth only secures the HTTP API. A browser WebSocket cannot send ' +
+        'it, so live updates need the /v1/receive path authenticated another ' +
+        'way. Paste a Pangolin Resource Access Token here (in <id>.<secret> ' +
+        'form); it is sent as ?p_token. Or exempt the path and lock it down at ' +
+        'the network level — see docs/remote-access.md.'));
 
       var status = App.util.el('div', 'status-line', '');
       list.appendChild(status);
@@ -92,7 +97,8 @@
           serverUrl: url,
           number: n,
           authUser: authUserInput.value.trim(),
-          authPass: authPassInput.value
+          authPass: authPassInput.value,
+          receiveToken: recvTokenInput.value.trim()
         });
         App.config.saveActiveAccount();
         setStatus('Saved.', 'ok');
@@ -114,7 +120,8 @@
           serverUrl: urlInput.value.trim().replace(/\/+$/, ''),
           number: normalizedNumber(),
           authUser: authUserInput.value.trim(),
-          authPass: authPassInput.value
+          authPass: authPassInput.value,
+          receiveToken: recvTokenInput.value.trim()
         });
         setStatus('Testing…');
         App.api.about().then(function (info) {

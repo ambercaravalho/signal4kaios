@@ -70,7 +70,8 @@ Common cases:
   and run **Test connection**. The server must be reachable from the phone and
   running in `json-rpc` mode.
 - **HTTP works but live messages never arrive**, and you configured proxy auth:
-  this is the WebSocket + Basic Auth limitation. See
+  this is the WebSocket + Basic Auth limitation. Fix it by authenticating the
+  `/v1/receive` path with a **Receive token** (or exempting it) — see
   [Remote access](remote-access.md). The app also shows a one-time toast
   ("blocked by the proxy auth") when it detects this pattern.
 - **A specific message/reaction/receipt didn't render.** Look for a

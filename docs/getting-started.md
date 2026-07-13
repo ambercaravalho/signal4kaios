@@ -108,6 +108,11 @@ The first launch opens **Settings** automatically. Fill in:
   spaces, parentheses, and dashes and adds a leading `+` if you forget it.
 - **Reverse proxy username / password** — leave blank unless your server is
   behind HTTP Basic Auth. See [Remote access](remote-access.md).
+- **Receive token** (optional) — a Pangolin Resource Access Token
+  (`<id>.<secret>`) the app appends to the `/v1/receive` WebSocket URL as
+  `?p_token=` so the proxy can authenticate live updates (Basic Auth can't cover
+  a browser WebSocket). Leave blank on a LAN/tunnel. See
+  [Remote access](remote-access.md#authenticating-the-receive-path-with-a-token-recommended).
 
 Then:
 

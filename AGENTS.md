@@ -100,8 +100,11 @@ IndexedDB schema, and event shapes.
   endpoint; history accrues from first use and is pruned to ~500 messages per
   conversation. Don't assume the server can backfill.
 - **WebSocket + Basic Auth is unfixable in the app.** A browser `WebSocket`
-  cannot carry Basic Auth credentials on its handshake. Do not attempt an
-  in-app workaround; the fix is proxy-side (see
+  cannot carry Basic Auth credentials on its handshake, so don't attempt an
+  in-app Basic-Auth workaround. The supported way to authenticate the receive
+  path is the optional **receive token** appended to the URL query
+  (`App.config.receiveToken`), which the proxy validates; otherwise the path is
+  exempted and protected at the network level (see
   [`docs/remote-access.md`](docs/remote-access.md)).
 
 ## Adding a screen

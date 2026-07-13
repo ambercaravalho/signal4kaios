@@ -42,6 +42,27 @@
     return App.config.number();
   }
 
+  var SELF_NAME = 'Note to Self';
+
+  /* True when a key (number or uuid) refers to this account. Used to relabel
+     the self chat as "Note to Self", matching other Signal clients. */
+  function isSelfKey(key) {
+    var num = App.config.number();
+    if (!key || !num) return false;
+    if (key === num) return true;
+    var c = contactsByKey[key];
+    return !!(c && c.number && c.number === num);
+  }
+
+  function isSelfConv(conv) {
+    return !!(conv && conv.type !== 'group' && isSelfKey(conv.id));
+  }
+
+  function directName(key, fallback) {
+    if (isSelfKey(key)) return SELF_NAME;
+    return fallback;
+  }
+
   function msgId(convId, ts, author) {
     return convId + '|' + ts + '|' + author;
   }
@@ -87,13 +108,14 @@
       if (!g) refreshDirectory(); // unknown group: refetch in background
     } else {
       var peer = ev.incoming ? ev.author : ev.convId;
+      var dname = displayName(ev.convId) === ev.convId && ev.incoming && ev.authorName
+        ? ev.authorName
+        : displayName(ev.convId);
       conv = {
         id: ev.convId,
         type: 'direct',
         sendId: ev.convId,
-        name: displayName(ev.convId) === ev.convId && ev.incoming && ev.authorName
-          ? ev.authorName
-          : displayName(ev.convId),
+        name: directName(ev.convId, dname),
         lastTs: 0,
         lastPreview: '',
         unread: 0,
@@ -448,7 +470,7 @@
             changed = true;
           }
         } else {
-          var name = displayName(conv.id);
+          var name = directName(conv.id, displayName(conv.id));
           if (name !== conv.id && name !== conv.name) {
             conv.name = name;
             persistConv(conv);
@@ -746,7 +768,7 @@
         id: convId,
         type: 'direct',
         sendId: convId,
-        name: contact.name || convId,
+        name: directName(convId, contact.name || convId),
         lastTs: 0,
         lastPreview: '',
         unread: 0,
@@ -922,6 +944,7 @@
 
     displayName: displayName,
     contactByKey: contactOf,
+    isSelfConv: isSelfConv,
 
     typing: function (convId) {
       var t = typingMap[convId];

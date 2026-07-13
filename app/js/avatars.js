@@ -70,5 +70,20 @@
     });
   }
 
-  App.avatars = { load: load, apply: apply };
+  /* Build the avatar element for a conversation row/header. The self chat
+     ("Note to Self") gets a notebook glyph instead of initials or a photo,
+     matching other Signal clients; everyone else gets initials that upgrade to
+     the real profile photo when it loads. */
+  function elFor(conv) {
+    if (App.store.isSelfConv(conv)) {
+      return App.util.el('div', 'avatar note-self', '📔');
+    }
+    var avatarEl = App.util.el('div',
+      'avatar ' + App.util.colorClass(conv.name || conv.id),
+      App.util.initials(conv.name));
+    apply(avatarEl, conv);
+    return avatarEl;
+  }
+
+  App.avatars = { load: load, apply: apply, el: elFor };
 })();

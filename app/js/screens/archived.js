@@ -32,11 +32,7 @@
           row.setAttribute('nav-selectable', 'true');
           row.setAttribute('data-id', conv.id);
 
-          var avatarEl = App.util.el('div',
-            'avatar ' + App.util.colorClass(conv.name || conv.id),
-            App.util.initials(conv.name));
-          row.appendChild(avatarEl);
-          App.avatars.apply(avatarEl, conv);
+          row.appendChild(App.avatars.el(conv));
 
           var main = App.util.el('div', 'conv-main');
           var top = App.util.el('div', 'conv-top');

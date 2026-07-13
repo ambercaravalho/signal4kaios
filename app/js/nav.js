@@ -53,7 +53,17 @@
         document.activeElement.tagName === 'TEXTAREA')) {
       document.activeElement.blur();
     }
-    this.ensureVisible(target);
+    // At the ends of the list, snap the scroll container fully to the top or
+    // bottom so non-selectable content there (section headers above the first
+    // item, a status/hint line below the last) becomes visible — otherwise
+    // wrapping back to the first item would leave the header scrolled off.
+    if (index <= 0 && this.scrollEl) {
+      this.scrollEl.scrollTop = 0;
+    } else if (index >= items.length - 1 && this.scrollEl) {
+      this.scrollEl.scrollTop = this.scrollEl.scrollHeight;
+    } else {
+      this.ensureVisible(target);
+    }
     if (this.onChange) this.onChange(target, index);
   };
 

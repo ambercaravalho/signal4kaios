@@ -3,6 +3,8 @@
 
   /* Generic vertical menu screen.
      create({ title, items: [{ label, hint, onSelect }] })
+     An item with a `section` string instead renders a non-selectable heading
+     used to group the items beneath it (App.Nav skips it).
      After onSelect the menu pops, so you return to the previous screen — unless
      onSelect returns 'keep' or pushes another screen onto the stack (detected by
      a growth in router depth), in which case the menu stays underneath it. */
@@ -18,6 +20,10 @@
       el.appendChild(list);
 
       opts.items.forEach(function (item, i) {
+        if (item.section) {
+          list.appendChild(App.util.sectionHeader(item.section));
+          return;
+        }
         var row = App.util.el('div', 'menu-item', item.label);
         row.setAttribute('nav-selectable', 'true');
         row.setAttribute('data-id', String(i));

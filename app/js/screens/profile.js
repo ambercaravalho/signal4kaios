@@ -115,6 +115,9 @@
   }
 
   App.screens.profile = {
+    /* Exposed so other screens (e.g. Settings) can jump straight to the QR. */
+    showQr: showQr,
+
     create: function () {
       var name = currentName();
       var about = currentAbout();

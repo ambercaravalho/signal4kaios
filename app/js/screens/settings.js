@@ -154,17 +154,21 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('', 'Select', '');
+          App.softkeys.set('QR code', 'Select', '');
           nav.select(0);
         },
         resume: function () {
-          App.softkeys.set('', 'Select', '');
+          App.softkeys.set('QR code', 'Select', '');
           refreshToggle(receiptsRow);
           refreshToggle(typingRow);
           refreshToggle(mutedArchiveRow);
           refreshToggle(styledRow);
         },
         onKey: function (evt) {
+          if (evt.key === 'SoftLeft') {
+            App.screens.profile.showQr();
+            return true;
+          }
           if (nav.handleKey(evt)) return true;
           if (evt.key === 'Enter') {
             var sel = nav.selected();

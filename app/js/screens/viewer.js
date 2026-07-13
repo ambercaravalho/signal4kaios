@@ -2,9 +2,9 @@
   'use strict';
 
   /* Full-screen attachment viewer. Downloads via systemXHR, caches the blob
-     in IndexedDB (LRU, ~40 entries). Images display inline, audio plays
-     with the center key, and anything downloaded can be saved to the phone
-     via DeviceStorage (SoftLeft). */
+     in IndexedDB (LRU, ~40 entries). Images display inline, audio and video
+     play in-app with the center key, and anything downloaded can be saved to
+     the phone via DeviceStorage (SoftLeft). */
 
   var CACHE_KEEP = 40;
 
@@ -38,7 +38,7 @@
 
       var objectUrl = null;
       var loadedBlob = null;
-      var audio = null;
+      var media = null; // the <audio> or <video> element, when playable
 
       function type() {
         return (loadedBlob && loadedBlob.type) || att.contentType || '';
@@ -51,7 +51,8 @@
       }
 
       function updateSoftkeys() {
-        var center = type().indexOf('audio/') === 0 ? 'Play' : '';
+        var center = '';
+        if (media) center = media.paused ? 'Play' : 'Pause';
         App.softkeys.set(loadedBlob ? 'Save' : '', center, 'Back');
       }
 
@@ -67,8 +68,19 @@
         } else if (t.indexOf('audio/') === 0) {
           setStatus('♪ ' + (att.filename || 'Voice message') +
             '\nPress the center key to play.');
-          audio = new Audio(objectUrl);
-          audio.onended = function () { setStatus('♪ Finished. Center key replays.'); };
+          media = new Audio(objectUrl);
+          media.onended = function () {
+            setStatus('♪ Finished. Center key replays.');
+            updateSoftkeys();
+          };
+        } else if (t.indexOf('video/') === 0) {
+          status.classList.add('hidden');
+          var video = document.createElement('video');
+          video.setAttribute('playsinline', 'true');
+          video.src = objectUrl;
+          box.appendChild(video);
+          media = video;
+          media.onended = function () { updateSoftkeys(); };
         } else {
           setStatus('Downloaded ' + Math.round(blob.size / 1024) + ' KB (' +
             (t || 'unknown type') + ').\nPress Save to store it on the phone.');
@@ -121,14 +133,16 @@
       }
 
       function togglePlay() {
-        if (!audio) return;
-        if (audio.paused) {
-          audio.play();
-          setStatus('♪ Playing… center key pauses.');
+        if (!media) return;
+        var isAudio = type().indexOf('audio/') === 0;
+        if (media.paused) {
+          media.play();
+          if (isAudio) setStatus('♪ Playing… center key pauses.');
         } else {
-          audio.pause();
-          setStatus('♪ Paused. Center key resumes.');
+          media.pause();
+          if (isAudio) setStatus('♪ Paused. Center key resumes.');
         }
+        updateSoftkeys();
       }
 
       return {
@@ -138,9 +152,9 @@
           load();
         },
         destroy: function () {
-          if (audio) {
-            audio.pause();
-            audio = null;
+          if (media) {
+            media.pause();
+            media = null;
           }
           if (objectUrl) URL.revokeObjectURL(objectUrl);
         },

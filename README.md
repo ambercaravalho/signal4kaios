@@ -57,8 +57,8 @@ The full wiki lives in **[`docs/`](docs/README.md)**:
   install/sideload, first-run config.
 - **[User guide](docs/user-guide.md)** — every feature, plus the keypad
   reference.
-- **[Remote access](docs/remote-access.md)** — reverse proxy + Basic Auth, and
-  the WebSocket caveat.
+- **[Remote access](docs/remote-access.md)** — reverse proxy + Basic Auth, the
+  WebSocket caveat, and authenticating the receive path with a token.
 - **[Architecture](docs/architecture.md)** — data flow, modules, IndexedDB, event
   shapes.
 - **[Development](docs/development.md)** — Gecko 48 constraints, packaging,

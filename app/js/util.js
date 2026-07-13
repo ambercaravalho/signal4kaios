@@ -37,6 +37,26 @@
       pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
   }
 
+  /* Timestamp for a message bubble. A bare time is meaningless once a message
+     is more than a day old, so anything but today also carries the date:
+       today      -> "14:32"
+       yesterday  -> "Yesterday 14:32"
+       this year  -> "10 Jul, 14:32"
+       older      -> "10 Jul 2024, 14:32" */
+  function fmtMsgTime(ts) {
+    if (!ts) return '';
+    var d = new Date(ts);
+    var now = new Date();
+    var time = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    if (d.toDateString() === now.toDateString()) return time;
+    var yest = new Date(now.getTime());
+    yest.setDate(now.getDate() - 1);
+    if (d.toDateString() === yest.toDateString()) return 'Yesterday ' + time;
+    var date = d.getDate() + ' ' + MONTHS[d.getMonth()];
+    if (d.getFullYear() !== now.getFullYear()) date += ' ' + d.getFullYear();
+    return date + ', ' + time;
+  }
+
   /* Compact human duration ("45s", "5m", "1h", "2d", "1w") for countdowns. */
   function fmtDuration(secs) {
     secs = Math.max(0, Math.round(secs));
@@ -309,6 +329,7 @@
     colorClass: colorClass,
     fmtTime: fmtTime,
     fmtTimeFull: fmtTimeFull,
+    fmtMsgTime: fmtMsgTime,
     fmtDuration: fmtDuration,
     expireLabel: expireLabel,
     EXPIRE_OPTIONS: EXPIRE_OPTIONS,

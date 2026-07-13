@@ -156,7 +156,7 @@
         if (rs) node.appendChild(App.util.el('div', 'msg-reactions', rs));
 
         var meta = App.util.el('div', 'msg-meta',
-          (rec.edited ? '(edited) ' : '') + App.util.fmtTime(rec.timestamp));
+          (rec.edited ? '(edited) ' : '') + App.util.fmtMsgTime(rec.timestamp));
         if (!rec.incoming) {
           var t = ticksFor(rec);
           if (t) meta.appendChild(App.util.el('span', t.cls, ' ' + t.text));

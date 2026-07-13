@@ -5,21 +5,24 @@
      Reconnects with exponential backoff + jitter; also reconnects when the
      app returns to the foreground.
 
-     Basic-auth limitation (no client-side fix exists): browsers refuse both
-     custom WebSocket handshake headers and userinfo (user:pass@) in ws://
-     URLs, so this code can never attach an Authorization header to the
-     handshake. An earlier version of this file tried to work around that by
+     Basic-auth limitation: browsers refuse both custom WebSocket handshake
+     headers and userinfo (user:pass@) in ws:// URLs, so this code can never
+     attach an Authorization header to the handshake. An earlier version tried
      priming Gecko's HTTP auth cache with a prior XHR, on the theory that the
-     cache would carry over to the handshake — confirmed by testing against a
-     Traefik-based proxy (Pangolin's "header auth") that it does not. Basic
-     Auth middlewares are typically stateless and check every single request
-     independently, including the WS upgrade request, and there is no
-     browser API that lets a WebSocket client satisfy that. If auth is
-     failing only for the socket while plain HTTP calls succeed, the fix has
-     to happen on the proxy: exempt the /v1/receive path from Basic Auth
-     (e.g. a separate Pangolin resource/rule for it), and if it still needs
-     protection, use a network-level control instead (IP allowlist, or the
-     fact that it's already behind the tunnel) — see the README. */
+     cache would carry over to the handshake — confirmed against a Traefik-based
+     proxy (Pangolin's "header auth") that it does not. Basic Auth middlewares
+     are stateless and check every request independently, including the WS
+     upgrade, and no browser API lets a WebSocket client satisfy that.
+
+     The one thing the WebSocket URL *can* carry is a query string, so the
+     supported way to authenticate the receive path is a query token that the
+     proxy validates itself. For Pangolin this is a Resource Access Token,
+     passed as ?p_token=<id>.<secret> (Pangolin's default query param is
+     p_token). Set it as App.config.receiveToken. Note that Pangolin path
+     rules match the URL path with the query stripped, so a rule can never
+     match on the token — the access-token feature is what reads the query.
+     Alternatively exempt the path and protect it at the network level (IP
+     allowlist / tunnel). See docs/remote-access.md. */
 
   var sock = null;
   var attempts = 0;
@@ -55,7 +58,12 @@
 
     var url = App.config.wsUrl() + '/v1/receive/' +
       encodeURIComponent(App.config.number());
-    App.util.dbg('ws: connecting ' + url);
+    // Optional proxy-auth token for the receive path (a browser WebSocket can't
+    // send Basic Auth). Sent as ?p_token=<id>.<secret>, which Pangolin reads as
+    // a Resource Access Token. Redact it from the debug log — it's a secret.
+    var tok = App.config.receiveToken();
+    if (tok) url += '?p_token=' + encodeURIComponent(tok);
+    App.util.dbg('ws: connecting ' + url.replace(/([?&]p_token=)[^&]*/, '$1***'));
     App.store.setConnection('connecting');
 
     var startedAt = Date.now();
@@ -112,13 +120,20 @@
       App.store.setConnection('closed');
       sock = null;
 
-      // A handshake that's rejected (e.g. a 401 from Basic Auth) closes
-      // immediately without ever opening — that pattern, with Basic Auth
-      // configured, is the one thing the app can actually detect here.
-      if (!opened && App.config.hasBasicAuth() && Date.now() - startedAt < 5000) {
-        App.util.dbg('ws: closed before opening with Basic Auth configured — ' +
-          'the proxy is likely rejecting the handshake (see README: ' +
-          'Basic Auth cannot authenticate a WebSocket in any browser)');
+      // A handshake that's rejected (e.g. a 401 from Basic Auth, or a bad/missing
+      // receive token) closes immediately without ever opening — that pattern,
+      // with proxy auth configured, is the one thing the app can detect here.
+      if (!opened && Date.now() - startedAt < 5000 &&
+        (App.config.hasBasicAuth() || App.config.receiveToken())) {
+        if (App.config.receiveToken()) {
+          App.util.dbg('ws: closed before opening with a receive token set — ' +
+            'the proxy likely rejected it (wrong/expired token, or it is not a ' +
+            'valid <id>.<secret> access token — see docs/remote-access.md)');
+        } else {
+          App.util.dbg('ws: closed before opening with Basic Auth configured — ' +
+            'the proxy is likely rejecting the handshake (see README: ' +
+            'Basic Auth cannot authenticate a WebSocket in any browser)');
+        }
         if (!warnedAuth) {
           warnedAuth = true;
           App.toast('Live updates blocked by the proxy auth — see Debug log');
