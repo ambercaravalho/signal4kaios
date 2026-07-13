@@ -526,17 +526,27 @@
     return Object.assign(base, extras || {});
   }
 
-  /* Delete messages whose disappearing-message deadline has passed and notify
-     open screens. Runs on startup, on a timer, and when a chat is opened. */
+  function emitRemovals(removed) {
+    (removed || []).forEach(function (r) {
+      emit('message-removed', { id: r.id, convId: r.convId, timestamp: r.timestamp });
+    });
+    if (removed && removed.length) emit('conversations');
+    return removed;
+  }
+
+  /* Full-store sweep of expired disappearing messages. Used on startup and on
+     the periodic timer (not on chat open — that uses purgeExpiredConv). */
   function purgeExpired() {
-    return App.db.deleteExpired(Date.now()).then(function (removed) {
-      (removed || []).forEach(function (r) {
-        emit('message-removed', { id: r.id, convId: r.convId, timestamp: r.timestamp });
-      });
-      if (removed && removed.length) emit('conversations');
-      return removed;
-    })['catch'](function (e) {
+    return App.db.deleteExpired(Date.now()).then(emitRemovals)['catch'](function (e) {
       App.util.dbg('purge expired failed: ' + e.message);
+    });
+  }
+
+  /* Conversation-scoped expired sweep: cheap enough to run when a chat opens,
+     so an already-expired message never flashes on screen. */
+  function purgeExpiredConv(convId) {
+    return App.db.deleteExpiredIn(convId, Date.now()).then(emitRemovals)['catch'](function (e) {
+      App.util.dbg('purge conv expired failed: ' + e.message);
     });
   }
 
@@ -878,6 +888,7 @@
 
     setPinned: setPinned,
     purgeExpired: purgeExpired,
+    purgeExpiredConv: purgeExpiredConv,
 
     conversation: function (id) { return convs[id]; },
 

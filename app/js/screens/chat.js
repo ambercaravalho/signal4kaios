@@ -608,7 +608,9 @@
           App.store.markRead(convId);
           onConnection(App.store.connectionState());
           onTyping(convId);
-          App.store.purgeExpired().then(loadInitial, loadInitial);
+          // Sweep only this conversation's expired messages (indexed, bounded)
+          // before rendering, so opening a chat stays fast.
+          App.store.purgeExpiredConv(convId).then(loadInitial, loadInitial);
           updatePinnedBar();
         },
         resume: function () {

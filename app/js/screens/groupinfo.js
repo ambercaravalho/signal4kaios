@@ -48,6 +48,19 @@
         App.router.push(App.screens.chat.create(c.id));
       }
 
+      /* Whether the current account is an admin of this group. Admin ids may be
+         E.164 numbers or UUIDs depending on the signal-cli version, so check
+         our number and (if we know it) our own UUID. Admin-only actions are
+         hidden when this is false since the server would reject them. */
+      function amIAdmin() {
+        var admins = (detail && detail.admins) || [];
+        var me = App.config.number();
+        if (admins.indexOf(me) >= 0) return true;
+        var selfC = App.store.contactByKey(me);
+        if (selfC && selfC.uuid && admins.indexOf(selfC.uuid) >= 0) return true;
+        return false;
+      }
+
       function memberEntries() {
         var me = App.config.number();
         var admins = (detail && detail.admins) || [];
@@ -121,36 +134,42 @@
 
         function memberOptions(entry) {
           var items = [];
+          var canManage = amIAdmin();
           if (!entry.self) {
             items.push({
               label: 'Message',
               onSelect: function () { messageMember(entry); }
             });
           }
-          if (entry.admin) {
-            items.push({
-              label: 'Remove admin',
-              onSelect: function () {
-                act(App.api.removeGroupAdmins(groupId, [entry.id]), 'Removed admin');
-              }
-            });
-          } else {
-            items.push({
-              label: 'Make admin',
-              onSelect: function () {
-                act(App.api.addGroupAdmins(groupId, [entry.id]), 'Made admin');
-              }
-            });
+          // Admin promotion/demotion and removal are admin-only in Signal, so
+          // only offer them when we're actually an admin.
+          if (canManage) {
+            if (entry.admin) {
+              items.push({
+                label: 'Remove admin',
+                onSelect: function () {
+                  act(App.api.removeGroupAdmins(groupId, [entry.id]), 'Removed admin');
+                }
+              });
+            } else {
+              items.push({
+                label: 'Make admin',
+                onSelect: function () {
+                  act(App.api.addGroupAdmins(groupId, [entry.id]), 'Made admin');
+                }
+              });
+            }
+            if (!entry.self) {
+              items.push({
+                label: 'Remove from group',
+                onSelect: function () {
+                  act(App.api.removeGroupMembers(groupId, [entry.id]),
+                    'Removed from group');
+                }
+              });
+            }
           }
-          if (!entry.self) {
-            items.push({
-              label: 'Remove from group',
-              onSelect: function () {
-                act(App.api.removeGroupMembers(groupId, [entry.id]),
-                  'Removed from group');
-              }
-            });
-          }
+          if (!items.length) return; // nothing actionable (e.g. yourself, non-admin)
           App.router.push(App.screens.menu.create({ title: entry.name, items: items }));
         }
 
@@ -176,7 +195,10 @@
         }
 
         function softkeys() {
-          App.softkeys.set('Add', entries.length ? 'Options' : '', '');
+          var sel = mnav.selected();
+          var entry = sel && entries[parseInt(sel.getAttribute('data-id'), 10)];
+          var hasOpts = entry && (!entry.self || amIAdmin());
+          App.softkeys.set('Add', hasOpts ? 'Options' : '', '');
         }
 
         return {
