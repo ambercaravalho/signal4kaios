@@ -1,50 +1,43 @@
 # AGENTS.md
 
 Instructions for AI agents working in this repository. Read this before making
-any change. Deeper documentation lives in [`docs/`](docs/README.md).
+any change. Deeper docs live in [`docs/`](docs/README.md).
 
 ## What this is
 
-**signal4kaios** is a Signal messenger client for **KaiOS 2.5** feature phones.
-It talks to a self-hosted
+**signal4kaios** is a Signal client for **KaiOS 2.5** feature phones. It talks to
+a self-hosted
 [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server
-(in `json-rpc` mode) over HTTP + a receive WebSocket. It is packaged as a
+(in `json-rpc` mode) over HTTP + a receive WebSocket, packaged as a
 **privileged** KaiOS app and sideloaded onto the phone.
 
-There is **no build step, no bundler, no package manager, no dependencies, and
-no `package.json`**. The app is plain files under [`app/`](app/) served as-is.
-Do not introduce npm, transpilers, frameworks, or a build pipeline.
+There is **no build step, bundler, package manager, dependency, or
+`package.json`** — the app is plain files under [`app/`](app/) served as-is.
+Don't introduce npm, transpilers, frameworks, or a build pipeline.
 
 ## Non-negotiable platform constraints
 
-KaiOS 2.5 runs **Gecko 48** (roughly Firefox 48, ES5-era). Code that uses newer
-syntax will silently break on the phone even though it runs fine on your desktop.
-[`tools/package.sh`](tools/package.sh) hard-fails packaging if it detects any of
-these, so treat them as bans:
+KaiOS 2.5 runs **Gecko 48** (~Firefox 48, ES5-era). Newer syntax breaks silently
+on the phone even though it runs on your desktop.
+[`tools/package.sh`](tools/package.sh) hard-fails packaging on these four, so
+treat them as bans:
 
-- No `async` / `await`. Use Promises with `.then()` / `.catch()`.
-- No spread / rest `...` (in any position). Use `Object.assign`, `.apply`, etc.
+- No `async` / `await` — use Promises with `.then()` / `.catch()`.
+- No spread / rest `...` (anywhere) — use `Object.assign`, `.apply`, etc.
 - No `String.prototype.padStart` / `padEnd` (unreliable on Gecko 48).
-- No CSS `display: grid`. Use flexbox.
+- No CSS `display: grid` — use flexbox.
 
-Additional bans that the grep gate does **not** catch but that will break the
-privileged-app CSP or the runtime — you must uphold these manually:
+These the gate does **not** catch but you must still uphold:
 
-- No ES modules (`import` / `export`). Every file is a plain script.
-- No arrow functions, template literals, `let`/`const`, classes, generators, or
-  other post-ES5 syntax. Use `var` and `function`.
-- No inline event handlers (`onclick="..."`) and no inline `<script>` / `<style>`
-  blocks. The privileged CSP forbids them. Keep all JS and CSS in local files.
-- Bind events in JS with `addEventListener`.
+- No ES modules (`import` / `export`) — every file is a plain script.
+- No arrow functions, template literals, `let`/`const`, classes, or generators —
+  use `var` and `function`.
+- No inline event handlers or inline `<script>` / `<style>` (the privileged CSP
+  forbids them). Keep JS/CSS in local files; bind events with `addEventListener`.
 
-When in doubt, run `sh tools/package.sh` — if it passes the syntax gate you are
-clear on the automated checks.
-
-The gate scans only first-party code (`app/js`, `app/css`). Vendored third-party
-libraries live in `app/vendor/` (outside the gate) — that's where a prebuilt
-file that can't meet the style rules (e.g. the `jsQR` QR decoder) belongs. Keep
-your own code in `app/js` so it stays gated; don't move first-party code into
-`vendor/` to dodge the checks.
+When in doubt, run `sh tools/package.sh`. The gate scans only first-party code
+(`app/js`, `app/css`); vendored third-party libraries go in `app/vendor/`
+(outside the gate). Don't move first-party code into `vendor/` to dodge checks.
 
 ## Architecture at a glance
 
@@ -54,92 +47,81 @@ ws.js ──▶ normalize.js ──▶ store.js ──▶ IndexedDB (db.js)
                               └──▶ emits events ──▶ js/screens/* patch the DOM
 ```
 
-- Receive path: [`ws.js`](app/js/ws.js) gets raw frames →
-  [`normalize.js`](app/js/normalize.js) turns them into typed events →
-  [`store.js`](app/js/store.js) applies them, persists via
-  [`db.js`](app/js/db.js), and emits events → screens re-render.
-- Send path: screens call `App.store.send*` → optimistic record →
+- Receive: [`ws.js`](app/js/ws.js) → [`normalize.js`](app/js/normalize.js)
+  (typed events) → [`store.js`](app/js/store.js) (apply, persist via
+  [`db.js`](app/js/db.js), emit) → screens re-render.
+- Send: screens call `App.store.send*` → optimistic record →
   [`api.js`](app/js/api.js) → [`http.js`](app/js/http.js) (mozSystem XHR).
 
-See [`docs/architecture.md`](docs/architecture.md) for the full module reference,
+See [`docs/architecture.md`](docs/architecture.md) for the module reference,
 IndexedDB schema, and event shapes.
 
 ## Conventions
 
 - **Module shape**: every file is an IIFE (`(function () { 'use strict'; ... })();`)
-  that attaches its public surface to the global `App` object (e.g. `App.store`,
-  `App.util`). `App` is created in [`polyfills.js`](app/js/polyfills.js).
-- **No implicit globals**: only reach other modules through `App.*`.
-- **Load order is manual**: scripts are listed in
-  [`app/index.html`](app/index.html) and load in order. A module must appear
-  after everything it uses at load time. When you add a new `js/` file (including
-  a new screen), add a `<script>` tag in the right place in `index.html`.
-- **DOM**: build nodes with `App.util.el(tag, className, text)`; do not use
+  attaching its public surface to the global `App` (e.g. `App.store`, `App.util`),
+  created in [`polyfills.js`](app/js/polyfills.js).
+- **No implicit globals**: reach other modules only through `App.*`.
+- **Load order is manual**: scripts load in the order listed in
+  [`app/index.html`](app/index.html); a module must appear after everything it
+  uses. Add a `<script>` tag for every new `js/` file.
+- **DOM**: build nodes with `App.util.el(tag, className, text)`; don't use
   `innerHTML` with untrusted content.
-- **Diagnostics**: log to the in-app debug ring buffer with
-  `App.util.dbg(msg, data)` (viewable in Settings → Debug log). This is the
-  primary debugging tool since there is no console on the phone.
-- **User-facing messages**: use `App.toast(msg)` for transient notices.
-- **Time / formatting helpers** live in [`util.js`](app/js/util.js)
-  (`fmtTime`, `initials`, `colorClass`, `debounce`, ...).
+- **Diagnostics**: log to the in-app ring buffer with `App.util.dbg(msg, data)`
+  (Settings → Debug log) — the primary debugging tool, since there's no console
+  on the phone. Use `App.toast(msg)` for user-facing notices.
 - **Config** (server URL, number, proxy auth) is in `localStorage` via
-  [`config.js`](app/js/config.js). All persisted message/contact data is in
-  IndexedDB via [`db.js`](app/js/db.js).
+  [`config.js`](app/js/config.js); all message/contact data is in IndexedDB via
+  [`db.js`](app/js/db.js).
 
 ## Rules for specific areas
 
-- **Envelope parsing belongs only in `normalize.js`.** signal-cli envelope
-  shapes vary across versions, so all parsing is centralized there. Unknown or
-  unexpected shapes must be logged with `App.util.dbg` and skipped — **never let
-  a malformed frame throw or crash the app.**
-- **Message mutations must be serialized.** Read-modify-write updates to stored
-  messages (reactions, receipts, edits, deletes) go through `enqueueMutation` in
+- **Envelope parsing belongs only in `normalize.js`.** signal-cli shapes vary
+  across versions, so all parsing is centralized there. Log unknown shapes with
+  `App.util.dbg` and skip them — **never let a malformed frame throw.**
+- **Message mutations must be serialized.** Read-modify-write updates (reactions,
+  receipts, edits, deletes) go through `enqueueMutation` in
   [`store.js`](app/js/store.js) so concurrent frames can't clobber each other.
-  Follow that pattern for any new message mutation.
 - **IndexedDB is the only message history.** The REST API has no history
   endpoint; history accrues from first use and is pruned to ~500 messages per
   conversation. Don't assume the server can backfill.
-- **WebSocket + Basic Auth is unfixable in the app.** A browser `WebSocket`
-  cannot carry Basic Auth credentials on its handshake, so don't attempt an
-  in-app Basic-Auth workaround. The supported way to authenticate the receive
-  path is the optional **receive token** appended to the URL query
-  (`App.config.receiveToken`), which the proxy validates; otherwise the path is
-  exempted and protected at the network level (see
+- **WebSocket + Basic Auth is unfixable in the app.** A browser `WebSocket` can't
+  carry Basic Auth on its handshake, so don't attempt an in-app workaround. The
+  supported fix is the optional receive token appended to the URL query
+  (`App.config.receiveToken`), validated by the proxy; otherwise exempt the path
+  and protect it at the network level (see
   [`docs/remote-access.md`](docs/remote-access.md)).
 
 ## Adding a screen
 
-Screens are objects returned by a `create()` factory, registered on
-`App.screens.<name>`, and driven by the router
-([`router.js`](app/js/router.js)). The contract:
+Screens are objects from a `create()` factory, registered on
+`App.screens.<name>` and driven by [`router.js`](app/js/router.js). Contract:
 
 ```js
 { el, enter(), resume(), pause(), destroy(), onKey(evt) /* -> true if handled */ }
 ```
 
-- D-pad navigation: mark focusable nodes with the `nav-selectable` attribute and
-  use an `App.Nav` instance ([`nav.js`](app/js/nav.js)); it manages the
-  `nav-selected` state and scrolling.
-- Softkey labels: set them with `App.softkeys.set(left, center, right)`
+- D-pad nav: mark focusable nodes `nav-selectable` and use an `App.Nav` instance
+  ([`nav.js`](app/js/nav.js)); it manages `nav-selected` and scrolling.
+- Softkeys: `App.softkeys.set(left, center, right)`
   ([`softkeys.js`](app/js/softkeys.js)).
-- `onKey` returns `true` when it handles a key; unhandled `Backspace` pops the
-  screen stack (KaiOS's Back key sends Backspace).
-- The simplest reference is [`screens/menu.js`](app/js/screens/menu.js).
-- Remember to add the new file's `<script>` tag to `index.html`.
+- `onKey` returns `true` when handled; unhandled `Backspace` pops the stack
+  (KaiOS's Back sends Backspace).
+- Simplest reference: [`screens/menu.js`](app/js/screens/menu.js). Add the new
+  file's `<script>` tag to `index.html`.
 
 ## Definition of done
 
-- Run `sh tools/package.sh`. It gates on Gecko-48 syntax and produces
-  `dist/signal4kaios.zip`. Packaging must pass.
-- Prefer verifying behavior in the KaiOS 2.5 simulator (kaiosrt via WebIDE)
-  before trusting a change; a desktop browser does not enforce the privileged CSP
-  and `http.js` falls back to a plain XHR there (use a CORS proxy — see
-  [`docs/development.md`](docs/development.md)).
-- Re-sideload after any change to `manifest.webapp` permissions.
+- Run `sh tools/package.sh` — it must pass the Gecko-48 gate and produce
+  `dist/signal4kaios.zip`.
+- Prefer verifying in the KaiOS 2.5 simulator (kaiosrt via WebIDE); the desktop
+  doesn't enforce the privileged CSP and `http.js` falls back to plain XHR there
+  (use a CORS proxy — see [`docs/development.md`](docs/development.md)).
+- Re-sideload after any `manifest.webapp` permission change.
 
 ## Security baseline
 
-The workspace enterprise product-security rules still apply: no hardcoded
-secrets, treat all external input (including WebSocket frames and API responses)
-as untrusted, and never log credentials. Proxy auth credentials live in config
-and must never be logged via `App.util.dbg`.
+The enterprise product-security rules apply: no hardcoded secrets, treat all
+external input (WebSocket frames, API responses) as untrusted, and never log
+credentials. Proxy auth credentials live in config and must never be logged via
+`App.util.dbg`.

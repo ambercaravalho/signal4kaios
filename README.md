@@ -1,71 +1,54 @@
 # signal4kaios
 
 Real Signal, on a phone with actual buttons. **signal4kaios** is a Signal
-messenger client for **KaiOS 2.5** feature phones, powered by a self-hosted
+messenger client for **KaiOS 2.5** feature phones, backed by a self-hosted
 [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server on
 your network.
 
-Written in vanilla JavaScript with **zero build step**, and packaged as a
-**privileged** KaiOS app — required for `systemXHR`, which lets the app talk to
-your server across origins without CORS.
+It's vanilla JavaScript with **no build step**, packaged as a **privileged**
+KaiOS app (privilege is what grants `systemXHR`, so the app can reach your server
+cross-origin without CORS).
 
 ## Highlights
 
-- Real-time 1:1 and group chat (WebSocket receive, `json-rpc` mode) with
-  reactions (a full emoji picker, plus a "who reacted" view), replies, edits,
-  read receipts, and typing indicators — the last two switchable off if you'd
-  rather stay mysterious.
-- **Disappearing messages** — set the timer per chat, see the countdown in a
-  message's info, and watch messages delete themselves when they expire.
-- **Pinned messages** in groups (synced through the group pin endpoint) and
-  **pinned conversations** that float to the top of your list.
-- **Attachments**: attach any file through the KaiOS system picker (which itself
-  covers camera, recorder, gallery, and video) — all cached offline in IndexedDB
-  and saveable to the phone.
-- **Full group management**: add/remove members, promote or demote admins, set
-  who can add members / edit the group / send messages, manage the invite link,
-  and block a group.
-- **QR codes**: share your Signal profile as a scannable code, and scan someone
-  else's (best-effort with the camera).
-- Find people fast: search-as-you-type in New chat, or start one by phone number
-  or Signal username (with a "is this even registered?" check).
-- Manage the little things: edit your own profile, rename contacts, verify
-  safety numbers, and review who you've blocked.
-- Juggle more than one number with multiple accounts, each with its own local
-  history.
-- Jump straight from a search result to that message in the thread.
-- Archived and muted chats (with an optional "keep muted chats archived"),
-  unread badges, local message search, and a reconnect that keeps trying (and
-  wakes up) so you miss as little as possible.
-- Fully keypad-driven, tuned for a 240×320 screen.
+- Real-time 1:1 and group chat over the receive WebSocket (`json-rpc` mode):
+  reactions (full emoji picker + a "who reacted" view), replies, edits, read
+  receipts, and typing indicators (the last two toggleable).
+- **Disappearing messages**: set the timer per chat, see a message's countdown,
+  and messages delete themselves when they expire.
+- **Pinning**: synced pinned messages in groups, plus local pinned conversations
+  that float to the top of the list.
+- **Attachments** through the KaiOS system picker (camera, recorder, gallery,
+  video, or any file), cached offline and saveable to the phone.
+- **Group management**: members, admins, per-action permissions, invite link,
+  and group blocking.
+- **QR codes**: show your Signal profile code and scan someone else's.
+- **Finding people**: search-as-you-type, or start by number/username with a
+  registration check.
+- Multiple accounts, archived/muted chats, unread badges, local search, and a
+  persistent reconnect. Fully keypad-driven for a 240x320 screen.
 
 ## Quickstart
 
 1. Run a **signal-cli-rest-api** server in `json-rpc` mode, registered/linked to
-   your Signal account and reachable from the phone.
+   your account and reachable from the phone.
 2. Package the app: `sh tools/package.sh` (or point WebIDE at `app/`).
-3. Sideload it onto the phone and, on first run, enter your server URL and Signal
-   number.
+3. Sideload it and, on first run, enter your server URL and Signal number.
 
-Full steps are in **[Getting started](docs/getting-started.md)**.
+Full steps: **[Getting started](docs/getting-started.md)**.
 
 ## Documentation
 
-The full wiki lives in **[`docs/`](docs/README.md)**:
+The wiki lives in **[`docs/`](docs/README.md)**:
 
-- **[Getting started](docs/getting-started.md)** — requirements, server setup,
-  install/sideload, first-run config.
-- **[User guide](docs/user-guide.md)** — every feature, plus the keypad
-  reference.
-- **[Remote access](docs/remote-access.md)** — reverse proxy + Basic Auth, the
-  WebSocket caveat, and authenticating the receive path with a token.
-- **[Architecture](docs/architecture.md)** — data flow, modules, IndexedDB, event
-  shapes.
-- **[Development](docs/development.md)** — Gecko 48 constraints, packaging,
-  desktop dev, adding a screen.
+- **[Getting started](docs/getting-started.md)** — server setup, install, first-run config.
+- **[User guide](docs/user-guide.md)** — every feature and the keypad reference.
+- **[Remote access](docs/remote-access.md)** — reverse proxy, Basic Auth, and the WebSocket caveat.
+- **[Architecture](docs/architecture.md)** — data flow, modules, IndexedDB, event shapes.
+- **[Development](docs/development.md)** — Gecko 48 constraints, packaging, adding a screen.
 
-Contributing or using an AI agent on this repo? Read **[AGENTS.md](AGENTS.md)**
-for the condensed rules (Gecko 48 bans, conventions, definition of done).
+Contributing (or pointing an AI agent at this repo)? Start with
+**[AGENTS.md](AGENTS.md)**.
 
 ## License
 
