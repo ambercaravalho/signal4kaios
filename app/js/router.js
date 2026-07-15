@@ -32,6 +32,7 @@
     if (cur) {
       if (cur.pause) cur.pause();
       cur.el.classList.add('hidden');
+      if (App.marquee) App.marquee.stop(cur.el.querySelector('.hdr-title'));
     }
     stack.push(screen);
     container.appendChild(screen.el);

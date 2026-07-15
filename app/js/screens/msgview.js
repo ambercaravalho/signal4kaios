@@ -31,11 +31,11 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set({ icon: 'back' }, '', '');
+          App.softkeys.set('Back', '', '');
           pane.scrollTop = 0;
         },
         resume: function () {
-          App.softkeys.set({ icon: 'back' }, '', '');
+          App.softkeys.set('Back', '', '');
         },
         onKey: function (evt) {
           if (evt.key === 'ArrowDown') {

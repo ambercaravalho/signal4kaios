@@ -7,7 +7,7 @@
 
      Any of the three labels is normally text, but may be an icon token for
      universally-recognized glyphs (per the KaiOS guide): pass an object
-     { icon: 'back' | 'play' | 'pause' } instead of a string. */
+     { icon: 'play' | 'pause' } instead of a string. */
 
   function applyKey(id, val) {
     var node = document.getElementById(id);

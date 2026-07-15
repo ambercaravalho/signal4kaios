@@ -26,7 +26,20 @@
       var list = App.util.el('div', 'list');
       el.appendChild(list);
 
-      var nav = new App.Nav(el, { scrollEl: list });
+      var nav = new App.Nav(el, { scrollEl: list, onChange: marqueeSelected });
+
+      // iPod-style scroll of the highlighted row's name when it's too long to
+      // fit. Only the selected row scrolls; the previous one is reset.
+      var rowMarquee = null;
+      function marqueeSelected() {
+        if (rowMarquee) { App.marquee.stop(rowMarquee); rowMarquee = null; }
+        var sel = nav.selected();
+        var name = sel && sel.querySelector ? sel.querySelector('.conv-name') : null;
+        if (name) {
+          App.marquee.apply(name);
+          rowMarquee = name;
+        }
+      }
 
       function archivedTab() { return tabs.index() === 1; }
 
@@ -97,6 +110,7 @@
           archived.forEach(function (conv) { list.appendChild(convRow(conv)); });
           nav.refresh();
           updateSoftkeys();
+          marqueeSelected();
           return;
         }
 
@@ -119,6 +133,7 @@
         convs.forEach(function (conv) { list.appendChild(convRow(conv)); });
         nav.refresh();
         updateSoftkeys();
+        marqueeSelected();
       }
 
       function selectedConv() {
@@ -189,6 +204,13 @@
         }
 
         items.push({
+          label: 'Mark all as read',
+          onSelect: function () {
+            App.store.markAllRead();
+            App.toast('Marked all as read');
+          }
+        });
+        items.push({
           label: 'Search messages',
           onSelect: function () {
             App.router.replace(App.screens.search.create());
@@ -241,6 +263,7 @@
           clearTimeout(renderTick);
           renderTick = null;
         }
+        if (rowMarquee) { App.marquee.stop(rowMarquee); rowMarquee = null; }
         App.store.off('conversations', onConvsChanged);
         App.store.off('typing', onTyping);
         App.store.off('connection', onConnection);
@@ -260,7 +283,10 @@
           setConn(App.store.connectionState());
           render();
         },
-        pause: function () { paused = true; },
+        pause: function () {
+          paused = true;
+          if (rowMarquee) { App.marquee.stop(rowMarquee); rowMarquee = null; }
+        },
         destroy: unsubscribe,
         onKey: function (evt) {
           if (tabs.handleKey(evt)) return true;

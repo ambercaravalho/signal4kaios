@@ -157,12 +157,12 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set({ icon: 'back' }, 'Open', 'Scan');
+          App.softkeys.set('Back', 'Open', 'Scan');
           render();
           nav.selectById('__query');
         },
         resume: function () {
-          App.softkeys.set({ icon: 'back' }, 'Open', 'Scan');
+          App.softkeys.set('Back', 'Open', 'Scan');
           render();
         },
         onKey: function (evt) {

@@ -72,7 +72,7 @@
           'this list is read-only. You can block a group from its Group info.'));
         nav.refresh();
         nav.select(0);
-        App.softkeys.set({ icon: 'back' }, '', '');
+        App.softkeys.set('Back', '', '');
       }
 
       function load() {
@@ -93,11 +93,11 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set({ icon: 'back' }, '', '');
+          App.softkeys.set('Back', '', '');
           load();
         },
         resume: function () {
-          App.softkeys.set({ icon: 'back' }, '', '');
+          App.softkeys.set('Back', '', '');
         },
         onKey: function (evt) {
           if (nav.handleKey(evt)) return true;

@@ -760,6 +760,15 @@
     if (hadUnread) emit('conversations');
   }
 
+  /* Mark every conversation on the device as read: clears unread markers and,
+     when read receipts are enabled, sends them (bounded per conversation by
+     markRead). Only touches conversations that actually have unread messages. */
+  function markAllRead() {
+    Object.keys(convs).forEach(function (id) {
+      if (convs[id] && convs[id].unread > 0) markRead(id);
+    });
+  }
+
   function openConversationWith(contact) {
     var convId = contact.number || contact.uuid;
     var conv = convs[convId];
@@ -848,6 +857,7 @@
     deleteForEveryone: deleteForEveryone,
     attachmentLabel: attachmentLabel,
     markRead: markRead,
+    markAllRead: markAllRead,
     openConversationWith: openConversationWith,
     openGroupConversation: openGroupConversation,
 

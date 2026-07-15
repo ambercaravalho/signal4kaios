@@ -53,7 +53,7 @@
       function updateSoftkeys() {
         var center = '';
         if (media) center = { icon: media.paused ? 'play' : 'pause' };
-        App.softkeys.set({ icon: 'back' }, center, loadedBlob ? 'Save' : '');
+        App.softkeys.set('Back', center, loadedBlob ? 'Save' : '');
       }
 
       function show(blob) {

@@ -180,7 +180,7 @@
             App.router.pop();
             return;
           }
-          App.softkeys.set({ icon: 'back' }, '', '');
+          App.softkeys.set('Back', '', '');
           if (liveSupported()) startLive();
           else snapFallback();
         },

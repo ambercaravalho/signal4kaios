@@ -46,11 +46,11 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set({ icon: 'back' }, '', link ? 'Open link' : '');
+          App.softkeys.set('Back', '', link ? 'Open link' : '');
           render();
         },
         resume: function () {
-          App.softkeys.set({ icon: 'back' }, '', link ? 'Open link' : '');
+          App.softkeys.set('Back', '', link ? 'Open link' : '');
         },
         onKey: function (evt) {
           if (evt.key === 'SoftRight' && link) {

@@ -370,6 +370,10 @@ html, body {
   text-overflow: ellipsis;
 }
 
+.conv-name.marquee {
+  text-overflow: clip;
+}
+
 .conv-time {
   flex: none;
   font-size: 12px;
@@ -1019,11 +1023,6 @@ html, body {
 
 #sk-center.sk-icon-pause::before {
   content: '\275A\275A';
-}
-
-/* Back affordance on the left key (KaiOS: leftwards arrow). */
-.sk-icon-back::before {
-  content: '\2190';
 }
 
 /* ---- Overlay layer (dialogs + in-app notices, above screen content) ---- */

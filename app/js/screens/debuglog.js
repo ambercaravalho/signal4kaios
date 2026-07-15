@@ -20,7 +20,7 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set({ icon: 'back' }, '', 'Refresh');
+          App.softkeys.set('Back', '', 'Refresh');
           render();
         },
         onKey: function (evt) {

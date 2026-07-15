@@ -91,7 +91,7 @@
         else if (sel === loadMore) center = 'Load';
         else if (sel === pinnedBar) center = 'View pinned';
         else center = 'Options';
-        var back = (editTarget || pendingQuote) ? 'Cancel' : { icon: 'back' };
+        var back = (editTarget || pendingQuote) ? 'Cancel' : 'Back';
         App.softkeys.set(back, center, 'Menu');
       }
 

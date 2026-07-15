@@ -54,7 +54,7 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set({ icon: 'back' }, 'React', '');
+          App.softkeys.set('Back', 'React', '');
           nav.select(0);
         },
         onKey: function (evt) {

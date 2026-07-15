@@ -181,11 +181,11 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set({ icon: 'back' }, 'Select', 'QR code');
+          App.softkeys.set('Back', 'Select', 'QR code');
           nav.select(0);
         },
         resume: function () {
-          App.softkeys.set({ icon: 'back' }, 'Select', 'QR code');
+          App.softkeys.set('Back', 'Select', 'QR code');
           refreshThemeRow();
           syncToggle(receiptsRow);
           syncToggle(typingRow);
