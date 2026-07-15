@@ -60,7 +60,8 @@
       }
 
       function softkeys() {
-        App.softkeys.set(multiple ? 'Done' : '', multiple ? 'Toggle' : 'Select', '');
+        App.softkeys.set(multiple ? 'Done' : { icon: 'back' },
+          multiple ? 'Toggle' : 'Select', '');
       }
 
       App.router.push({

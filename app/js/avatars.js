@@ -7,6 +7,7 @@
      avatar) memoizes null so we don't hammer the server. */
 
   var memo = {}; // convId -> Promise<objectURL|null>
+  var resolvedUrl = {}; // convId -> objectURL|null once known, for sync reuse
 
   /* Reject anything that isn't a usable image so a proxy/error body
      (e.g. an HTML 404 page returned with a non-zero length) never gets
@@ -47,6 +48,11 @@
       });
     })['catch'](function () {
       return null;
+    }).then(function (url) {
+      // Remember the outcome so a list re-render can paint the photo (or skip
+      // it) synchronously instead of flashing initials while the promise runs.
+      resolvedUrl[conv.id] = url || null;
+      return url;
     });
     return memo[conv.id];
   }
@@ -81,7 +87,19 @@
     var avatarEl = App.util.el('div',
       'avatar ' + App.util.colorClass(conv.name || conv.id),
       App.util.initials(conv.name));
-    apply(avatarEl, conv);
+    var known = resolvedUrl[conv.id];
+    if (known) {
+      // Photo already loaded this session: attach it immediately so a
+      // re-render reuses it without the initials-then-photo flash.
+      var img = App.util.el('img', 'avatar-img');
+      img.src = known;
+      avatarEl.textContent = '';
+      avatarEl.appendChild(img);
+    } else if (known === undefined) {
+      // Not resolved yet: load and swap in when ready. (null means "resolved,
+      // no avatar" — leave the initials and don't refetch.)
+      apply(avatarEl, conv);
+    }
     return avatarEl;
   }
 

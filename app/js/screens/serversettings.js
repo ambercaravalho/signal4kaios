@@ -141,7 +141,9 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('', 'Select', '');
+          // First-run is the root screen (nothing to go back to); otherwise the
+          // left key is the cohesive Back.
+          App.softkeys.set(opts.firstRun ? '' : { icon: 'back' }, 'Select', '');
           if (opts.firstRun) {
             setStatus('Welcome! Enter your signal-cli-rest-api server URL and number.');
           } else if (opts.addAccount) {
@@ -150,7 +152,7 @@
           nav.select(0);
         },
         resume: function () {
-          App.softkeys.set('', 'Select', '');
+          App.softkeys.set(opts.firstRun ? '' : { icon: 'back' }, 'Select', '');
         },
         onKey: function (evt) {
           var active = document.activeElement;

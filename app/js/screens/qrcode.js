@@ -46,19 +46,15 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set(link ? 'Open link' : '', '', 'Back');
+          App.softkeys.set({ icon: 'back' }, '', link ? 'Open link' : '');
           render();
         },
         resume: function () {
-          App.softkeys.set(link ? 'Open link' : '', '', 'Back');
+          App.softkeys.set({ icon: 'back' }, '', link ? 'Open link' : '');
         },
         onKey: function (evt) {
-          if (evt.key === 'SoftLeft' && link) {
+          if (evt.key === 'SoftRight' && link) {
             App.util.openUrl(link);
-            return true;
-          }
-          if (evt.key === 'SoftRight') {
-            App.router.pop();
             return true;
           }
           return false;

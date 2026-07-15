@@ -992,8 +992,8 @@ html, body {
   font-size: 16px;
 }
 
-/* Center-key icon (guide allows universally-recognized glyphs like play/pause). */
-#sk-center.sk-icon::before {
+/* Softkey icons (guide allows universally-recognized glyphs like back/play). */
+.sk-icon::before {
   font-size: 18px;
 }
 
@@ -1003,6 +1003,11 @@ html, body {
 
 #sk-center.sk-icon-pause::before {
   content: '\275A\275A';
+}
+
+/* Back affordance on the left key (KaiOS: leftwards arrow). */
+.sk-icon-back::before {
+  content: '\2190';
 }
 
 /* ---- Overlay layer (dialogs + in-app notices, above screen content) ---- */

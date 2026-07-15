@@ -95,11 +95,11 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('', 'Select', '');
+          App.softkeys.set({ icon: 'back' }, 'Select', '');
           load();
         },
         resume: function () {
-          App.softkeys.set('', 'Select', '');
+          App.softkeys.set({ icon: 'back' }, 'Select', '');
         },
         onKey: function (evt) {
           if (nav.handleKey(evt)) return true;

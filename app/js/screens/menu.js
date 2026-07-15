@@ -36,11 +36,11 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('', 'Select', '');
+          App.softkeys.set({ icon: 'back' }, 'Select', '');
           nav.select(0);
         },
         resume: function () {
-          App.softkeys.set('', 'Select', '');
+          App.softkeys.set({ icon: 'back' }, 'Select', '');
         },
         onKey: function (evt) {
           if (nav.handleKey(evt)) return true;

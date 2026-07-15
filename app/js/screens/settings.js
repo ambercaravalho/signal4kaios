@@ -181,11 +181,11 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('QR code', 'Select', '');
+          App.softkeys.set({ icon: 'back' }, 'Select', 'QR code');
           nav.select(0);
         },
         resume: function () {
-          App.softkeys.set('QR code', 'Select', '');
+          App.softkeys.set({ icon: 'back' }, 'Select', 'QR code');
           refreshThemeRow();
           syncToggle(receiptsRow);
           syncToggle(typingRow);
@@ -193,7 +193,7 @@
           syncToggle(styledRow);
         },
         onKey: function (evt) {
-          if (evt.key === 'SoftLeft') {
+          if (evt.key === 'SoftRight') {
             App.screens.profile.showQr();
             return true;
           }

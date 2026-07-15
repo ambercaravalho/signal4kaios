@@ -28,7 +28,7 @@
 
       function updateSoftkeys() {
         var sel = nav.selected();
-        App.softkeys.set('', sel === input ? 'Search' : 'Open', '');
+        App.softkeys.set({ icon: 'back' }, sel === input ? 'Search' : 'Open', '');
       }
 
       function renderResults() {

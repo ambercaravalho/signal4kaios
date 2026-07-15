@@ -203,13 +203,22 @@
 
       var paused = false;
       var dirty = false;
+      var renderTick = null;
 
+      /* Coalesce bursts of store events (a new message often emits
+         'conversations' plus 'typing' plus a receipt in the same tick) into a
+         single render, so the list — and its avatars — rebuild once, not
+         several times in a row. */
       function renderIfVisible() {
         if (paused) {
           dirty = true;
           return;
         }
-        render();
+        if (renderTick) return;
+        renderTick = setTimeout(function () {
+          renderTick = null;
+          if (!paused) render();
+        }, 0);
       }
 
       function onConvsChanged() { renderIfVisible(); }
@@ -223,6 +232,10 @@
       }
 
       function unsubscribe() {
+        if (renderTick) {
+          clearTimeout(renderTick);
+          renderTick = null;
+        }
         App.store.off('conversations', onConvsChanged);
         App.store.off('typing', onTyping);
         App.store.off('connection', onConnection);

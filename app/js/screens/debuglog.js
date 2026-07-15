@@ -20,16 +20,13 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('Refresh', '', 'Back');
+          App.softkeys.set({ icon: 'back' }, '', 'Refresh');
           render();
         },
         onKey: function (evt) {
           switch (evt.key) {
-            case 'SoftLeft':
-              render();
-              return true;
             case 'SoftRight':
-              App.router.pop();
+              render();
               return true;
             case 'ArrowUp':
               pre.scrollTop -= 40;

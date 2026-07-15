@@ -5,22 +5,26 @@
      Key handling itself lives in the router, which dispatches to the
      active screen.
 
-     The center label is normally text, but may be an icon token for
+     Any of the three labels is normally text, but may be an icon token for
      universally-recognized glyphs (per the KaiOS guide): pass an object
-     { icon: 'play' } or { icon: 'pause' } instead of a string. */
+     { icon: 'back' | 'play' | 'pause' } instead of a string. */
+
+  function applyKey(id, val) {
+    var node = document.getElementById(id);
+    if (val && typeof val === 'object' && val.icon) {
+      node.textContent = '';
+      node.className = 'sk-icon sk-icon-' + val.icon;
+    } else {
+      node.className = '';
+      node.textContent = val || '';
+    }
+  }
 
   App.softkeys = {
     set: function (left, center, right) {
-      document.getElementById('sk-left').textContent = left || '';
-      var c = document.getElementById('sk-center');
-      c.className = '';
-      if (center && typeof center === 'object' && center.icon) {
-        c.textContent = '';
-        c.className = 'sk-icon sk-icon-' + center.icon;
-      } else {
-        c.textContent = center || '';
-      }
-      document.getElementById('sk-right').textContent = right || '';
+      applyKey('sk-left', left);
+      applyKey('sk-center', center);
+      applyKey('sk-right', right);
     }
   };
 })();

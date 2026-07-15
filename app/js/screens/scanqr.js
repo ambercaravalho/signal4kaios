@@ -180,13 +180,13 @@
             App.router.pop();
             return;
           }
-          App.softkeys.set('', '', 'Cancel');
+          App.softkeys.set({ icon: 'back' }, '', '');
           if (liveSupported()) startLive();
           else snapFallback();
         },
         destroy: cleanup,
         onKey: function (evt) {
-          if (evt.key === 'SoftRight' || evt.key === 'Backspace') {
+          if (evt.key === 'SoftLeft' || evt.key === 'Backspace') {
             if (!finished) { finished = true; cleanup(); App.router.pop(); }
             return true;
           }

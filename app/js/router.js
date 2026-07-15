@@ -66,6 +66,16 @@
       return;
     }
 
+    // Cohesive Back: the left softkey is Back on every pushed screen. When the
+    // top screen doesn't claim SoftLeft for its own action, treat it like the
+    // hardware Back key and pop.
+    if (evt.key === 'SoftLeft' && stack.length > 1) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      pop();
+      return;
+    }
+
     if (evt.key === 'Backspace') {
       // Let Backspace edit non-empty text fields.
       var t = document.activeElement;

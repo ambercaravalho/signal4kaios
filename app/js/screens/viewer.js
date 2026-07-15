@@ -6,7 +6,7 @@
      play in-app with the center key, and anything downloaded can be saved to
      the phone via DeviceStorage (SoftLeft). */
 
-  var CACHE_KEEP = 40;
+  var CACHE_KEEP = 150; // shared attachment LRU; matches chat thumbnail cache
 
   function storageFor(type) {
     if (type.indexOf('image/') === 0) return 'pictures';
@@ -53,7 +53,7 @@
       function updateSoftkeys() {
         var center = '';
         if (media) center = { icon: media.paused ? 'play' : 'pause' };
-        App.softkeys.set(loadedBlob ? 'Save' : '', center, 'Back');
+        App.softkeys.set({ icon: 'back' }, center, loadedBlob ? 'Save' : '');
       }
 
       function show(blob) {
@@ -160,14 +160,11 @@
         },
         onKey: function (evt) {
           switch (evt.key) {
-            case 'SoftLeft':
+            case 'SoftRight':
               save();
               return true;
             case 'Enter':
               togglePlay();
-              return true;
-            case 'SoftRight':
-              App.router.pop();
               return true;
             default:
               return false;

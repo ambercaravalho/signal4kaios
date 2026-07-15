@@ -4,6 +4,9 @@
   var PAGE = 50;
   var DOM_CAP = 120; // max message nodes kept in the DOM at once
   var AUTO_DL = 400 * 1024; // auto-download images up to this size for inline view
+  var PRUNE_KEEP = 500; // messages kept per conversation (matches main.js)
+  var THUMB_CACHE_KEEP = 150; // cached attachment blobs kept (LRU)
+  var THUMB_MARGIN = 240; // px around the viewport to pre-hydrate thumbnails
 
   var lastDirRefresh = 0; // throttle background refreshes for unknown authors
 
@@ -78,17 +81,60 @@
       });
 
       function updateSoftkeys() {
+        // Cohesive layout: Left = Back (cancels a pending edit/reply first),
+        // Center = the primary action for the current selection, Right = the
+        // dynamic chat Menu.
         var sel = nav.selected();
-        if (sel === ta) {
-          var left = editTarget ? 'Cancel edit' : (pendingQuote ? 'Cancel reply' : 'Emoji');
-          App.softkeys.set(left, 'Send', editTarget ? '' : 'Attach');
-        } else if (sel === loadMore) {
-          App.softkeys.set('', 'Load', '');
-        } else if (sel === pinnedBar) {
-          App.softkeys.set('', 'View pinned', '');
-        } else {
-          App.softkeys.set('', 'Options', '');
+        var center;
+        if (sel === ta) center = 'Send';
+        else if (sel === loadMore) center = 'Load';
+        else if (sel === pinnedBar) center = 'View pinned';
+        else center = 'Options';
+        var back = (editTarget || pendingQuote) ? 'Cancel' : { icon: 'back' };
+        App.softkeys.set(back, center, 'Menu');
+      }
+
+      /* Chat-level actions, built from the current conversation. Opened with the
+         right softkey. Items defer their work so the menu pops first and the
+         next screen/picker layers over the chat (not over the menu). */
+      function openChatMenu() {
+        var items = [];
+        items.push({
+          label: 'Attach',
+          hint: 'Photo, video, or file',
+          onSelect: function () { setTimeout(attach, 0); }
+        });
+        items.push({
+          label: 'Emoji',
+          hint: 'Insert an emoji',
+          onSelect: function () { setTimeout(openEmoji, 0); }
+        });
+        if (conv) {
+          items.push({
+            label: conv.type === 'group' ? 'Group info' : 'Contact info',
+            hint: conv.name,
+            onSelect: function () {
+              setTimeout(function () {
+                if (conv.type === 'group') {
+                  App.router.push(App.screens.groupinfo.create(conv));
+                } else {
+                  App.router.push(App.screens.contactinfo.create(conv));
+                }
+              }, 0);
+            }
+          });
         }
+        if (pinnedRecs.length) {
+          items.push({
+            label: 'Pinned messages',
+            hint: pinnedRecs.length +
+              (pinnedRecs.length === 1 ? ' pinned message' : ' pinned messages'),
+            onSelect: function () { setTimeout(openPinnedList, 0); }
+          });
+        }
+        App.router.push(App.screens.menu.create({
+          title: conv ? conv.name : 'Menu', items: items
+        }));
       }
 
       function ticksFor(rec) {
@@ -142,6 +188,10 @@
           node.appendChild(App.util.el('div', 'msg-attach', label));
           if ((att.contentType || '').indexOf('image/') === 0 && att.id) {
             node.appendChild(App.util.el('img', 'msg-thumb hidden'));
+            // Defer the actual load until the row is near the viewport, so a
+            // cold open of an image-heavy chat doesn't fire dozens of parallel
+            // downloads/DB reads up front. hydrateVisibleThumbs() picks it up.
+            node.setAttribute('data-thumb', 'pending');
           }
         }
 
@@ -162,7 +212,6 @@
           if (t) meta.appendChild(App.util.el('span', t.cls, ' ' + t.text));
         }
         node.appendChild(meta);
-        hydrateThumb(node, rec);
         return node;
       }
 
@@ -193,10 +242,13 @@
         App.db.getAttachment(att.id).then(function (row) {
           if (row && row.blob) return row.blob;
           if (att.size && att.size > AUTO_DL) return null;
+          var td = Date.now();
           return App.api.attachment(att.id).then(function (blob) {
-            App.db.putAttachment(att.id, blob, att.contentType).then(function () {
-              return App.db.pruneAttachments(40);
-            });
+            App.util.dbg('thumb dl ' + Math.round(blob.size / 1024) +
+              'KB +' + (Date.now() - td) + 'ms');
+            // Cache without pruning here; pruning once per download meant a
+            // full attachment-store scan per image. Prune runs once on open.
+            App.db.putAttachment(att.id, blob, att.contentType);
             return blob;
           });
         }).then(function (blob) {
@@ -204,6 +256,37 @@
           thumbUrls[att.id] = URL.createObjectURL(blob);
           show(thumbUrls[att.id]);
         })['catch'](function () { /* chip stays; View photo still works */ });
+      }
+
+      /* True when a message row is within THUMB_MARGIN px of the visible area. */
+      function thumbVisible(node) {
+        var top = node.offsetTop;
+        var bottom = top + node.offsetHeight;
+        var viewTop = list.scrollTop - THUMB_MARGIN;
+        var viewBottom = list.scrollTop + list.clientHeight + THUMB_MARGIN;
+        return bottom >= viewTop && top <= viewBottom;
+      }
+
+      /* Hydrate thumbnails for rows near the viewport; the rest wait until they
+         are scrolled into range (see onListScroll). */
+      function hydrateVisibleThumbs() {
+        var nodes = list.querySelectorAll('.msg[data-thumb="pending"]');
+        for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
+          if (!thumbVisible(node)) continue;
+          node.setAttribute('data-thumb', 'done');
+          var rec = msgById[node.getAttribute('data-id')];
+          if (rec) hydrateThumb(node, rec);
+        }
+      }
+
+      var thumbTick = null;
+      function onListScroll() {
+        if (thumbTick) return;
+        thumbTick = setTimeout(function () {
+          thumbTick = null;
+          hydrateVisibleThumbs();
+        }, 120);
       }
 
       function scrollToBottom() {
@@ -229,7 +312,9 @@
       }
 
       function loadInitial() {
+        var t0 = Date.now();
         App.db.getMessagesPage(convId, oldestTs, PAGE).then(function (rows) {
+          App.util.dbg('chat page (' + rows.length + ') +' + (Date.now() - t0) + 'ms');
           hasMore = rows.length === PAGE;
           loadMore.classList.toggle('hidden', !hasMore);
           rows.forEach(function (rec) {
@@ -244,6 +329,8 @@
             scrollToBottom();
           }
           updateSoftkeys();
+          hydrateVisibleThumbs();
+          App.util.dbg('chat rendered +' + (Date.now() - t0) + 'ms');
         });
       }
 
@@ -289,6 +376,7 @@
           hasMore = rows.length === PAGE;
           loadMore.classList.toggle('hidden', !hasMore);
           list.scrollTop += list.scrollHeight - prevHeight;
+          hydrateVisibleThumbs();
         });
       }
 
@@ -304,7 +392,10 @@
          nav-selectable while it is visible (nav.items() does not skip hidden
          elements). */
       function updatePinnedBar() {
+        var t0 = Date.now();
         App.db.getPinned(convId).then(function (rows) {
+          App.util.dbg('chat getPinned (' + (rows ? rows.length : 0) +
+            ') +' + (Date.now() - t0) + 'ms');
           pinnedRecs = rows || [];
           if (pinnedRecs.length) {
             pinnedBar.textContent = '📌 ' + pinnedRecs.length +
@@ -352,6 +443,7 @@
         list.appendChild(renderMsgNode(rec));
         trimDom();
         if (wasAtComposer || !rec.incoming) scrollToBottom();
+        hydrateVisibleThumbs();
       }
 
       function onMessageUpdated(rec, oldId) {
@@ -557,10 +649,12 @@
       }
 
       ta.addEventListener('input', onInput);
+      list.addEventListener('scroll', onListScroll);
 
       return {
         el: el,
         enter: function () {
+          var tEnter = Date.now();
           App.store.on('message', onMessage);
           App.store.on('message-updated', onMessageUpdated);
           App.store.on('message-removed', onMessageRemoved);
@@ -570,10 +664,27 @@
           App.store.markRead(convId);
           onConnection(App.store.connectionState());
           onTyping(convId);
-          // Sweep only this conversation's expired messages (indexed, bounded)
-          // before rendering, so opening a chat stays fast.
-          App.store.purgeExpiredConv(convId).then(loadInitial, loadInitial);
-          updatePinnedBar();
+
+          // Paint the newest page immediately. Everything that would walk the
+          // whole conversation (expired sweep, pinned-bar scan, prune) is kept
+          // off the cold-open path and deferred until after the first paint.
+          loadInitial();
+
+          setTimeout(function () {
+            var tHk = Date.now();
+            updatePinnedBar();
+            // Bound the conversation now so a freshly-synced chat's background
+            // walks aren't over thousands of un-pruned rows.
+            App.db.pruneConversation(convId, PRUNE_KEEP);
+            App.db.pruneAttachments(THUMB_CACHE_KEEP);
+            // Only the expired-message sweep (a full-conversation cursor walk)
+            // when this chat actually uses disappearing messages.
+            if (conv && conv.expireTimer) {
+              App.store.purgeExpiredConv(convId);
+            }
+            App.util.dbg('chat open housekeeping +' + (Date.now() - tEnter) +
+              'ms (hk ' + (Date.now() - tHk) + 'ms)');
+          }, 0);
         },
         resume: function () {
           App.store.setOpenConv(convId);
@@ -583,6 +694,11 @@
         },
         destroy: function () {
           sendTypingStop();
+          if (thumbTick) {
+            clearTimeout(thumbTick);
+            thumbTick = null;
+          }
+          list.removeEventListener('scroll', onListScroll);
           Object.keys(thumbUrls).forEach(function (k) {
             URL.revokeObjectURL(thumbUrls[k]);
           });
@@ -594,27 +710,24 @@
           App.store.off('connection', onConnection);
         },
         onKey: function (evt) {
+          // Right softkey always opens the chat Menu.
+          if (evt.key === 'SoftRight') {
+            openChatMenu();
+            return true;
+          }
+          // Left softkey (Back): cancel a pending edit/reply first; otherwise
+          // fall through so the router pops the screen.
+          if (evt.key === 'SoftLeft') {
+            if (editTarget) { setEditing(null); return true; }
+            if (pendingQuote) { setQuote(null); return true; }
+            return false;
+          }
+
           var inComposer = document.activeElement === ta;
 
           if (inComposer) {
             if (evt.key === 'Enter') {
               send();
-              return true;
-            }
-            if (evt.key === 'SoftLeft' && editTarget) {
-              setEditing(null);
-              return true;
-            }
-            if (evt.key === 'SoftLeft' && pendingQuote) {
-              setQuote(null);
-              return true;
-            }
-            if (evt.key === 'SoftLeft' && !editTarget && !pendingQuote) {
-              openEmoji();
-              return true;
-            }
-            if (evt.key === 'SoftRight' && !editTarget) {
-              attach();
               return true;
             }
             if (evt.key === 'ArrowUp') {

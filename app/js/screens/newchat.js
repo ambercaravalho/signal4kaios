@@ -157,16 +157,16 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('Scan', 'Open', '');
+          App.softkeys.set({ icon: 'back' }, 'Open', 'Scan');
           render();
           nav.selectById('__query');
         },
         resume: function () {
-          App.softkeys.set('Scan', 'Open', '');
+          App.softkeys.set({ icon: 'back' }, 'Open', 'Scan');
           render();
         },
         onKey: function (evt) {
-          if (evt.key === 'SoftLeft') { openScan(); return true; }
+          if (evt.key === 'SoftRight') { openScan(); return true; }
           var inInput = document.activeElement === input;
           if (inInput && (evt.key === 'ArrowLeft' || evt.key === 'ArrowRight')) {
             return false; // move the text cursor

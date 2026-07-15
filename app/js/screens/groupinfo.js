@@ -198,7 +198,7 @@
           var sel = mnav.selected();
           var entry = sel && entries[parseInt(sel.getAttribute('data-id'), 10)];
           var hasOpts = entry && (!entry.self || amIAdmin());
-          App.softkeys.set('Add', hasOpts ? 'Options' : '', '');
+          App.softkeys.set({ icon: 'back' }, hasOpts ? 'Options' : '', 'Add');
         }
 
         return {
@@ -207,7 +207,7 @@
           resume: function () { softkeys(); },
           onKey: function (evt) {
             if (mnav.handleKey(evt)) { softkeys(); return true; }
-            if (evt.key === 'SoftLeft') { addMember(); return true; }
+            if (evt.key === 'SoftRight') { addMember(); return true; }
             if (evt.key === 'Enter') {
               var sel = mnav.selected();
               if (!sel) return true;
@@ -445,17 +445,17 @@
 
       function refreshSoftkeys() {
         var sel = nav.selected();
-        App.softkeys.set('', sel && sel.__url ? 'Open' : 'Select', '');
+        App.softkeys.set({ icon: 'back' }, sel && sel.__url ? 'Open' : 'Select', '');
       }
 
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('', 'Select', '');
+          App.softkeys.set({ icon: 'back' }, 'Select', '');
           load();
         },
         resume: function () {
-          App.softkeys.set('', 'Select', '');
+          App.softkeys.set({ icon: 'back' }, 'Select', '');
         },
         onKey: function (evt) {
           if (nav.handleKey(evt)) { refreshSoftkeys(); return true; }

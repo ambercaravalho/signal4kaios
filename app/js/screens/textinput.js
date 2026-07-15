@@ -82,11 +82,11 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('', opts.submitLabel || 'Save', '');
+          App.softkeys.set({ icon: 'back' }, opts.submitLabel || 'Save', '');
           nav.selectById('__input');
         },
         resume: function () {
-          App.softkeys.set('', opts.submitLabel || 'Save', '');
+          App.softkeys.set({ icon: 'back' }, opts.submitLabel || 'Save', '');
         },
         onKey: function (evt) {
           var inInput = document.activeElement === input;

@@ -30,7 +30,7 @@
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('', 'Insert', '');
+          App.softkeys.set({ icon: 'back' }, 'Insert', '');
           nav.select(0);
         },
         onKey: function (evt) {
