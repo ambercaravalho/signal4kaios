@@ -15,6 +15,18 @@
     return stack[stack.length - 1] || null;
   }
 
+  /* Point the marquee at the current screen's header title (after a tick, so
+     layout/measurement is settled). Long titles scroll iPod-style; short ones
+     are left alone. */
+  function refreshTitleMarquee() {
+    if (!App.marquee) return;
+    var s = top();
+    var title = s && s.el ? s.el.querySelector('.hdr-title') : null;
+    setTimeout(function () {
+      if (top() === s) App.marquee.apply(title);
+    }, 0);
+  }
+
   function push(screen) {
     var cur = top();
     if (cur) {
@@ -24,6 +36,7 @@
     stack.push(screen);
     container.appendChild(screen.el);
     if (screen.enter) screen.enter();
+    refreshTitleMarquee();
   }
 
   function pop() {
@@ -36,6 +49,7 @@
       cur.el.classList.remove('hidden');
       if (cur.resume) cur.resume();
     }
+    refreshTitleMarquee();
   }
 
   function replace(screen) {

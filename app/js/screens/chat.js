@@ -43,7 +43,8 @@
       var el = App.util.el('div', 'screen');
       el.setAttribute('data-conv-id', convId);
       var hdr = App.util.el('div', 'hdr');
-      var title = App.util.el('span', 'hdr-title', conv ? conv.name : convId);
+      var title = App.util.el('span', 'hdr-title');
+      App.util.emojify(title, conv ? conv.name : convId);
       var sub = App.util.el('span', 'hdr-sub', '');
       hdr.appendChild(title);
       hdr.appendChild(sub);
@@ -203,7 +204,11 @@
         }
 
         var rs = reactionSummary(rec.reactions);
-        if (rs) node.appendChild(App.util.el('div', 'msg-reactions', rs));
+        if (rs) {
+          var rsEl = App.util.el('div', 'msg-reactions');
+          App.util.emojify(rsEl, rs);
+          node.appendChild(rsEl);
+        }
 
         var meta = App.util.el('div', 'msg-meta',
           (rec.edited ? '(edited) ' : '') + App.util.fmtMsgTime(rec.timestamp));

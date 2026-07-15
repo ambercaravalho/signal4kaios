@@ -47,7 +47,9 @@
 
         var main = App.util.el('div', 'conv-main');
         var top = App.util.el('div', 'conv-top');
-        top.appendChild(App.util.el('span', 'conv-name', conv.name || conv.id));
+        var nameEl = App.util.el('span', 'conv-name');
+        App.util.emojify(nameEl, conv.name || conv.id);
+        top.appendChild(nameEl);
         if (conv.pinned && !archivedTab()) {
           top.appendChild(App.util.el('span', 'pin-icon', '\uD83D\uDCCC'));
         }
@@ -57,9 +59,12 @@
 
         var bottom = App.util.el('div', 'conv-bottom');
         var typing = !archivedTab() && App.store.typing(conv.id);
-        var preview = App.util.el('span',
-          'conv-preview' + (typing ? ' typing' : ''),
-          typing ? 'typing\u2026' : (conv.lastPreview || ''));
+        var preview = App.util.el('span', 'conv-preview' + (typing ? ' typing' : ''));
+        if (typing) {
+          preview.textContent = 'typing\u2026';
+        } else {
+          App.util.emojify(preview, conv.lastPreview || '');
+        }
         bottom.appendChild(preview);
         if (conv.unread > 0) {
           bottom.appendChild(App.util.el('span', 'badge', String(conv.unread)));

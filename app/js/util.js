@@ -272,13 +272,39 @@
     return { body: out, styles: styles };
   }
 
+  /* Match a single emoji (astral-plane glyph, flag pair, or one of the common
+     BMP emoji symbols), including any VS16, skin-tone modifier, and ZWJ
+     sequence that belongs with it. Gecko 48 has no /u flag or \p{}, so this
+     works on UTF-16 surrogate units directly. */
+  var EMOJI_RE = /(?:\uD83C[\uDDE6-\uDDFF]){2}|(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u00A9\u00AE\u203C\u2049\u2122\u2139\u2194-\u21AA\u231A\u231B\u2328\u23CF\u23E9-\u23F3\u23F8-\u23FA\u24C2\u25AA\u25AB\u25B6\u25C0\u25FB-\u25FE\u2600-\u27BF\u2934\u2935\u2B05-\u2B07\u2B1B\u2B1C\u2B50\u2B55\u3030\u303D\u3297\u3299])(?:\uFE0F)?(?:\uD83C[\uDFFB-\uDFFF])?(?:\u200D(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?(?:\uD83C[\uDFFB-\uDFFF])?)*/g;
+
+  /* Append text to a container, wrapping emoji runs in <span class="emoji"> so
+     they can be sized up to match the text. Plain text goes in as text nodes. */
+  function emojify(container, text) {
+    if (!text) return;
+    EMOJI_RE.lastIndex = 0;
+    var last = 0;
+    var m;
+    while ((m = EMOJI_RE.exec(text)) !== null) {
+      if (!m[0]) { EMOJI_RE.lastIndex += 1; continue; } // guard zero-length
+      if (m.index > last) {
+        container.appendChild(document.createTextNode(text.slice(last, m.index)));
+      }
+      container.appendChild(el('span', 'emoji', m[0]));
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) {
+      container.appendChild(document.createTextNode(text.slice(last)));
+    }
+  }
+
   /* Append text to a container, wrapping styled ranges in spans. Overlapping
      ranges are handled by splitting on every range boundary and applying all
      classes active over each segment. */
   function renderStyledBody(container, text, styles) {
     text = text || '';
     if (!styles || !styles.length) {
-      container.appendChild(document.createTextNode(text));
+      emojify(container, text);
       return;
     }
     var valid = [];
@@ -294,7 +320,7 @@
       }
     }
     if (!valid.length) {
-      container.appendChild(document.createTextNode(text));
+      emojify(container, text);
       return;
     }
     var bounds = Object.keys(pts).map(Number).sort(function (x, y) { return x - y; });
@@ -310,9 +336,11 @@
         }
       });
       if (classes.length) {
-        container.appendChild(el('span', classes.join(' '), seg));
+        var span = el('span', classes.join(' '));
+        emojify(span, seg);
+        container.appendChild(span);
       } else {
-        container.appendChild(document.createTextNode(seg));
+        emojify(container, seg);
       }
     }
   }
@@ -325,6 +353,7 @@
     openUrl: openUrl,
     parseStyledMarkdown: parseStyledMarkdown,
     renderStyledBody: renderStyledBody,
+    emojify: emojify,
     pad2: pad2,
     colorClass: colorClass,
     fmtTime: fmtTime,

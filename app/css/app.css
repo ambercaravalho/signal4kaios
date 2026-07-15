@@ -200,6 +200,22 @@ html, body {
   text-overflow: ellipsis;
 }
 
+/* While scrolling a long title (see marquee.js): left-align and drop the
+   ellipsis so the whole name passes by. */
+.hdr-title.marquee {
+  text-align: left;
+  text-overflow: clip;
+}
+
+/* Emoji render smaller than surrounding text in the KaiOS system font; bump
+   them up (relative to context) so they line up with the text. Applied by
+   App.util.emojify to message bodies, previews, names, and reactions. */
+.emoji {
+  font-size: 1.2em;
+  line-height: 1;
+  vertical-align: -0.1em;
+}
+
 .hdr-sub {
   flex: none;
   font-size: 12px;
