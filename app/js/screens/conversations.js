@@ -11,44 +11,91 @@
       hdr.appendChild(sub);
       el.appendChild(hdr);
 
+      // Chats / Archived are two tabs (KaiOS Tab component), switched with the
+      // Left/Right D-pad keys, instead of a separate archived screen.
+      var tabs = App.tabs.create(['Chats', 'Archived'], function () {
+        render();
+        nav.select(0);
+        updateSoftkeys();
+      });
+      el.appendChild(tabs.el);
+
       var list = App.util.el('div', 'list');
       el.appendChild(list);
 
       var nav = new App.Nav(el, { scrollEl: list });
 
+      function archivedTab() { return tabs.index() === 1; }
+
       function connLabel(state) {
-        if (state === 'open') return '● online';
-        if (state === 'connecting') return 'connecting…';
+        if (state === 'open') return '\u25CF online';
+        if (state === 'connecting') return 'connecting\u2026';
         return 'offline';
       }
 
-      function archivedRow() {
-        var archived = App.store.archivedConversations();
-        if (!archived.length) return;
-        var totalUnread = 0;
-        archived.forEach(function (c) { totalUnread += c.unread || 0; });
-        var row = App.util.el('div', 'menu-item archived-row',
-          '📁 Archived chats (' + archived.length + ')' +
-          (totalUnread ? ' •' : ''));
+      function convRow(conv) {
+        var row = App.util.el('div', 'conv-row');
         row.setAttribute('nav-selectable', 'true');
-        row.setAttribute('data-id', '__archived');
-        list.appendChild(row);
+        row.setAttribute('data-id', conv.id);
+
+        row.appendChild(App.avatars.el(conv));
+
+        var main = App.util.el('div', 'conv-main');
+        var top = App.util.el('div', 'conv-top');
+        top.appendChild(App.util.el('span', 'conv-name', conv.name || conv.id));
+        if (conv.pinned && !archivedTab()) {
+          top.appendChild(App.util.el('span', 'pin-icon', '\uD83D\uDCCC'));
+        }
+        if (conv.muted) top.appendChild(App.util.el('span', 'muted-icon', '\uD83D\uDD07'));
+        top.appendChild(App.util.el('span', 'conv-time', App.util.fmtTime(conv.lastTs)));
+        main.appendChild(top);
+
+        var bottom = App.util.el('div', 'conv-bottom');
+        var typing = !archivedTab() && App.store.typing(conv.id);
+        var preview = App.util.el('span',
+          'conv-preview' + (typing ? ' typing' : ''),
+          typing ? 'typing\u2026' : (conv.lastPreview || ''));
+        bottom.appendChild(preview);
+        if (conv.unread > 0) {
+          bottom.appendChild(App.util.el('span', 'badge', String(conv.unread)));
+        }
+        main.appendChild(bottom);
+        row.appendChild(main);
+        return row;
+      }
+
+      function updateSoftkeys() {
+        if (archivedTab()) {
+          var hasArchived = App.store.archivedConversations().length > 0;
+          App.softkeys.set('Options', hasArchived ? 'Open' : '', '');
+        } else {
+          var hasChats = App.store.conversations().length > 0;
+          App.softkeys.set('Options', hasChats ? 'Open' : '', 'New chat');
+        }
       }
 
       function render() {
         list.textContent = '';
-        var convs = App.store.conversations();
-        if (!convs.length) {
-          if (App.store.archivedConversations().length) {
-            archivedRow();
-            nav.refresh();
-            App.softkeys.set('Options', 'Open', 'New chat');
+
+        if (archivedTab()) {
+          var archived = App.store.archivedConversations();
+          if (!archived.length) {
+            list.appendChild(App.util.el('div', 'empty', 'No archived chats.'));
+            updateSoftkeys();
             return;
           }
-          // Still loading history from IndexedDB: don't flash the empty
-          // state before the store has finished its first read.
+          archived.forEach(function (conv) { list.appendChild(convRow(conv)); });
+          nav.refresh();
+          updateSoftkeys();
+          return;
+        }
+
+        var convs = App.store.conversations();
+        if (!convs.length) {
           if (!App.store.isReady()) {
-            list.appendChild(App.util.el('div', 'empty', 'Loading…'));
+            // Still loading history from IndexedDB: don't flash the empty
+            // state before the store has finished its first read.
+            list.appendChild(App.util.el('div', 'empty', 'Loading\u2026'));
             App.softkeys.set('Options', '', 'New chat');
             return;
           }
@@ -59,47 +106,39 @@
           App.softkeys.set('Options', '', 'New chat');
           return;
         }
-        convs.forEach(function (conv) {
-          var row = App.util.el('div', 'conv-row');
-          row.setAttribute('nav-selectable', 'true');
-          row.setAttribute('data-id', conv.id);
-
-          row.appendChild(App.avatars.el(conv));
-
-          var main = App.util.el('div', 'conv-main');
-          var top = App.util.el('div', 'conv-top');
-          top.appendChild(App.util.el('span', 'conv-name', conv.name || conv.id));
-          if (conv.pinned) top.appendChild(App.util.el('span', 'pin-icon', '📌'));
-          if (conv.muted) top.appendChild(App.util.el('span', 'muted-icon', '🔇'));
-          top.appendChild(App.util.el('span', 'conv-time', App.util.fmtTime(conv.lastTs)));
-          main.appendChild(top);
-
-          var bottom = App.util.el('div', 'conv-bottom');
-          var typing = App.store.typing(conv.id);
-          var preview = App.util.el('span',
-            'conv-preview' + (typing ? ' typing' : ''),
-            typing ? 'typing…' : (conv.lastPreview || ''));
-          bottom.appendChild(preview);
-          if (conv.unread > 0) {
-            bottom.appendChild(App.util.el('span', 'badge', String(conv.unread)));
-          }
-          main.appendChild(bottom);
-          row.appendChild(main);
-          list.appendChild(row);
-        });
-        archivedRow();
+        convs.forEach(function (conv) { list.appendChild(convRow(conv)); });
         nav.refresh();
-        App.softkeys.set('Options', 'Open', 'New chat');
+        updateSoftkeys();
+      }
+
+      function selectedConv() {
+        var sel = nav.selected();
+        return sel ? App.store.conversation(sel.getAttribute('data-id')) : null;
       }
 
       function openOptionsMenu() {
         var items = [];
+        var conv = selectedConv();
 
-        // Actions on the currently highlighted conversation.
-        var sel = nav.selected();
-        var convId = sel && sel.getAttribute('data-id');
-        var conv = convId && convId !== '__archived'
-          ? App.store.conversation(convId) : null;
+        if (archivedTab()) {
+          if (!conv) return;
+          items.push({
+            label: 'Unarchive chat',
+            hint: conv.name,
+            onSelect: function () {
+              App.store.setArchived(conv.id, false);
+              App.toast('Unarchived');
+            }
+          });
+          items.push({
+            label: conv.muted ? 'Unmute chat' : 'Mute chat',
+            onSelect: function () { App.store.setMuted(conv.id, !conv.muted); }
+          });
+          App.router.push(App.screens.menu.create({ title: conv.name, items: items }));
+          return;
+        }
+
+        // Chats tab: actions on the highlighted conversation, then app actions.
         if (conv) {
           items.push({ section: 'This chat' });
           items.push({
@@ -126,7 +165,7 @@
             hint: conv.name,
             onSelect: function () {
               App.store.setArchived(conv.id, true);
-              App.toast('Archived — new messages bring it back');
+              App.toast('Archived \u2014 new messages bring it back');
             }
           });
           items.push({
@@ -136,9 +175,9 @@
               App.store.setMuted(conv.id, !conv.muted);
             }
           });
+          items.push({ section: 'App' });
         }
 
-        if (conv) items.push({ section: 'App' });
         items.push({
           label: 'Search messages',
           onSelect: function () {
@@ -201,24 +240,19 @@
         pause: function () { paused = true; },
         destroy: unsubscribe,
         onKey: function (evt) {
+          if (tabs.handleKey(evt)) return true;
           if (nav.handleKey(evt)) return true;
           switch (evt.key) {
             case 'Enter': {
-              var sel = nav.selected();
-              if (!sel) return true;
-              var id = sel.getAttribute('data-id');
-              if (id === '__archived') {
-                App.router.push(App.screens.archived.create());
-              } else {
-                App.router.push(App.screens.chat.create(id));
-              }
+              var conv = selectedConv();
+              if (conv) App.router.push(App.screens.chat.create(conv.id));
               return true;
             }
             case 'SoftLeft':
               openOptionsMenu();
               return true;
             case 'SoftRight':
-              App.router.push(App.screens.newchat.create());
+              if (!archivedTab()) App.router.push(App.screens.newchat.create());
               return true;
             default:
               return false;

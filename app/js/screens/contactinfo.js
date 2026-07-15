@@ -35,23 +35,21 @@
       }
 
       function disappearing() {
-        var current = App.store.convExpire(conv.id);
-        var items = App.util.EXPIRE_OPTIONS.map(function (opt) {
-          return {
-            label: opt.label + (opt.secs === current ? '  ✓' : ''),
-            onSelect: function () {
-              App.api.updateContact(recipient, null, opt.secs).then(function () {
-                App.store.setConvExpire(conv.id, opt.secs);
-                App.toast('Disappearing messages: ' + opt.label);
-              })['catch'](function (err) {
-                App.toast('Update failed: ' + err.message);
-              });
-            }
-          };
+        App.valueSelector.open({
+          title: 'Disappearing messages',
+          selected: App.store.convExpire(conv.id),
+          options: App.util.EXPIRE_OPTIONS.map(function (opt) {
+            return { label: opt.label, value: opt.secs };
+          }),
+          onPick: function (secs) {
+            App.api.updateContact(recipient, null, secs).then(function () {
+              App.store.setConvExpire(conv.id, secs);
+              App.toast('Disappearing messages: ' + App.util.expireLabel(secs));
+            })['catch'](function (err) {
+              App.toast('Update failed: ' + err.message);
+            });
+          }
         });
-        App.router.push(App.screens.menu.create({
-          title: 'Disappearing messages', items: items
-        }));
       }
 
       return App.screens.menu.create({

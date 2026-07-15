@@ -336,54 +336,50 @@
       }
 
       function disappearing() {
-        var current = App.store.convExpire(conv.id);
-        var items = App.util.EXPIRE_OPTIONS.map(function (opt) {
-          return {
-            label: opt.label + (opt.secs === current ? '  ✓' : ''),
-            onSelect: function () {
-              App.api.updateGroup(groupId, { expiration_time: opt.secs })
-                .then(function () {
-                  App.store.setConvExpire(conv.id, opt.secs);
-                  App.toast('Disappearing messages: ' + opt.label);
-                })['catch'](function (err) {
-                  App.toast('Update failed: ' + err.message);
-                });
-            }
-          };
+        App.valueSelector.open({
+          title: 'Disappearing messages',
+          selected: App.store.convExpire(conv.id),
+          options: App.util.EXPIRE_OPTIONS.map(function (opt) {
+            return { label: opt.label, value: opt.secs };
+          }),
+          onPick: function (secs) {
+            App.api.updateGroup(groupId, { expiration_time: secs })
+              .then(function () {
+                App.store.setConvExpire(conv.id, secs);
+                App.toast('Disappearing messages: ' + App.util.expireLabel(secs));
+              })['catch'](function (err) {
+                App.toast('Update failed: ' + err.message);
+              });
+          }
         });
-        App.router.push(App.screens.menu.create({
-          title: 'Disappearing messages', items: items
-        }));
       }
 
       /* Change one group permission, sending all three values so the others
          aren't reset to empty by the server. */
       function permMenu(title, key) {
         var perms = (detail && detail.permissions) || {};
-        var opts = [
-          { v: 'every-member', label: 'Everyone' },
-          { v: 'only-admins', label: 'Only admins' }
-        ];
-        var items = opts.map(function (o) {
-          return {
-            label: o.label + (perms[key] === o.v ? '  ✓' : ''),
-            onSelect: function () {
-              var next = {
-                add_members: perms.add_members || 'every-member',
-                edit_group: perms.edit_group || 'only-admins',
-                send_messages: perms.send_messages || 'every-member'
-              };
-              next[key] = o.v;
-              App.api.updateGroup(groupId, { permissions: next }).then(function () {
-                App.toast('Permission updated');
-                return reloadDetail();
-              })['catch'](function (err) {
-                App.toast('Update failed: ' + err.message);
-              });
-            }
-          };
+        App.valueSelector.open({
+          title: title,
+          selected: perms[key],
+          options: [
+            { label: 'Everyone', value: 'every-member' },
+            { label: 'Only admins', value: 'only-admins' }
+          ],
+          onPick: function (v) {
+            var next = {
+              add_members: perms.add_members || 'every-member',
+              edit_group: perms.edit_group || 'only-admins',
+              send_messages: perms.send_messages || 'every-member'
+            };
+            next[key] = v;
+            App.api.updateGroup(groupId, { permissions: next }).then(function () {
+              App.toast('Permission updated');
+              return reloadDetail();
+            })['catch'](function (err) {
+              App.toast('Update failed: ' + err.message);
+            });
+          }
         });
-        App.router.push(App.screens.menu.create({ title: title, items: items }));
       }
 
       function groupLinkMenu() {
@@ -416,39 +412,35 @@
       }
 
       function blockGroup() {
-        App.router.push(App.screens.menu.create({
+        App.dialog.confirm({
           title: 'Block group?',
-          items: [{
-            label: 'Block group',
-            hint: 'Stop receiving messages',
-            onSelect: function () {
-              App.api.blockGroup(groupId).then(function () {
-                App.toast('Group blocked');
-                App.store.setArchived(conv.id, true);
-              })['catch'](function (err) {
-                App.toast('Block failed: ' + err.message);
-              });
-            }
-          }]
-        }));
+          message: 'You will stop receiving messages from this group.',
+          confirmLabel: 'Block',
+          onConfirm: function () {
+            App.api.blockGroup(groupId).then(function () {
+              App.toast('Group blocked');
+              App.store.setArchived(conv.id, true);
+            })['catch'](function (err) {
+              App.toast('Block failed: ' + err.message);
+            });
+          }
+        });
       }
 
       function leave() {
-        App.router.push(App.screens.menu.create({
+        App.dialog.confirm({
           title: 'Leave group?',
-          items: [{
-            label: 'Leave group',
-            hint: 'You will stop receiving messages',
-            onSelect: function () {
-              App.api.quitGroup(groupId).then(function () {
-                App.toast('Left group');
-                App.store.setArchived(conv.id, true);
-              })['catch'](function (err) {
-                App.toast('Leave failed: ' + err.message);
-              });
-            }
-          }]
-        }));
+          message: 'You will stop receiving messages from this group.',
+          confirmLabel: 'Leave',
+          onConfirm: function () {
+            App.api.quitGroup(groupId).then(function () {
+              App.toast('Left group');
+              App.store.setArchived(conv.id, true);
+            })['catch'](function (err) {
+              App.toast('Leave failed: ' + err.message);
+            });
+          }
+        });
       }
 
       function refreshSoftkeys() {

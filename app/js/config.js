@@ -73,6 +73,12 @@
       return read().profileAbout || '';
     },
 
+    /* UI theme: 'light' (default, native KaiOS look) or 'dark' (Signal dark).
+       Applied by App.theme on boot. */
+    theme: function () {
+      return read().theme || 'light';
+    },
+
     /* Feature flags. Boolean flags default to their most common value when the
        key is absent so existing installs keep their current behavior. */
     sendReadReceipts: function () {

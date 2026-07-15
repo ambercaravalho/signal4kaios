@@ -48,6 +48,15 @@
   }
 
   function onKeyDown(evt) {
+    // A modal dialog captures all keys above the screen stack.
+    if (App.dialog && App.dialog.active()) {
+      if (App.dialog.handleKey(evt)) {
+        evt.preventDefault();
+        evt.stopPropagation();
+      }
+      return;
+    }
+
     var s = top();
     if (!s) return;
 

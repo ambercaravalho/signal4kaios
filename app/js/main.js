@@ -14,8 +14,21 @@
 
   function boot() {
     App.util.dbg('boot');
+    App.theme.apply();
     App.config.ensureAccounts();
     App.router.init(document.getElementById('screens'));
+
+    // Surface connection drops as a top-of-screen in-app notice (distinct from
+    // the transient toast). Only fire on an actual open -> offline transition.
+    var lastConn = null;
+    App.store.on('connection', function (state) {
+      if (state === 'offline' && lastConn === 'open') {
+        App.notice.show('Connection lost', 'Trying to reconnect\u2026', { icon: '!' });
+      } else if (state === 'open' && lastConn === 'offline') {
+        App.notice.hide();
+      }
+      lastConn = state;
+    });
 
     if (App.config.isConfigured()) {
       App.router.push(App.screens.conversations.create());

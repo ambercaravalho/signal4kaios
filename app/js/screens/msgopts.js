@@ -138,11 +138,20 @@
         manageGrp.push({
           label: 'Delete for everyone',
           onSelect: function () {
-            App.store.deleteForEveryone(rec).then(function () {
-              App.toast('Message deleted');
-            })['catch'](function (err) {
-              App.toast('Delete failed: ' + err.message);
+            App.dialog.confirm({
+              title: 'Delete for everyone?',
+              message: 'This removes the message for all chat participants.',
+              confirmLabel: 'Delete',
+              onConfirm: function () {
+                App.router.pop(); // close this options menu
+                App.store.deleteForEveryone(rec).then(function () {
+                  App.toast('Message deleted');
+                })['catch'](function (err) {
+                  App.toast('Delete failed: ' + err.message);
+                });
+              }
             });
+            return 'keep';
           }
         });
       }

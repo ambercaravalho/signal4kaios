@@ -2,8 +2,8 @@
   'use strict';
 
   /* Main settings menu. The signal-cli-rest-api connection fields live in their
-     own screen (App.screens.serversettings); everything here is a menu action or
-     a toggle. */
+     own screen (App.screens.serversettings); everything here is a menu action,
+     a boolean toggle (checkbox), or a value selector. */
 
   App.screens.settings = {
     create: function () {
@@ -24,40 +24,54 @@
         return row;
       }
 
-      /* A menu-item whose hint reflects a boolean; toggled in onAction. */
-      function toggleAction(label, hintFn) {
-        var row = action(label, hintFn());
-        row.__hintFn = hintFn;
+      /* A menu-item with a trailing checkbox reflecting a boolean config flag.
+         Enter toggles it (handled generically via row.__toggle). */
+      function toggle(label, getFn, setFn) {
+        var row = App.util.el('div', 'menu-item toggle');
+        row.setAttribute('nav-selectable', 'true');
+        row.setAttribute('data-id', label);
+        row.appendChild(App.util.el('span', 'toggle-label', label));
+        row.appendChild(App.util.el('span', 'opt-mark check'));
+        row.__toggle = { get: getFn, set: setFn };
+        syncToggle(row);
+        list.appendChild(row);
         return row;
       }
 
-      function refreshToggle(row) {
-        if (!row || !row.__hintFn) return;
-        var hint = row.querySelector('.hint');
-        if (hint) hint.textContent = row.__hintFn();
+      function syncToggle(row) {
+        if (!row || !row.__toggle) return;
+        if (row.__toggle.get()) row.classList.add('on');
+        else row.classList.remove('on');
+      }
+
+      function themeLabel() {
+        return App.theme.current() === 'light' ? 'Light' : 'Dark';
       }
 
       list.appendChild(App.util.sectionHeader('Server'));
       action('Server & connection', 'URL, number, proxy auth');
 
+      list.appendChild(App.util.sectionHeader('Appearance'));
+      var themeRow = action('Theme', themeLabel());
+
       list.appendChild(App.util.sectionHeader('Privacy'));
-      var receiptsRow = toggleAction('Read receipts', function () {
-        return App.config.sendReadReceipts() ? 'On' : 'Off';
-      });
-      var typingRow = toggleAction('Typing indicators', function () {
-        return App.config.typingIndicators() ? 'On' : 'Off';
-      });
+      var receiptsRow = toggle('Read receipts',
+        function () { return App.config.sendReadReceipts(); },
+        function (v) { App.config.set({ sendReadReceipts: v }); });
+      var typingRow = toggle('Typing indicators',
+        function () { return App.config.typingIndicators(); },
+        function (v) { App.config.set({ typingIndicators: v }); });
       action('Blocked', 'People and groups you have blocked');
 
       list.appendChild(App.util.sectionHeader('Chats'));
-      var mutedArchiveRow = toggleAction('Keep muted chats archived', function () {
-        return App.config.keepMutedArchived() ? 'On' : 'Off';
-      });
+      var mutedArchiveRow = toggle('Keep muted chats archived',
+        function () { return App.config.keepMutedArchived(); },
+        function (v) { App.config.set({ keepMutedArchived: v }); });
 
       list.appendChild(App.util.sectionHeader('Composer'));
-      var styledRow = toggleAction('Text formatting', function () {
-        return App.config.styledText() ? 'On' : 'Off';
-      });
+      var styledRow = toggle('Text formatting',
+        function () { return App.config.styledText(); },
+        function (v) { App.config.set({ styledText: v }); });
 
       list.appendChild(App.util.sectionHeader('Profile'));
       action('Edit profile', 'Set your Signal name');
@@ -78,6 +92,26 @@
       function setStatus(text, cls) {
         status.textContent = text;
         status.className = 'status-line' + (cls ? ' ' + cls : '');
+      }
+
+      function refreshThemeRow() {
+        var hint = themeRow.querySelector('.hint');
+        if (hint) hint.textContent = themeLabel();
+      }
+
+      function chooseTheme() {
+        App.valueSelector.open({
+          title: 'Theme',
+          selected: App.theme.current(),
+          options: [
+            { label: 'Dark', value: 'dark' },
+            { label: 'Light', value: 'light' }
+          ],
+          onPick: function (v) {
+            App.theme.set(v);
+            refreshThemeRow();
+          }
+        });
       }
 
       function accountSwitcher() {
@@ -109,22 +143,8 @@
         switch (id) {
           case 'Server & connection':
             return App.router.push(App.screens.serversettings.create());
-          case 'Read receipts':
-            App.config.set({ sendReadReceipts: !App.config.sendReadReceipts() });
-            refreshToggle(receiptsRow);
-            return;
-          case 'Typing indicators':
-            App.config.set({ typingIndicators: !App.config.typingIndicators() });
-            refreshToggle(typingRow);
-            return;
-          case 'Keep muted chats archived':
-            App.config.set({ keepMutedArchived: !App.config.keepMutedArchived() });
-            refreshToggle(mutedArchiveRow);
-            return;
-          case 'Text formatting':
-            App.config.set({ styledText: !App.config.styledText() });
-            refreshToggle(styledRow);
-            return;
+          case 'Theme':
+            return chooseTheme();
           case 'Blocked':
             return App.router.push(App.screens.blocked.create());
           case 'Edit profile':
@@ -132,7 +152,7 @@
           case 'Switch account':
             return accountSwitcher();
           case 'Refresh contacts & groups':
-            setStatus('Refreshing…');
+            setStatus('Refreshing\u2026');
             App.store.refreshDirectory().then(function () {
               setStatus('Contacts & groups updated.', 'ok');
             })['catch'](function (err) {
@@ -142,10 +162,17 @@
           case 'Debug log':
             return App.router.push(App.screens.debuglog.create());
           case 'Clear local data':
-            App.db.wipe().then(function () {
-              localStorage.removeItem('s4k.config');
-              App.toast('Local data cleared');
-              location.reload();
+            App.dialog.confirm({
+              title: 'Clear local data?',
+              message: 'Deletes cached messages and settings on this phone.',
+              confirmLabel: 'Clear',
+              onConfirm: function () {
+                App.db.wipe().then(function () {
+                  localStorage.removeItem('s4k.config');
+                  App.toast('Local data cleared');
+                  location.reload();
+                });
+              }
             });
             return;
         }
@@ -159,10 +186,11 @@
         },
         resume: function () {
           App.softkeys.set('QR code', 'Select', '');
-          refreshToggle(receiptsRow);
-          refreshToggle(typingRow);
-          refreshToggle(mutedArchiveRow);
-          refreshToggle(styledRow);
+          refreshThemeRow();
+          syncToggle(receiptsRow);
+          syncToggle(typingRow);
+          syncToggle(mutedArchiveRow);
+          syncToggle(styledRow);
         },
         onKey: function (evt) {
           if (evt.key === 'SoftLeft') {
@@ -173,6 +201,11 @@
           if (evt.key === 'Enter') {
             var sel = nav.selected();
             if (!sel) return true;
+            if (sel.__toggle) {
+              sel.__toggle.set(!sel.__toggle.get());
+              syncToggle(sel);
+              return true;
+            }
             onAction(sel.getAttribute('data-id'));
             return true;
           }

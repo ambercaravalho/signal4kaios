@@ -1,4 +1,134 @@
-/* Signal4KaiOS — 240x320 QVGA, Gecko 48: flexbox only, no grid. */
+/* Signal4KaiOS — 240x320 QVGA, Gecko 48: flexbox only, no grid, px only
+   (Gecko 48's rem handling is unreliable). Values are pinned to the KaiOS
+   design guide + KaiUI reference (their rem base is 1rem = 10px, so KaiUI
+   2.8rem -> 28px, 6rem -> 60px, etc.). Colors and metrics come from the token
+   layer below; the native light theme is the default, Signal dark is opt-in
+   via html[data-theme="dark"]. The Signal-blue accent is kept as the highlight
+   color in both themes. */
+
+/* ---- Design tokens (defaults = native KaiOS light theme) ---- */
+:root {
+  /* Fixed metrics (KaiUI: header 2.8rem, softkey/tabs 3rem, list item 6rem,
+     separator 2.4rem). --list-item-h is the single knob for list density. */
+  --hdr-h: 28px;
+  --sk-h: 30px;
+  --tab-h: 30px;
+  --list-item-h: 60px;
+  --sep-h: 24px;
+
+  --bg: #ffffff;
+  --bg-elev: #f4f4f4;
+  --field-bg: #ffffff;
+  --line: #e6e6e6;
+  --line-strong: #cccccc;
+
+  --text: #4d4d4d;
+  --text-2: #6a6a6a;
+  --text-3: #8c8c8c;
+  --on-accent: #ffffff;
+  --on-sel-2: #dce7fd;
+
+  --accent: #3a76f0;
+  --accent-light: #2b5fd0;
+  --link: #1a56d6;
+  --section: #6a6a6a;
+  --header-bg: #14224f;
+
+  --ok: #1a7f37;
+  --bad: #d11a2a;
+  --danger-soft: #d11a2a;
+  --warn: #a97400;
+  --tick-read: #1a56d6;
+
+  --msg-in-bg: #ebebed;
+  --msg-in-text: #000000;
+  --msg-out-bg: #3a76f0;
+  --msg-out-text: #ffffff;
+  --msg-out-meta: #dce7fd;
+
+  --pinned-bg: #e8eefc;
+  --pinned-line: #cdd9f7;
+  --pinned-text: #2b3f66;
+
+  --avatar-bg: #b8b8be;
+  --note-self-bg: #3a76f0;
+
+  --quote-bg: rgba(0, 0, 0, 0.05);
+  --attach-line: #a9bce0;
+  --spoiler-bg: #c8c8cc;
+
+  --toast-bg: #323232;
+  --toast-text: #ffffff;
+  --debug-text: #444444;
+
+  --scrim: rgba(0, 0, 0, 0.9);
+  --dialog-bg: #ffffff;
+  --dialog-header-bg: #cccccc;
+  --notice-bg: #ffffff;
+
+  --sk-bg: #cccccc;
+  --sk-text: #323232;
+
+  /* The media viewer is always letterboxed on black, so its text stays a
+     fixed light gray regardless of theme. */
+  --viewer-text: #c0c0c4;
+}
+
+/* ---- Signal dark theme (opt-in) ---- */
+html[data-theme="dark"] {
+  --bg: #1b1b1d;
+  --bg-elev: #232326;
+  --field-bg: #1b1b1d;
+  --line: #2a2a2e;
+  --line-strong: #3a3a40;
+
+  --text: #f0f0f0;
+  --text-2: #9a9a9e;
+  --text-3: #b8c6e6;
+  --on-accent: #ffffff;
+  --on-sel-2: #dce7fd;
+
+  --accent: #3a76f0;
+  --accent-light: #6fa8ff;
+  --link: #6aa0ff;
+  --section: #9a9a9e;
+  --header-bg: #232326;
+
+  --ok: #7fd77f;
+  --bad: #ff7070;
+  --danger-soft: #ff9d9d;
+  --warn: #f0c060;
+  --tick-read: #6fd0ff;
+
+  --msg-in-bg: #2e2e33;
+  --msg-in-text: #f0f0f0;
+  --msg-out-bg: #2b4d8f;
+  --msg-out-text: #f0f0f0;
+  --msg-out-meta: #b8c6e6;
+
+  --pinned-bg: #26314a;
+  --pinned-line: #33405e;
+  --pinned-text: #cdd6ee;
+
+  --avatar-bg: #4a4a52;
+  --note-self-bg: #2c6bed;
+
+  --quote-bg: rgba(255, 255, 255, 0.05);
+  --attach-line: #4a5a7a;
+  --spoiler-bg: #6a6a70;
+
+  --toast-bg: #323232;
+  --toast-text: #ffffff;
+  --debug-text: #b8b8bc;
+
+  --scrim: rgba(0, 0, 0, 0.9);
+  --dialog-bg: #232326;
+  --dialog-header-bg: #3a3a40;
+  --notice-bg: #232326;
+
+  --sk-bg: #232326;
+  --sk-text: #f0f0f0;
+}
 
 * {
   margin: 0;
@@ -6,14 +136,16 @@
   box-sizing: border-box;
 }
 
+/* Open Sans is the KaiOS system typeface (resolves on device; falls back to
+   sans-serif on desktop dev). Base size is the guide's primary/body 17px. */
 html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family: sans-serif;
-  font-size: 14px;
-  background: #1b1b1d;
-  color: #f0f0f0;
+  font-family: "Open Sans", sans-serif;
+  font-size: 17px;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .hidden {
@@ -42,25 +174,26 @@ html, body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #1b1b1d;
+  background: var(--bg);
 }
 
-/* ---- Header ---- */
+/* ---- Header (H1: 17px, centered, white on the dark header bar) ---- */
 .hdr {
   flex: none;
-  height: 28px;
-  background: #3a76f0;
-  color: #fff;
+  height: var(--hdr-h);
+  background: var(--header-bg);
+  color: var(--on-accent);
   display: flex;
   align-items: center;
-  padding: 0 6px;
+  padding: 0 8px;
   overflow: hidden;
 }
 
 .hdr-title {
   flex: 1;
   font-weight: bold;
-  font-size: 14px;
+  font-size: 17px;
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -68,9 +201,37 @@ html, body {
 
 .hdr-sub {
   flex: none;
-  font-size: 11px;
+  font-size: 12px;
   opacity: 0.85;
   margin-left: 4px;
+}
+
+/* ---- Tabs (H3: 14px; active bold + accent underline, inactive muted) ---- */
+.tabs {
+  flex: none;
+  display: flex;
+  height: var(--tab-h);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-2);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.tab.sel {
+  color: var(--text);
+  font-weight: 700;
+  border-bottom-color: var(--accent);
 }
 
 /* ---- Scrolling lists ---- */
@@ -83,36 +244,38 @@ html, body {
 .empty {
   padding: 24px 12px;
   text-align: center;
-  color: #9a9a9e;
-  font-size: 13px;
+  color: var(--text-2);
+  font-size: 14px;
   line-height: 1.5;
 }
 
-/* ---- Conversation rows ---- */
+/* ---- Conversation rows (list item: 60px, primary 17 / secondary 14) ---- */
 .conv-row {
   display: flex;
   align-items: center;
-  padding: 5px 6px;
-  border-bottom: 1px solid #2a2a2e;
+  min-height: var(--list-item-h);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
 }
 
 .conv-row[nav-selected="true"] {
-  background: #3a76f0;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .avatar {
   flex: none;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background: #4a4a52;
+  background: var(--avatar-bg);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: bold;
-  margin-right: 6px;
+  margin-right: 8px;
   overflow: hidden;
 }
 
@@ -124,8 +287,8 @@ html, body {
 
 /* The self ("Note to Self") chat: a notebook glyph on a Signal-blue circle. */
 .avatar.note-self {
-  background: #2c6bed;
-  font-size: 15px;
+  background: var(--note-self-bg);
+  font-size: 18px;
 }
 
 /* Deterministic avatar colors (inline styles are blocked by the privileged
@@ -152,7 +315,7 @@ html, body {
 .conv-name {
   flex: 1;
   font-weight: bold;
-  font-size: 13px;
+  font-size: 17px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -160,14 +323,14 @@ html, body {
 
 .conv-time {
   flex: none;
-  font-size: 10px;
-  color: #9a9a9e;
+  font-size: 12px;
+  color: var(--text-2);
   margin-left: 4px;
 }
 
 .conv-row[nav-selected="true"] .conv-time,
 .conv-row[nav-selected="true"] .conv-preview {
-  color: #dce7fd;
+  color: var(--on-sel-2);
 }
 
 .conv-bottom {
@@ -177,28 +340,28 @@ html, body {
 
 .conv-preview {
   flex: 1;
-  font-size: 11px;
-  color: #9a9a9e;
+  font-size: 14px;
+  color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .conv-preview.typing {
-  color: #6fa8ff;
+  color: var(--accent-light);
   font-style: italic;
 }
 
 .muted-icon {
   flex: none;
-  font-size: 10px;
+  font-size: 12px;
   margin-left: 3px;
   opacity: 0.8;
 }
 
 .pin-icon {
   flex: none;
-  font-size: 10px;
+  font-size: 12px;
   margin-left: 3px;
   opacity: 0.85;
 }
@@ -206,20 +369,20 @@ html, body {
 .pinned-bar {
   flex: none;
   padding: 4px 8px;
-  font-size: 11px;
-  color: #cdd6ee;
-  background: #26314a;
-  border-bottom: 1px solid #33405e;
+  font-size: 12px;
+  color: var(--pinned-text);
+  background: var(--pinned-bg);
+  border-bottom: 1px solid var(--pinned-line);
 }
 
 .pinned-bar[nav-selected="true"] {
-  background: #3a76f0;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .msg-pin {
-  font-size: 10px;
-  color: #f0c060;
+  font-size: 11px;
+  color: var(--warn);
   margin-bottom: 1px;
 }
 
@@ -242,8 +405,8 @@ html, body {
 
 .qr-caption {
   margin-top: 8px;
-  font-size: 10px;
-  color: #9a9a9e;
+  font-size: 12px;
+  color: var(--viewer-text);
   text-align: center;
   word-break: break-all;
 }
@@ -253,29 +416,29 @@ html, body {
 }
 
 .archived-row {
-  color: #9a9a9e;
-  font-size: 12px;
+  color: var(--text-2);
+  font-size: 14px;
 }
 
 .badge {
   flex: none;
-  min-width: 16px;
-  height: 16px;
-  border-radius: 8px;
-  background: #3a76f0;
-  color: #fff;
-  font-size: 10px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
   font-weight: bold;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
+  padding: 0 5px;
   margin-left: 4px;
 }
 
 .conv-row[nav-selected="true"] .badge {
-  background: #fff;
-  color: #3a76f0;
+  background: var(--on-accent);
+  color: var(--accent);
 }
 
 /* ---- Chat ---- */
@@ -288,64 +451,66 @@ html, body {
 
 .load-more {
   text-align: center;
-  font-size: 11px;
-  color: #9a9a9e;
-  padding: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+  padding: 6px;
 }
 
 .load-more[nav-selected="true"] {
-  color: #fff;
-  background: #3a76f0;
+  color: var(--on-accent);
+  background: var(--accent);
   border-radius: 4px;
 }
 
 .msg {
   max-width: 85%;
   margin: 2px 0;
-  padding: 4px 6px;
+  padding: 5px 7px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.3;
   word-wrap: break-word;
   border: 1px solid transparent;
 }
 
 .msg.in {
-  background: #2e2e33;
+  background: var(--msg-in-bg);
+  color: var(--msg-in-text);
   margin-right: auto;
   border-bottom-left-radius: 2px;
 }
 
 .msg.out {
-  background: #2b4d8f;
+  background: var(--msg-out-bg);
+  color: var(--msg-out-text);
   margin-left: auto;
   border-bottom-right-radius: 2px;
 }
 
 .msg[nav-selected="true"] {
-  border-color: #6fa8ff;
+  border-color: var(--accent-light);
 }
 
 .msg-author {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: bold;
-  color: #6fa8ff;
+  color: var(--accent-light);
   margin-bottom: 1px;
 }
 
 .msg-quote {
-  border-left: 2px solid #6fa8ff;
+  border-left: 2px solid var(--accent-light);
   padding: 1px 4px;
   margin-bottom: 2px;
-  font-size: 11px;
-  color: #b8c6e6;
-  background: rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+  color: var(--text-3);
+  background: var(--quote-bg);
   border-radius: 2px;
 }
 
 .msg-quote-author {
   font-weight: bold;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .msg-body {
@@ -354,15 +519,15 @@ html, body {
   word-break: break-word;
 }
 
-/* ---- Full-message reader ---- */
+/* ---- Full-message reader (body text: 17px) ---- */
 .msgview-pane {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: 10px;
 }
 
 .msgview-body {
-  font-size: 14px;
+  font-size: 17px;
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -370,9 +535,9 @@ html, body {
 }
 
 .msg-attach {
-  font-size: 12px;
-  color: #b8c6e6;
-  border: 1px dashed #4a5a7a;
+  font-size: 13px;
+  color: var(--text-3);
+  border: 1px dashed var(--attach-line);
   border-radius: 4px;
   padding: 3px 5px;
   margin-bottom: 2px;
@@ -388,23 +553,23 @@ html, body {
 
 .msg.deleted .msg-body {
   font-style: italic;
-  color: #9a9a9e;
+  color: var(--text-2);
 }
 
 .msg-reactions {
-  font-size: 11px;
+  font-size: 13px;
   margin-top: 1px;
 }
 
 .msg-meta {
-  font-size: 9px;
-  color: #9a9a9e;
+  font-size: 11px;
+  color: var(--text-2);
   text-align: right;
   margin-top: 1px;
 }
 
 .msg.out .msg-meta {
-  color: #b8c6e6;
+  color: var(--msg-out-meta);
 }
 
 .msg-meta .ticks {
@@ -412,17 +577,17 @@ html, body {
 }
 
 .msg-meta .ticks.read {
-  color: #6fd0ff;
+  color: var(--tick-read);
 }
 
 .msg-meta .failed {
-  color: #ff7070;
+  color: var(--bad);
   font-weight: bold;
 }
 
 .typing-line {
-  font-size: 11px;
-  color: #6fa8ff;
+  font-size: 12px;
+  color: var(--accent-light);
   font-style: italic;
   padding: 2px 6px;
   flex: none;
@@ -431,15 +596,15 @@ html, body {
 /* ---- Composer ---- */
 .composer {
   flex: none;
-  padding: 3px 4px;
-  border-top: 1px solid #2a2a2e;
-  background: #232326;
+  padding: 4px 6px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-elev);
 }
 
 .composer .quote-bar {
-  font-size: 10px;
-  color: #b8c6e6;
-  border-left: 2px solid #6fa8ff;
+  font-size: 12px;
+  color: var(--text-3);
+  border-left: 2px solid var(--accent-light);
   padding: 1px 4px;
   margin-bottom: 2px;
   white-space: nowrap;
@@ -449,85 +614,102 @@ html, body {
 
 .composer textarea {
   width: 100%;
-  border: 1px solid #3a3a40;
+  border: 1px solid var(--line-strong);
   border-radius: 4px;
-  background: #1b1b1d;
-  color: #f0f0f0;
-  font-family: sans-serif;
-  font-size: 13px;
-  padding: 3px 4px;
+  background: var(--field-bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  padding: 4px 6px;
   resize: none;
-  height: 26px;
+  min-height: 30px;
+  height: 30px;
 }
 
 .composer textarea[nav-selected="true"] {
-  border-color: #3a76f0;
+  border-color: var(--accent);
 }
 
-/* ---- Menus / settings ---- */
+/* ---- Menus / settings (list item: 60px, primary 17 / hint 14) ---- */
 .menu-item {
-  padding: 8px 8px;
-  border-bottom: 1px solid #2a2a2e;
-  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: var(--list-item-h);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 17px;
 }
 
 .menu-item[nav-selected="true"] {
-  background: #3a76f0;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .menu-item .hint {
   display: block;
-  font-size: 10px;
-  color: #9a9a9e;
-  margin-top: 1px;
+  font-size: 14px;
+  color: var(--text-2);
+  margin-top: 2px;
 }
 
 .menu-item[nav-selected="true"] .hint {
-  color: #dce7fd;
+  color: var(--on-sel-2);
+}
+
+/* Toggle row: a menu item with a trailing checkbox reflecting a boolean. */
+.menu-item.toggle {
+  flex-direction: row;
+  align-items: center;
+}
+
+.menu-item.toggle .toggle-label {
+  flex: 1;
+  min-width: 0;
 }
 
 .field {
-  padding: 6px 8px;
+  padding: 8px 10px;
 }
 
 .field label {
   display: block;
-  font-size: 11px;
-  color: #9a9a9e;
-  margin-bottom: 2px;
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 3px;
 }
 
 .field input {
   width: 100%;
-  border: 1px solid #3a3a40;
+  border: 1px solid var(--line-strong);
   border-radius: 4px;
-  background: #1b1b1d;
-  color: #f0f0f0;
-  font-size: 13px;
-  padding: 4px;
+  background: var(--field-bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 17px;
+  padding: 6px;
 }
 
 .field input[nav-selected="true"] {
-  border-color: #3a76f0;
+  border-color: var(--accent);
 }
 
 .field-note {
-  padding: 0 8px 6px;
-  font-size: 10px;
-  color: #9a9a9e;
+  padding: 0 10px 6px;
+  font-size: 12px;
+  color: var(--text-2);
   line-height: 1.4;
 }
 
 .field-note .link {
-  color: #6aa0ff;
+  color: var(--link);
   text-decoration: underline;
   word-break: break-all;
 }
 
 .field-note .link[nav-selected="true"] {
-  background: #3a76f0;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 /* Message text styles (Signal body ranges). */
@@ -538,8 +720,8 @@ html, body {
 
 /* Spoiler: obscured until its message is highlighted (D-pad select reveals). */
 .fmt-spoiler {
-  background: #6a6a70;
-  color: #6a6a70;
+  background: var(--spoiler-bg);
+  color: var(--spoiler-bg);
   border-radius: 3px;
 }
 
@@ -548,29 +730,112 @@ html, body {
   color: inherit;
 }
 
+/* ---- Separator (KaiOS: filled gray bar, H4 ~15px, normal case) ---- */
 .section-title {
-  padding: 8px 8px 2px;
-  font-size: 10px;
-  font-weight: bold;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #7f9cff;
-  border-bottom: 1px solid #2a2a2e;
-  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  min-height: var(--sep-h);
+  padding: 0 10px;
+  margin-bottom: 4px;
+  font-size: 15px;
+  color: var(--section);
+  background: var(--line);
 }
 
 .status-line {
-  padding: 4px 8px;
-  font-size: 11px;
-  color: #9a9a9e;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-2);
 }
 
 .status-line.ok {
-  color: #7fd77f;
+  color: var(--ok);
 }
 
 .status-line.bad {
-  color: #ff7070;
+  color: var(--bad);
+}
+
+/* ---- Selection controls (radio / checkbox) — value selector & toggles ---- */
+.opt-row {
+  display: flex;
+  align-items: center;
+  min-height: var(--list-item-h);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 17px;
+}
+
+.opt-row[nav-selected="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.opt-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.opt-mark {
+  flex: none;
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--text-2);
+  border-radius: 50%;
+  margin-left: 8px;
+}
+
+.opt-mark.check {
+  border-radius: 3px;
+}
+
+/* Selected (highlighted) row recolors the control outline. */
+[nav-selected="true"] > .opt-mark {
+  border-color: var(--on-accent);
+}
+
+/* Checked state — parent carries .on. Radio: filled inner dot. */
+.on > .opt-mark:not(.check)::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+[nav-selected="true"].on > .opt-mark:not(.check)::after {
+  background: var(--on-accent);
+}
+
+/* Checked state — checkbox: filled box with a tick. */
+.on > .opt-mark.check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.on > .opt-mark.check::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid var(--on-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+[nav-selected="true"].on > .opt-mark.check {
+  background: var(--on-accent);
+  border-color: var(--on-accent);
+}
+
+[nav-selected="true"].on > .opt-mark.check::after {
+  border-color: var(--accent);
 }
 
 /* ---- Reaction picker ---- */
@@ -593,20 +858,20 @@ html, body {
 }
 
 .react-cell[nav-selected="true"] {
-  background: #3a76f0;
+  background: var(--accent);
 }
 
 .react-remove {
   width: 100%;
   text-align: center;
   padding: 8px;
-  font-size: 13px;
-  color: #ff9d9d;
+  font-size: 14px;
+  color: var(--danger-soft);
 }
 
 .react-remove[nav-selected="true"] {
-  background: #3a76f0;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 /* ---- Attachment viewer ---- */
@@ -626,8 +891,8 @@ html, body {
 }
 
 .viewer-status {
-  color: #9a9a9e;
-  font-size: 12px;
+  color: var(--viewer-text);
+  font-size: 13px;
   padding: 12px;
   text-align: center;
 }
@@ -641,27 +906,30 @@ html, body {
   flex: 1;
   overflow-y: auto;
   font-family: monospace;
-  font-size: 9px;
+  font-size: 10px;
   padding: 4px;
   white-space: pre-wrap;
   word-wrap: break-word;
-  color: #b8b8bc;
+  color: var(--debug-text);
 }
 
-/* ---- Softkey bar ---- */
+/* ---- Softkey bar (KaiUI: gray bar, side H5 14/600, center 16/700 caps) ---- */
 #softkeys {
   flex: none;
-  height: 30px;
-  background: #232326;
-  border-top: 1px solid #2a2a2e;
+  height: var(--sk-h);
+  background: var(--sk-bg);
+  border-top: 1px solid var(--line);
   display: flex;
   align-items: center;
-  padding: 0 4px;
-  font-size: 12px;
+  padding: 0 6px;
+  color: var(--sk-text);
 }
 
 #sk-left, #sk-right {
   flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: capitalize;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -678,23 +946,142 @@ html, body {
 #sk-center {
   flex: 1;
   text-align: center;
-  font-weight: bold;
+  font-weight: 700;
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: 16px;
 }
 
-/* ---- Toast ---- */
+/* Center-key icon (guide allows universally-recognized glyphs like play/pause). */
+#sk-center.sk-icon::before {
+  font-size: 18px;
+}
+
+#sk-center.sk-icon-play::before {
+  content: '\25B6';
+}
+
+#sk-center.sk-icon-pause::before {
+  content: '\275A\275A';
+}
+
+/* ---- Overlay layer (dialogs + in-app notices, above screen content) ---- */
+#overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 20;
+  pointer-events: none;
+}
+
+#overlay > * {
+  pointer-events: auto;
+}
+
+/* ---- Dialog (white card with a gray title strip over a dark backdrop) ---- */
+.dialog-scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.dialog-card {
+  width: 100%;
+  max-width: 216px;
+  background: var(--dialog-bg);
+  color: var(--text);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.dialog-title {
+  background: var(--dialog-header-bg);
+  color: var(--text);
+  font-size: 17px;
+  font-weight: bold;
+  padding: 6px 10px;
+}
+
+.dialog-msg {
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.4;
+  padding: 10px;
+}
+
+/* ---- In-app notice (top banner) ---- */
+.notice {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  margin: 4px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  background: var(--notice-bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 5px 0 rgba(0, 0, 0, 0.5);
+}
+
+.notice-icon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  margin-right: 8px;
+}
+
+.notice-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.notice-primary {
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notice-secondary {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Toast (KaiUI: dark #323232 pill with shadow) ---- */
 #toast {
   position: absolute;
   bottom: 36px;
   left: 8px;
   right: 8px;
-  background: rgba(0, 0, 0, 0.85);
-  border: 1px solid #3a3a40;
-  color: #fff;
-  font-size: 12px;
-  padding: 6px 8px;
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  font-size: 14px;
+  padding: 8px 10px;
   border-radius: 6px;
   text-align: center;
+  box-shadow: 0 4px 5px 0 rgba(0, 0, 0, 0.5);
   z-index: 10;
 }

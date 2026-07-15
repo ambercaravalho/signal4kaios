@@ -52,7 +52,7 @@
 
       function updateSoftkeys() {
         var center = '';
-        if (media) center = media.paused ? 'Play' : 'Pause';
+        if (media) center = { icon: media.paused ? 'play' : 'pause' };
         App.softkeys.set(loadedBlob ? 'Save' : '', center, 'Back');
       }
 
