@@ -179,6 +179,7 @@ html, body {
 
 /* ---- Header (H1: 17px, centered, white on the dark header bar) ---- */
 .hdr {
+  position: relative;
   flex: none;
   height: var(--hdr-h);
   background: var(--header-bg);
@@ -204,6 +205,38 @@ html, body {
   font-size: 12px;
   opacity: 0.85;
   margin-left: 4px;
+}
+
+/* Connection status dot: absolutely positioned so it never nudges the
+   centered header title. Pinned to the right of the bar. */
+.conn-dot {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  margin-top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6a6a6a;
+}
+
+.conn-dot.on {
+  background: #2ecc71;
+}
+
+.conn-dot.off {
+  background: #e74c3c;
+}
+
+.conn-dot.connecting {
+  background: #f1c40f;
+  animation: conn-pulse 1s ease-in-out infinite;
+}
+
+@keyframes conn-pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.25; }
+  100% { opacity: 1; }
 }
 
 /* ---- Tabs (H3: 14px; active bold + accent underline, inactive muted) ---- */
@@ -736,7 +769,6 @@ html, body {
   align-items: center;
   min-height: var(--sep-h);
   padding: 0 10px;
-  margin-bottom: 4px;
   font-size: 15px;
   color: var(--section);
   background: var(--line);
@@ -876,6 +908,7 @@ html, body {
 
 /* ---- Attachment viewer ---- */
 .viewer {
+  position: relative;
   flex: 1;
   display: flex;
   align-items: center;
@@ -884,10 +917,18 @@ html, body {
   overflow: hidden;
 }
 
+/* Absolutely fill the viewer and letterbox via object-fit so the aspect ratio
+   is preserved. Percentage max-height on a flex child is unreliable on Gecko
+   48, which stretched the image; anchoring to the positioned .viewer avoids
+   that. */
 .viewer img,
 .viewer video {
-  max-width: 100%;
-  max-height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .viewer-status {

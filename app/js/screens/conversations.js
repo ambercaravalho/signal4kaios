@@ -6,9 +6,12 @@
       var el = App.util.el('div', 'screen');
       var hdr = App.util.el('div', 'hdr');
       var title = App.util.el('span', 'hdr-title', 'Signal');
-      var sub = App.util.el('span', 'hdr-sub', '');
+      // Connection status is a single dot (green online, red offline, pulsing
+      // yellow while reconnecting), positioned absolutely so it never shifts
+      // the centered title.
+      var dot = App.util.el('span', 'conn-dot');
       hdr.appendChild(title);
-      hdr.appendChild(sub);
+      hdr.appendChild(dot);
       el.appendChild(hdr);
 
       // Chats / Archived are two tabs (KaiOS Tab component), switched with the
@@ -27,10 +30,12 @@
 
       function archivedTab() { return tabs.index() === 1; }
 
-      function connLabel(state) {
-        if (state === 'open') return '\u25CF online';
-        if (state === 'connecting') return 'connecting\u2026';
-        return 'offline';
+      function setConn(state) {
+        var cls = state === 'open' ? 'on'
+          : (state === 'connecting' ? 'connecting' : 'off');
+        dot.className = 'conn-dot ' + cls;
+        dot.setAttribute('title', state === 'open' ? 'Online'
+          : (state === 'connecting' ? 'Reconnecting\u2026' : 'Offline'));
       }
 
       function convRow(conv) {
@@ -209,7 +214,7 @@
 
       function onConvsChanged() { renderIfVisible(); }
       function onTyping() { renderIfVisible(); }
-      function onConnection(state) { sub.textContent = connLabel(state); }
+      function onConnection(state) { setConn(state); }
 
       function subscribe() {
         App.store.on('conversations', onConvsChanged);
@@ -228,13 +233,13 @@
         enter: function () {
           subscribe();
           paused = false;
-          sub.textContent = connLabel(App.store.connectionState());
+          setConn(App.store.connectionState());
           render();
         },
         resume: function () {
           paused = false;
           dirty = false;
-          sub.textContent = connLabel(App.store.connectionState());
+          setConn(App.store.connectionState());
           render();
         },
         pause: function () { paused = true; },
