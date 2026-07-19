@@ -72,9 +72,6 @@
         function (v) { App.config.set({ typingIndicators: v }); });
       action('Blocked', 'People and groups you have blocked');
 
-      list.appendChild(App.util.sectionHeader('Notifications'));
-      action('Background notifications', 'Get notified while the app is closed');
-
       list.appendChild(App.util.sectionHeader('Appearance'));
       var themeRow = action('Theme', themeLabel());
 
@@ -148,8 +145,6 @@
             return App.router.push(App.screens.blocked.create());
           case 'Edit profile':
             return App.router.push(App.screens.profile.create());
-          case 'Background notifications':
-            return App.router.push(App.screens.pushsettings.create());
           case 'Switch account':
             return accountSwitcher();
           case 'Refresh contacts & groups':

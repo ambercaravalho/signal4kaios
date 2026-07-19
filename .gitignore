@@ -1,10 +1,14 @@
-# Packaged app output (produced by tools/package.sh)
+# Packaged app output (produced by app/scripts/package.sh)
 dist/
 
 # OS cruft
 .DS_Store
 
-# Local environment overrides
+# Gateway build/runtime and secrets (gateway/, docker/)
+node_modules/
+data/
+*.log
+.env
 .env.local
 .env.development.local
 .env.test.local

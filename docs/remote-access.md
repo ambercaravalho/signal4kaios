@@ -1,11 +1,11 @@
 # Remote access (connection auth modes)
 
-To use the app away from home you put the signal-cli-rest-api server behind a
-reverse proxy with a public `https://` address and authenticate the connection.
-The app has **three connection auth modes**, chosen in
-**Settings -> Server & connection -> Connection security**. Each request the app
-makes (the HTTP API *and* the receive WebSocket) is authenticated according to
-the mode.
+To use the app away from home, put the **[gateway](gateway.md)** behind a reverse
+proxy with a public `https://` address and authenticate the connection. The
+gateway adds no auth of its own, so the reverse proxy in front of it is where
+authentication lives. The app has **three connection auth modes**, chosen in
+**Settings -> Server & connection -> Connection security**; each authenticates
+every request the app makes — the HTTP API *and* the receive WebSocket.
 
 - [Choosing a mode](#choosing-a-mode)
 - [Why the WebSocket is the hard part](#why-the-websocket-is-the-hard-part)
@@ -59,6 +59,11 @@ query-string secret works (a Traefik/Caddy/nginx rule, an auth middleware, an
 edge function, etc.). Use `wss://`/`https://` so the token is encrypted in
 transit.
 
+The gateway's push endpoints ride the same token: the app registers over
+`App.http` (which appends the param), and the ServiceWorker appends it to its own
+`/v1/push/*` fetches while the app is closed — so a single token requirement in
+front of the gateway covers the API, the receive WebSocket, and background push.
+
 ## Pangolin
 
 [Pangolin](https://github.com/fosrl/pangolin) validates a **Resource Access
@@ -92,8 +97,8 @@ Watch for:
 - **Too-broad an exemption is catastrophic.** If you instead exempt a path
   rather than use a token, scope it to exactly `/v1/receive` (ideally
   `/v1/receive/<your-number>`). Exempting `/v1/*` or the whole host exposes
-  `send`, account, and username endpoints - an attacker could impersonate you,
-  link a device, or unregister the number.
+  `send`, account, and username endpoints (proxied through the gateway) - an
+  attacker could impersonate you, link a device, or unregister the number.
 - **`ws://` / `http://` (no TLS) leaks the token in cleartext.** Always use
   `wss://` / `https://`.
 - **The token appears in proxy logs** unless disabled. Keep it long, and rotate

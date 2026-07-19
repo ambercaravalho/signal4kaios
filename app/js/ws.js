@@ -1,7 +1,14 @@
 (function () {
   'use strict';
 
-  /* WebSocket manager for ws://<server>/v1/receive/<number> (json-rpc mode).
+  /* WebSocket manager for ws://<gateway>/v1/receive/<number>. The gateway relays
+     signal-cli's receive stream and buffers it, so on connect it replays the
+     backlog we missed (frames with seq > our cursor) as { t, seq, data }
+     envelopes, sends a 'backlog-done' sentinel, then streams live 'frame'
+     envelopes. We persist the highest applied seq and reconnect with
+     ?since=<seq> to resume without gaps or duplicates. If pointed straight at
+     signal-cli-rest-api (no gateway), a message without a `t` field is treated
+     as a raw frame.
      Reconnects with exponential backoff + jitter; also reconnects when the
      app returns to the foreground.
 
@@ -28,6 +35,8 @@
   var everConnected = false; // have we had at least one successful open?
   var lastCloseAt = 0;       // when the socket last dropped (for gap logging)
   var framesThisSession = 0; // frames received since the current open
+  var cursor = 0;            // highest gateway seq applied (backlog resume point)
+  var cursorTimer = null;    // debounces persisting the cursor to IndexedDB
 
   var HEARTBEAT_MS = 30000;  // safety-net poll for a silently-dead socket
   var WAKE_ALARM_MS = 300000; // how far ahead to schedule the wake alarm
@@ -37,6 +46,31 @@
     if (sock && sock.readyState === WebSocket.OPEN) return 'open';
     if (sock && sock.readyState === WebSocket.CONNECTING) return 'connecting';
     return 'closed';
+  }
+
+  /* The backlog cursor is the highest gateway seq we've applied. It's persisted
+     per-account in IndexedDB (via App.db.kv) and loaded once before the first
+     connect so we resume without gaps or duplicates. */
+  function loadCursor() {
+    if (!App.db || !App.db.kvGet) return Promise.resolve();
+    return App.db.kvGet('wsCursor').then(function (v) {
+      cursor = (typeof v === 'number' && v > 0) ? v : 0;
+      App.util.dbg('ws: cursor loaded (' + cursor + ')');
+    })['catch'](function () { cursor = 0; });
+  }
+
+  function updateCursor(seq) {
+    if (typeof seq === 'number' && seq > cursor) cursor = seq;
+  }
+
+  function persistCursor() {
+    if (cursorTimer || !App.db || !App.db.kvSet) return;
+    cursorTimer = setTimeout(function () {
+      cursorTimer = null;
+      App.db.kvSet('wsCursor', cursor)['catch'](function (e) {
+        App.util.dbg('ws: cursor persist failed ' + (e && e.message));
+      });
+    }, 1000);
   }
 
   function connect() {
@@ -59,6 +93,10 @@
     var param = App.config.tokenParam();
     var tok = App.config.authMode() === 'token' ? App.config.receiveToken() : '';
     if (tok) url += '?' + encodeURIComponent(param) + '=' + encodeURIComponent(tok);
+    // Resume the gateway backlog from the last seq we applied. Appended after the
+    // token so the separator is correct whether or not a token is present.
+    var sinceSep = url.indexOf('?') === -1 ? '?' : '&';
+    url += sinceSep + 'since=' + cursor;
     var redactRe = new RegExp('([?&]' + param.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=)[^&]*');
     App.util.dbg('ws: connecting ' + url.replace(redactRe, '$1***'));
     App.store.setConnection('connecting');
@@ -82,8 +120,8 @@
       if (everConnected && lastCloseAt) {
         App.util.dbg('ws: reconnected after ' + (Date.now() - lastCloseAt) + 'ms gap');
         // Refresh the directory so contacts/groups that appeared while offline
-        // resolve; signal-cli streams queued messages on the fresh socket, but
-        // there is no history API so already-delivered messages can't backfill.
+        // resolve. Missed messages are backfilled by the gateway's backlog
+        // replay (?since=<cursor>) on this fresh socket.
         resync();
       } else {
         App.util.dbg('ws: open');
@@ -94,15 +132,38 @@
     };
 
     sock.onmessage = function (evt) {
-      var frame;
+      var msg;
       try {
-        frame = JSON.parse(evt.data);
+        msg = JSON.parse(evt.data);
       } catch (e) {
         App.util.dbg('ws: non-JSON frame', evt.data);
         return;
       }
+      // Gateway envelope: { t: 'backlog'|'backlog-done'|'frame', seq, data }.
+      // Fall back to treating the message as a raw signal-cli frame so the app
+      // still works if pointed directly at signal-cli-rest-api.
+      if (msg && msg.t) {
+        if (msg.t === 'backlog') {
+          // Already-seen-while-closed messages: apply silently (no notification
+          // flood), just advance the resume cursor.
+          if (msg.data) App.store.ingestRaw(msg.data, { silent: true });
+          updateCursor(msg.seq);
+        } else if (msg.t === 'backlog-done') {
+          App.util.dbg('ws: backlog replay complete (seq ' + (msg.seq || 0) + ')');
+          updateCursor(msg.seq);
+          persistCursor();
+        } else if (msg.t === 'frame') {
+          framesThisSession += 1;
+          if (msg.data) App.store.ingestRaw(msg.data);
+          updateCursor(msg.seq);
+          persistCursor();
+        } else {
+          App.util.dbg('ws: unknown envelope type ' + msg.t);
+        }
+        return;
+      }
       framesThisSession += 1;
-      App.store.ingestRaw(frame);
+      App.store.ingestRaw(msg);
     };
 
     sock.onclose = function (evt) {
@@ -256,6 +317,7 @@
 
   App.ws = {
     connect: connect,
+    loadCursor: loadCursor,
     stop: stop,
     restart: restart,
     state: state

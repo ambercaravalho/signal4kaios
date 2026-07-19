@@ -31,13 +31,27 @@ Screens are pure consumers: they subscribe to store events and re-render, never
 parsing frames or writing message data to IndexedDB directly — that all goes
 through `App.store`.
 
+The app's single backend is the **[gateway](gateway.md)** (a Node/TS service in
+front of signal-cli-rest-api): it reverse-proxies all HTTP, relays the receive
+WebSocket with a buffered backlog, and sends background Web Push. From the app's
+perspective the server URL simply points at the gateway.
+
 ## The receive path
 
 1. **[`ws.js`](../app/js/ws.js)** maintains the WebSocket to
-   `wss://<server>/v1/receive/<number>`, with backoff+jitter reconnect, a
-   reconnect-on-foreground handler, a heartbeat for a silently-dead socket, and a
-   wake alarm; after a reconnect it kicks off a directory resync. Each frame's
-   JSON goes to `App.store.ingestRaw`.
+   `wss://<gateway>/v1/receive/<number>?since=<seq>`, with backoff+jitter
+   reconnect, a reconnect-on-foreground handler, a heartbeat for a silently-dead
+   socket, and a wake alarm; after a reconnect it kicks off a directory resync.
+   The gateway wraps each message in an envelope
+   `{ t: 'backlog'|'backlog-done'|'frame', seq, data }`: on connect it replays the
+   backlog missed since our persisted cursor (`seq > since`) as `backlog`
+   envelopes (ingested **silently** — history + unread only, no notification),
+   sends a `backlog-done` sentinel, then streams live `frame` envelopes (ingested
+   normally). The app advances/persists the cursor (`wsCursor` in `kv`) from each
+   `seq` so the next reconnect resumes with no gaps or duplicates. Each frame's
+   `data` goes to `App.store.ingestRaw`. See [Gateway](gateway.md) for the
+   protocol. (Pointed straight at signal-cli-rest-api, a message without `t` is
+   treated as a raw frame.)
 2. **[`normalize.js`](../app/js/normalize.js)** is the single choke point that
    turns a raw signal-cli envelope into zero or more **typed events**. Envelope
    shapes vary across versions, so **all** parsing lives here and anything
@@ -73,21 +87,22 @@ load after everything it depends on.
 | [`polyfills.js`](../app/js/polyfills.js) | Tiny Gecko-48 shims; creates `window.App` |
 | [`platform.js`](../app/js/platform.js) | `App.platform`: cross-version B2G abstraction (activities, device storage, alarms, ServiceWorker detection) — feature-detects the 3.0+ shape, falls back to 2.5, always returns a Promise |
 | [`util.js`](../app/js/util.js) | `el`, time/format helpers, `initials`, `colorClass`, `debounce`, and the `dbg` ring buffer |
-| [`config.js`](../app/js/config.js) | `localStorage` settings (server URL, number, proxy auth, receive token); feature flags; cached username+link; multi-account list; URL helpers |
+| [`config.js`](../app/js/config.js) | `localStorage` settings (gateway/server URL, number, connection auth mode + proxy auth/receive token); feature flags; cached username+link; multi-account list; URL helpers |
 | [`toast.js`](../app/js/toast.js) | `App.toast` transient message bar |
 | [`http.js`](../app/js/http.js) | Promise wrapper over `mozSystem` XHR (CORS-free); desktop XHR fallback; attaches Basic Auth |
 | [`api.js`](../app/js/api.js) | Wrappers over the REST endpoints (send, reactions, receipts, contacts/groups, group member/admin/permission/link/block management, message pin/unpin, set-username, disappearing-timer) |
 | [`db.js`](../app/js/db.js) | IndexedDB persistence — the message history; includes the expired-message sweep and pinned-message query |
 | [`normalize.js`](../app/js/normalize.js) | Envelope → typed events (the only parser) |
-| [`ws.js`](../app/js/ws.js) | Receive WebSocket: backoff/reconnect, foreground+heartbeat+alarm wake, resync on reconnect, auth-failure detection |
-| [`store.js`](../app/js/store.js) | State hub: apply events, persist, emit; optimistic send; serialized mutations |
+| [`ws.js`](../app/js/ws.js) | Receive WebSocket: gateway envelope protocol (backlog/live) with a persisted `since` cursor, backoff/reconnect, foreground+heartbeat+alarm wake, resync on reconnect, auth-failure detection |
+| [`store.js`](../app/js/store.js) | State hub: apply events (with a silent path for backlog replay), persist, emit; optimistic send; serialized mutations |
+| [`push.js`](../app/js/push.js) | `App.push`: always-on Web Push (3.0+). On boot fetches the gateway VAPID key, subscribes, registers via `App.http`, caches gateway coords for `sw.js`; clean no-op on 2.5 |
 | [`avatars.js`](../app/js/avatars.js) | Profile-photo fetch + cache with per-session memoization |
 | [`nav.js`](../app/js/nav.js) | D-pad selection via `nav-selectable` / `nav-selected` |
 | [`softkeys.js`](../app/js/softkeys.js) | SoftLeft/Center/SoftRight labels |
 | [`router.js`](../app/js/router.js) | Screen stack + one global keydown dispatcher |
-| [`main.js`](../app/js/main.js) | Boot: init router + store, push first screen, background prune; registers `sw.js` on 3.0+ |
+| [`main.js`](../app/js/main.js) | Boot: init router + store (loads the WS cursor before connecting), push first screen, background prune, auto push subscribe; registers `sw.js` on 3.0+ |
 | [`screens/*.js`](../app/js/screens) | Individual screens (see below) |
-| [`sw.js`](../app/sw.js) | ServiceWorker (3.0+ only, outside `app/js`): relays the `alarm` system message to the page for reconnect, and handles notification clicks |
+| [`sw.js`](../app/sw.js) | ServiceWorker (3.0+ only, outside `app/js`): relays the `alarm` system message to the page for reconnect, shows gateway Web Push (payload or `/v1/push/pending` fallback), and handles notification clicks |
 
 **Vendored libraries** live in [`app/vendor/`](../app/vendor), outside `app/js`
 so the [packaging syntax gate](development.md#packaging) only scans first-party
@@ -127,7 +142,7 @@ support keeps the un-suffixed `signal4kaios` name so its history survives.
 | `conversations` | peer number/uuid, or `g:` + internal group id | One per chat; holds local-only `pinned` and last-known `expireTimer` |
 | `contacts` | uuid preferred, else number | Address-book / profile directory |
 | `attachments` | `id` | LRU blob cache for viewed media; `avatar:*` entries exempt from pruning |
-| `kv` | `k` | Small key/value store (e.g. cached groups map) |
+| `kv` | `k` | Small key/value store (e.g. cached groups map, and `wsCursor` — the gateway backlog resume point) |
 
 ## Normalized event shapes
 

@@ -6,17 +6,17 @@
      1. Receive the KaiOS 'alarm' system message and relay a wake signal to the
         page so ws.js can reconnect and drain queued messages. This is the
         3.0/4.0 equivalent of mozSetMessageHandler('alarm') on 2.5.
-     2. Handle 'push' messages from the push bridge (see docs/push-bridge.md) and
-        show a notification even when the app is fully closed — the only way to
-        notify without a running WebSocket. If a push carries no readable payload
-        it falls back to asking the bridge what's pending.
+     2. Handle 'push' messages from the gateway (see docs/gateway.md) and show a
+        notification even when the app is fully closed — the only way to notify
+        without a running WebSocket. If a push carries no readable payload it
+        falls back to asking the gateway what's pending.
      3. Handle notification clicks so tapping a message notification focuses the
         app and opens the right conversation.
 
    Kept deliberately small and dependency-free; it shares nothing with the
-   page's App.* modules. Bridge coordinates (URL/token/number/VAPID key) are
-   handed over by push.js via Cache Storage so this worker can act with the app
-   closed. */
+   page's App.* modules. Gateway coordinates (base URL, number, VAPID key, and —
+   in token auth mode — the receive token/param) are handed over by push.js via
+   Cache Storage so this worker can act with the app closed. */
 
 var NOTIF_ICON = '/assets/icons/kaios_112.png';
 var PUSH_CACHE = 's4k-push';
@@ -64,15 +64,24 @@ function urlB64ToUint8Array(base64) {
   return arr;
 }
 
-/* Bridge coordinates written by push.js (page side) so this worker can reach
-   the bridge while the app is closed. Returns null if push isn't set up. */
-function readBridgeCfg() {
+/* Gateway coordinates written by push.js (page side) so this worker can reach
+   the gateway while the app is closed. Returns null if push isn't set up. */
+function readPushCfg() {
   if (!self.caches) return Promise.resolve(null);
   return self.caches.open(PUSH_CACHE).then(function (cache) {
     return cache.match(PUSH_CFG_KEY);
   }).then(function (res) {
     return res ? res.json() : null;
   })['catch'](function () { return null; });
+}
+
+/* Append the receive token as a query param (token auth mode) so the worker's
+   own cross-origin fetches pass a reverse proxy in front of the gateway. */
+function withToken(url, cfg) {
+  if (!cfg || !cfg.token || !cfg.tokenParam) return url;
+  var sep = url.indexOf('?') === -1 ? '?' : '&';
+  return url + sep + encodeURIComponent(cfg.tokenParam) + '=' +
+    encodeURIComponent(cfg.token);
 }
 
 function showFromPayload(p) {
@@ -85,27 +94,21 @@ function showFromPayload(p) {
   });
 }
 
-/* Fallback for "tickle" pushes with no readable payload: ask the bridge what's
-   pending for this subscription. The bridge must send CORS headers so this
-   cross-origin fetch can read the response (the signal-cli server cannot, which
-   is why the bridge exists). */
+/* Fallback for "tickle" pushes with no readable payload: ask the gateway what's
+   pending for this number. The gateway sends CORS headers on /v1/push/* so this
+   cross-origin fetch can read the response. */
 function fetchPending() {
-  return readBridgeCfg().then(function (cfg) {
-    if (!cfg || !cfg.bridgeUrl) return null;
-    return self.registration.pushManager.getSubscription().then(function (sub) {
-      var base = cfg.bridgeUrl.replace(/\/+$/, '');
-      var url = base + '/v1/push/pending?number=' +
-        encodeURIComponent(cfg.number || '');
-      if (sub) url += '&endpoint=' + encodeURIComponent(sub.endpoint);
-      var headers = {};
-      if (cfg.token) headers['Authorization'] = 'Bearer ' + cfg.token;
-      return self.fetch(url, { mode: 'cors', headers: headers })
-        .then(function (res) { return res.ok ? res.json() : null; })
-        .then(function (data) {
-          if (!data) return null;
-          return data.messages || data.items || (data.length ? data : null);
-        });
-    });
+  return readPushCfg().then(function (cfg) {
+    if (!cfg || !cfg.serverUrl) return null;
+    var base = cfg.serverUrl.replace(/\/+$/, '');
+    var url = withToken(base + '/v1/push/pending?number=' +
+      encodeURIComponent(cfg.number || ''), cfg);
+    return self.fetch(url, { mode: 'cors' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data) return null;
+        return data.messages || data.items || (data.length ? data : null);
+      });
   })['catch'](function () { return null; });
 }
 
@@ -138,21 +141,22 @@ self.addEventListener('push', function (event) {
   );
 });
 
-/* The push service can rotate a subscription; re-subscribe and tell the bridge
+/* The push service can rotate a subscription; re-subscribe and tell the gateway
    the new endpoint (fire-and-forget — we don't need the response). */
 self.addEventListener('pushsubscriptionchange', function (event) {
   event.waitUntil(
-    readBridgeCfg().then(function (cfg) {
-      if (!cfg || !cfg.bridgeUrl) return null;
+    readPushCfg().then(function (cfg) {
+      if (!cfg || !cfg.serverUrl) return null;
       function reRegister(sub) {
-        var headers = { 'Content-Type': 'application/json' };
-        if (cfg.token) headers['Authorization'] = 'Bearer ' + cfg.token;
         var body = {
           number: cfg.number || '',
           subscription: (sub && sub.toJSON) ? sub.toJSON() : sub
         };
-        return self.fetch(cfg.bridgeUrl.replace(/\/+$/, '') + '/v1/push/register', {
-          method: 'POST', mode: 'cors', headers: headers, body: JSON.stringify(body)
+        var url = withToken(cfg.serverUrl.replace(/\/+$/, '') + '/v1/push/register', cfg);
+        return self.fetch(url, {
+          method: 'POST', mode: 'cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
         })['catch'](function () { return null; });
       }
       if (event.newSubscription) return reRegister(event.newSubscription);

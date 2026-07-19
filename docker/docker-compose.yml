@@ -1,0 +1,53 @@
+# The gateway is the only service exposed to the app; signal-cli-rest-api sits on
+# an internal-only network the app never reaches.
+#
+#   cp docker/.env.example docker/.env   # edit as needed
+#   docker compose -f docker/docker-compose.yml up -d
+
+services:
+  signal-cli-rest-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    environment:
+      # json-rpc mode keeps a persistent receive stream the gateway relays.
+      - MODE=json-rpc
+    volumes:
+      - signal-cli-config:/home/.local/share/signal-cli
+    networks:
+      - internal
+    # No ports published: only the gateway can reach it.
+    restart: unless-stopped
+
+  gateway:
+    build:
+      # Context is the repo root so the image can copy from gateway/.
+      context: ..
+      dockerfile: docker/Dockerfile
+    depends_on:
+      - signal-cli-rest-api
+    environment:
+      - PORT=8090
+      - SIGNAL_CLI_URL=http://signal-cli-rest-api:8080
+      - DB_PATH=/app/data/gateway.db
+      - RETENTION_PER_NUMBER=500
+      - PUSH_WHEN_IDLE_ONLY=true
+      # Generate with: npx web-push generate-vapid-keys
+      - VAPID_PUBLIC=${VAPID_PUBLIC:-}
+      - VAPID_PRIVATE=${VAPID_PRIVATE:-}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@example.com}
+    volumes:
+      - gateway-data:/app/data
+    ports:
+      # Point the app's Server URL at this. Put a TLS-terminating reverse proxy
+      # in front for remote access (see docs/remote-access.md).
+      - "8090:8090"
+    networks:
+      - internal
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  signal-cli-config:
+  gateway-data:

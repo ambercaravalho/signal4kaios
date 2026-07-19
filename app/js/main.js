@@ -71,8 +71,9 @@
       }, 5000);
     });
 
-    // If background push is enabled, re-assert the subscription with the bridge
-    // (endpoints can change across reboots/updates). Best-effort, non-blocking.
+    // Background push is always on: subscribe and (re-)register with the gateway
+    // (endpoints can change across reboots/updates). Best-effort, non-blocking;
+    // a clean no-op on KaiOS 2.5 / where Push is unsupported.
     if (App.push) App.push.sync();
   }
 

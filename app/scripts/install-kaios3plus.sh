@@ -13,7 +13,7 @@
 #     your PATH as `appscmd`.
 #
 # Usage:
-#   APPSCMD=/path/to/appscmd sh tools/install-kaios3plus.sh
+#   APPSCMD=/path/to/appscmd sh app/scripts/install-kaios3plus.sh
 #
 # Launch from the phone's app list, or from the desktop with:
 #   appscmd launch http://signal4kaios.localhost/manifest.webmanifest
@@ -23,7 +23,7 @@
 # Debug afterwards with a modern Firefox at about:debugging (NOT the 2.5 WebIDE,
 # which cannot speak the Gecko 84/123 remote protocol).
 set -e
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 APPSCMD="${APPSCMD:-appscmd}"
 PORT="${PORT:-6000}"

@@ -181,7 +181,7 @@
     }
   }
 
-  function applyMessage(ev) {
+  function applyMessage(ev, silent) {
     var conv = ensureConv(ev);
     var rec = {
       id: msgId(ev.convId, ev.timestamp, ev.author),
@@ -227,7 +227,10 @@
 
     emit('message', rec);
     emit('conversations');
-    if (ev.incoming) notify(conv, rec);
+    // During gateway backlog replay (silent), skip the user-facing notification:
+    // these messages were already pushed while the app was closed, so re-notifying
+    // would flood on every reconnect. The unread count above still updates.
+    if (ev.incoming && !silent) notify(conv, rec);
 
     // Viewing this chat right now: mark read immediately.
     if (ev.incoming && openConvId === conv.id) {
@@ -407,9 +410,9 @@
     if (changed) emit('conversations');
   }
 
-  function applyEvent(ev) {
+  function applyEvent(ev, silent) {
     switch (ev.type) {
-      case 'message': return applyMessage(ev);
+      case 'message': return applyMessage(ev, silent);
       case 'reaction': return applyReaction(ev);
       case 'remoteDelete': return applyRemoteDelete(ev);
       case 'edit': return applyEdit(ev);
@@ -423,9 +426,13 @@
     }
   }
 
-  function ingestRaw(frame) {
+  /* Turn one raw signal-cli frame into events and apply them. Pass
+     { silent: true } during gateway backlog replay so already-pushed messages
+     don't re-trigger notifications (unread counts still update). */
+  function ingestRaw(frame, opts) {
+    var silent = !!(opts && opts.silent);
     var events = App.normalize.parse(frame, self());
-    events.forEach(applyEvent);
+    events.forEach(function (ev) { applyEvent(ev, silent); });
   }
 
   /* Best display name across the many places Signal keeps names:
@@ -848,7 +855,12 @@
         refreshDirectory()['catch'](function (e) {
           App.util.dbg('directory refresh failed: ' + e.message);
         });
-        App.ws.connect();
+        // Load the gateway backlog cursor before connecting so the first
+        // /v1/receive request resumes from where we left off instead of
+        // replaying the whole buffer.
+        App.ws.loadCursor().then(function () {
+          App.ws.connect();
+        });
       }
     })['catch'](function (e) {
       ready = true;

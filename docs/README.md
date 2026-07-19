@@ -2,8 +2,9 @@
 
 A Signal client for **KaiOS 2.5, 3.0, 3.1, and 4.0** feature phones, backed by a
 self-hosted
-[signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server.
-Start with whichever section fits what you're doing.
+[signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server
+fronted by the signal4kaios **gateway**. Start with whichever section fits what
+you're doing.
 
 ## For users
 
@@ -13,8 +14,8 @@ Start with whichever section fits what you're doing.
   [troubleshooting](user-guide.md#troubleshooting).
 - **[Remote access](remote-access.md)** — a reverse proxy with Basic Auth, and
   the one WebSocket caveat to know about.
-- **[Push bridge](push-bridge.md)** — optional background/closed-app
-  notifications via Web Push, and the bridge server API to make them work.
+- **[Gateway](gateway.md)** — the Node/TS backend the app talks to: HTTP proxy,
+  buffered WebSocket relay with backlog replay, and always-on background push.
 
 ## For developers
 
@@ -29,14 +30,19 @@ Start with whichever section fits what you're doing.
 ## How the pieces fit together
 
 ```
-                            your home network / a reverse proxy
-                                          │
-   ┌───────────────┐   HTTP + WebSocket   │   ┌───────────────────────┐
-   │  signal4kaios │◀────────────────────▶│──▶│  signal-cli-rest-api   │──▶ Signal
-   │  (KaiOS app)  │                       │   │  (json-rpc mode)       │
-   └───────────────┘                       │   └───────────────────────┘
+                    your home network / a reverse proxy
+                                  │
+ ┌───────────────┐  HTTP + WS     │   ┌──────────────┐      ┌────────────────────┐
+ │  signal4kaios │◀──────────────▶│──▶│   gateway    │─────▶│ signal-cli-rest-api │──▶ Signal
+ │  (KaiOS app)  │                │   │  (Node/TS)   │      │   (json-rpc mode)   │
+ └───────────────┘                │   └──────────────┘      └────────────────────┘
+                                  │      (buffer + push)         (internal only)
 ```
 
-The app is only a client. Your Signal account lives on the server, which must be
-**registered or linked** and running in **`json-rpc`** mode. The phone reaches it
-over Wi-Fi or through a reverse proxy (see [Remote access](remote-access.md)).
+The app is only a client, and it talks to a single backend: the
+**[gateway](gateway.md)**, which proxies HTTP to signal-cli-rest-api, relays the
+receive WebSocket with a buffered backlog, and sends background push. Your Signal
+account lives on signal-cli-rest-api, which must be **registered or linked** and
+running in **`json-rpc`** mode; it stays internal and is never exposed to the app.
+The phone reaches the gateway over Wi-Fi or through a reverse proxy (see
+[Remote access](remote-access.md)).

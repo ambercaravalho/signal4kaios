@@ -1,10 +1,10 @@
 # Getting started
 
 From nothing to a working Signal client on your phone, in three parts: the
-**server**, the **install**, and the **first-run config**.
+**backend**, the **install**, and the **first-run config**.
 
 - [Requirements](#requirements)
-- [1. The server](#1-the-server)
+- [1. Run the backend](#1-run-the-backend)
 - [2. Install (sideload)](#2-install-sideload)
 - [3. First-run configuration](#3-first-run-configuration)
 - [Next steps](#next-steps)
@@ -12,46 +12,43 @@ From nothing to a working Signal client on your phone, in three parts: the
 ## Requirements
 
 - A phone running **KaiOS 2.5** (Gecko 48), **3.0/3.1** (Gecko 84), or **4.0**
-  (Gecko 123) with the developer/debug menu enabled. The app ships one package
-  that installs on all of them; only the install tool differs (see below).
-- A **signal-cli-rest-api** server in **`json-rpc`** mode (`MODE=json-rpc`),
-  already **registered or linked** to your account, and **reachable from the
-  phone** — directly on Wi-Fi (e.g. `http://192.168.1.100:4329`) or through a
-  reverse proxy (see [Remote access](remote-access.md)).
+  (Gecko 123) with the developer/debug menu enabled. One package installs on all
+  of them; only the install tool differs (see below).
+- **Docker** (with Compose) to run the backend from [`docker/`](../docker).
 - A desktop with **ADB**, plus:
   - **KaiOS 2.5** — an old **Firefox (52–59)** for WebIDE.
   - **KaiOS 3.0/3.1/4.0** — the **`appscmd`** tool (WebIDE is gone) and a modern
-    **Firefox** for `about:debugging`. Note: on-device debugging is only
-    available on 3.0/3.1/4.0 builds that have it enabled.
+    **Firefox** for `about:debugging`. On-device debugging must be enabled on the
+    build.
 
-> Why `json-rpc`? The app receives messages in real time over the `/v1/receive`
-> WebSocket, which the server only exposes in `json-rpc` mode. In `normal` mode
-> there is no live socket.
+## 1. Run the backend
 
-## 1. The server
+The backend is two containers: **signal-cli-rest-api** (holds your Signal
+account) and the **[gateway](gateway.md)** (the only thing the phone talks to —
+it proxies the API, buffers missed messages, and sends background push).
+signal-cli-rest-api stays on an internal network; only the gateway's port
+(`8090`) is published.
 
-signal4kaios is only a client — your Signal account lives on the server. If you
-don't have one running, follow
+```sh
+cp docker/.env.example docker/.env   # optional: set VAPID keys to lock down push
+docker compose -f docker/docker-compose.yml up -d
+```
+
+Then **register or link your Signal number** once (linking is easiest — it
+appears as a linked device, like Signal Desktop), following
 [bbernhard/signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api).
-The essentials the app depends on:
 
-- Run the container with **`MODE=json-rpc`**.
-- **Register** a new number or **link** the server to an existing account
-  (linking is usually easiest — it appears as a linked device, like Signal
-  Desktop).
-- Make the server's HTTP port reachable from the phone (on the same Wi-Fi, just
-  the LAN IP and port).
-
-Sanity-check it from any browser on the network: `http://<server>:<port>/v1/about`
-should return JSON with the version and `"mode": "json-rpc"`. The app's **Test
-connection** button hits the same endpoint.
+Sanity-check from any browser on the network: `http://<host>:8090/v1/about`
+should return JSON with the version and `"mode": "json-rpc"` (proxied through the
+gateway). The app's **Test connection** button hits the same endpoint. For
+running the gateway outside Docker, see [Gateway](gateway.md).
 
 ## 2. Install (sideload)
 
 First, package the app:
 
 ```sh
-sh tools/package.sh
+sh app/scripts/package.sh
 ```
 
 This checks for Gecko-48-incompatible syntax, verifies both manifests
@@ -83,7 +80,7 @@ adb-forwarded debugger socket. Download the binary for your desktop from
 for Linux), make it executable, then:
 
 ```sh
-APPSCMD=/path/to/appscmd sh tools/install-kaios3plus.sh
+APPSCMD=/path/to/appscmd sh app/scripts/install-kaios3plus.sh
 ```
 
 The helper runs `adb root`, forwards the debugger socket, and installs `app/`.
@@ -118,8 +115,8 @@ section of [`app/manifest.webmanifest`](../app/manifest.webmanifest) (3.0/3.1/4.
 
 The first launch opens **Settings**. Fill in:
 
-- **Server URL** — e.g. `http://192.168.1.100:4329` (or your public `https://`
-  address behind a reverse proxy).
+- **Server URL** — the **gateway** address, e.g. `http://192.168.1.100:8090` (or
+  your public `https://` address behind a reverse proxy).
 - **My Signal number** — E.164 form, e.g. `+15551234567` (the app normalizes
   spaces/parentheses/dashes and adds a leading `+`).
 - **Connection security** — pick how requests authenticate against your proxy.
@@ -142,5 +139,5 @@ Accounts**; each keeps its own local history.
 
 - Learn the app: **[User guide](user-guide.md)**.
 - Use it away from home: **[Remote access](remote-access.md)**.
-- Get notified with the app closed (KaiOS 3.0+): **[Push bridge](push-bridge.md)**.
+- How the backend works, incl. closed-app push (KaiOS 3.0+): **[Gateway](gateway.md)**.
 - Something not working? **[Troubleshooting](user-guide.md#troubleshooting)**.

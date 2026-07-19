@@ -6,7 +6,7 @@
 # which must stay ES5 for 2.5. app/sw.js lives outside app/js (it is 3.0+ only)
 # and is not gated, but is kept ES5-clean for consistency.
 set -e
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 # --- Gecko 48 syntax gate -------------------------------------------------
 # KaiOS 2.5 runs Gecko 48: no async/await, no spread/rest (...), no
@@ -41,8 +41,9 @@ done
 # --- Zip -------------------------------------------------------------------
 mkdir -p dist
 rm -f dist/signal4kaios.zip
-(cd app && zip -qr ../dist/signal4kaios.zip . -x '*.DS_Store')
+# Exclude app/scripts (build/deploy helpers) so they don't ship inside the app.
+(cd app && zip -qr ../dist/signal4kaios.zip . -x '*.DS_Store' -x 'scripts/*')
 echo "OK: dist/signal4kaios.zip"
 echo
 echo "Install on KaiOS 2.5:         WebIDE (old Firefox) -> Open Packaged App -> app/"
-echo "Install on KaiOS 3.0/3.1/4.0: sh tools/install-kaios3plus.sh   (needs adb + appscmd)"
+echo "Install on KaiOS 3.0/3.1/4.0: sh app/scripts/install-kaios3plus.sh   (needs adb + appscmd)"

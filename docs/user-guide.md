@@ -243,12 +243,15 @@ Grouped into sections; SoftLeft anywhere in Settings jumps to **My QR code**.
 ## Notifications and reconnect
 
 Backgrounded, new messages raise a system notification (unless muted); group
-notifications are prefixed with the sender's name.
+notifications are prefixed with the sender's name. On **KaiOS 3.0+**, the
+[gateway](gateway.md) also sends background push, so you're notified even when the
+app is fully **closed** — this is always on, with nothing to configure.
 
 If the connection drops or the app is suspended, it retries with backoff,
 reconnects on foreground, and uses a periodic wake alarm to reconnect on its own.
-There's no server-side history to replay, so anything delivered while fully
-offline can't be backfilled.
+On reconnect the gateway replays the backlog you missed while offline (up to its
+buffer limit), so recent messages are backfilled; older history beyond that
+buffer is not.
 
 ## What lives on the phone
 

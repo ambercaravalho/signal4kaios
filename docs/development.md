@@ -14,19 +14,26 @@ it's built) and [AGENTS.md](../AGENTS.md) (the condensed rules).
 
 ## Ground rules
 
-- **No build step, no bundler, no package manager, no dependencies.** Files under
-  [`app/`](../app) are served as-is. Don't add npm, transpilers, or a framework.
+- **The KaiOS app (`app/`) has no build step, no bundler, no package manager, no
+  dependencies.** Files under [`app/`](../app) are served as-is. Don't add npm,
+  transpilers, or a framework to the app.
 - The app is **privileged**; its CSP forbids inline scripts, styles, and event
   handlers.
 - Target runtime is **KaiOS 2.5 = Gecko 48** (ES5-era). The app **also** runs on
   **KaiOS 3.0/3.1** (Gecko 84) and **4.0** (Gecko 123), so keep first-party page
   code (`app/js`) ES5-clean — 2.5 is the lowest common denominator. See
   [Cross-version support](#cross-version-support).
+- The **[gateway](gateway.md)** is a **separate** Node/TypeScript component
+  ([`gateway/`](../gateway)) that runs server-side. It has its own `package.json`
+  + `tsc` build and normal npm dependencies; **the Gecko-48 constraints and the
+  "no build step" rule above do NOT apply to it.** The packaging gate only scans
+  `app/`, so the gateway is out of scope for it.
 
 ## Gecko 48 constraints
 
 These run fine in a modern desktop browser but **break on the phone**.
-[`tools/package.sh`](../tools/package.sh) hard-fails packaging on the first four:
+[`app/scripts/package.sh`](../app/scripts/package.sh) hard-fails packaging on the
+first four:
 
 | Banned | Use instead |
 |---|---|
@@ -73,15 +80,15 @@ relays the `alarm` system message and notification clicks back to the page.
 ## Packaging
 
 ```sh
-sh tools/package.sh
+sh app/scripts/package.sh
 ```
 
 Runs the Gecko-48 syntax gate against `app/js` and `app/css`, then zips `app/`
-into `dist/signal4kaios.zip` (`dist/` is gitignored). The gate scans **only**
-first-party code; vendor a third-party library in [`app/vendor/`](../app/vendor)
-to keep prebuilt files (e.g. the `jsQR` decoder) out of the gate — they're still
-zipped and loaded via `<script>`. Keep your own code in `app/js` so it stays
-gated.
+into `dist/signal4kaios.zip` (`dist/` is gitignored; `app/scripts/` is excluded
+from the zip). The gate scans **only** first-party code; vendor a third-party
+library in [`app/vendor/`](../app/vendor) to keep prebuilt files (e.g. the `jsQR`
+decoder) out of the gate — they're still zipped and loaded via `<script>`. Keep
+your own code in `app/js` so it stays gated.
 
 Install/sideload steps are in
 [Getting started → Install](getting-started.md#2-install-sideload). Re-sideload
@@ -91,21 +98,40 @@ after any change to manifest permissions (`manifest.webapp` on 2.5,
 ## Developing on the desktop
 
 [`http.js`](../app/js/http.js) falls back to a plain XHR when `mozSystem` isn't
-available, so you can iterate in a normal browser behind a CORS proxy:
+available, so you can iterate in a normal browser behind a CORS proxy. Run the
+[gateway](gateway.md) first (it's what the app talks to), then:
 
 ```sh
 # serve the app
 cd app && python3 -m http.server 8000
 
-# proxy the API to add CORS headers (the WebSocket passes through fine)
-npx local-cors-proxy --proxyUrl http://192.168.1.100:4329 --port 4330
+# proxy the gateway's HTTP API to add CORS headers (the WebSocket relay is not
+# subject to CORS and connects to the gateway directly)
+npx local-cors-proxy --proxyUrl http://192.168.1.100:8090 --port 8091
 ```
 
-Then set the in-app **Server URL** to the proxy (e.g. `http://localhost:4330`).
+Then set the in-app **Server URL** to the proxy (e.g. `http://localhost:8091`).
+The gateway itself only adds CORS to `/v1/push/*`, so a CORS proxy is still needed
+for the proxied API when developing in a desktop browser.
 
 **Caveat:** the desktop doesn't enforce the privileged-app CSP, so inline
 handlers/styles that would be rejected on the phone appear to work. Keep all
 scripts and styles in local files and verify on-device or in the simulator.
+
+## Developing the gateway
+
+The gateway lives in [`gateway/`](../gateway) and is an ordinary Node project:
+
+```sh
+cd gateway
+npm install
+npm run build          # type-check + compile to dist/
+SIGNAL_CLI_URL=http://127.0.0.1:8080 npm start
+```
+
+See the [Gateway docs](gateway.md) for the env vars, the WS envelope/cursor
+protocol, and push behavior. For a container setup, use
+[`docker/docker-compose.yml`](../docker/docker-compose.yml).
 
 ## Testing on KaiOS
 
@@ -115,7 +141,7 @@ before trusting a change. The simulator enforces the CSP and runs the real Gecko
 
 For **KaiOS 3.0/3.1/4.0**, WebIDE is gone. Install with `appscmd` over an
 adb-forwarded debugger socket (see
-[`tools/install-kaios3plus.sh`](../tools/install-kaios3plus.sh) and
+[`app/scripts/install-kaios3plus.sh`](../app/scripts/install-kaios3plus.sh) and
 [Getting started → Install](getting-started.md#on-kaios-30-31-and-40)) and debug
 with a modern Firefox at `about:debugging`. Because the 3.0+ engine is much
 newer, run a quick regression on a 2.5 device/simulator too — a change that works

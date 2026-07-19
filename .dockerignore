@@ -1,0 +1,15 @@
+# Build context is the repo root (docker/docker-compose.yml); the image only
+# needs gateway sources. Keep the context small and avoid leaking artifacts.
+**/node_modules
+**/dist
+**/data
+.git
+.gitignore
+*.log
+**/.env
+**/.DS_Store
+
+# Not needed to build the gateway image.
+app
+docs
+dist
