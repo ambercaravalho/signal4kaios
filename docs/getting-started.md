@@ -142,4 +142,5 @@ Accounts**; each keeps its own local history.
 
 - Learn the app: **[User guide](user-guide.md)**.
 - Use it away from home: **[Remote access](remote-access.md)**.
+- Get notified with the app closed (KaiOS 3.0+): **[Push bridge](push-bridge.md)**.
 - Something not working? **[Troubleshooting](user-guide.md#troubleshooting)**.

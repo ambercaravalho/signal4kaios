@@ -48,11 +48,20 @@
         return App.theme.current() === 'light' ? 'Light' : 'Dark';
       }
 
+      list.appendChild(App.util.sectionHeader('Account'));
+      action('Edit profile', 'Set your Signal name');
+      action('Switch account', 'Change or add a number');
+
       list.appendChild(App.util.sectionHeader('Server'));
       action('Server & connection', 'URL, number, proxy auth');
 
-      list.appendChild(App.util.sectionHeader('Appearance'));
-      var themeRow = action('Theme', themeLabel());
+      list.appendChild(App.util.sectionHeader('Chats'));
+      var styledRow = toggle('Text formatting',
+        function () { return App.config.styledText(); },
+        function (v) { App.config.set({ styledText: v }); });
+      var mutedArchiveRow = toggle('Keep muted chats archived',
+        function () { return App.config.keepMutedArchived(); },
+        function (v) { App.config.set({ keepMutedArchived: v }); });
 
       list.appendChild(App.util.sectionHeader('Privacy'));
       var receiptsRow = toggle('Read receipts',
@@ -63,21 +72,11 @@
         function (v) { App.config.set({ typingIndicators: v }); });
       action('Blocked', 'People and groups you have blocked');
 
-      list.appendChild(App.util.sectionHeader('Chats'));
-      var mutedArchiveRow = toggle('Keep muted chats archived',
-        function () { return App.config.keepMutedArchived(); },
-        function (v) { App.config.set({ keepMutedArchived: v }); });
+      list.appendChild(App.util.sectionHeader('Notifications'));
+      action('Background notifications', 'Get notified while the app is closed');
 
-      list.appendChild(App.util.sectionHeader('Composer'));
-      var styledRow = toggle('Text formatting',
-        function () { return App.config.styledText(); },
-        function (v) { App.config.set({ styledText: v }); });
-
-      list.appendChild(App.util.sectionHeader('Profile'));
-      action('Edit profile', 'Set your Signal name');
-
-      list.appendChild(App.util.sectionHeader('Accounts'));
-      action('Switch account', 'Change or add a number');
+      list.appendChild(App.util.sectionHeader('Appearance'));
+      var themeRow = action('Theme', themeLabel());
 
       list.appendChild(App.util.sectionHeader('Data'));
       action('Refresh contacts & groups');
@@ -149,6 +148,8 @@
             return App.router.push(App.screens.blocked.create());
           case 'Edit profile':
             return App.router.push(App.screens.profile.create());
+          case 'Background notifications':
+            return App.router.push(App.screens.pushsettings.create());
           case 'Switch account':
             return accountSwitcher();
           case 'Refresh contacts & groups':

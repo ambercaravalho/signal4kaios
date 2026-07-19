@@ -119,6 +119,38 @@
       return read().keepMutedArchived !== false;
     },
 
+    /* ---- Web Push (background / closed-app notifications) ----
+       KaiOS delivers push messages to the ServiceWorker even when the app is
+       closed, but signal-cli-rest-api cannot send them. A separate "push
+       bridge" server holds the signal-cli receive socket open and turns each
+       incoming message into a Web Push. These settings point the phone at that
+       bridge and enable the subscription. See docs/push-bridge.md. */
+
+    /* Whether background push notifications are enabled on this device. */
+    pushEnabled: function () {
+      return read().pushEnabled === true;
+    },
+
+    /* Base URL of the push bridge server (e.g. https://push.example.com).
+       Separate from serverUrl because the bridge is its own component. */
+    pushBridgeUrl: function () {
+      return (read().pushBridgeUrl || '').replace(/\/+$/, '');
+    },
+
+    /* VAPID application server public key (base64url). When set, the phone
+       subscribes with it so only the matching bridge private key can push.
+       Strongly recommended; leaving it blank lets any party that learns the
+       endpoint push to this device. */
+    pushVapidKey: function () {
+      return read().pushVapidKey || '';
+    },
+
+    /* Optional bearer token the phone sends when registering its subscription
+       with the bridge, so the bridge can authenticate registrations. */
+    pushBridgeToken: function () {
+      return read().pushBridgeToken || '';
+    },
+
     isConfigured: function () {
       return !!(App.config.serverUrl() && App.config.number());
     },

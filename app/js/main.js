@@ -70,6 +70,10 @@
         });
       }, 5000);
     });
+
+    // If background push is enabled, re-assert the subscription with the bridge
+    // (endpoints can change across reboots/updates). Best-effort, non-blocking.
+    if (App.push) App.push.sync();
   }
 
   window.addEventListener('load', boot);

@@ -13,6 +13,8 @@ Start with whichever section fits what you're doing.
   [troubleshooting](user-guide.md#troubleshooting).
 - **[Remote access](remote-access.md)** — a reverse proxy with Basic Auth, and
   the one WebSocket caveat to know about.
+- **[Push bridge](push-bridge.md)** — optional background/closed-app
+  notifications via Web Push, and the bridge server API to make them work.
 
 ## For developers
 

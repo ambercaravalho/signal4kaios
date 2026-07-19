@@ -79,16 +79,11 @@
       attempts = 0;
       warnedAuth = false;
       framesThisSession = 0;
-      // Diagnostics for the "missed while disconnected" investigation: note
-      // whether this is a reconnect and how long the gap was, so the debug
-      // log shows whether signal-cli drains its queue on the fresh socket.
       if (everConnected && lastCloseAt) {
-        App.util.dbg('ws: reconnected after ' + (Date.now() - lastCloseAt) +
-          'ms gap — any messages queued while offline should stream now');
-        // Best-effort catch-up: signal-cli should stream queued messages on the
-        // fresh socket; refresh the directory so any new contacts/groups that
-        // appeared while we were offline resolve correctly. There is no history
-        // API, so already-delivered messages we missed cannot be backfilled.
+        App.util.dbg('ws: reconnected after ' + (Date.now() - lastCloseAt) + 'ms gap');
+        // Refresh the directory so contacts/groups that appeared while offline
+        // resolve; signal-cli streams queued messages on the fresh socket, but
+        // there is no history API so already-delivered messages can't backfill.
         resync();
       } else {
         App.util.dbg('ws: open');
