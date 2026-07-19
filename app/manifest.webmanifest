@@ -30,6 +30,9 @@
       "desktop-notification": {
         "description": "Show notifications for new Signal messages"
       },
+      "push": {
+        "description": "Receive new-message notifications while the app is closed"
+      },
       "alarms": {
         "description": "Periodically wake to reconnect and catch up on messages"
       },

@@ -99,6 +99,22 @@ const server = http.createServer(function (req, res) {
     return;
   }
 
+  if (pathname === '/v1/push/test' && req.method === 'POST') {
+    readJson(req).then(function (body) {
+      const number = body && body.number ? String(body.number) : '';
+      if (!number) {
+        sendJson(res, 400, { error: 'number required' });
+        return;
+      }
+      push.sendTest(number).then(function (results) {
+        sendJson(res, 200, { sent: results.length, results: results });
+      });
+    })['catch'](function () {
+      sendJson(res, 400, { error: 'invalid body' });
+    });
+    return;
+  }
+
   if (pathname === '/v1/push/pending' && req.method === 'GET') {
     const number = url.searchParams.get('number');
     if (!number) {

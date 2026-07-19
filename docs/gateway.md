@@ -109,6 +109,7 @@ without a `t` field is treated as a raw frame, so basic receive still works
 | `GET /v1/push/vapid` | gateway | `{ "publicKey": "<vapid or empty>" }`; the app reads this to subscribe. |
 | `POST /v1/push/register` | gateway | `{ number, subscription }` — store a push subscription. |
 | `POST /v1/push/unregister` | gateway | `{ endpoint }` — drop a subscription. |
+| `POST /v1/push/test` | gateway | `{ number }` — send a canned notification to every subscription for that number (ignores the idle gate) and return each push service's status. Handy for debugging. |
 | `GET /v1/push/pending?number=` | gateway | Returns and clears queued notes (payloadless-push fallback). CORS-enabled. |
 | everything else | proxy | Forwarded verbatim (method, path, query, headers, body, binary) to `SIGNAL_CLI_URL`. |
 
@@ -131,11 +132,29 @@ receive token/param in Cache Storage, so the ServiceWorker
 
 On an incoming message, the gateway builds a note by mirroring the conversation
 id rules in [`normalize.js`](../app/js/normalize.js) (group → `g:<id>`, otherwise
-the sender's number/uuid) so tapping the notification opens the right chat, and
-sends it as an encrypted Web Push payload (plus a `/v1/push/pending` fallback for
-push services that can't carry payloads). When `PUSH_WHEN_IDLE_ONLY` is true and
-the app is currently connected for that number, the push is skipped (the app
-shows its own notification).
+the sender's number/uuid) so tapping the notification opens the right chat. When
+`PUSH_WHEN_IDLE_ONLY` is true and the app is currently connected for that number,
+the push is skipped (the app shows its own notification).
+
+### KaiOS push service quirks
+
+The KaiOS push service (`notification.kaiostech.com`) is a fork of Mozilla's old
+autopush and is stricter than modern browsers, so the gateway adapts:
+
+- **Encoding.** It only accepts the legacy `aesgcm` content encoding, not
+  web-push's default `aes128gcm`. The gateway always sends `aesgcm`.
+- **Payloads need VAPID.** Without VAPID keys, KaiOS only allows *empty*
+  ("tickle") pushes. So with VAPID the gateway sends the note as an encrypted
+  payload; without it, it sends a payloadless tickle and the ServiceWorker pulls
+  the note from `GET /v1/push/pending`. Either way the notification shows real
+  text — VAPID just avoids the extra round-trip (and restricts who can push).
+- **App `push` permission.** The KaiOS manifest
+  ([`manifest.webmanifest`](../app/manifest.webmanifest)) must request the `push`
+  permission for delivery to work.
+
+If pushes never arrive, check the gateway log for `push: sent … (201)` vs.
+`push: send failed … (4xx)`, or trigger `POST /v1/push/test` with your number to
+see the push service's response directly.
 
 ## Deploying
 

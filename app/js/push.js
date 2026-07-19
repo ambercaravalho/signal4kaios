@@ -56,7 +56,22 @@
     });
   }
 
-  function subscribe(reg, vapidKey) {
+  /* The VAPID key the app last subscribed with, so we can detect a change
+     (e.g. the gateway going from keyless to VAPID-configured) and re-subscribe.
+     KaiOS/Gecko doesn't reliably expose subscription.options, so we compare
+     against this cached value instead. */
+  function readCachedVapidKey() {
+    if (typeof caches === 'undefined') return Promise.resolve('');
+    return caches.open('s4k-push').then(function (cache) {
+      return cache.match('/__s4k_push_cfg');
+    }).then(function (res) {
+      return res ? res.json() : null;
+    }).then(function (cfg) {
+      return (cfg && cfg.vapidKey) || '';
+    })['catch'](function () { return ''; });
+  }
+
+  function subscribe(reg, vapidKey, forceResubscribe) {
     var opts = { userVisibleOnly: true };
     if (vapidKey) {
       try {
@@ -66,8 +81,13 @@
       }
     }
     return reg.pushManager.getSubscription().then(function (existing) {
-      if (existing) return existing;
-      return reg.pushManager.subscribe(opts);
+      if (existing && !forceResubscribe) return existing;
+      if (!existing) return reg.pushManager.subscribe(opts);
+      // Key changed: drop the stale subscription and make a fresh one so the
+      // new applicationServerKey (or lack of one) actually takes effect.
+      App.util.dbg('push: VAPID key changed, re-subscribing');
+      return existing.unsubscribe()['catch'](function () { return null; })
+        .then(function () { return reg.pushManager.subscribe(opts); });
     });
   }
 
@@ -98,13 +118,17 @@
       return Promise.resolve();
     }
     return fetchVapidKey().then(function (vapidKey) {
-      return navigator.serviceWorker.ready.then(function (reg) {
-        return subscribe(reg, vapidKey);
-      }).then(function (sub) {
-        return savePushCfg(vapidKey).then(function () {
-          return registerWithGateway(sub);
-        }).then(function () {
-          App.util.dbg('push: subscribed (' + endpointHost(sub.endpoint) + ')');
+      return readCachedVapidKey().then(function (prevKey) {
+        var keyChanged = (prevKey || '') !== (vapidKey || '');
+        return navigator.serviceWorker.ready.then(function (reg) {
+          return subscribe(reg, vapidKey, keyChanged);
+        }).then(function (sub) {
+          return savePushCfg(vapidKey).then(function () {
+            return registerWithGateway(sub);
+          }).then(function () {
+            App.util.dbg('push: subscribed (' + endpointHost(sub.endpoint) +
+              (vapidKey ? ', VAPID' : ', keyless') + ')');
+          });
         });
       });
     })['catch'](function (e) {
