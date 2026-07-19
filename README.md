@@ -1,67 +1,85 @@
 # signal4kaios
 
-Real Signal, on a phone with actual buttons. **signal4kaios** is a Signal
-messenger client for **KaiOS 2.5, 3.0, 3.1, and 4.0** feature phones, backed by a
-self-hosted
-[signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server —
-fronted by the signal4kaios **[gateway](docs/gateway.md)**, a small Node/TS
-service the app talks to that proxies the API, buffers missed messages for gapless
-reconnects, and delivers background push while the app is closed.
+**Real Signal, on a phone with actual buttons.**
 
-It's vanilla JavaScript with **no build step**, packaged as a **privileged**
-KaiOS app (privilege is what grants `systemXHR`, so the app can reach your server
-cross-origin without CORS). One package installs on every supported version — it
-ships both the 2.5 `manifest.webapp` and the 3.0+ `manifest.webmanifest`.
+signal4kaios is a full-featured [Signal](https://signal.org) messenger for
+**KaiOS** feature phones — the flip phones and keypad handsets that don't run
+Android or iOS. Send and receive real Signal messages, react, reply, join
+groups, and share photos, all driven by the number pad and D-pad.
 
-## Highlights
+It connects to your own self-hosted Signal backend, so your messages never pass
+through anyone else's servers. Works on **KaiOS 2.5, 3.0, 3.1, and 4.0** from a
+single install.
 
-- Real-time 1:1 and group chat over the receive WebSocket (`json-rpc` mode):
-  reactions (full emoji picker + a "who reacted" view), replies, edits, read
-  receipts, and typing indicators (the last two toggleable).
-- **Disappearing messages**: set the timer per chat, see a message's countdown,
-  and messages delete themselves when they expire.
-- **Pinning**: synced pinned messages in groups, plus local pinned conversations
-  that float to the top of the list.
-- **Background notifications** (KaiOS 3.0+): the gateway sends Web Push so new
-  messages notify you even when the app is fully closed — always on, no setup.
-- **Gapless reconnect**: the gateway buffers what arrives while you're offline and
-  replays your backlog on reconnect, so nothing is missed.
-- **Attachments** through the KaiOS system picker (camera, recorder, gallery,
-  video, or any file), cached offline and saveable to the phone.
-- **Group management**: members, admins, per-action permissions, invite link,
-  and group blocking.
-- **QR codes**: show your Signal profile code and scan someone else's.
-- **Finding people**: search-as-you-type, or start by number/username with a
-  registration check.
-- Multiple accounts, archived/muted chats, unread badges, local search, and a
-  persistent reconnect. Fully keypad-driven for a 240x320 screen.
+> **You'll need to run a small backend** (two Docker containers) that holds your
+> Signal account and talks to the phone. See the [Quickstart](#quickstart).
+
+## Features
+
+| Area | What you get |
+| --- | --- |
+| **Messaging** | Real-time 1:1 and group chat, reactions (full emoji picker + "who reacted"), replies, edits, read receipts, and typing indicators (last two toggleable) |
+| **Disappearing messages** | Per-chat timer, live countdown on a message, and automatic deletion when it expires |
+| **Notifications** | Background push (KaiOS 3.0+) that reaches you even when the app is fully closed — always on, nothing to configure |
+| **Never miss a message** | The backend buffers anything that arrives while you're offline and replays it on reconnect |
+| **Media** | Send/receive photos, video, voice notes, and files via the KaiOS system picker; cached offline and saveable to the phone |
+| **Groups** | Manage members, admins, per-action permissions, invite links, pinned messages, and group blocking |
+| **Finding people** | Search-as-you-type, or start a chat by number/username with a registration check |
+| **Organization** | Multiple accounts, archived/muted chats, pinned conversations, unread badges, and local search |
+| **Built for the hardware** | Fully keypad-driven, tuned for a 240x320 screen, with persistent reconnect |
+
+## Requirements
+
+- A **KaiOS 2.5 / 3.0 / 3.1 / 4.0** phone with the developer/debug menu enabled.
+- **Docker** (with Compose) to run the backend.
+- A desktop to package and sideload the app (WebIDE on 2.5, `appscmd` on 3.0+).
 
 ## Quickstart
 
-1. Start the backend (signal-cli-rest-api + gateway) with Docker:
+1. **Start the backend** — signal-cli-rest-api (holds your Signal account) and
+   the gateway (the only thing the phone talks to):
 
 ```sh
 cp docker/.env.example docker/.env
 docker compose -f docker/docker-compose.yml up -d
 ```
 
-2. Register or link your Signal number on signal-cli-rest-api (one-time — see
-   [Getting started](docs/getting-started.md)).
-3. Package and sideload the app: `sh app/scripts/package.sh` (WebIDE on 2.5,
-   `appscmd` on 3.0/3.1/4.0).
-4. On first run, set **Server URL** to the gateway (e.g. `http://<host>:8090`)
-   and your Signal number.
+2. **Register or link** your Signal number on signal-cli-rest-api — a one-time
+   step covered in [Getting started](docs/getting-started.md).
+3. **Install the app**: `sh app/scripts/package.sh`, then sideload it (WebIDE on
+   2.5, `appscmd` on 3.0/3.1/4.0).
+4. **Point it at the backend**: on first run, set **Server URL** to the gateway
+   (e.g. `http://<host>:8090`) and enter your Signal number.
 
-Full steps: **[Getting started](docs/getting-started.md)**.
+Full walkthrough: **[Getting started](docs/getting-started.md)**.
+
+## How it works
+
+The phone app is a client only — your Signal account lives on the backend. Two
+pieces run server-side:
+
+- **[signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api)** —
+  holds the account and does the actual Signal protocol work. It stays on an
+  internal network and is never exposed to the phone.
+- **[gateway](docs/gateway.md)** — a small Node/TypeScript service the app talks
+  to. It proxies the API, relays the receive stream while buffering missed
+  messages for gapless reconnects, and sends background push so notifications
+  arrive even when the app is closed.
+
+The app itself is vanilla JavaScript with **no build step**, packaged as a
+**privileged** KaiOS app (privilege grants the cross-origin `systemXHR` it needs
+to reach your server). One package installs on every supported version — it ships
+both the 2.5 `manifest.webapp` and the 3.0+ `manifest.webmanifest`, and the OS
+picks whichever it understands.
 
 ## Documentation
 
-The wiki lives in **[`docs/`](docs/README.md)**:
+Full docs live in **[`docs/`](docs/README.md)**:
 
 - **[Getting started](docs/getting-started.md)** — backend setup, install, first-run config.
 - **[User guide](docs/user-guide.md)** — every feature and the keypad reference.
 - **[Gateway](docs/gateway.md)** — the Node/TS backend: HTTP proxy, buffered WS relay, background push.
-- **[Remote access](docs/remote-access.md)** — reverse proxy, Basic Auth, and the WebSocket caveat.
+- **[Remote access](docs/remote-access.md)** — reverse proxy, auth modes, and the WebSocket caveat.
 - **[Architecture](docs/architecture.md)** — data flow, modules, IndexedDB, event shapes.
 - **[Development](docs/development.md)** — Gecko 48 constraints, cross-version support, packaging, adding a screen.
 
