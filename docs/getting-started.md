@@ -11,13 +11,18 @@ From nothing to a working Signal client on your phone, in three parts: the
 
 ## Requirements
 
-- A phone running **KaiOS 2.5** (Gecko 48) with the developer/debug menu enabled.
+- A phone running **KaiOS 2.5** (Gecko 48), **3.0/3.1** (Gecko 84), or **4.0**
+  (Gecko 123) with the developer/debug menu enabled. The app ships one package
+  that installs on all of them; only the install tool differs (see below).
 - A **signal-cli-rest-api** server in **`json-rpc`** mode (`MODE=json-rpc`),
   already **registered or linked** to your account, and **reachable from the
   phone** — directly on Wi-Fi (e.g. `http://192.168.1.100:4329`) or through a
   reverse proxy (see [Remote access](remote-access.md)).
-- A desktop with **ADB** and an old **Firefox (52–59)** for WebIDE, used once to
-  sideload.
+- A desktop with **ADB**, plus:
+  - **KaiOS 2.5** — an old **Firefox (52–59)** for WebIDE.
+  - **KaiOS 3.0/3.1/4.0** — the **`appscmd`** tool (WebIDE is gone) and a modern
+    **Firefox** for `about:debugging`. Note: on-device debugging is only
+    available on 3.0/3.1/4.0 builds that have it enabled.
 
 > Why `json-rpc`? The app receives messages in real time over the `/v1/receive`
 > WebSocket, which the server only exposes in `json-rpc` mode. In `normal` mode
@@ -43,36 +48,60 @@ connection** button hits the same endpoint.
 
 ## 2. Install (sideload)
 
-1. Package the app (or point WebIDE at `app/` directly):
+First, package the app:
 
-   ```sh
-   sh tools/package.sh
-   ```
+```sh
+sh tools/package.sh
+```
 
-   This checks for Gecko-48-incompatible syntax and produces
-   `dist/signal4kaios.zip`.
+This checks for Gecko-48-incompatible syntax, verifies both manifests
+(`manifest.webapp` for 2.5 and `manifest.webmanifest` for 3.0/3.1/4.0) and the
+ServiceWorker are present, and produces `dist/signal4kaios.zip`.
 
-2. On the phone, enable debug mode by dialing `*#*#33284#*#*` (a bug icon
+### On KaiOS 2.5
+
+1. On the phone, enable debug mode by dialing `*#*#33284#*#*` (a bug icon
    appears in the status bar).
 
-3. Connect over USB and forward the debugger socket:
+2. Connect over USB and forward the debugger socket:
 
    ```sh
    adb forward tcp:6000 localfilesystem:/data/local/debugger-socket
    ```
 
-4. In **Firefox (52–59)**, open **WebIDE → Remote Runtime → `localhost:6000`**.
+3. In **Firefox (52–59)**, open **WebIDE → Remote Runtime → `localhost:6000`**.
 
-5. Choose **Open Packaged App**, select the **`app/`** folder, then **Install
+4. Choose **Open Packaged App**, select the **`app/`** folder, then **Install
    and Run**.
 
-> **Re-sideload after any change to `manifest.webapp` permissions**, or they
-> won't take effect.
+### On KaiOS 3.0, 3.1, and 4.0
+
+WebIDE no longer works — packaged apps install with **`appscmd`** over the
+adb-forwarded debugger socket. Download the binary for your desktop from
+[kaiostech/appscmd](https://github.com/kaiostech/appscmd) (e.g.
+`appscmd-aarch64-apple-darwin` for Apple Silicon, `appscmd-x86_64-unknown-linux-gnu`
+for Linux), make it executable, then:
+
+```sh
+APPSCMD=/path/to/appscmd sh tools/install-kaios3plus.sh
+```
+
+The helper runs `adb root`, forwards the debugger socket, and installs `app/`.
+Launch it from the phone's app list, or from the desktop with
+`appscmd launch http://signal4kaios.localhost/manifest.webmanifest` (the `launch`
+subcommand wants the full manifest URL, not the short name). Debug with a modern
+Firefox at **`about:debugging`** (not the 2.5 WebIDE).
+
+> **Re-install after any change to manifest permissions**, or they won't take
+> effect. On 3.0/3.1/4.0 the origin is `http://signal4kaios.localhost`, so a
+> fresh install starts with empty settings and message history — this is
+> expected.
 
 ### Permissions
 
 The app is **privileged** and declares these in
-[`app/manifest.webapp`](../app/manifest.webapp):
+[`app/manifest.webapp`](../app/manifest.webapp) (2.5) and the `b2g_features`
+section of [`app/manifest.webmanifest`](../app/manifest.webmanifest) (3.0/3.1/4.0):
 
 | Permission | Why |
 |---|---|

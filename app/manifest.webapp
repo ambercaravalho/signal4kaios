@@ -1,7 +1,7 @@
 {
   "version": "0.4.0",
   "name": "Signal4KaiOS",
-  "description": "Signal messenger client for KaiOS 2.5, powered by signal-cli-rest-api",
+  "description": "Signal messenger client for KaiOS, powered by signal-cli-rest-api",
   "type": "privileged",
   "launch_path": "/index.html",
   "icons": {
@@ -47,7 +47,7 @@
     "en-US": {
       "name": "Signal4KaiOS",
       "subtitle": "Signal client",
-      "description": "Signal messenger client for KaiOS 2.5, powered by signal-cli-rest-api"
+      "description": "Signal messenger client for KaiOS, powered by signal-cli-rest-api"
     }
   },
   "default_locale": "en-US"

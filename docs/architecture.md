@@ -15,8 +15,11 @@ How the app is put together. For the rules when changing it see
 
 ## Design in one picture
 
-Everything is vanilla ES5, no build step. Each file is an IIFE that hangs its
-public API off a global `App`. The core data flow is one direction:
+Everything is vanilla ES5 (2.5's Gecko 48 is the floor), no build step, and the
+same package runs on KaiOS 2.5, 3.0, 3.1, and 4.0 — see
+[Development → Cross-version support](development.md#cross-version-support).
+Each file is an IIFE that hangs its public API off a global `App`. The core data
+flow is one direction:
 
 ```
 ws.js ──▶ normalize.js ──▶ store.js ──▶ IndexedDB (db.js)
@@ -68,6 +71,7 @@ load after everything it depends on.
 | File | Responsibility |
 |---|---|
 | [`polyfills.js`](../app/js/polyfills.js) | Tiny Gecko-48 shims; creates `window.App` |
+| [`platform.js`](../app/js/platform.js) | `App.platform`: cross-version B2G abstraction (activities, device storage, alarms, ServiceWorker detection) — feature-detects the 3.0+ shape, falls back to 2.5, always returns a Promise |
 | [`util.js`](../app/js/util.js) | `el`, time/format helpers, `initials`, `colorClass`, `debounce`, and the `dbg` ring buffer |
 | [`config.js`](../app/js/config.js) | `localStorage` settings (server URL, number, proxy auth, receive token); feature flags; cached username+link; multi-account list; URL helpers |
 | [`toast.js`](../app/js/toast.js) | `App.toast` transient message bar |
@@ -81,8 +85,9 @@ load after everything it depends on.
 | [`nav.js`](../app/js/nav.js) | D-pad selection via `nav-selectable` / `nav-selected` |
 | [`softkeys.js`](../app/js/softkeys.js) | SoftLeft/Center/SoftRight labels |
 | [`router.js`](../app/js/router.js) | Screen stack + one global keydown dispatcher |
-| [`main.js`](../app/js/main.js) | Boot: init router + store, push first screen, background prune |
+| [`main.js`](../app/js/main.js) | Boot: init router + store, push first screen, background prune; registers `sw.js` on 3.0+ |
 | [`screens/*.js`](../app/js/screens) | Individual screens (see below) |
+| [`sw.js`](../app/sw.js) | ServiceWorker (3.0+ only, outside `app/js`): relays the `alarm` system message to the page for reconnect, and handles notification clicks |
 
 **Vendored libraries** live in [`app/vendor/`](../app/vendor), outside `app/js`
 so the [packaging syntax gate](development.md#packaging) only scans first-party
@@ -90,8 +95,9 @@ code: `qrcode.js` (ES5 QR **encoder**, for showing your profile QR) and
 `jsQR.js` (QR **decoder**, for scanning). They attach plain globals and load via
 `<script>` tags. Scanning needs camera access, which varies across KaiOS builds:
 `scanqr` tries a live `getUserMedia` preview (needs `video-capture`) and, if a
-raw stream isn't granted, falls back to a MozActivity `pick` snapshot decoded
-with jsQR.
+raw stream isn't granted, falls back to a `pick` web activity (via
+`App.platform` — `WebActivity` on 3.0+, `MozActivity` on 2.5) whose snapshot is
+decoded with jsQR.
 
 ## Screens and the router
 

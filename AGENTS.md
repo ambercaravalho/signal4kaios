@@ -5,11 +5,14 @@ any change. Deeper docs live in [`docs/`](docs/README.md).
 
 ## What this is
 
-**signal4kaios** is a Signal client for **KaiOS 2.5** feature phones. It talks to
-a self-hosted
+**signal4kaios** is a Signal client for **KaiOS 2.5** feature phones that also
+runs on **KaiOS 3.0, 3.1, and 4.0**. It talks to a self-hosted
 [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server
 (in `json-rpc` mode) over HTTP + a receive WebSocket, packaged as a
-**privileged** KaiOS app and sideloaded onto the phone.
+**privileged** KaiOS app and sideloaded onto the phone. One package ships both
+manifests ([`manifest.webapp`](app/manifest.webapp) for 2.5,
+[`manifest.webmanifest`](app/manifest.webmanifest) for 3.0+); the OS reads
+whichever it understands.
 
 There is **no build step, bundler, package manager, dependency, or
 `package.json`** — the app is plain files under [`app/`](app/) served as-is.
@@ -17,8 +20,11 @@ Don't introduce npm, transpilers, frameworks, or a build pipeline.
 
 ## Non-negotiable platform constraints
 
-KaiOS 2.5 runs **Gecko 48** (~Firefox 48, ES5-era). Newer syntax breaks silently
-on the phone even though it runs on your desktop.
+KaiOS 2.5 runs **Gecko 48** (~Firefox 48, ES5-era). The app also targets KaiOS
+3.0/3.1 (Gecko 84) and 4.0 (Gecko 123), but 2.5 is the lowest common
+denominator, so **all first-party page code (`app/js`) must stay ES5-clean**.
+Newer syntax breaks
+silently on the phone even though it runs on your desktop.
 [`tools/package.sh`](tools/package.sh) hard-fails packaging on these four, so
 treat them as bans:
 
@@ -71,8 +77,15 @@ IndexedDB schema, and event shapes.
   (Settings → Debug log) — the primary debugging tool, since there's no console
   on the phone. Use `App.toast(msg)` for user-facing notices.
 - **Config** (server URL, number, proxy auth) is in `localStorage` via
-  [`config.js`](app/js/config.js); all message/contact data is in IndexedDB via
-  [`db.js`](app/js/db.js).
+ [`config.js`](app/js/config.js); all message/contact data is in IndexedDB via
+ [`db.js`](app/js/db.js).
+- **Version-specific KaiOS APIs go through [`platform.js`](app/js/platform.js)**
+ (`App.platform`). Never call `MozActivity`, `navigator.getDeviceStorage`, or
+ `navigator.mozAlarms` directly — `App.platform` feature-detects the 3.0+
+ shape (`WebActivity`, `navigator.b2g.*`, ServiceWorker) first and falls back to
+ the 2.5 shape, always returning a Promise. [`sw.js`](app/sw.js) is 3.0+-only
+ (registered from [`main.js`](app/js/main.js)) and relays the `alarm` system
+ message and notification clicks back to the page.
 
 ## Rules for specific areas
 

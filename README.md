@@ -1,13 +1,15 @@
 # signal4kaios
 
 Real Signal, on a phone with actual buttons. **signal4kaios** is a Signal
-messenger client for **KaiOS 2.5** feature phones, backed by a self-hosted
+messenger client for **KaiOS 2.5, 3.0, 3.1, and 4.0** feature phones, backed by a
+self-hosted
 [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server on
 your network.
 
 It's vanilla JavaScript with **no build step**, packaged as a **privileged**
 KaiOS app (privilege is what grants `systemXHR`, so the app can reach your server
-cross-origin without CORS).
+cross-origin without CORS). One package installs on every supported version — it
+ships both the 2.5 `manifest.webapp` and the 3.0+ `manifest.webmanifest`.
 
 ## Highlights
 
@@ -32,8 +34,9 @@ cross-origin without CORS).
 
 1. Run a **signal-cli-rest-api** server in `json-rpc` mode, registered/linked to
    your account and reachable from the phone.
-2. Package the app: `sh tools/package.sh` (or point WebIDE at `app/`).
-3. Sideload it and, on first run, enter your server URL and Signal number.
+2. Package the app: `sh tools/package.sh`.
+3. Sideload it (WebIDE on 2.5, `appscmd` on 3.0/3.1/4.0) and, on first run, enter
+   your server URL and Signal number.
 
 Full steps: **[Getting started](docs/getting-started.md)**.
 
@@ -45,7 +48,7 @@ The wiki lives in **[`docs/`](docs/README.md)**:
 - **[User guide](docs/user-guide.md)** — every feature and the keypad reference.
 - **[Remote access](docs/remote-access.md)** — reverse proxy, Basic Auth, and the WebSocket caveat.
 - **[Architecture](docs/architecture.md)** — data flow, modules, IndexedDB, event shapes.
-- **[Development](docs/development.md)** — Gecko 48 constraints, packaging, adding a screen.
+- **[Development](docs/development.md)** — Gecko 48 constraints, cross-version support, packaging, adding a screen.
 
 Contributing (or pointing an AI agent at this repo)? Start with
 **[AGENTS.md](AGENTS.md)**.

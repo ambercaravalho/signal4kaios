@@ -143,15 +143,30 @@
     if (conv.muted) return;
     if (!document.hidden) return;
     if (typeof Notification === 'undefined') return;
-    try {
-      var title = conv.name || 'Signal';
-      var body = rec.body || '[attachment]';
-      if (conv.type === 'group') body = displayName(rec.author) + ': ' + body;
-      var n = new Notification(title, {
-        body: body.slice(0, 100),
-        tag: conv.id,
-        icon: '/assets/icons/kaios_112.png'
+    var title = conv.name || 'Signal';
+    var body = rec.body || '[attachment]';
+    if (conv.type === 'group') body = displayName(rec.author) + ': ' + body;
+    var opts = {
+      body: body.slice(0, 100),
+      tag: conv.id,
+      icon: '/assets/icons/kaios_112.png'
+    };
+
+    // KaiOS 3.0/4.0: show through the ServiceWorker so the notification (and its
+    // click) survives while the app is backgrounded; the click is handled by
+    // sw.js's notificationclick, keyed on the tag (the conversation id).
+    if (App.platform.hasServiceWorker() && navigator.serviceWorker) {
+      navigator.serviceWorker.ready.then(function (reg) {
+        return reg.showNotification(title, opts);
+      })['catch'](function (e) {
+        App.util.dbg('notify (sw) failed ' + (e && e.message));
       });
+      return;
+    }
+
+    // KaiOS 2.5: the page-owned Notification constructor with an onclick.
+    try {
+      var n = new Notification(title, opts);
       n.onclick = function () {
         try {
           window.focus();

@@ -141,8 +141,9 @@ file. The chosen file is sent as-is, keeping its original filename.
   number drops into the field ready to start a chat; anything else is placed
   there for you to review.
 
-Both are **best-effort on KaiOS 2.5** — camera and decoder support vary by
-device, and the app backs out cleanly when scanning isn't available.
+Both are **best-effort** — camera and decoder support vary by device and KaiOS
+version (the live camera path is generally smoother on 3.0/3.1/4.0), and the app
+backs out cleanly when scanning isn't available.
 
 ## Starting a new chat
 

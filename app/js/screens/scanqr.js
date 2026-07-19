@@ -111,33 +111,34 @@
         if (onResult) setTimeout(function () { onResult(text); }, 0);
       }
 
-      /* Snapshot fallback: hand off to the OS camera via a 'pick' activity,
-         then decode the returned photo. Works wherever the photo picker does. */
+      /* Snapshot fallback: hand off to the OS camera via a 'pick' activity
+         (WebActivity on 3.0/4.0, MozActivity on 2.5 — see App.platform), then
+         decode the returned photo. Works wherever the photo picker does. */
       function snapFallback() {
-        if (typeof MozActivity === 'undefined') {
-          fail(new Error('no camera stream and no MozActivity'));
+        if (typeof WebActivity === 'undefined' && typeof MozActivity === 'undefined') {
+          fail(new Error('no camera stream and no pick activity'));
           return;
         }
         cleanup();
         status.textContent = 'Opening camera…';
-        var act;
-        try {
-          act = new MozActivity({ name: 'pick', data: { type: ['image/*'] } });
-        } catch (e) { fail(e); return; }
-        act.onsuccess = function () {
-          var blob = this.result && this.result.blob;
+        App.platform.openActivity('pick', { type: ['image/*'] }).then(function (result) {
+          var blob = result && result.blob;
           if (!blob) { if (!finished) { finished = true; App.router.pop(); } return; }
           status.textContent = 'Reading QR code…';
-          decodeBlob(blob).then(function (text) {
+          return decodeBlob(blob).then(function (text) {
             if (text) { done(text); return; }
             App.toast('No QR code found in that photo');
             if (!finished) { finished = true; App.router.pop(); }
-          })['catch'](fail);
-        };
-        act.onerror = function () {
-          // User backed out of the camera.
+          });
+        })['catch'](function (err) {
+          // A rejection here is usually the user backing out of the camera; a
+          // decode error is a real failure. Treat a cancel as a plain pop.
+          if (err && err.message && /decode|read the photo/i.test(err.message)) {
+            fail(err);
+            return;
+          }
           if (!finished) { finished = true; App.router.pop(); }
-        };
+        });
       }
 
       function loop() {

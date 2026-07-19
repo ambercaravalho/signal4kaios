@@ -114,9 +114,9 @@ Watch for:
   keeps the receive path off the public internet, making the token a second layer
   rather than the only wall.
 
-Note: the `?p_token=` handshake still depends on how KaiOS's Gecko 48 `WebSocket`
-behaves on-device, so verify live updates on the phone — desktop doesn't exercise
-the same code path.
+Note: the `?p_token=` handshake still depends on how KaiOS's `WebSocket` behaves
+on-device (Gecko 48 on 2.5, Gecko 84/123 on 3.0/3.1/4.0), so verify live updates
+on the phone — desktop doesn't exercise the same code path.
 
 ## How to tell it's happening
 

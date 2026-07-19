@@ -1,6 +1,7 @@
 # signal4kaios documentation
 
-A Signal client for **KaiOS 2.5** feature phones, backed by a self-hosted
+A Signal client for **KaiOS 2.5, 3.0, 3.1, and 4.0** feature phones, backed by a
+self-hosted
 [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server.
 Start with whichever section fits what you're doing.
 
@@ -17,8 +18,9 @@ Start with whichever section fits what you're doing.
 
 - **[Architecture](architecture.md)** — receive/send flow, module reference,
   IndexedDB schema, and normalized event shapes.
-- **[Development](development.md)** — Gecko 48 constraints, packaging, desktop
-  dev, conventions, and adding a screen.
+- **[Development](development.md)** — Gecko 48 constraints, cross-version support
+  (2.5 / 3.0 / 3.1 / 4.0), packaging, desktop dev, conventions, and adding a
+  screen.
 - **[AGENTS.md](../AGENTS.md)** — condensed rules for AI agents (and a fast
   orientation for humans).
 

@@ -18,7 +18,10 @@ it's built) and [AGENTS.md](../AGENTS.md) (the condensed rules).
   [`app/`](../app) are served as-is. Don't add npm, transpilers, or a framework.
 - The app is **privileged**; its CSP forbids inline scripts, styles, and event
   handlers.
-- Target runtime is **KaiOS 2.5 = Gecko 48** (ES5-era).
+- Target runtime is **KaiOS 2.5 = Gecko 48** (ES5-era). The app **also** runs on
+  **KaiOS 3.0/3.1** (Gecko 84) and **4.0** (Gecko 123), so keep first-party page
+  code (`app/js`) ES5-clean — 2.5 is the lowest common denominator. See
+  [Cross-version support](#cross-version-support).
 
 ## Gecko 48 constraints
 
@@ -38,6 +41,35 @@ These run fine in a modern desktop browser but **break on the phone**.
 Passing the syntax gate clears the automated checks, but not the runtime-only
 bans (ES modules and below) — you must uphold those yourself.
 
+## Cross-version support
+
+The app targets KaiOS 2.5, 3.0, 3.1, and 4.0 from one codebase. 3.0 and 3.1
+share the same engine and app model, so they behave identically here. The
+differences that matter:
+
+| Concern | KaiOS 2.5 | KaiOS 3.0 / 3.1 / 4.0 |
+|---|---|---|
+| Engine | Gecko 48 (ES5) | Gecko 84 (3.0/3.1) / 123 (4.0), ES2021 |
+| Manifest | [`manifest.webapp`](../app/manifest.webapp) | [`manifest.webmanifest`](../app/manifest.webmanifest) (keys under `b2g_features`) |
+| Origin | `app://…` | `http://signal4kaios.localhost` |
+| Web activities | `MozActivity` | `WebActivity` |
+| Device storage | `navigator.getDeviceStorage` | `navigator.b2g.getDeviceStorage` |
+| Alarms | `navigator.mozAlarms` + `mozSetMessageHandler` | `navigator.b2g.alarmManager` + ServiceWorker `systemmessage` |
+| ServiceWorker | none | yes ([`app/sw.js`](../app/sw.js)) |
+
+Both manifests ship in the same package — the OS reads whichever it understands.
+`systemXHR` + `mozSystem` XHR, `WebSocket`, IndexedDB, and `getUserMedia` work
+unchanged on both.
+
+**Rule: never call a version-specific B2G API directly.** Route it through
+[`platform.js`](../app/js/platform.js) (`App.platform`), which feature-detects
+the 3.0+ shape first and falls back to the 2.5 shape, always returning a
+Promise. Current helpers: `openActivity`, `getDeviceStorage` + `addNamed`,
+`scheduleAlarm`, `hasServiceWorker`. The ServiceWorker
+([`sw.js`](../app/sw.js)) is 3.0+-only (registered from
+[`main.js`](../app/js/main.js) behind `App.platform.hasServiceWorker()`) and
+relays the `alarm` system message and notification clicks back to the page.
+
 ## Packaging
 
 ```sh
@@ -53,7 +85,8 @@ gated.
 
 Install/sideload steps are in
 [Getting started → Install](getting-started.md#2-install-sideload). Re-sideload
-after any change to `manifest.webapp` permissions.
+after any change to manifest permissions (`manifest.webapp` on 2.5,
+`manifest.webmanifest` on 3.0+).
 
 ## Developing on the desktop
 
@@ -80,6 +113,14 @@ Verify in the **KaiOS 2.5 simulator** (kaiosrt via WebIDE) or on a real device
 before trusting a change. The simulator enforces the CSP and runs the real Gecko
 48 engine, catching syntax and permission issues the desktop misses.
 
+For **KaiOS 3.0/3.1/4.0**, WebIDE is gone. Install with `appscmd` over an
+adb-forwarded debugger socket (see
+[`tools/install-kaios3plus.sh`](../tools/install-kaios3plus.sh) and
+[Getting started → Install](getting-started.md#on-kaios-30-31-and-40)) and debug
+with a modern Firefox at `about:debugging`. Because the 3.0+ engine is much
+newer, run a quick regression on a 2.5 device/simulator too — a change that works
+on 4.0 can still break the Gecko-48 path.
+
 ## Code conventions
 
 - **Module shape**: `(function () { 'use strict'; /* ... */ App.foo = {...}; })();`
@@ -96,6 +137,9 @@ before trusting a change. The simulator enforces the CSP and runs the real Gecko
 - Add boolean feature flags to [`config.js`](../app/js/config.js) following the
   `sendReadReceipts` pattern (accessor with a sensible default), then gate on
   `App.config.<flag>()`.
+- Reach version-specific KaiOS APIs (activities, device storage, alarms) only
+  through [`App.platform`](../app/js/platform.js) — never call `MozActivity`,
+  `navigator.getDeviceStorage`, or `navigator.mozAlarms` directly.
 - Register every new `js/` file in [`app/index.html`](../app/index.html) at the
   correct load-order position.
 

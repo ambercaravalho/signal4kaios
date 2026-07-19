@@ -12,10 +12,35 @@
     App.router.push(App.screens.chat.create(convId));
   };
 
+  /* KaiOS 3.0+ only (3.0/3.1/4.0): register the ServiceWorker that relays wake alarms and
+     notification clicks. 2.5 has no ServiceWorker (App.platform.hasServiceWorker
+     is false there), so this is skipped and the mozSetMessageHandler path in
+     ws.js handles wake alarms instead. */
+  function registerServiceWorker() {
+    if (!App.platform.hasServiceWorker()) return;
+    try {
+      navigator.serviceWorker.register('/sw.js').then(function () {
+        App.util.dbg('sw: registered');
+      })['catch'](function (e) {
+        App.util.dbg('sw: registration failed ' + (e && e.message));
+      });
+      navigator.serviceWorker.addEventListener('message', function (evt) {
+        var data = evt && evt.data;
+        if (data && data.type === 's4k-open-conversation' && data.convId) {
+          try { window.focus(); } catch (e2) { /* not focusable */ }
+          App.openConversation(data.convId);
+        }
+      });
+    } catch (e) {
+      App.util.dbg('sw: unavailable ' + e.message);
+    }
+  }
+
   function boot() {
     App.util.dbg('boot');
     App.theme.apply();
     App.config.ensureAccounts();
+    registerServiceWorker();
     App.router.init(document.getElementById('screens'));
 
     // Surface connection drops as a top-of-screen in-app notice (distinct from

@@ -1,5 +1,10 @@
 #!/bin/sh
 # Package the app for KaiOS sideloading, gated on Gecko 48 compatibility.
+#
+# The app targets KaiOS 2.5 (Gecko 48), 3.0/3.1 (Gecko 84), and 4.0 (Gecko 123).
+# The Gecko-48 syntax gate below only scans first-party page code under app/js,
+# which must stay ES5 for 2.5. app/sw.js lives outside app/js (it is 3.0+ only)
+# and is not gated, but is kept ES5-clean for consistency.
 set -e
 cd "$(dirname "$0")/.."
 
@@ -23,8 +28,21 @@ if grep -rnE 'display:[[:space:]]*grid' app/css; then
   exit 1
 fi
 
+# --- Manifest / ServiceWorker presence ------------------------------------
+# 2.5 reads manifest.webapp; 3.0/3.1/4.0 read manifest.webmanifest. Ship both so
+# a single package installs on any of them. sw.js backs 3.0+ background wake.
+for required in app/manifest.webapp app/manifest.webmanifest app/sw.js; do
+  if [ ! -f "$required" ]; then
+    echo "FAIL: missing $required (needed for cross-version install)." >&2
+    exit 1
+  fi
+done
+
 # --- Zip -------------------------------------------------------------------
 mkdir -p dist
 rm -f dist/signal4kaios.zip
 (cd app && zip -qr ../dist/signal4kaios.zip . -x '*.DS_Store')
 echo "OK: dist/signal4kaios.zip"
+echo
+echo "Install on KaiOS 2.5:         WebIDE (old Firefox) -> Open Packaged App -> app/"
+echo "Install on KaiOS 3.0/3.1/4.0: sh tools/install-kaios3plus.sh   (needs adb + appscmd)"

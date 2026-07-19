@@ -164,14 +164,12 @@
      a separate (and largely unsupported) concern — this only helps while the
      app is still resident but suspended. */
   function scheduleWakeAlarm() {
-    try {
-      var alarms = navigator.mozAlarms;
-      if (!alarms || !alarms.add) return;
-      var when = new Date(Date.now() + WAKE_ALARM_MS);
-      alarms.add(when, 'honorTimezone', { type: 's4k-wake' });
-    } catch (e) {
-      App.util.dbg('ws: could not schedule wake alarm ' + e.message);
-    }
+    var when = new Date(Date.now() + WAKE_ALARM_MS);
+    // App.platform picks navigator.b2g.alarmManager (3.0/4.0) or
+    // navigator.mozAlarms (2.5); rejects (harmless no-op) off-device.
+    App.platform.scheduleAlarm(when, { type: 's4k-wake' })['catch'](function (e) {
+      App.util.dbg('ws: could not schedule wake alarm ' + (e && e.message));
+    });
   }
 
   function startHeartbeat() {
@@ -226,22 +224,41 @@
   });
 
   // When a wake alarm fires, reconnect (if we still want a connection) and
-  // arm the next alarm. Feature-detected so it is harmless off-device.
+  // arm the next alarm.
+  function onWake() {
+    App.util.dbg('ws: wake alarm fired');
+    if (wanted && state() === 'closed') {
+      attempts = 0;
+      connect();
+    }
+    scheduleWakeAlarm();
+  }
+
+  // KaiOS 2.5: the 'alarm' system message is delivered straight to the page via
+  // mozSetMessageHandler. Feature-detected so it is harmless off-device.
   try {
     if (navigator.mozSetMessageHandler) {
       navigator.mozSetMessageHandler('alarm', function (msg) {
         var data = msg && msg.data;
         if (data && data.type !== 's4k-wake') return;
-        App.util.dbg('ws: wake alarm fired');
-        if (wanted && state() === 'closed') {
-          attempts = 0;
-          connect();
-        }
-        scheduleWakeAlarm();
+        onWake();
       });
     }
   } catch (e) {
     App.util.dbg('ws: alarm handler unavailable ' + e.message);
+  }
+
+  // KaiOS 3.0/4.0: the 'alarm' system message goes to the ServiceWorker (sw.js),
+  // which relays it to open clients via postMessage. Listen for that relay.
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
+      navigator.serviceWorker.addEventListener('message', function (evt) {
+        var data = evt && evt.data;
+        if (data && data.type === 's4k-wake') onWake();
+      });
+    }
+  } catch (e2) {
+    App.util.dbg('ws: sw message handler unavailable ' + e2.message);
   }
 
   App.ws = {

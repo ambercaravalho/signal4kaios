@@ -113,23 +113,21 @@
 
       function save() {
         if (!loadedBlob) return;
-        if (!navigator.getDeviceStorage) {
-          App.toast('Saving only works on the phone');
-          return;
-        }
-        var storage = navigator.getDeviceStorage(storageFor(type()));
+        // App.platform picks navigator.b2g.getDeviceStorage (3.0/4.0) or
+        // navigator.getDeviceStorage (2.5); null on desktop.
+        var storage = App.platform.getDeviceStorage(storageFor(type()));
         if (!storage) {
-          App.toast('No storage available');
+          App.toast('Saving only works on the phone');
           return;
         }
         var name = att.filename ||
           ('signal_' + Date.now() + extFor(type()));
-        var req = storage.addNamed(loadedBlob, name);
-        req.onsuccess = function () { App.toast('Saved as ' + this.result); };
-        req.onerror = function () {
-          App.toast('Save failed: ' + (this.error && this.error.name === 'NoModificationAllowedError'
-            ? 'file already exists' : (this.error ? this.error.name : 'unknown')));
-        };
+        App.platform.addNamed(storage, loadedBlob, name).then(function (result) {
+          App.toast('Saved as ' + result);
+        })['catch'](function (err) {
+          App.toast('Save failed: ' + (err && err.name === 'NoModificationAllowedError'
+            ? 'file already exists' : (err && err.name ? err.name : 'unknown')));
+        });
       }
 
       function togglePlay() {

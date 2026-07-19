@@ -176,22 +176,14 @@
     }
   }
 
-  /* Open a URL in the phone browser via a KaiOS "view" web activity, falling
-     back to window.open on desktop. */
+  /* Open a URL in the phone browser via a KaiOS "view" web activity (WebActivity
+     on 3.0/4.0, MozActivity on 2.5), falling back to window.open on desktop.
+     App.platform.openActivity handles the version differences. */
   function openUrl(url) {
     if (!url) return;
-    try {
-      if (typeof MozActivity !== 'undefined') {
-        var act = new MozActivity({ name: 'view', data: { type: 'url', url: url } });
-        act.onerror = function () {
-          if (App.toast) App.toast('Could not open link');
-        };
-      } else if (window.open) {
-        window.open(url, '_blank');
-      }
-    } catch (e) {
+    App.platform.openActivity('view', { type: 'url', url: url })['catch'](function () {
       if (App.toast) App.toast('Could not open link');
-    }
+    });
   }
 
   /* ---- Text styling (bold/italic/etc.) ----

@@ -1,0 +1,65 @@
+{
+  "id": "signal4kaios",
+  "name": "Signal4KaiOS",
+  "short_name": "Signal",
+  "description": "Signal messenger client, powered by signal-cli-rest-api",
+  "lang": "en-US",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "theme_color": "#14224f",
+  "background_color": "#14224f",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/assets/icons/kaios_56.png", "type": "image/png", "sizes": "56x56" },
+    { "src": "/assets/icons/kaios_112.png", "type": "image/png", "sizes": "112x112" }
+  ],
+  "b2g_features": {
+    "version": "0.5.0",
+    "type": "privileged",
+    "origin": "signal4kaios",
+    "subtitle": "Signal client",
+    "developer": {
+      "name": "Amber Caravalho",
+      "url": "https://github.com/ambercaravalho/signal4kaios"
+    },
+    "cursor": false,
+    "permissions": {
+      "systemXHR": {
+        "description": "Communicate with the signal-cli-rest-api server on the local network"
+      },
+      "desktop-notification": {
+        "description": "Show notifications for new Signal messages"
+      },
+      "alarms": {
+        "description": "Periodically wake to reconnect and catch up on messages"
+      },
+      "video-capture": {
+        "description": "Use the camera to scan another person's Signal QR code"
+      },
+      "device-storage:pictures": {
+        "access": "readcreate",
+        "description": "Save received photos to the gallery"
+      },
+      "device-storage:music": {
+        "access": "readcreate",
+        "description": "Save received voice messages and audio"
+      },
+      "device-storage:videos": {
+        "access": "readcreate",
+        "description": "Save received videos"
+      },
+      "device-storage:sdcard": {
+        "access": "readcreate",
+        "description": "Save received files"
+      }
+    },
+    "serviceworker": {
+      "script_url": "/sw.js",
+      "update_via_cache": "none"
+    },
+    "messages": [
+      { "alarm": "/sw.js" },
+      { "notification": "/sw.js" }
+    ]
+  }
+}
