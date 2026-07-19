@@ -16,14 +16,9 @@
     }
   }
 
-  /* HTTP Basic Auth for reverse proxies (e.g. Pangolin "header auth") in
-     front of the signal-cli-rest-api server. Two things happen together:
-     - The Authorization header is set explicitly, so this request is
-       authenticated on the first try (no dependency on a 401 challenge).
-     - Passing the same username/password to xhr.open() teaches Gecko's own
-       HTTP auth cache for this origin, which is what lets the WebSocket
-       handshake (an HTTP request the app cannot attach headers to) ride
-       along on cached credentials — see ws.js's auth-priming step. */
+  /* HTTP Basic Auth header for a reverse proxy in front of the server (used
+     only in the 'basic' auth mode). Set explicitly so the request is
+     authenticated on the first try, without depending on a 401 challenge. */
   function basicAuthHeader() {
     var user = App.config.authUser();
     if (!user) return null;
@@ -35,6 +30,18 @@
     }
   }
 
+  /* In 'token' auth mode the receive token is sent as a query param on every
+     request, so the same secret authenticates both the API and (in ws.js) the
+     receive WebSocket. Returns the URL with the param appended, or the URL
+     unchanged if no token is set. */
+  function withToken(url) {
+    var token = App.config.receiveToken();
+    if (!token) return url;
+    var param = App.config.tokenParam();
+    var sep = url.indexOf('?') === -1 ? '?' : '&';
+    return url + sep + encodeURIComponent(param) + '=' + encodeURIComponent(token);
+  }
+
   function request(method, path, body, opts) {
     opts = opts || {};
     return new Promise(function (resolve, reject) {
@@ -43,13 +50,18 @@
         reject(new Error('Server URL is not configured'));
         return;
       }
+      var mode = App.config.authMode();
       var xhr = makeXhr();
-      var authHeader = basicAuthHeader();
-      if (authHeader) {
-        xhr.open(method, base + path, true, App.config.authUser(), App.config.authPass());
-      } else {
-        xhr.open(method, base + path, true);
+      // Build the URL first so the token param (if any) is never in the logged
+      // `path`. The Authorization header is only used in 'basic' mode.
+      var url = base + path;
+      var authHeader = null;
+      if (mode === 'token') {
+        url = withToken(url);
+      } else if (mode === 'basic') {
+        authHeader = basicAuthHeader();
       }
+      xhr.open(method, url, true);
       xhr.timeout = opts.timeout || 15000;
       if (opts.binary) xhr.responseType = 'blob';
       if (authHeader) xhr.setRequestHeader('Authorization', authHeader);
@@ -72,8 +84,14 @@
           }
         } else {
           var msg = 'HTTP ' + xhr.status;
-          if (xhr.status === 401) {
-            msg += ' — check the auth username/password in Settings';
+          if (xhr.status === 401 || xhr.status === 403) {
+            if (mode === 'basic') {
+              msg += ' — check the proxy username/password in Settings';
+            } else if (mode === 'token') {
+              msg += ' — check the receive token and its param name in Settings';
+            } else {
+              msg += ' — the server needs authentication (set it in Settings)';
+            }
           }
           try {
             var parsed = JSON.parse(xhr.responseText);

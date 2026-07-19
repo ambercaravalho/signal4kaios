@@ -39,8 +39,25 @@
       return read().authPass || '';
     },
 
+    /* Connection auth mode: how (if at all) requests are authenticated against a
+       reverse proxy in front of the server. One of:
+         'none'  - no credentials on any request (LAN / private VPN only).
+         'basic' - HTTP Basic Auth header; the WebSocket is left unauthenticated.
+         'token' - a single token sent as a query param on EVERY request (HTTP
+                   and the WebSocket), so both the API and the receive path are
+                   covered. See docs/remote-access.md. */
+    authMode: function () {
+      return read().authMode || 'none';
+    },
+
     hasBasicAuth: function () {
-      return !!App.config.authUser();
+      return App.config.authMode() === 'basic' && !!App.config.authUser();
+    },
+
+    /* Query-param name the receive token is sent as. Generic default 'token';
+       set to 'p_token' for Pangolin (its default access-token param). */
+    tokenParam: function () {
+      return read().tokenParam || 'token';
     },
 
     /* Signal username and its shareable link (from the set-username endpoint).
@@ -53,11 +70,12 @@
       return read().usernameLink || '';
     },
 
-    /* Optional access token appended to the receive WebSocket URL as a
-       ?p_token=<id>.<secret> query so a reverse proxy can authenticate the
-       /v1/receive path, which a browser WebSocket cannot do with Basic Auth.
-       For Pangolin this is a Resource Access Token (its default query param is
-       p_token). See docs/remote-access.md. */
+    /* The receive token (used when authMode is 'token'). Sent as a query param
+       (see tokenParam) on every HTTP request and on the receive WebSocket URL,
+       so a reverse proxy can authenticate both the API and the /v1/receive path
+       with one secret. For Pangolin this is a Resource Access Token in
+       <id>.<secret> form; set tokenParam to 'p_token'. See
+       docs/remote-access.md. */
     receiveToken: function () {
       return read().receiveToken || '';
     },
@@ -118,6 +136,24 @@
       return read().accounts || [];
     },
 
+    /* One-time migration: derive the auth mode for configs saved before modes
+       existed. A receive token wins (the old mixed pipeline becomes token-only,
+       and we keep p_token as the param so existing Pangolin setups keep working);
+       otherwise a username means Basic Auth; otherwise unauthenticated. */
+    ensureAuthMode: function () {
+      var c = read();
+      if (c.authMode) return;
+      if (c.receiveToken) {
+        c.authMode = 'token';
+        if (!c.tokenParam) c.tokenParam = 'p_token';
+      } else if (c.authUser) {
+        c.authMode = 'basic';
+      } else {
+        c.authMode = 'none';
+      }
+      write(c);
+    },
+
     /* One-time migration: fold a pre-multi-account config into the accounts
        list. The existing account keeps the legacy (un-suffixed) database so no
        history is lost. */
@@ -128,8 +164,11 @@
         c.accounts = [{
           number: c.number,
           serverUrl: c.serverUrl || '',
+          authMode: c.authMode || 'none',
           authUser: c.authUser || '',
           authPass: c.authPass || '',
+          receiveToken: c.receiveToken || '',
+          tokenParam: c.tokenParam || '',
           legacyDb: true
         }];
       } else {
@@ -155,9 +194,11 @@
       var entry = {
         number: c.number || '',
         serverUrl: c.serverUrl || '',
+        authMode: c.authMode || 'none',
         authUser: c.authUser || '',
         authPass: c.authPass || '',
-        receiveToken: c.receiveToken || ''
+        receiveToken: c.receiveToken || '',
+        tokenParam: c.tokenParam || ''
       };
       var found = false;
       for (var i = 0; i < c.accounts.length; i++) {
@@ -181,9 +222,11 @@
         if (accounts[i].number === number) {
           c.serverUrl = accounts[i].serverUrl || '';
           c.number = accounts[i].number || '';
+          c.authMode = accounts[i].authMode || 'none';
           c.authUser = accounts[i].authUser || '';
           c.authPass = accounts[i].authPass || '';
           c.receiveToken = accounts[i].receiveToken || '';
+          c.tokenParam = accounts[i].tokenParam || '';
           write(c);
           return true;
         }

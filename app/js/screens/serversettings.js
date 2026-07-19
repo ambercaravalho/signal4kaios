@@ -2,11 +2,18 @@
   'use strict';
 
   /* Server & connection settings: the signal-cli-rest-api URL, your Signal
-     number, and optional reverse-proxy credentials, plus Save / Test. Split out
-     of the main Settings menu so the everyday options stay uncluttered.
+     number, and the connection auth mode (with its credentials), plus Save /
+     Test. Split out of the main Settings menu so the everyday options stay
+     uncluttered.
 
      create({ firstRun?, addAccount? }) — firstRun is the initial setup screen;
      addAccount starts with blank fields to add another number. */
+
+  var MODE_LABEL = {
+    none: 'Unauthenticated',
+    basic: 'Basic header auth',
+    token: 'Receive token'
+  };
 
   App.screens.serversettings = {
     create: function (opts) {
@@ -24,7 +31,19 @@
       // entered without clobbering the current one until Save.
       var cfg = opts.addAccount ? {} : App.config.get();
 
-      function field(labelText, value, placeholder, type) {
+      // Current mode + a draft of every credential so switching modes back and
+      // forth within the session doesn't lose what was typed.
+      var mode = cfg.authMode || 'none';
+      var draft = {
+        authUser: cfg.authUser || '',
+        authPass: cfg.authPass || '',
+        receiveToken: cfg.receiveToken || '',
+        tokenParam: cfg.tokenParam || 'token'
+      };
+      // Live input refs for the currently-rendered credential fields.
+      var inputs = {};
+
+      function field(parent, labelText, value, placeholder, type) {
         var wrap = App.util.el('div', 'field');
         var label = App.util.el('label', null, labelText);
         var input = App.util.el('input');
@@ -34,41 +53,111 @@
         input.setAttribute('nav-selectable', 'true');
         wrap.appendChild(label);
         wrap.appendChild(input);
-        list.appendChild(wrap);
+        parent.appendChild(wrap);
         return input;
       }
 
-      function action(label, hint) {
+      function action(parent, label, hint) {
         var row = App.util.el('div', 'menu-item', label);
         row.setAttribute('nav-selectable', 'true');
         row.setAttribute('data-id', label);
         if (hint) row.appendChild(App.util.el('span', 'hint', hint));
-        list.appendChild(row);
+        parent.appendChild(row);
         return row;
       }
 
-      var urlInput = field('Server URL', cfg.serverUrl, 'http://192.168.1.100:4329');
-      var numInput = field('My Signal number', cfg.number, '+15551234567');
-      var authUserInput = field('Reverse proxy username (optional)', cfg.authUser,
-        'leave blank if not needed');
-      var authPassInput = field('Reverse proxy password', cfg.authPass,
-        '', 'password');
-      var recvTokenInput = field('Receive token (optional)', cfg.receiveToken,
-        'Pangolin access token: id.secret');
-      list.appendChild(App.util.el('div', 'field-note',
-        'Basic Auth only secures the HTTP API. A browser WebSocket cannot send ' +
-        'it, so live updates need the /v1/receive path authenticated another ' +
-        'way. Paste a Pangolin Resource Access Token here (in <id>.<secret> ' +
-        'form); it is sent as ?p_token. Or exempt the path and lock it down at ' +
-        'the network level — see docs/remote-access.md.'));
+      function clear(node) {
+        while (node.firstChild) node.removeChild(node.firstChild);
+      }
+
+      var urlInput = field(list, 'Server URL', cfg.serverUrl,
+        'http://192.168.1.100:4329');
+      var numInput = field(list, 'My Signal number', cfg.number, '+15551234567');
+
+      var modeRow = action(list, 'Connection security', MODE_LABEL[mode]);
+      var modeHint = modeRow.querySelector('.hint');
+
+      // Credential fields + explanatory note for the current mode live here and
+      // are rebuilt whenever the mode changes.
+      var credsWrap = App.util.el('div');
+      list.appendChild(credsWrap);
 
       var status = App.util.el('div', 'status-line', '');
       list.appendChild(status);
 
-      action('Save', 'Store settings and reconnect');
-      action('Test connection', 'Ping the signal-cli-rest-api server');
+      action(list, 'Save', 'Store settings and reconnect');
+      action(list, 'Test connection', 'Ping the signal-cli-rest-api server');
 
       var nav = new App.Nav(el, { scrollEl: list });
+
+      // Capture whatever is typed in the current credential inputs into `draft`
+      // so it survives a mode switch (and a re-render).
+      function captureInputs() {
+        if (inputs.authUser) draft.authUser = inputs.authUser.value.trim();
+        if (inputs.authPass) draft.authPass = inputs.authPass.value;
+        if (inputs.receiveToken) draft.receiveToken = inputs.receiveToken.value.trim();
+        if (inputs.tokenParam) draft.tokenParam = inputs.tokenParam.value.trim();
+      }
+
+      function renderCreds() {
+        clear(credsWrap);
+        inputs = {};
+        if (mode === 'basic') {
+          inputs.authUser = field(credsWrap, 'Proxy username', draft.authUser,
+            'reverse-proxy user');
+          inputs.authPass = field(credsWrap, 'Proxy password', draft.authPass,
+            '', 'password');
+          credsWrap.appendChild(App.util.el('div', 'field-note',
+            'Password-protects the HTTP API, but a browser cannot send Basic ' +
+            'Auth on the WebSocket, so live updates are left unauthenticated. ' +
+            'Lock down /v1/receive separately, or use Receive token instead.'));
+        } else if (mode === 'token') {
+          inputs.receiveToken = field(credsWrap, 'Receive token', draft.receiveToken,
+            'secret sent with every request', 'password');
+          inputs.tokenParam = field(credsWrap, 'Token query param',
+            draft.tokenParam || 'token', 'token (use p_token for Pangolin)');
+          credsWrap.appendChild(App.util.el('div', 'field-note',
+            'The token is sent as ?<param>=<token> on every request, including ' +
+            'the WebSocket, so the proxy authenticates both the API and live ' +
+            'updates with one secret. Use HTTPS/WSS. For Pangolin set the ' +
+            'param to p_token.'));
+        } else {
+          credsWrap.appendChild(App.util.el('div', 'field-note',
+            'No authentication. Anyone who can reach the server can read your ' +
+            'messages and send as you. Use only on a trusted home network or ' +
+            'private VPN.'));
+        }
+      }
+
+      function chooseMode() {
+        captureInputs();
+        App.router.push(App.screens.menu.create({
+          title: 'Connection security',
+          items: [
+            {
+              label: 'Unauthenticated',
+              hint: 'No login. Anyone who can reach the server can read/send. Home/VPN only.',
+              onSelect: function () { setMode('none'); }
+            },
+            {
+              label: 'Basic header auth',
+              hint: 'Password-protects the API, but leaves the live WebSocket unauthenticated.',
+              onSelect: function () { setMode('basic'); }
+            },
+            {
+              label: 'Receive token',
+              hint: 'One token on every request, including the WebSocket. Best option.',
+              onSelect: function () { setMode('token'); }
+            }
+          ]
+        }));
+      }
+
+      function setMode(m) {
+        mode = m;
+        modeHint.textContent = MODE_LABEL[mode];
+        renderCreds();
+      }
 
       function setStatus(text, cls) {
         status.textContent = text;
@@ -79,6 +168,27 @@
         var n = numInput.value.trim().replace(/[\s()-]/g, '');
         if (n && n.charAt(0) !== '+') n = '+' + n;
         return n;
+      }
+
+      // Build the auth-related config patch for the current mode, blanking the
+      // fields that don't apply so a mode switch fully replaces the old creds.
+      function authPatch() {
+        captureInputs();
+        var patch = {
+          authMode: mode,
+          authUser: '',
+          authPass: '',
+          receiveToken: '',
+          tokenParam: ''
+        };
+        if (mode === 'basic') {
+          patch.authUser = draft.authUser;
+          patch.authPass = draft.authPass;
+        } else if (mode === 'token') {
+          patch.receiveToken = draft.receiveToken;
+          patch.tokenParam = draft.tokenParam || 'token';
+        }
+        return patch;
       }
 
       function save() {
@@ -93,13 +203,7 @@
           return;
         }
         var prevNumber = App.config.number();
-        App.config.set({
-          serverUrl: url,
-          number: n,
-          authUser: authUserInput.value.trim(),
-          authPass: authPassInput.value,
-          receiveToken: recvTokenInput.value.trim()
-        });
+        App.config.set(Object.assign({ serverUrl: url, number: n }, authPatch()));
         App.config.saveActiveAccount();
         setStatus('Saved.', 'ok');
         App.toast('Settings saved');
@@ -116,27 +220,27 @@
 
       function testConnection() {
         // Use current field values so testing works before saving.
-        App.config.set({
+        App.config.set(Object.assign({
           serverUrl: urlInput.value.trim().replace(/\/+$/, ''),
-          number: normalizedNumber(),
-          authUser: authUserInput.value.trim(),
-          authPass: authPassInput.value,
-          receiveToken: recvTokenInput.value.trim()
-        });
+          number: normalizedNumber()
+        }, authPatch()));
         setStatus('Testing…');
         App.api.about().then(function (info) {
           var v = info && info.version ? ' v' + info.version : '';
-          var mode = info && info.mode ? ' (' + info.mode + ' mode)' : '';
-          setStatus('Connected' + v + mode, 'ok');
+          var modeStr = info && info.mode ? ' (' + info.mode + ' mode)' : '';
+          setStatus('Connected' + v + modeStr, 'ok');
         })['catch'](function (err) {
           setStatus(err.message, 'bad');
         });
       }
 
       function onAction(id) {
+        if (id === 'Connection security') return chooseMode();
         if (id === 'Save') return save();
         if (id === 'Test connection') return testConnection();
       }
+
+      renderCreds();
 
       return {
         el: el,

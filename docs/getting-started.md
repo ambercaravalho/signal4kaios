@@ -122,13 +122,13 @@ The first launch opens **Settings**. Fill in:
   address behind a reverse proxy).
 - **My Signal number** — E.164 form, e.g. `+15551234567` (the app normalizes
   spaces/parentheses/dashes and adds a leading `+`).
-- **Reverse proxy username / password** — blank unless behind Basic Auth (see
-  [Remote access](remote-access.md)).
-- **Receive token** (optional) — a Pangolin Resource Access Token
-  (`<id>.<secret>`) the app appends as `?p_token=` so the proxy can authenticate
-  live updates (Basic Auth can't cover a browser WebSocket). Blank on a
-  LAN/tunnel. See
-  [Remote access](remote-access.md#authenticating-the-receive-path-with-a-token).
+- **Connection security** — pick how requests authenticate against your proxy.
+  On a trusted home LAN leave it **Unauthenticated**. Behind a public reverse
+  proxy pick **Receive token** (recommended — one token covers the API and live
+  updates) and fill in the token and its query-param name; **Basic header auth
+  only** is available but leaves the live WebSocket unauthenticated. Each option
+  lists its pros and cons in the picker. See
+  [Remote access](remote-access.md#choosing-a-mode).
 
 Then press **Test connection** (a success line shows the server version and
 mode), then **Save**. The app stores the settings, connects, and loads your

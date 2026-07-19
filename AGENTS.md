@@ -98,12 +98,15 @@ IndexedDB schema, and event shapes.
 - **IndexedDB is the only message history.** The REST API has no history
   endpoint; history accrues from first use and is pruned to ~500 messages per
   conversation. Don't assume the server can backfill.
-- **WebSocket + Basic Auth is unfixable in the app.** A browser `WebSocket` can't
-  carry Basic Auth on its handshake, so don't attempt an in-app workaround. The
-  supported fix is the optional receive token appended to the URL query
-  (`App.config.receiveToken`), validated by the proxy; otherwise exempt the path
-  and protect it at the network level (see
-  [`docs/remote-access.md`](docs/remote-access.md)).
+- **Connection auth has three modes** (`App.config.authMode()`): `'none'`,
+  `'basic'` (HTTP `Authorization: Basic`), and `'token'`. A browser `WebSocket`
+  can't carry Basic Auth on its handshake, so `'basic'` leaves the receive path
+  unauthenticated — don't attempt an in-app workaround. `'token'` mode sends the
+  receive token as a query param (`App.config.tokenParam()`, default `token`) on
+  **every** request — both HTTP ([`http.js`](app/js/http.js)) and the WebSocket
+  ([`ws.js`](app/js/ws.js)) — so one secret covers the API and live updates.
+  Keep the token out of the debug log. See
+  [`docs/remote-access.md`](docs/remote-access.md).
 
 ## Adding a screen
 

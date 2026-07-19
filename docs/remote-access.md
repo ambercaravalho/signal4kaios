@@ -1,128 +1,126 @@
-# Remote access (reverse proxy + HTTP Basic Auth)
+# Remote access (connection auth modes)
 
-To use the app away from home, put the signal-cli-rest-api server behind a
-reverse proxy with a public `https://` address, protected by **HTTP Basic Auth**
-(for example [Pangolin](https://github.com/fosrl/pangolin)'s "header auth", built
-on Traefik).
+To use the app away from home you put the signal-cli-rest-api server behind a
+reverse proxy with a public `https://` address and authenticate the connection.
+The app has **three connection auth modes**, chosen in
+**Settings -> Server & connection -> Connection security**. Each request the app
+makes (the HTTP API *and* the receive WebSocket) is authenticated according to
+the mode.
 
-- [Configuring the app](#configuring-the-app)
-- [The WebSocket caveat](#the-websocket-caveat)
-- [Authenticating the receive path with a token](#authenticating-the-receive-path-with-a-token)
-- [Alternative: exempt the receive path](#alternative-exempt-the-receive-path)
-- [Risks if this isn't set up perfectly](#risks-if-this-isnt-set-up-perfectly)
+- [Choosing a mode](#choosing-a-mode)
+- [Why the WebSocket is the hard part](#why-the-websocket-is-the-hard-part)
+- [Receive token mode](#receive-token-mode)
+- [Pangolin](#pangolin)
+- [Risks and hardening](#risks-and-hardening)
 - [How to tell it's happening](#how-to-tell-its-happening)
 
-## Configuring the app
+## Choosing a mode
 
-**Settings → Server & connection** has **Reverse proxy username** and
-**password** — standard HTTP Basic Auth credentials, the same ones you'd put in
-`https://user:pass@resource.example.com`. Point **Server URL** at the public
-`https://` address, fill them in, and Save.
+| Mode | What it does | Pros | Cons |
+|---|---|---|---|
+| **Unauthenticated** | No credentials on any request | Nothing to configure | Anyone who can reach the server can read your messages and send as you |
+| **Basic header auth only** | `Authorization: Basic` on the HTTP API; WebSocket sent with no auth | Password-protects the HTTP API | A browser can't send Basic Auth on a WebSocket, so the live receive path is left unauthenticated |
+| **Receive token** | One token sent as `?<param>=<token>` on **every** request, including the WebSocket | One secret covers both the API and live updates; works with any proxy that validates a query token | The token is a bearer secret (treat like a password) and appears in proxy logs |
 
-On every HTTP request [`http.js`](../app/js/http.js) attaches an explicit
-`Authorization: Basic …` header, so contacts, groups, sending, receipts,
-reactions, and media all work behind Basic Auth.
+**Unauthenticated** is only safe on a trusted home LAN or a private VPN/tunnel,
+and even then it's risky. **Basic header auth only** is a half-measure: your API
+is protected but the receive path isn't, so either lock `/v1/receive` down
+separately or expect live updates to be blocked. **Receive token** is the
+recommended mode for any internet-facing setup.
 
-## The WebSocket caveat
-
-**Basic Auth covers only the HTTP API. The live WebSocket cannot be
-authenticated that way in any browser, and there's no client-side fix.**
+## Why the WebSocket is the hard part
 
 Messages arrive over a `wss://` WebSocket to `/v1/receive/<number>`, and a
 browser's `WebSocket` API refuses both custom handshake headers (no
-`Authorization`) and URL userinfo (`wss://user:pass@host/…` doesn't work). There
-is no API to attach credentials to the handshake, and Basic Auth middlewares are
-stateless — they check the WebSocket upgrade request too, and reject it. So the
-socket fails on every attempt while everything else works. **The fix belongs on
-the proxy, not the app.**
+`Authorization`) and URL userinfo (`wss://user:pass@host/...` doesn't work).
+There is no API to attach credentials to the handshake. That's why Basic Auth
+can only ever cover the HTTP API, and why the token mode exists: the one thing a
+browser lets you put on the handshake is the URL's **query string**.
 
-## Authenticating the receive path with a token
+## Receive token mode
 
-The one thing a browser lets you put on the handshake is the URL's **query
-string**, so the app can carry a secret there for the proxy to validate.
+The app sends the token as a query param on every request:
 
-With Pangolin the right mechanism is a **Resource Access Token**, passed as
-`?p_token=<token-id>.<access-token>` and validated on every request, including
-the WebSocket upgrade (see
-[Shareable Links](https://docs.pangolin.net/manage/access-control/links)).
+- HTTP: `https://<host>/v1/...?<param>=<token>` (see
+  [`http.js`](../app/js/http.js)).
+- WebSocket: `wss://<host>/v1/receive/<number>?<param>=<token>` (see
+  [`ws.js`](../app/js/ws.js)); the token is redacted from the debug log.
+
+Set it up in **Settings -> Server & connection**:
+
+1. Choose **Connection security -> Receive token**.
+2. Paste the token into **Receive token**.
+3. Set **Token query param** to whatever your proxy expects (default `token`).
+4. Save.
+
+Your reverse proxy must be configured to accept requests that carry a valid
+token in that query param and reject the rest. Any proxy that can validate a
+query-string secret works (a Traefik/Caddy/nginx rule, an auth middleware, an
+edge function, etc.). Use `wss://`/`https://` so the token is encrypted in
+transit.
+
+## Pangolin
+
+[Pangolin](https://github.com/fosrl/pangolin) validates a **Resource Access
+Token** passed in a query param (its default is `p_token`), on every request
+including the WebSocket upgrade.
+
+1. In Pangolin, open the resource -> **Access Tokens** (Shareable Links) ->
+   create a non-expiring token. You get a value shaped `<token-id>.<secret>`.
+2. In the app: **Connection security -> Receive token**, paste that whole value,
+   and set **Token query param** to `p_token`.
 
 > **Not a PATH rule.** A rule like `PATH = /v1/receive/*token=SECRET*` cannot
-> work: the Badger plugin hands Pangolin the path with the query **stripped
-> off**, so the rule is matched against `/v1/receive/+15551234567` — the
-> `?token=…` isn't in the string, nothing matches, and the request falls through
-> to your block rule. Pangolin's rule engine has no query matcher; the
-> access-token feature is the only thing that reads the query.
-
-Setup:
-
-1. In Pangolin, open the resource → **Access Tokens** (Shareable Links) → create
-   a non-expiring token. You get a value shaped `<token-id>.<access-token>`.
-2. In the app: **Settings → Server & connection → Receive token**, paste that
-   whole value, and Save.
-3. Leave your Basic Auth / header auth on the resource as-is for the HTTP API.
-
-The app then connects to
-`wss://<host>/v1/receive/<number>?p_token=<token-id>.<access-token>` (redacted in
-the debug log). Pangolin verifies the `p_token` and allows the handshake, while
-everything else keeps using Basic Auth.
+> work: Pangolin matches the path with the query **stripped off**, so the
+> `?token=...` isn't in the string. The access-token feature is the only thing
+> that reads the query.
 
 Notes:
 
-- The value **must** be the `<id>.<secret>` token Pangolin generates — it splits
-  on the `.` and looks the ID up in its database, so an arbitrary passphrase is
-  rejected.
-- `p_token` is Pangolin's default query param
-  (`server.resource_access_token_param`). If your deployment changed it, adjust
-  the param the app sends to match.
-- The token authenticates the **whole resource** — treat it as sensitive as your
-  Basic Auth password.
-- Use `wss://` so the token is encrypted in transit; it's then visible only in
-  the proxy's own logs (disable logging for that route, and rotate on leak).
+- The value **must** be the `<id>.<secret>` token Pangolin generates - it splits
+  on the `.` and looks the ID up, so an arbitrary passphrase is rejected.
+- The token authenticates the **whole resource** - treat it as sensitive as a
+  password.
 
-## Alternative: exempt the receive path
-
-If you'd rather not use a token, give the WebSocket path its own resource/rule
-with Basic Auth **off**:
-
-- Create a **second resource** for the same backend scoped to **`/v1/receive`**
-  (or a separate subdomain routed to it), with Basic Auth off.
-- Since that leaves it unauthenticated at the proxy, protect it another way — an
-  **IP allowlist**, or a tunnel / private network it already sits behind.
-- Everything else under the hostname keeps Basic Auth.
-
-## Risks if this isn't set up perfectly
+## Risks and hardening
 
 The receive path streams your incoming (and synced sent) messages in real time.
 Watch for:
 
-- **A PATH rule can't gate on the token** — it matches the query-stripped path,
-  so use the `p_token` access token instead.
-- **A resource with no auth at all is fully open** — if the resource has no
-  Pangolin auth method enabled, every request is allowed and the token is never
-  checked. Keep at least one auth method on it.
-- **Too-broad an exemption is catastrophic.** Scope any bypass to exactly
-  `/v1/receive` (ideally `/v1/receive/<your-number>`). Exempting `/v1/*` or the
-  whole host exposes `send`, account, and username endpoints — an attacker could
-  impersonate you, link a device, or unregister the number.
-- **`ws://` (no TLS) leaks the token in cleartext.** Always use `wss://`.
-- **The token is a bearer secret**, equivalent to read access to your messages,
-  and appears in proxy logs unless disabled. Keep it long, and rotate on leak.
-- **Keep `/v1/attachments` authenticated** — bodies arrive over the receive
-  stream, but media is a separate fetch, so a token-only eavesdropper sees text
-  but can't pull media.
-- **Prefer defense-in-depth** — a tunnel/VPN (Newt / WireGuard / Tailscale)
-  keeps the receive path off the public internet, making the token a second layer
+- **A resource with no auth at all is fully open** - every request is allowed
+  and the token is never checked. Keep the token requirement on it.
+- **Too-broad an exemption is catastrophic.** If you instead exempt a path
+  rather than use a token, scope it to exactly `/v1/receive` (ideally
+  `/v1/receive/<your-number>`). Exempting `/v1/*` or the whole host exposes
+  `send`, account, and username endpoints - an attacker could impersonate you,
+  link a device, or unregister the number.
+- **`ws://` / `http://` (no TLS) leaks the token in cleartext.** Always use
+  `wss://` / `https://`.
+- **The token appears in proxy logs** unless disabled. Keep it long, and rotate
+  on leak.
+- **Prefer defense-in-depth** - a tunnel/VPN (Newt / WireGuard / Tailscale)
+  keeps the server off the public internet, making the token a second layer
   rather than the only wall.
 
-Note: the `?p_token=` handshake still depends on how KaiOS's `WebSocket` behaves
-on-device (Gecko 48 on 2.5, Gecko 84/123 on 3.0/3.1/4.0), so verify live updates
-on the phone — desktop doesn't exercise the same code path.
+## Alternative: exempt the receive path
+
+If you'd rather not use a token, give the WebSocket path its own resource/rule
+with auth **off**, scoped to `/v1/receive`, and protect it another way (an IP
+allowlist, or a tunnel / private network it already sits behind). Everything
+else under the hostname keeps its auth. Use **Basic header auth only** mode in
+the app for the HTTP API in that case.
 
 ## How to tell it's happening
 
-If messages stop arriving after you configure proxy auth, check **Settings →
-Debug log**. A socket that **closes immediately after connecting**, right when
-Basic Auth is configured, is this issue. The app detects the pattern (a handshake
-rejected within a few seconds, before the socket opens — see
-[`ws.js`](../app/js/ws.js)), logs an explanatory line, and shows a one-time
-toast: *"Live updates blocked by the proxy auth — see Debug log."*
+If messages stop arriving, check **Settings -> Debug log**. A socket that
+**closes immediately after connecting** while an auth mode is set is the
+telltale: in token mode the proxy is rejecting the token (wrong value or wrong
+param name); in Basic Auth mode the proxy is blocking the unauthenticated
+WebSocket. The app detects the pattern (a handshake rejected within a few seconds
+before the socket opens - see [`ws.js`](../app/js/ws.js)), logs an explanatory
+line, and shows a one-time toast: *"Live updates blocked by the proxy auth - see
+Debug log."*
+
+Note: the query-string handshake still depends on how KaiOS's `WebSocket`
+behaves on-device (Gecko 48 on 2.5, Gecko 84/123 on 3.0/3.1/4.0), so verify live
+updates on the phone - desktop doesn't exercise the same code path.

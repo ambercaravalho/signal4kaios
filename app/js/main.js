@@ -39,6 +39,7 @@
   function boot() {
     App.util.dbg('boot');
     App.theme.apply();
+    App.config.ensureAuthMode();
     App.config.ensureAccounts();
     registerServiceWorker();
     App.router.init(document.getElementById('screens'));
