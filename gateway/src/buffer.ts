@@ -1,6 +1,5 @@
 /* Durable store (SQLite via better-sqlite3): the buffered receive frames with a
-   per-number cursor (seq), push subscriptions, known numbers, and a small
-   pending-notification queue for payloadless "tickle" pushes. */
+   per-number cursor (seq), push subscriptions, and known numbers. */
 
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
@@ -33,14 +32,7 @@ db.exec(
   'CREATE TABLE IF NOT EXISTS numbers (' +
   '  number TEXT PRIMARY KEY,' +
   '  created_at INTEGER NOT NULL' +
-  ');' +
-  'CREATE TABLE IF NOT EXISTS pending (' +
-  '  id INTEGER PRIMARY KEY AUTOINCREMENT,' +
-  '  number TEXT NOT NULL,' +
-  '  json TEXT NOT NULL,' +
-  '  created_at INTEGER NOT NULL' +
-  ');' +
-  'CREATE INDEX IF NOT EXISTS idx_pending_number ON pending(number);'
+  ');'
 );
 
 const getCounter = db.prepare('SELECT next_seq FROM counters WHERE number = ?');
@@ -132,30 +124,4 @@ export function addNumber(number: string): void {
 export function allNumbers(): string[] {
   const rows = selectNumbers.all() as { number: string }[];
   return rows.map((r) => r.number);
-}
-
-/* ---- pending notifications (tickle fallback) ---- */
-
-const insertPending = db.prepare(
-  'INSERT INTO pending (number, json, created_at) VALUES (?, ?, ?)'
-);
-const selectPending = db.prepare('SELECT id, json FROM pending WHERE number = ?');
-const deletePending = db.prepare('DELETE FROM pending WHERE id = ?');
-
-export function addPending(number: string, note: unknown): void {
-  insertPending.run(number, JSON.stringify(note), Date.now());
-}
-
-/* Return and clear all pending notes for a number. */
-export function takePending(number: string): unknown[] {
-  const rows = selectPending.all(number) as { id: number; json: string }[];
-  const takeTx = db.transaction((items: { id: number; json: string }[]) => {
-    const out: unknown[] = [];
-    for (const it of items) {
-      out.push(JSON.parse(it.json));
-      deletePending.run(it.id);
-    }
-    return out;
-  });
-  return takeTx(rows);
 }

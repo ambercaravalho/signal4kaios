@@ -152,9 +152,9 @@
       icon: '/assets/icons/kaios_112.png'
     };
 
-    // KaiOS 3.0/4.0: show through the ServiceWorker so the notification (and its
-    // click) survives while the app is backgrounded; the click is handled by
-    // sw.js's notificationclick, keyed on the tag (the conversation id).
+    // Prefer showing through the ServiceWorker (any KaiOS with one) so the
+    // notification and its click survive while the app is backgrounded; the click
+    // is handled by sw.js's notificationclick, keyed on the tag (conversation id).
     if (App.platform.hasServiceWorker() && navigator.serviceWorker) {
       navigator.serviceWorker.ready.then(function (reg) {
         return reg.showNotification(title, opts);
@@ -164,7 +164,8 @@
       return;
     }
 
-    // KaiOS 2.5: the page-owned Notification constructor with an onclick.
+    // Fallback (no ServiceWorker available): the page-owned Notification
+    // constructor with an onclick. Only works while the app is running.
     try {
       var n = new Notification(title, opts);
       n.onclick = function () {

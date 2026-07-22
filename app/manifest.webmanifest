@@ -61,8 +61,10 @@
       "update_via_cache": "none"
     },
     "messages": [
-      { "alarm": "/sw.js" },
-      { "notification": "/sw.js" }
+      "push",
+      "push-register",
+      "notification",
+      "alarm"
     ]
   }
 }

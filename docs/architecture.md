@@ -100,9 +100,9 @@ load after everything it depends on.
 | [`nav.js`](../app/js/nav.js) | D-pad selection via `nav-selectable` / `nav-selected` |
 | [`softkeys.js`](../app/js/softkeys.js) | SoftLeft/Center/SoftRight labels |
 | [`router.js`](../app/js/router.js) | Screen stack + one global keydown dispatcher |
-| [`main.js`](../app/js/main.js) | Boot: init router + store (loads the WS cursor before connecting), push first screen, background prune, auto push subscribe; registers `sw.js` on 3.0+ |
+| [`main.js`](../app/js/main.js) | Boot: init router + store (loads the WS cursor before connecting), push first screen, background prune, auto push subscribe; registers `sw.js` wherever a ServiceWorker is available (2.5 + 3.0/3.1/4.0) |
 | [`screens/*.js`](../app/js/screens) | Individual screens (see below) |
-| [`sw.js`](../app/sw.js) | ServiceWorker (3.0+ only, outside `app/js`): relays the `alarm` system message to the page for reconnect, shows gateway Web Push (payload or `/v1/push/pending` fallback), and handles notification clicks |
+| [`sw.js`](../app/sw.js) | ServiceWorker (all versions with the Push API; outside `app/js`, Gecko-48-safe): shows gateway Web Push (the sole closed-app notification path), relays the `alarm` system message to an open page for reconnect, and handles notification clicks |
 
 **Vendored libraries** live in [`app/vendor/`](../app/vendor), outside `app/js`
 so the [packaging syntax gate](development.md#packaging) only scans first-party

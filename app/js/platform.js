@@ -113,8 +113,9 @@
     return Promise.reject(new Error('alarms unavailable'));
   }
 
-  /* True on 3.0/4.0 (ServiceWorker + KaiOS system-message delivery); false on
-     2.5, where background wake uses mozSetMessageHandler instead. */
+  /* True wherever a ServiceWorker is available: 3.0/3.1/4.0, and 2.5 once the
+     'serviceworker' permission is granted (it's what exposes
+     navigator.serviceWorker there). False on desktop/simulator without one. */
   function hasServiceWorker() {
     return typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
   }

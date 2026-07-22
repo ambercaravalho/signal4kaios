@@ -10,8 +10,13 @@
      ServiceWorker (sw.js) shows the notification on the 'push' event, even when
      the app is fully closed.
 
-     Only meaningful on KaiOS 3.0+ (ServiceWorker + Push API). On 2.5, and on
-     desktop/simulator without Push, every call resolves to a clean no-op. */
+     Works on every KaiOS with the Push API — 2.5 and 3.0/3.1/4.0 alike (the API
+     is ServiceWorker-based on all of them). The one version difference is how the
+     OS is told to cold-wake the worker for a push: 3.0+ needs a runtime
+     systemMessageManager.subscribe('push') (see subscribeSystemMessages), while
+     2.5 wires it purely through the manifest ('serviceworker'/'push' permissions
+     and the 'push' message). On desktop/simulator without Push, every call
+     resolves to a clean no-op. */
 
   function supported() {
     return typeof navigator !== 'undefined' &&
@@ -91,6 +96,38 @@
     });
   }
 
+  /* Make sure we're actually allowed to show notifications. On KaiOS a push is
+     delivered but silently produces nothing if desktop-notification isn't
+     granted. Privileged apps are usually auto-granted, but request explicitly so
+     a 'default'/prompt state can't swallow every notification. */
+  function ensurePermission() {
+    if (typeof Notification === 'undefined') return Promise.resolve('unsupported');
+    if (Notification.permission === 'granted') return Promise.resolve('granted');
+    if (Notification.permission === 'denied') return Promise.resolve('denied');
+    try {
+      var r = Notification.requestPermission();
+      if (r && typeof r.then === 'function') return r;
+    } catch (e) { /* older callback-only form; fall through */ }
+    return Promise.resolve(Notification.permission || 'default');
+  }
+
+  /* Read the breadcrumb sw.js writes on every 'push' event, so the in-app Debug
+     log can show whether the ServiceWorker is actually receiving pushes on this
+     device (there's no console on the phone). */
+  function reportPushDebug() {
+    if (typeof caches === 'undefined') return Promise.resolve();
+    return caches.open('s4k-push').then(function (cache) {
+      return cache.match('/__s4k_push_debug');
+    }).then(function (res) {
+      return res ? res.json() : null;
+    }).then(function (info) {
+      info = info || {};
+      var p = info.pushCount || 0;
+      App.util.dbg('push: SW push wakes so far — ' + p);
+      if (p) App.util.dbg('push: last push wake ' + new Date(info.lastpush).toLocaleString());
+    })['catch'](function () {});
+  }
+
   /* Ask the gateway for its VAPID public key. Empty string means "push without
      VAPID" (the gateway wasn't configured with keys). */
   function fetchVapidKey() {
@@ -107,6 +144,30 @@
     });
   }
 
+  /* KaiOS 3.0+ only: subscribe the ServiceWorker to the system messages we act on
+     while backgrounded/closed, so the OS wakes it for them. NOTE: 'push' is NOT a
+     systemMessage — it's owned by the Push API (pushManager.subscribe), and
+     subscribing it here throws a SecurityError ("operation is insecure"). We only
+     subscribe the genuine system messages ('notification' for click-wake, 'alarm'
+     for reconnect). Feature-detected: systemMessageManager doesn't exist on 2.5,
+     which wires wake-up through the manifest alone, so this is a clean no-op there.
+     Idempotent, so it's safe to run on every boot. */
+  function subscribeSystemMessages(reg) {
+    if (!reg || !reg.systemMessageManager) return Promise.resolve();
+    var names = ['notification', 'alarm'];
+    return Promise.all(names.map(function (n) {
+      try {
+        return reg.systemMessageManager.subscribe(n)['catch'](function (e) {
+          App.util.dbg('push: subscribe(' + n + ') failed — ' + (e && e.message));
+        });
+      } catch (e) {
+        return Promise.resolve();
+      }
+    })).then(function () {
+      App.util.dbg('push: system messages subscribed');
+    });
+  }
+
   /* Boot entry point: subscribe and register, automatically. Best-effort and
      non-blocking — any failure (unsupported platform, permission denied, gateway
      unreachable) is logged and swallowed so it never breaks startup. */
@@ -117,20 +178,32 @@
     if (!App.config.isConfigured()) {
       return Promise.resolve();
     }
-    return fetchVapidKey().then(function (vapidKey) {
+    return ensurePermission().then(function (perm) {
+      App.util.dbg('push: notification permission = ' + perm);
+      if (perm === 'denied') {
+        App.util.dbg('push: notifications are blocked — enable them in ' +
+          'Settings > Privacy & Security > App Permissions');
+      }
+      return fetchVapidKey();
+    }).then(function (vapidKey) {
       return readCachedVapidKey().then(function (prevKey) {
         var keyChanged = (prevKey || '') !== (vapidKey || '');
         return navigator.serviceWorker.ready.then(function (reg) {
-          return subscribe(reg, vapidKey, keyChanged);
+          return subscribeSystemMessages(reg).then(function () {
+            return subscribe(reg, vapidKey, keyChanged);
+          });
         }).then(function (sub) {
           return savePushCfg(vapidKey).then(function () {
             return registerWithGateway(sub);
           }).then(function () {
             App.util.dbg('push: subscribed (' + endpointHost(sub.endpoint) +
+              ', …' + String(sub.endpoint || '').slice(-12) +
               (vapidKey ? ', VAPID' : ', keyless') + ')');
           });
         });
       });
+    }).then(function () {
+      return reportPushDebug();
     })['catch'](function (e) {
       App.util.dbg('push: subscribe failed — ' + (e && e.message));
     });

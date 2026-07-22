@@ -12,10 +12,11 @@
     App.router.push(App.screens.chat.create(convId));
   };
 
-  /* KaiOS 3.0+ only (3.0/3.1/4.0): register the ServiceWorker that relays wake alarms and
-     notification clicks. 2.5 has no ServiceWorker (App.platform.hasServiceWorker
-     is false there), so this is skipped and the mozSetMessageHandler path in
-     ws.js handles wake alarms instead. */
+  /* Register the ServiceWorker that shows closed-app push notifications, relays
+     wake alarms, and handles notification clicks. Runs on any KaiOS with a
+     ServiceWorker (2.5 once the 'serviceworker' permission is granted, and
+     3.0/3.1/4.0); feature-detected via App.platform.hasServiceWorker(), so it's a
+     clean no-op on platforms without one. */
   function registerServiceWorker() {
     if (!App.platform.hasServiceWorker()) return;
     try {

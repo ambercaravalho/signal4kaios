@@ -1,26 +1,29 @@
 'use strict';
 
-/* ServiceWorker for KaiOS 3.0+ (3.0/3.1/4.0; no-op on 2.5, which has none).
+/* ServiceWorker for signal4kaios — runs on every KaiOS with the Push API
+   (2.5 and 3.0/3.1/4.0). It does the things the page can't once the app is
+   backgrounded or fully closed:
 
-   It exists for things the page can't do on its own once backgrounded/closed:
-     1. Receive the KaiOS 'alarm' system message and relay a wake signal to the
-        page so ws.js can reconnect and drain queued messages. This is the
-        3.0/4.0 equivalent of mozSetMessageHandler('alarm') on 2.5.
-     2. Handle 'push' messages from the gateway (see docs/gateway.md) and show a
-        notification even when the app is fully closed — the only way to notify
-        without a running WebSocket. If a push carries no readable payload it
-        falls back to asking the gateway what's pending.
-     3. Handle notification clicks so tapping a message notification focuses the
-        app and opens the right conversation.
+     1. 'push' — the gateway sends an aesgcm-encrypted push for each incoming
+        message (see docs/gateway.md); this worker shows the notification even
+        when the app is closed. This is the ONLY closed-app notification path.
+     2. 'systemmessage' (alarm) — if a window is still open (backgrounded app),
+        relay a wake so ws.js reconnects and drains queued messages. When the app
+        is fully closed, push handles notifications, so the alarm does nothing
+        here.
+     3. 'notificationclick' — focus/open the app on the right conversation.
 
-   Kept deliberately small and dependency-free; it shares nothing with the
-   page's App.* modules. Gateway coordinates (base URL, number, VAPID key, and —
-   in token auth mode — the receive token/param) are handed over by push.js via
-   Cache Storage so this worker can act with the app closed. */
+   Kept small, dependency-free, and Gecko-48-safe (var/function only, no arrow
+   functions, template literals, or let/const) since it also runs on KaiOS 2.5.
+   It shares nothing with the page's App.* modules; the page hands over the
+   gateway coordinates (base URL, number, VAPID key, and — in token auth mode —
+   the receive token/param) via Cache Storage so this worker can re-register a
+   rotated push subscription on its own. */
 
 var NOTIF_ICON = '/assets/icons/kaios_112.png';
 var PUSH_CACHE = 's4k-push';
 var PUSH_CFG_KEY = '/__s4k_push_cfg';
+var PUSH_DEBUG_KEY = '/__s4k_push_debug';
 
 self.addEventListener('install', function () {
   self.skipWaiting();
@@ -41,22 +44,41 @@ function relay(message) {
     });
 }
 
-/* KaiOS delivers system messages (e.g. 'alarm') to the ServiceWorker via a
-   'systemmessage' event. Relay wake alarms to any open window so the receive
-   socket can reconnect. */
+/* Record each push cold-wake so the page can report it in the in-app Debug log
+   (there's no console on the phone). Best-effort; never blocks. */
+function notePushWake() {
+  if (!self.caches) return Promise.resolve();
+  return self.caches.open(PUSH_CACHE).then(function (cache) {
+    return cache.match(PUSH_DEBUG_KEY).then(function (res) {
+      return res ? res.json() : null;
+    }).then(function (prev) {
+      var info = prev || {};
+      info.pushCount = (info.pushCount || 0) + 1;
+      info.lastpush = Date.now();
+      return cache.put(PUSH_DEBUG_KEY, new Response(JSON.stringify(info), {
+        headers: { 'Content-Type': 'application/json' }
+      }));
+    });
+  })['catch'](function () { /* diagnostics only */ });
+}
+
+/* KaiOS delivers the 'alarm' system message to the worker as a 'systemmessage'
+   event. Its only remaining job is to nudge a still-open (backgrounded) window
+   to reconnect; the page re-arms the next alarm itself. A fully-closed app is
+   notified via push, not here. */
 self.addEventListener('systemmessage', function (event) {
   var name = event.name || (event.data && event.data.name);
   if (name && name !== 'alarm') return;
   var payload = event.data || {};
   var data = payload.data || payload;
   if (data && data.type && data.type !== 's4k-wake') return;
-  event.waitUntil(relay({ type: 's4k-wake' }));
+  event.waitUntil(relay({ type: 's4k-wake' })['catch'](function () {}));
 });
 
 /* Convert a base64url VAPID key into the Uint8Array applicationServerKey wants.
    Mirrors the helper in push.js so the worker can re-subscribe on its own. */
 function urlB64ToUint8Array(base64) {
-  var padding = '='.repeat((4 - (base64.length % 4)) % 4);
+  var padding = new Array((4 - (base64.length % 4)) % 4 + 1).join('=');
   var b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
   var raw = self.atob(b64);
   var arr = new Uint8Array(raw.length);
@@ -94,27 +116,12 @@ function showFromPayload(p) {
   });
 }
 
-/* Fallback for "tickle" pushes with no readable payload: ask the gateway what's
-   pending for this number. The gateway sends CORS headers on /v1/push/* so this
-   cross-origin fetch can read the response. */
-function fetchPending() {
-  return readPushCfg().then(function (cfg) {
-    if (!cfg || !cfg.serverUrl) return null;
-    var base = cfg.serverUrl.replace(/\/+$/, '');
-    var url = withToken(base + '/v1/push/pending?number=' +
-      encodeURIComponent(cfg.number || ''), cfg);
-    return self.fetch(url, { mode: 'cors' })
-      .then(function (res) { return res.ok ? res.json() : null; })
-      .then(function (data) {
-        if (!data) return null;
-        return data.messages || data.items || (data.length ? data : null);
-      });
-  })['catch'](function () { return null; });
-}
-
-/* Web Push. userVisibleOnly means we MUST show a notification for every push,
-   so every branch ends in showNotification (even on error). */
+/* Web Push. userVisibleOnly means we MUST show a notification for every push, so
+   every branch ends in showNotification. The gateway sends an aesgcm-encrypted
+   JSON payload; a keyless (no-VAPID) gateway can only send empty pushes, which
+   fall back to a generic notice. */
 self.addEventListener('push', function (event) {
+  event.waitUntil(notePushWake());
   var payload = null;
   if (event.data) {
     try {
@@ -123,22 +130,7 @@ self.addEventListener('push', function (event) {
       try { payload = { body: event.data.text() }; } catch (e2) { payload = null; }
     }
   }
-
-  if (payload && (payload.title || payload.body || payload.convId)) {
-    event.waitUntil(showFromPayload(payload));
-    return;
-  }
-
-  event.waitUntil(
-    fetchPending().then(function (items) {
-      if (items && items.length) {
-        return Promise.all(items.map(showFromPayload));
-      }
-      return showFromPayload({ title: 'Signal', body: 'New message' });
-    })['catch'](function () {
-      return showFromPayload({ title: 'Signal', body: 'New message' });
-    })
-  );
+  event.waitUntil(showFromPayload(payload || { title: 'Signal', body: 'New message' }));
 });
 
 /* The push service can rotate a subscription; re-subscribe and tell the gateway

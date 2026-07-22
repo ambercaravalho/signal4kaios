@@ -110,7 +110,6 @@ without a `t` field is treated as a raw frame, so basic receive still works
 | `POST /v1/push/register` | gateway | `{ number, subscription }` — store a push subscription. |
 | `POST /v1/push/unregister` | gateway | `{ endpoint }` — drop a subscription. |
 | `POST /v1/push/test` | gateway | `{ number }` — send a canned notification to every subscription for that number (ignores the idle gate) and return each push service's status. Handy for debugging. |
-| `GET /v1/push/pending?number=` | gateway | Returns and clears queued notes (payloadless-push fallback). CORS-enabled. |
 | everything else | proxy | Forwarded verbatim (method, path, query, headers, body, binary) to `SIGNAL_CLI_URL`. |
 
 signal-cli has no `/v1/push/*` routes, so there is no collision.
@@ -128,7 +127,15 @@ On boot the app:
 
 It also caches the gateway URL, number, VAPID key, and — in token auth mode — the
 receive token/param in Cache Storage, so the ServiceWorker
-([`sw.js`](../app/sw.js)) can reach the gateway while the app is closed.
+([`sw.js`](../app/sw.js)) can re-register a rotated push subscription while the
+app is closed.
+
+For the OS to cold-wake the (stopped) ServiceWorker on a push, the app must both
+declare the `push` system message in the manifest **and** subscribe at runtime.
+On KaiOS 3.0+ the app calls `registration.systemMessageManager.subscribe('push')`
+(see [`push.js`](../app/js/push.js)); on 2.5 the `serviceworker`/`push` manifest
+permissions wire it up. Missing that runtime subscribe is the usual reason a push
+returns `201` at the server but no notification ever appears.
 
 On an incoming message, the gateway builds a note by mirroring the conversation
 id rules in [`normalize.js`](../app/js/normalize.js) (group → `g:<id>`, otherwise
@@ -143,18 +150,19 @@ autopush and is stricter than modern browsers, so the gateway adapts:
 
 - **Encoding.** It only accepts the legacy `aesgcm` content encoding, not
   web-push's default `aes128gcm`. The gateway always sends `aesgcm`.
-- **Payloads need VAPID.** Without VAPID keys, KaiOS only allows *empty*
-  ("tickle") pushes. So with VAPID the gateway sends the note as an encrypted
-  payload; without it, it sends a payloadless tickle and the ServiceWorker pulls
-  the note from `GET /v1/push/pending`. Either way the notification shows real
-  text — VAPID just avoids the extra round-trip (and restricts who can push).
-- **App `push` permission.** The KaiOS manifest
-  ([`manifest.webmanifest`](../app/manifest.webmanifest)) must request the `push`
-  permission for delivery to work.
+- **Payloads need VAPID.** KaiOS only delivers a push *payload* (the message
+  text) when it is VAPID-signed. So with VAPID the gateway sends the note as an
+  encrypted `aesgcm` payload and the ServiceWorker shows it directly; without
+  VAPID it can only send an empty push, which shows a generic "New message".
+  Configure VAPID to get real message text.
+- **App must subscribe for wake.** See the note above — the `push` permission
+  plus a runtime `systemMessageManager.subscribe('push')` (3.0+) are required for
+  the OS to cold-wake the worker.
 
 If pushes never arrive, check the gateway log for `push: sent … (201)` vs.
 `push: send failed … (4xx)`, or trigger `POST /v1/push/test` with your number to
-see the push service's response directly.
+see the push service's response directly. A `201` with no notification almost
+always means the runtime subscribe is missing or notifications aren't permitted.
 
 ## Deploying
 

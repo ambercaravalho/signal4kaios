@@ -106,22 +106,13 @@ const server = http.createServer(function (req, res) {
         sendJson(res, 400, { error: 'number required' });
         return;
       }
-      push.sendTest(number).then(function (results) {
-        sendJson(res, 200, { sent: results.length, results: results });
+      const empty = !!(body && body.empty);
+      push.sendTest(number, empty).then(function (results) {
+        sendJson(res, 200, { sent: results.length, empty: empty, results: results });
       });
     })['catch'](function () {
       sendJson(res, 400, { error: 'invalid body' });
     });
-    return;
-  }
-
-  if (pathname === '/v1/push/pending' && req.method === 'GET') {
-    const number = url.searchParams.get('number');
-    if (!number) {
-      sendJson(res, 400, { error: 'number required' });
-      return;
-    }
-    sendJson(res, 200, { messages: push.pending(number) });
     return;
   }
 

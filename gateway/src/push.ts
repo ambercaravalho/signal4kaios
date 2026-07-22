@@ -1,7 +1,7 @@
-/* Web Push: store subscriptions, and on a new incoming message deliver a push
-   (payload + a pending-queue fallback for payloadless "tickle" services). Push
-   is skipped when the app is currently connected for that number (it notifies
-   itself) unless PUSH_WHEN_IDLE_ONLY is false. */
+/* Web Push: store subscriptions, and on a new incoming message send an
+   aesgcm-encrypted payload so the app's ServiceWorker cold-wakes and shows the
+   note directly. Push is skipped when the app is currently connected for that
+   number (it notifies itself) unless PUSH_WHEN_IDLE_ONLY is false. */
 
 import webpush from 'web-push';
 import { config } from './config';
@@ -11,6 +11,8 @@ import * as clients from './clients';
 import * as upstream from './upstream';
 import { toNote } from './parse';
 
+// Whether VAPID is configured. KaiOS only delivers a *payload* push when it is
+// VAPID-signed; without VAPID it allows empty "tickles" only.
 let vapidReady = false;
 
 export function init(): void {
@@ -23,7 +25,7 @@ export function init(): void {
       log.error('push: invalid VAPID keys', e);
     }
   } else {
-    log.info('push: no VAPID keys (sending without VAPID)');
+    log.info('push: no VAPID keys (empty tickles only — set VAPID for payloads)');
   }
 }
 
@@ -47,19 +49,32 @@ export function unregister(endpoint: string): void {
   log.info('push: unregistered a subscription');
 }
 
-export function pending(number: string): unknown[] {
-  return buffer.takePending(number);
-}
-
 // KaiOS's push service (notification.kaiostech.com) is a fork of Mozilla's old
-// autopush: it ONLY accepts the legacy 'aesgcm' content encoding (not web-push's
-// default 'aes128gcm'), and it only allows an encrypted PAYLOAD when the push is
-// VAPID-signed. Without VAPID we must send a payloadless "tickle" and let the
-// ServiceWorker pull the note from /v1/push/pending.
+// autopush and has two hard rules:
+//   1. It only accepts the legacy 'aesgcm' content encoding (not web-push's
+//      default 'aes128gcm'), so we force it below.
+//   2. An empty "tickle" does NOT reliably cold-wake a stopped ServiceWorker; a
+//      real VAPID-signed encrypted payload does. So when VAPID is configured we
+//      send the note as an aesgcm payload and the SW shows it directly. Without
+//      VAPID the push service only allows empty pushes (a generic notice).
 const PUSH_TTL = 3600;
 
 function sendOptions(): webpush.RequestOptions {
   return { TTL: PUSH_TTL, contentEncoding: 'aesgcm' };
+}
+
+/* Mask a push endpoint for logs/responses: host + the last 12 chars of the token
+   (enough to compare against the device's current subscription, not enough to be
+   a usable capability URL). */
+function maskEndpoint(endpoint?: string): string {
+  if (!endpoint) return '(none)';
+  try {
+    const u = new URL(endpoint);
+    const tail = endpoint.slice(-12);
+    return u.host + '/…' + tail;
+  } catch {
+    return '…' + endpoint.slice(-12);
+  }
 }
 
 /* Send to one subscription; prune it if the service says it's gone. Resolves to
@@ -68,25 +83,26 @@ function sendTo(
   number: string,
   sub: unknown,
   payload: string | undefined
-): Promise<{ statusCode?: number; error?: string }> {
+): Promise<{ statusCode?: number; error?: string; endpoint?: string }> {
+  const ep = (sub as { endpoint?: string }).endpoint;
   return webpush
     .sendNotification(sub as webpush.PushSubscription, payload, sendOptions())
     .then(function (res) {
-      log.info('push: sent to ' + maskNumber(number) + ' (' + res.statusCode + ')');
-      return { statusCode: res.statusCode };
+      log.info('push: sent to ' + maskNumber(number) + ' ' + maskEndpoint(ep) +
+        ' (' + res.statusCode + ')');
+      return { statusCode: res.statusCode, endpoint: maskEndpoint(ep) };
     })
     .catch(function (err: any) {
       const status = err && err.statusCode;
       if (status === 404 || status === 410) {
-        const endpoint = (sub as { endpoint?: string }).endpoint;
-        if (endpoint) buffer.removeSubByEndpoint(endpoint);
+        if (ep) buffer.removeSubByEndpoint(ep);
         log.warn('push: pruned expired subscription for ' + maskNumber(number));
       } else {
         const detail = (err && err.body) || (err && err.message) || String(err);
         log.error('push: send failed for ' + maskNumber(number) +
           (status ? ' (' + status + ')' : '') + ': ' + detail);
       }
-      return { statusCode: status, error: (err && err.body) || (err && err.message) };
+      return { statusCode: status, error: (err && err.body) || (err && err.message), endpoint: maskEndpoint(ep) };
     });
 }
 
@@ -107,21 +123,24 @@ export function onIncoming(number: string, text: string): void {
     return;
   }
 
-  // Always queue for the tickle fallback, then push. With VAPID we can carry an
-  // encrypted payload; without it we send an empty tickle (KaiOS requirement).
-  buffer.addPending(number, note);
+  // Send the note as an aesgcm payload (this is what cold-wakes the SW on
+  // KaiOS); without VAPID we can only send an empty push (generic notice).
   const payload = vapidReady ? JSON.stringify(note) : undefined;
-
   subs.forEach(function (sub) { sendTo(number, sub, payload); });
 }
 
 /* Manual test: push a canned note to every subscription for a number, ignoring
    the idle gate. Returns per-subscription results so a caller can see exactly
-   what the push service reported. */
-export function sendTest(number: string): Promise<Array<{ statusCode?: number; error?: string }>> {
+   what the push service reported. Pass empty=true to send a PAYLOADLESS push
+   (a "tickle"): nothing to decrypt, so if it's delivered at all the SW's 'push'
+   event must fire — a pure delivery/wake probe that isolates delivery failures
+   from payload-decryption failures. */
+export function sendTest(
+  number: string,
+  empty?: boolean
+): Promise<Array<{ statusCode?: number; error?: string; endpoint?: string }>> {
   const subs = buffer.subsFor(number);
   const note = { title: 'Signal', body: 'Test notification', convId: '', incoming: true };
-  buffer.addPending(number, note);
-  const payload = vapidReady ? JSON.stringify(note) : undefined;
+  const payload = (!empty && vapidReady) ? JSON.stringify(note) : undefined;
   return Promise.all(subs.map(function (sub) { return sendTo(number, sub, payload); }));
 }
