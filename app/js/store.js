@@ -149,7 +149,10 @@
     var opts = {
       body: body.slice(0, 100),
       tag: conv.id,
-      icon: '/assets/icons/kaios_112.png'
+      icon: '/assets/icons/kaios_112.png',
+      // Route the click reliably (sw.js prefers data.convId over the tag) and
+      // consistently with closed-app push notifications.
+      data: { convId: conv.id }
     };
 
     // Prefer showing through the ServiceWorker (any KaiOS with one) so the

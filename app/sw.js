@@ -24,6 +24,7 @@ var NOTIF_ICON = '/assets/icons/kaios_112.png';
 var PUSH_CACHE = 's4k-push';
 var PUSH_CFG_KEY = '/__s4k_push_cfg';
 var PUSH_DEBUG_KEY = '/__s4k_push_debug';
+var PENDING_CONV_KEY = '/__s4k_pending_conv';
 
 self.addEventListener('install', function () {
   self.skipWaiting();
@@ -159,6 +160,18 @@ self.addEventListener('pushsubscriptionchange', function (event) {
   );
 });
 
+/* Stash the tapped conversation so a cold-started app can route to it. The page
+   reads and clears this on boot (fresh entries only). Best-effort. */
+function savePendingConv(convId) {
+  if (!convId || !self.caches) return Promise.resolve();
+  return self.caches.open(PUSH_CACHE).then(function (cache) {
+    return cache.put(PENDING_CONV_KEY, new Response(
+      JSON.stringify({ convId: convId, ts: Date.now() }),
+      { headers: { 'Content-Type': 'application/json' } }
+    ));
+  })['catch'](function () { /* best-effort */ });
+}
+
 self.addEventListener('notificationclick', function (event) {
   var n = event.notification;
   var convId = (n && n.data && n.data.convId) || (n && n.tag) || null;
@@ -176,10 +189,14 @@ self.addEventListener('notificationclick', function (event) {
             return client.focus();
           }
         }
-        if (self.clients.openWindow) {
-          return self.clients.openWindow('/index.html');
-        }
-        return null;
+        // No live window: persist the target so main.js can open it once the
+        // cold-started app has booted, then launch the app.
+        return savePendingConv(convId).then(function () {
+          if (self.clients.openWindow) {
+            return self.clients.openWindow('/index.html');
+          }
+          return null;
+        });
       })
   );
 });

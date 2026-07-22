@@ -10,6 +10,11 @@
 
   var stack = [];
   var container = null;
+  // When a pop happens (e.g. leaving a chat back to the root), briefly ignore a
+  // follow-up Back on the root so a fast double-press can't accidentally close
+  // the app. KaiOS's Back key auto-repeats/registers quickly, hence the guard.
+  var lastPopAt = 0;
+  var EXIT_COOLDOWN_MS = 600;
 
   function top() {
     return stack[stack.length - 1] || null;
@@ -42,6 +47,7 @@
 
   function pop() {
     if (stack.length <= 1) return;
+    lastPopAt = Date.now();
     var s = stack.pop();
     if (s.destroy) s.destroy();
     if (s.el.parentNode) s.el.parentNode.removeChild(s.el);
@@ -100,8 +106,13 @@
       if (stack.length > 1) {
         evt.preventDefault();
         pop();
+      } else if (Date.now() - lastPopAt < EXIT_COOLDOWN_MS) {
+        // Just popped back to the root; swallow a fast follow-up Back so an
+        // accidental double-press doesn't close the app.
+        evt.preventDefault();
       }
-      // On the root screen the default is allowed: KaiOS backgrounds/closes.
+      // On the root screen (after the cooldown) the default is allowed: KaiOS
+      // backgrounds/closes.
     }
   }
 

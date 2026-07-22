@@ -12,6 +12,32 @@
     App.router.push(App.screens.chat.create(convId));
   };
 
+  /* A notification tapped while the app was closed can't postMessage a live
+     window, so sw.js stashes the target conversation in Cache Storage. Read it
+     once on boot (fresh entries only, so an unrelated later launch still lands
+     on the list), clear it, and open the chat. */
+  function openPendingConversation() {
+    if (typeof caches === 'undefined') return;
+    caches.open('s4k-push').then(function (cache) {
+      return cache.match('/__s4k_pending_conv').then(function (res) {
+        if (!res) return null;
+        return res.json().then(function (info) {
+          return cache['delete']('/__s4k_pending_conv').then(function () {
+            return info;
+          });
+        });
+      });
+    }).then(function (info) {
+      if (!info || !info.convId) return;
+      // Ignore stale entries (>60s): the tap that set this should be recent.
+      if (typeof info.ts === 'number' && Date.now() - info.ts > 60000) return;
+      App.util.dbg('boot: opening conversation from notification');
+      App.openConversation(info.convId);
+    })['catch'](function (e) {
+      App.util.dbg('boot: pending conversation read failed ' + (e && e.message));
+    });
+  }
+
   /* Register the ServiceWorker that shows closed-app push notifications, relays
      wake alarms, and handles notification clicks. Runs on any KaiOS with a
      ServiceWorker (2.5 once the 'serviceworker' permission is granted, and
@@ -64,6 +90,9 @@
     }
 
     App.store.init().then(function () {
+      // If the app was cold-started by a notification tap, route to that chat
+      // now that history is loaded.
+      openPendingConversation();
       // Prune old history in the background after startup.
       setTimeout(function () {
         App.store.conversations().forEach(function (c) {

@@ -36,6 +36,7 @@
 
       var nav = new App.Nav(el, { scrollEl: list });
       var busy = false;
+      var resultCount = 0; // matching contacts/groups from the last render()
 
       function row(name, hint, kind, id, avatarConv) {
         var r = App.util.el('div', 'conv-row');
@@ -102,6 +103,7 @@
             'Try "Refresh contacts & groups" in Settings.'));
         }
 
+        resultCount = shown;
         nav.refresh();
       }
 
@@ -183,6 +185,14 @@
             if (!sel) return true;
             var id = sel.getAttribute('data-id');
             if (id === '__query') {
+              // OK on the search box: if the query matched contacts/groups, drop
+              // into the results so the user can pick one (this also blurs the
+              // input). Only start a chat with the literal text when there's
+              // nothing to pick (the sole row is the "Start chat with …" offer).
+              if (resultCount > 0) {
+                nav.select(1); // index 0 is the input; 1 is the first result
+                return true;
+              }
               startTyped();
               return true;
             }

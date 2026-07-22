@@ -144,6 +144,19 @@
     });
   }
 
+  /* Remember this device's push endpoint so ws.js can send it on the receive
+     socket (?ep=). The gateway uses it to skip push only for the devices that
+     are actually open, so a second device sharing the number still gets
+     notified while this one is in the foreground. Returns whether it changed. */
+  function saveEndpoint(endpoint) {
+    var next = endpoint || '';
+    var prev = '';
+    try { prev = window.localStorage.getItem('s4k.pushEndpoint') || ''; } catch (e) { /* unavailable */ }
+    if (next === prev) return false;
+    try { window.localStorage.setItem('s4k.pushEndpoint', next); } catch (e2) { /* unavailable */ }
+    return true;
+  }
+
   /* KaiOS 3.0+ only: subscribe the ServiceWorker to the system messages we act on
      while backgrounded/closed, so the OS wakes it for them. NOTE: 'push' is NOT a
      systemMessage — it's owned by the Push API (pushManager.subscribe), and
@@ -193,12 +206,20 @@
             return subscribe(reg, vapidKey, keyChanged);
           });
         }).then(function (sub) {
+          var endpointChanged = saveEndpoint(sub && sub.endpoint);
           return savePushCfg(vapidKey).then(function () {
             return registerWithGateway(sub);
           }).then(function () {
             App.util.dbg('push: subscribed (' + endpointHost(sub.endpoint) +
               ', …' + String(sub.endpoint || '').slice(-12) +
               (vapidKey ? ', VAPID' : ', keyless') + ')');
+            // First boot (or a rotated endpoint): the receive socket connected
+            // before we knew the endpoint, so reconnect to hand it to the
+            // gateway for the per-device push idle gate.
+            if (endpointChanged && App.ws && App.ws.restart) {
+              App.util.dbg('push: endpoint changed, reconnecting receive socket');
+              App.ws.restart();
+            }
           });
         });
       });

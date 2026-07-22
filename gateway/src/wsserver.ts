@@ -31,19 +31,22 @@ export function handleUpgrade(
   const number = decodeURIComponent(match[1]);
   const sinceRaw = url.searchParams.get('since');
   const since = sinceRaw ? parseInt(sinceRaw, 10) || 0 : 0;
+  // The device's push endpoint (optional). Lets push skip only the devices that
+  // are actually open, so another device sharing the number still gets notified.
+  const endpoint = url.searchParams.get('ep') || null;
 
   wss.handleUpgrade(req, socket, head, function (ws) {
-    onConnect(ws, number, since);
+    onConnect(ws, number, since, endpoint);
   });
 }
 
-function onConnect(ws: WebSocket, number: string, since: number): void {
+function onConnect(ws: WebSocket, number: string, since: number, endpoint: string | null): void {
   log.info('app connected ' + maskNumber(number) + ' since=' + since);
 
   // Make sure we are receiving upstream for this number.
   upstream.ensureNumber(number);
 
-  clients.add(number, ws);
+  clients.add(number, ws, endpoint);
   ws.on('close', function () {
     clients.remove(number, ws);
     log.info('app disconnected ' + maskNumber(number));

@@ -50,6 +50,13 @@
         input.type = type || 'text';
         input.value = value || '';
         input.placeholder = placeholder || '';
+        // Connection details (URL, number, tokens) are lowercase/case-exact — stop
+        // the KaiOS keypad starting in capitalized "Abc" mode. This only sets the
+        // default case; an explicit shift still types uppercase for the rare
+        // case-sensitive secret.
+        input.setAttribute('autocapitalize', 'none');
+        input.setAttribute('autocorrect', 'off');
+        input.spellcheck = false;
         input.setAttribute('nav-selectable', 'true');
         wrap.appendChild(label);
         wrap.appendChild(input);

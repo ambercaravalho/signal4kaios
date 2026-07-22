@@ -97,8 +97,14 @@
     // token so the separator is correct whether or not a token is present.
     var sinceSep = url.indexOf('?') === -1 ? '?' : '&';
     url += sinceSep + 'since=' + cursor;
+    // This device's push endpoint (if it has one) lets the gateway skip push
+    // only for the devices actually open, so another device sharing the number
+    // still gets notified. Redacted from the debug log (it's a capability URL).
+    var endpoint = '';
+    try { endpoint = window.localStorage.getItem('s4k.pushEndpoint') || ''; } catch (e) { /* unavailable */ }
+    if (endpoint) url += '&ep=' + encodeURIComponent(endpoint);
     var redactRe = new RegExp('([?&]' + param.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=)[^&]*');
-    App.util.dbg('ws: connecting ' + url.replace(redactRe, '$1***'));
+    App.util.dbg('ws: connecting ' + url.replace(redactRe, '$1***').replace(/([?&]ep=)[^&]*/, '$1***'));
     App.store.setConnection('connecting');
 
     var startedAt = Date.now();

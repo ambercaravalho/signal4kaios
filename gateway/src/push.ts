@@ -111,16 +111,35 @@ export function onIncoming(number: string, text: string): void {
   const note = toNote(text);
   if (!note || !note.incoming) return;
 
-  // The app is open for this number; it will show its own notification.
-  if (config.pushWhenIdleOnly && clients.count(number) > 0) {
-    log.info('push: skipped, app connected for ' + maskNumber(number));
+  const allSubs = buffer.subsFor(number);
+  if (!allSubs.length) {
+    log.info('push: no subscriptions for ' + maskNumber(number));
     return;
   }
 
-  const subs = buffer.subsFor(number);
-  if (!subs.length) {
-    log.info('push: no subscriptions for ' + maskNumber(number));
-    return;
+  // Per-device idle gate: a device that currently has the app open shows its own
+  // notification, so skip its push — but still push to every OTHER device
+  // sharing this number (e.g. a closed KaiOS 2.5 phone while a KaiOS 4 phone is
+  // open). Devices report their push endpoint on the receive socket (?ep=);
+  // fall back to the all-or-nothing behaviour only when we can't tell them apart.
+  let subs = allSubs;
+  if (config.pushWhenIdleOnly) {
+    const open = clients.connectedEndpoints(number);
+    if (open.size > 0) {
+      subs = allSubs.filter(function (sub) {
+        const ep = (sub as { endpoint?: string }).endpoint;
+        return !ep || !open.has(ep);
+      });
+    } else if (clients.count(number) > 0) {
+      // App(s) connected but none reported an endpoint we can match — preserve
+      // the original conservative skip so an open device isn't double-notified.
+      log.info('push: skipped, app connected for ' + maskNumber(number));
+      return;
+    }
+    if (!subs.length) {
+      log.info('push: skipped, open device(s) self-notify for ' + maskNumber(number));
+      return;
+    }
   }
 
   // Send the note as an aesgcm payload (this is what cold-wakes the SW on
