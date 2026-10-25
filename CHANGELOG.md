@@ -2,6 +2,12 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## Unreleased
+
+### Removed
+
+- The OStore source at `ambercaravalho.github.io/signal4kaios`. Current OStore builds can't add custom sources, so it couldn't be used. On KaiOS 3.0+, install and update by copying the ZIP from Releases to the phone and using OStore's **Manual Install** tab → **Install app from sdcard** (see [Setup](https://github.com/ambercaravalho/signal4kaios/blob/main/docs/setup.md#3-install-the-app)).
+
 ## v1.1.1
 
 The backend is easier to run: the gateway now ships as a prebuilt image. The phone app is unchanged.

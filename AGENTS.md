@@ -4,7 +4,7 @@ Instructions for AI agents working in this repository. Read this before making a
 
 ## What this is
 
-**signal4kaios** is a Signal client for **KaiOS 2.5** feature phones that also runs on **KaiOS 3.0, 3.1, and 4.0**. The app talks to a single backend, the **[gateway](docs/development.md#the-gateway)** (a Node/TS service), which in turn fronts a self-hosted [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server (in `json-rpc` mode): the gateway authenticates paired phones, reverse-proxies HTTP, relays the receive WebSocket with a buffered backlog, and sends background Web Push. The app is packaged as a **privileged** KaiOS app, distributed via OStore (3.0+) or sideloaded. One package ships both manifests ([`manifest.webapp`](app/manifest.webapp) for 2.5, [`manifest.webmanifest`](app/manifest.webmanifest) for 3.0+); the OS reads whichever it understands.
+**signal4kaios** is a Signal client for **KaiOS 2.5** feature phones that also runs on **KaiOS 3.0, 3.1, and 4.0**. The app talks to a single backend, the **[gateway](docs/development.md#the-gateway)** (a Node/TS service), which in turn fronts a self-hosted [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server (in `json-rpc` mode): the gateway authenticates paired phones, reverse-proxies HTTP, relays the receive WebSocket with a buffered backlog, and sends background Web Push. The app is packaged as a **privileged** KaiOS app and distributed as a ZIP on GitHub Releases, installed via OStore's Manual Install (3.0+) or sideloaded. One package ships both manifests ([`manifest.webapp`](app/manifest.webapp) for 2.5, [`manifest.webmanifest`](app/manifest.webmanifest) for 3.0+); the OS reads whichever it understands.
 
 The **KaiOS app** (`app/`) has **no build step, bundler, package manager, dependency, or `package.json`** — it is plain files served as-is. Don't introduce npm, transpilers, frameworks, or a build pipeline **into the app**.
 
@@ -72,10 +72,10 @@ Screens are objects from a `create()` factory, registered on `App.screens.<name>
 - `onKey` returns `true` when handled; unhandled `Backspace` pops the stack (KaiOS's Back sends Backspace).
 - Simplest reference: [`screens/menu.js`](app/js/screens/menu.js). Add the new file's `<script>` tag to `index.html`.
 
-## Releases and the store
+## Releases
 
-- The app version lives in **both** manifests (`version` in `manifest.webapp`, `b2g_features.version` in `manifest.webmanifest`); keep them equal — `package.sh` fails otherwise. Never change `id` / `origin` (`signal4kaios`); installed phones and OStore update URLs depend on them.
-- Releases are cut by pushing a `v<version>` tag ([`release.yml`](.github/workflows/release.yml)), which publishes the ZIP and rebuilds the OStore source on GitHub Pages. The same tag publishes the gateway image to `ghcr.io/ambercaravalho/signal4kaios-gateway` ([`gateway-image.yml`](.github/workflows/gateway-image.yml)); `main` publishes it as `edge`. Users clone the repo and [`docker/docker-compose.yml`](docker/docker-compose.yml) pulls the image; building locally is only for development ([`docker/docker-compose.build.yml`](docker/docker-compose.build.yml)). Release notes come from the tag's `## v<version>` section in [`CHANGELOG.md`](CHANGELOG.md); write it before tagging or the release fails. Listing text is in [`store/catalog.json`](store/catalog.json). See [`docs/development.md`](docs/development.md#packaging-and-releasing).
+- The app version lives in **both** manifests (`version` in `manifest.webapp`, `b2g_features.version` in `manifest.webmanifest`); keep them equal — `package.sh` fails otherwise. Never change `id` / `origin` (`signal4kaios`); installed phones depend on them.
+- Releases are cut by pushing a `v<version>` tag ([`release.yml`](.github/workflows/release.yml)), which publishes the ZIP as a GitHub Release. The same tag publishes the gateway image to `ghcr.io/ambercaravalho/signal4kaios-gateway` ([`gateway-image.yml`](.github/workflows/gateway-image.yml)); `main` publishes it as `edge`. Users clone the repo and [`docker/docker-compose.yml`](docker/docker-compose.yml) pulls the image; building locally is only for development ([`docker/docker-compose.build.yml`](docker/docker-compose.build.yml)). Release notes come from the tag's `## v<version>` section in [`CHANGELOG.md`](CHANGELOG.md); write it before tagging or the release fails. See [`docs/development.md`](docs/development.md#packaging-and-releasing).
 
 ## Definition of done
 

@@ -15,10 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: sh app/scripts/package.sh
-      - name: Store source builds
-        run: |
-          sh store/build-store-source.sh dist/signal4kaios.zip \
-            https://example.invalid/signal4kaios.zip /tmp/site
 
   gateway:
     name: Gateway build

@@ -43,9 +43,11 @@ To register a number directly instead of linking, see [signal-cli-rest-api](http
 
 ## 3. Install the app
 
-**KaiOS 3.0, 3.1, 4.0 — from OStore (easiest).** Signal4KaiOS is in the community [OStore](https://github.com/Samenal-sys/Store) catalogue. This project also publishes its own source: in OStore choose **Add source** and enter `https://ambercaravalho.github.io/signal4kaios/`. Use one source per phone; installing from both can cause a duplicate-install error.
+Download the ZIP from [Releases](https://github.com/ambercaravalho/signal4kaios/releases), or build one with `sh app/scripts/package.sh`.
 
-**Sideloading (any version).** Download a ZIP from [Releases](https://github.com/ambercaravalho/signal4kaios/releases) and unzip it, or build one with `sh app/scripts/package.sh`. Enable the phone's debug mode (on 2.5, dial `*#*#33284#*#*`), connect it over USB, then:
+**KaiOS 3.0, 3.1, 4.0 — with OStore (easiest).** Copy the ZIP, as-is (don't unzip it), onto the phone's storage, over USB or by downloading it on the phone. In OStore, open the **Manual Install** tab, choose **Install app from sdcard**, and pick the ZIP. To update, repeat with the newer ZIP.
+
+**Sideloading from a computer (any version).** Unzip the ZIP. Enable the phone's debug mode (on 2.5, dial `*#*#33284#*#*`), connect it over USB, then:
 
 - **KaiOS 2.5:** `adb forward tcp:6000 localfilesystem:/data/local/debugger-socket`, open WebIDE in Firefox 52–59, connect to the remote runtime at `localhost:6000`, and use **Open Packaged App** on the `app/` folder.
 - **KaiOS 3.0+:** get [`appscmd`](https://github.com/kaiostech/appscmd) and run `APPSCMD=/path/to/appscmd sh app/scripts/install-kaios3plus.sh`, then reboot the phone.

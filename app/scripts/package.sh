@@ -34,7 +34,7 @@ for required in app/manifest.webapp app/manifest.webmanifest app/sw.js; do
 done
 
 # --- Version check ---------------------------------------------------------
-# Both manifests must carry the same version (OStore compares the 3.0+ b2g_features.version for updates). When RELEASE_TAG is set (CI), the tag must be v<version>, optionally with a pre-release suffix (v1.2.0-rc1).
+# Both manifests must carry the same version. When RELEASE_TAG is set (CI), the tag must be v<version>, optionally with a pre-release suffix (v1.2.0-rc1).
 manifest_version() {
   sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -n 1
 }
