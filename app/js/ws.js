@@ -1,8 +1,7 @@
 (function () {
   'use strict';
 
-  /* WebSocket manager for ws://<gateway>/v1/receive/<number>. The gateway relays
-     signal-cli's receive stream and buffers it, so on connect it replays the backlog we missed (frames with seq > our cursor) as { t, seq, data } envelopes, sends a 'backlog-done' sentinel, then streams live 'frame' envelopes. We persist the highest applied seq and reconnect with ?since=<seq> to resume without gaps or duplicates. If pointed straight at signal-cli-rest-api (no gateway), a message without a `t` field is treated as a raw frame. Reconnects with exponential backoff + jitter; also reconnects when the app returns to the foreground.
+  /* WebSocket manager for ws://<gateway>/v1/receive/<number>. The gateway relays signal-cli's receive stream and buffers it, so on connect it replays the backlog we missed (frames with seq > our cursor) as { t, seq, data } envelopes, sends a 'backlog-done' sentinel, then streams live 'frame' envelopes. We persist the highest applied seq and reconnect with ?since=<seq> to resume without gaps or duplicates. If pointed straight at signal-cli-rest-api (no gateway), a message without a `t` field is treated as a raw frame. Reconnects with exponential backoff + jitter; also reconnects when the app returns to the foreground.
 
      Auth: a browser WebSocket can't send an Authorization header, so the device token rides in the subprotocol list (['s4k.v1', 's4k.auth.<token>']) and stays out of the URL. The gateway answers 's4k.v1', or closes with 4401 if the token isn't paired, which sends the user back to pairing. */
 
@@ -243,8 +242,7 @@
     App.util.dbg('ws: alarm handler unavailable ' + e.message);
   }
 
-  // KaiOS 3.0/4.0: the 'alarm' system message goes to the ServiceWorker (sw.js),
-  // which relays it to open clients via postMessage. Listen for that relay.
+  // KaiOS 3.0/4.0: the 'alarm' system message goes to the ServiceWorker (sw.js), which relays it to open clients via postMessage. Listen for that relay.
   try {
     if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
       navigator.serviceWorker.addEventListener('message', function (evt) {

@@ -1,8 +1,7 @@
 (function () {
   'use strict';
 
-  /* IndexedDB persistence. signal-cli-rest-api has no message-history API,
-     so this database IS the message history: everything received over the websocket (and everything sent) is stored here.
+  /* IndexedDB persistence. signal-cli-rest-api has no message-history API, so this database IS the message history: everything received over the websocket (and everything sent) is stored here.
 
      Stores:
        messages       keyPath 'id' = convId + '|' + timestamp + '|' + author

@@ -1,26 +1,23 @@
 # signal4kaios
 
-**Real Signal, on a phone with actual buttons.**
+*real Signal, on a phone with actual buttons.*
 
-signal4kaios is a full-featured [Signal](https://signal.org) messenger for **KaiOS** feature phones — the flip phones and keypad handsets that don't run Android or iOS. Send and receive real Signal messages, react, reply, join groups, and share photos, all driven by the number pad and D-pad.
+signal4kaios is a full-featured [Signal](https://signal.org) messenger for **KaiOS** feature phones. Send and receive messages, react, reply, join groups, and share photos, all driven by the number pad and D-pad.
 
-It connects to your own self-hosted Signal backend, so your messages never pass through anyone else's servers. Works on **KaiOS 2.5, 3.0, 3.1, and 4.0** from a single install.
-
+> [!IMPORTANT]
 > **You need to run a small backend** (two Docker containers) on a computer or server you control. The app does nothing without it.
 
-## Features
+## Screenshots
 
-| Area | What you get |
-| --- | --- |
-| **Messaging** | Real-time 1:1 and group chat, reactions (full emoji picker + "who reacted"), replies, edits, read receipts, and typing indicators (last two toggleable) |
-| **Disappearing messages** | Per-chat timer, live countdown on a message, and automatic deletion when it expires |
-| **Notifications** | Background push (KaiOS 3.0+) that reaches you even when the app is fully closed — always on, nothing to configure |
-| **Never miss a message** | The backend buffers anything that arrives while you're offline and replays it on reconnect |
-| **Media** | Send/receive photos, video, voice notes, and files via the KaiOS system picker; cached offline and saveable to the phone |
-| **Groups** | Manage members, admins, per-action permissions, invite links, pinned messages, and group blocking |
-| **Finding people** | Search-as-you-type, or start a chat by number/username with a registration check |
-| **Organization** | Multiple accounts, archived/muted chats, pinned conversations, unread badges, and local search |
-| **Built for the hardware** | Fully keypad-driven, tuned for a 240x320 screen, with persistent reconnect |
+img1
+
+img2
+
+img3
+
+## How it works
+
+The phone app is only a client. Your Signal account lives on [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api), which stays on an internal network. The phone talks to the **gateway** in front of it, which proxies the API, buffers messages so none are missed while you're offline, sends background push, and only accepts phones you've paired with a one-time code.
 
 ## Quickstart
 
@@ -36,9 +33,18 @@ It connects to your own self-hosted Signal backend, so your messages never pass 
 
 The full walkthrough, including use away from home, is in **[Setup](docs/setup.md)**.
 
-## How it works
+## Features
 
-The phone app is only a client. Your Signal account lives on [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api), which stays on an internal network. The phone talks to the **gateway** in front of it, which proxies the API, buffers messages so none are missed while you're offline, sends background push, and only accepts phones you've paired with a one-time code.
+| Area | What you get |
+| --- | --- |
+| **Messaging** | Real-time 1:1 and group chat, reactions, replies, edits, read receipts, and typing indicators |
+| **Disappearing messages** | Per-chat timer, live countdown on a message, and automatic deletion when it expires |
+| **Notifications** | Background push (KaiOS 3.0+) that reaches you even when the app is fully closed |
+| **Never miss a message** | The backend buffers anything that arrives while you're offline |
+| **Media** | Send/receive photos, video, voice notes, and files |
+| **Groups** | Manage members, admins, per-action permissions, invite links, and pinned messages |
+| **Finding people** | Search-as-you-type, or start a chat by number/username with a registration check |
+| **Organization** | Multiple accounts, archived/muted chats, pinned conversations, unread badges, and local search |
 
 ## Documentation
 
