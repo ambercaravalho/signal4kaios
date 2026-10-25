@@ -35,8 +35,14 @@ jobs:
           ASSET: ${{ steps.pkg.outputs.asset }}
           REPO: ${{ github.repository }}
         run: |
-          cat > notes.md <<EOF
-          ## Install
+          awk -v h="## $TAG" '$0 == h { on = 1; next } on && /^## / { exit } on' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "CHANGELOG.md has no '## $TAG' section; write the release notes first." >&2
+            exit 1
+          fi
+          cat >> notes.md <<EOF
+
+          ### Install
 
           - **KaiOS 3.0 / 3.1 / 4.0:** in OStore, add the source \`https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/\` and install Signal4KaiOS.
           - **KaiOS 2.5:** sideload \`$ASSET\` (unzipped) with WebIDE; see [Setup](https://github.com/$REPO/blob/main/docs/setup.md).
@@ -46,7 +52,7 @@ jobs:
           PRERELEASE=""
           case "$TAG" in *-*) PRERELEASE="--prerelease" ;; esac
           gh release create "$TAG" "dist/$ASSET" \
-            --title "Signal4KaiOS $TAG" \
+            --title "$TAG" \
             --notes-file notes.md \
             --generate-notes \
             $PRERELEASE

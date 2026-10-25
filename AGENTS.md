@@ -75,7 +75,7 @@ Screens are objects from a `create()` factory, registered on `App.screens.<name>
 ## Releases and the store
 
 - The app version lives in **both** manifests (`version` in `manifest.webapp`, `b2g_features.version` in `manifest.webmanifest`); keep them equal — `package.sh` fails otherwise. Never change `id` / `origin` (`signal4kaios`); installed phones and OStore update URLs depend on them.
-- Releases are cut by pushing a `v<version>` tag ([`release.yml`](.github/workflows/release.yml)), which publishes the ZIP and rebuilds the OStore source on GitHub Pages. Listing text is in [`store/catalog.json`](store/catalog.json). See [`docs/development.md`](docs/development.md#packaging-and-releasing).
+- Releases are cut by pushing a `v<version>` tag ([`release.yml`](.github/workflows/release.yml)), which publishes the ZIP and rebuilds the OStore source on GitHub Pages. Release notes come from the tag's `## v<version>` section in [`CHANGELOG.md`](CHANGELOG.md); write it before tagging or the release fails. Listing text is in [`store/catalog.json`](store/catalog.json). See [`docs/development.md`](docs/development.md#packaging-and-releasing).
 
 ## Definition of done
 

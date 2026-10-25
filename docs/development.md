@@ -235,8 +235,9 @@ Runs the Gecko 48 gate on `app/js` and `app/css`, checks that both manifests hav
 **Releasing** is tag-driven ([`release.yml`](../.github/workflows/release.yml)):
 
 1. Bump `version` in **both** manifests (it must increase, or OStore won't offer the update). Never change the app `id` / `origin` (`signal4kaios`).
-2. Commit, then `git tag v1.2.0 && git push origin v1.2.0` (pre-releases: `v1.2.0-rc1`; these also update the store source).
-3. CI packages with `RELEASE_TAG` set, publishes a GitHub Release with the ZIP and `store-entry.json`, then rebuilds the OStore source on GitHub Pages at `https://ambercaravalho.github.io/signal4kaios/`.
+2. Add a `## v1.2.0` section to [`CHANGELOG.md`](../CHANGELOG.md) describing the release for users. It becomes the release notes, and the release fails without it.
+3. Commit, then `git tag v1.2.0 && git push origin v1.2.0` (pre-releases: `v1.2.0-rc1`; these also update the store source).
+4. CI packages with `RELEASE_TAG` set, publishes a GitHub Release titled with the tag, carrying the changelog section, install instructions, the ZIP, and `store-entry.json`, then rebuilds the OStore source on GitHub Pages at `https://ambercaravalho.github.io/signal4kaios/`.
 
 [`scripts/build-store-source.sh`](../scripts/build-store-source.sh) generates the source (`webapps.json`, `Apps-directory/Signal4KaiOS/{manifest,update}.webmanifest`) from [`store/catalog.json`](../store/catalog.json), which holds the listing text.
 
