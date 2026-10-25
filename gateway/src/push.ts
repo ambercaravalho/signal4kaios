@@ -1,7 +1,4 @@
-/* Web Push: store subscriptions, and on a new incoming message send an
-   aesgcm-encrypted payload so the app's ServiceWorker cold-wakes and shows the
-   note directly. Push is skipped when the app is currently connected for that
-   number (it notifies itself) unless PUSH_WHEN_IDLE_ONLY is false. */
+/* Web Push: store subscriptions, and on a new incoming message send an aesgcm-encrypted payload so the app's ServiceWorker cold-wakes and shows the note directly. Push is skipped when the app is currently connected for that number (it notifies itself) unless PUSH_WHEN_IDLE_ONLY is false. */
 
 import webpush from 'web-push';
 import { config } from './config';
@@ -11,8 +8,7 @@ import * as clients from './clients';
 import * as upstream from './upstream';
 import { toNote } from './parse';
 
-// Whether VAPID is configured. KaiOS only delivers a *payload* push when it is
-// VAPID-signed; without VAPID it allows empty "tickles" only.
+// Whether VAPID is configured. KaiOS only delivers a *payload* push when it is VAPID-signed; without VAPID it allows empty "tickles" only.
 let vapidReady = false;
 
 export function init(): void {
@@ -33,11 +29,10 @@ export function vapidPublicKey(): string {
   return config.vapidPublic || '';
 }
 
-/* Register (or refresh) a subscription for a number and make sure we are
-   buffering that number so closed-app pushes can be produced. */
-export function register(number: string, subscription: unknown): void {
+/* Register (or refresh) a subscription for a number and make sure we are buffering that number so closed-app pushes can be produced. */
+export function register(number: string, subscription: unknown, deviceId: number): void {
   if (!number || !subscription) return;
-  buffer.addSub(number, subscription);
+  buffer.addSub(number, subscription, deviceId);
   buffer.addNumber(number);
   upstream.ensureNumber(number);
   log.info('push: registered subscription for ' + maskNumber(number));
@@ -49,23 +44,16 @@ export function unregister(endpoint: string): void {
   log.info('push: unregistered a subscription');
 }
 
-// KaiOS's push service (notification.kaiostech.com) is a fork of Mozilla's old
-// autopush and has two hard rules:
-//   1. It only accepts the legacy 'aesgcm' content encoding (not web-push's
-//      default 'aes128gcm'), so we force it below.
-//   2. An empty "tickle" does NOT reliably cold-wake a stopped ServiceWorker; a
-//      real VAPID-signed encrypted payload does. So when VAPID is configured we
-//      send the note as an aesgcm payload and the SW shows it directly. Without
-//      VAPID the push service only allows empty pushes (a generic notice).
+// KaiOS's push service (notification.kaiostech.com) is a fork of Mozilla's old autopush and has two hard rules:
+//   1. It only accepts the legacy 'aesgcm' content encoding (not web-push's default 'aes128gcm'), so we force it below.
+//   2. An empty "tickle" does NOT reliably cold-wake a stopped ServiceWorker; a real VAPID-signed encrypted payload does. So when VAPID is configured we send the note as an aesgcm payload and the SW shows it directly. Without VAPID the push service only allows empty pushes (a generic notice).
 const PUSH_TTL = 3600;
 
 function sendOptions(): webpush.RequestOptions {
   return { TTL: PUSH_TTL, contentEncoding: 'aesgcm' };
 }
 
-/* Mask a push endpoint for logs/responses: host + the last 12 chars of the token
-   (enough to compare against the device's current subscription, not enough to be
-   a usable capability URL). */
+/* Mask a push endpoint for logs/responses: host + the last 12 chars of the token (enough to compare against the device's current subscription, not enough to be a usable capability URL). */
 function maskEndpoint(endpoint?: string): string {
   if (!endpoint) return '(none)';
   try {
@@ -77,8 +65,7 @@ function maskEndpoint(endpoint?: string): string {
   }
 }
 
-/* Send to one subscription; prune it if the service says it's gone. Resolves to
-   a small status object (used by the manual test endpoint). */
+/* Send to one subscription; prune it if the service says it's gone. Resolves to a small status object (used by the manual test endpoint). */
 function sendTo(
   number: string,
   sub: unknown,
@@ -117,11 +104,7 @@ export function onIncoming(number: string, text: string): void {
     return;
   }
 
-  // Per-device idle gate: a device that currently has the app open shows its own
-  // notification, so skip its push — but still push to every OTHER device
-  // sharing this number (e.g. a closed KaiOS 2.5 phone while a KaiOS 4 phone is
-  // open). Devices report their push endpoint on the receive socket (?ep=);
-  // fall back to the all-or-nothing behaviour only when we can't tell them apart.
+  // Per-device idle gate: a device that currently has the app open shows its own notification, so skip its push — but still push to every OTHER device sharing this number (e.g. a closed KaiOS 2.5 phone while a KaiOS 4 phone is open). Devices report their push endpoint on the receive socket (?ep=); fall back to the all-or-nothing behaviour only when we can't tell them apart.
   let subs = allSubs;
   if (config.pushWhenIdleOnly) {
     const open = clients.connectedEndpoints(number);
@@ -131,8 +114,7 @@ export function onIncoming(number: string, text: string): void {
         return !ep || !open.has(ep);
       });
     } else if (clients.count(number) > 0) {
-      // App(s) connected but none reported an endpoint we can match — preserve
-      // the original conservative skip so an open device isn't double-notified.
+      // App(s) connected but none reported an endpoint we can match — preserve the original conservative skip so an open device isn't double-notified.
       log.info('push: skipped, app connected for ' + maskNumber(number));
       return;
     }
@@ -142,18 +124,12 @@ export function onIncoming(number: string, text: string): void {
     }
   }
 
-  // Send the note as an aesgcm payload (this is what cold-wakes the SW on
-  // KaiOS); without VAPID we can only send an empty push (generic notice).
+  // Send the note as an aesgcm payload (this is what cold-wakes the SW on KaiOS); without VAPID we can only send an empty push (generic notice).
   const payload = vapidReady ? JSON.stringify(note) : undefined;
   subs.forEach(function (sub) { sendTo(number, sub, payload); });
 }
 
-/* Manual test: push a canned note to every subscription for a number, ignoring
-   the idle gate. Returns per-subscription results so a caller can see exactly
-   what the push service reported. Pass empty=true to send a PAYLOADLESS push
-   (a "tickle"): nothing to decrypt, so if it's delivered at all the SW's 'push'
-   event must fire — a pure delivery/wake probe that isolates delivery failures
-   from payload-decryption failures. */
+/* Manual test: push a canned note to every subscription for a number, ignoring the idle gate. Returns per-subscription results so a caller can see exactly what the push service reported. Pass empty=true to send a PAYLOADLESS push (a "tickle"): nothing to decrypt, so if it's delivered at all the SW's 'push' event must fire — a pure delivery/wake probe that isolates delivery failures from payload-decryption failures. */
 export function sendTest(
   number: string,
   empty?: boolean

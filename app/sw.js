@@ -1,24 +1,12 @@
 'use strict';
 
-/* ServiceWorker for signal4kaios — runs on every KaiOS with the Push API
-   (2.5 and 3.0/3.1/4.0). It does the things the page can't once the app is
-   backgrounded or fully closed:
+/* ServiceWorker for signal4kaios — runs on every KaiOS with the Push API (2.5 and 3.0/3.1/4.0). It does the things the page can't once the app is backgrounded or fully closed:
 
-     1. 'push' — the gateway sends an aesgcm-encrypted push for each incoming
-        message (see docs/gateway.md); this worker shows the notification even
-        when the app is closed. This is the ONLY closed-app notification path.
-     2. 'systemmessage' (alarm) — if a window is still open (backgrounded app),
-        relay a wake so ws.js reconnects and drains queued messages. When the app
-        is fully closed, push handles notifications, so the alarm does nothing
-        here.
+     1. 'push' — the gateway sends an aesgcm-encrypted push for each incoming message (see docs/development.md); this worker shows the notification even when the app is closed. This is the ONLY closed-app notification path.
+     2. 'systemmessage' (alarm) — if a window is still open (backgrounded app), relay a wake so ws.js reconnects and drains queued messages. When the app is fully closed, push handles notifications, so the alarm does nothing here.
      3. 'notificationclick' — focus/open the app on the right conversation.
 
-   Kept small, dependency-free, and Gecko-48-safe (var/function only, no arrow
-   functions, template literals, or let/const) since it also runs on KaiOS 2.5.
-   It shares nothing with the page's App.* modules; the page hands over the
-   gateway coordinates (base URL, number, VAPID key, and — in token auth mode —
-   the receive token/param) via Cache Storage so this worker can re-register a
-   rotated push subscription on its own. */
+   Kept small, dependency-free, and Gecko-48-safe (var/function only, no arrow functions, template literals, or let/const) since it also runs on KaiOS 2.5. It shares nothing with the page's App.* modules; the page hands over the gateway coordinates (base URL, number, VAPID key, and the paired device token) via Cache Storage so this worker can re-register a rotated push subscription on its own. */
 
 var NOTIF_ICON = '/assets/icons/kaios_112.png';
 var PUSH_CACHE = 's4k-push';
@@ -45,8 +33,7 @@ function relay(message) {
     });
 }
 
-/* Record each push cold-wake so the page can report it in the in-app Debug log
-   (there's no console on the phone). Best-effort; never blocks. */
+/* Record each push cold-wake so the page can report it in the in-app Debug log (there's no console on the phone). Best-effort; never blocks. */
 function notePushWake() {
   if (!self.caches) return Promise.resolve();
   return self.caches.open(PUSH_CACHE).then(function (cache) {
@@ -63,10 +50,7 @@ function notePushWake() {
   })['catch'](function () { /* diagnostics only */ });
 }
 
-/* KaiOS delivers the 'alarm' system message to the worker as a 'systemmessage'
-   event. Its only remaining job is to nudge a still-open (backgrounded) window
-   to reconnect; the page re-arms the next alarm itself. A fully-closed app is
-   notified via push, not here. */
+/* KaiOS delivers the 'alarm' system message to the worker as a 'systemmessage' event. Its only remaining job is to nudge a still-open (backgrounded) window to reconnect; the page re-arms the next alarm itself. A fully-closed app is notified via push, not here. */
 self.addEventListener('systemmessage', function (event) {
   var name = event.name || (event.data && event.data.name);
   if (name && name !== 'alarm') return;
@@ -76,8 +60,7 @@ self.addEventListener('systemmessage', function (event) {
   event.waitUntil(relay({ type: 's4k-wake' })['catch'](function () {}));
 });
 
-/* Convert a base64url VAPID key into the Uint8Array applicationServerKey wants.
-   Mirrors the helper in push.js so the worker can re-subscribe on its own. */
+/* Convert a base64url VAPID key into the Uint8Array applicationServerKey wants. Mirrors the helper in push.js so the worker can re-subscribe on its own. */
 function urlB64ToUint8Array(base64) {
   var padding = new Array((4 - (base64.length % 4)) % 4 + 1).join('=');
   var b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -87,8 +70,7 @@ function urlB64ToUint8Array(base64) {
   return arr;
 }
 
-/* Gateway coordinates written by push.js (page side) so this worker can reach
-   the gateway while the app is closed. Returns null if push isn't set up. */
+/* Gateway coordinates written by push.js (page side) so this worker can reach the gateway while the app is closed. Returns null if push isn't set up. */
 function readPushCfg() {
   if (!self.caches) return Promise.resolve(null);
   return self.caches.open(PUSH_CACHE).then(function (cache) {
@@ -98,13 +80,11 @@ function readPushCfg() {
   })['catch'](function () { return null; });
 }
 
-/* Append the receive token as a query param (token auth mode) so the worker's
-   own cross-origin fetches pass a reverse proxy in front of the gateway. */
-function withToken(url, cfg) {
-  if (!cfg || !cfg.token || !cfg.tokenParam) return url;
-  var sep = url.indexOf('?') === -1 ? '?' : '&';
-  return url + sep + encodeURIComponent(cfg.tokenParam) + '=' +
-    encodeURIComponent(cfg.token);
+/* Headers for the worker's own gateway fetches: JSON plus the paired device token (the gateway rejects unauthenticated push routes). */
+function gatewayHeaders(cfg) {
+  var h = { 'Content-Type': 'application/json' };
+  if (cfg && cfg.token) h.Authorization = 'Bearer ' + cfg.token;
+  return h;
 }
 
 function showFromPayload(p) {
@@ -117,10 +97,7 @@ function showFromPayload(p) {
   });
 }
 
-/* Web Push. userVisibleOnly means we MUST show a notification for every push, so
-   every branch ends in showNotification. The gateway sends an aesgcm-encrypted
-   JSON payload; a keyless (no-VAPID) gateway can only send empty pushes, which
-   fall back to a generic notice. */
+/* Web Push. userVisibleOnly means we MUST show a notification for every push, so every branch ends in showNotification. The gateway sends an aesgcm-encrypted JSON payload; a keyless (no-VAPID) gateway can only send empty pushes, which fall back to a generic notice. */
 self.addEventListener('push', function (event) {
   event.waitUntil(notePushWake());
   var payload = null;
@@ -134,8 +111,7 @@ self.addEventListener('push', function (event) {
   event.waitUntil(showFromPayload(payload || { title: 'Signal', body: 'New message' }));
 });
 
-/* The push service can rotate a subscription; re-subscribe and tell the gateway
-   the new endpoint (fire-and-forget — we don't need the response). */
+/* The push service can rotate a subscription; re-subscribe and tell the gateway the new endpoint (fire-and-forget — we don't need the response). */
 self.addEventListener('pushsubscriptionchange', function (event) {
   event.waitUntil(
     readPushCfg().then(function (cfg) {
@@ -145,10 +121,10 @@ self.addEventListener('pushsubscriptionchange', function (event) {
           number: cfg.number || '',
           subscription: (sub && sub.toJSON) ? sub.toJSON() : sub
         };
-        var url = withToken(cfg.serverUrl.replace(/\/+$/, '') + '/v1/push/register', cfg);
+        var url = cfg.serverUrl.replace(/\/+$/, '') + '/v1/push/register';
         return self.fetch(url, {
           method: 'POST', mode: 'cors',
-          headers: { 'Content-Type': 'application/json' },
+          headers: gatewayHeaders(cfg),
           body: JSON.stringify(body)
         })['catch'](function () { return null; });
       }
@@ -160,8 +136,7 @@ self.addEventListener('pushsubscriptionchange', function (event) {
   );
 });
 
-/* Stash the tapped conversation so a cold-started app can route to it. The page
-   reads and clears this on boot (fresh entries only). Best-effort. */
+/* Stash the tapped conversation so a cold-started app can route to it. The page reads and clears this on boot (fresh entries only). Best-effort. */
 function savePendingConv(convId) {
   if (!convId || !self.caches) return Promise.resolve();
   return self.caches.open(PUSH_CACHE).then(function (cache) {
@@ -189,8 +164,7 @@ self.addEventListener('notificationclick', function (event) {
             return client.focus();
           }
         }
-        // No live window: persist the target so main.js can open it once the
-        // cold-started app has booted, then launch the app.
+        // No live window: persist the target so main.js can open it once the cold-started app has booted, then launch the app.
         return savePendingConv(convId).then(function () {
           if (self.clients.openWindow) {
             return self.clients.openWindow('/index.html');

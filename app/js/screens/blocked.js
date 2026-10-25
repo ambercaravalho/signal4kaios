@@ -1,10 +1,7 @@
 (function () {
   'use strict';
 
-  /* Read-only list of everything currently blocked. The REST API only exposes
-     a `blocked` flag on contacts and groups (and a group block endpoint); it
-     has no unblock endpoint and no contact block/unblock, so unblocking must be
-     done from the Signal app. This screen just surfaces who is blocked. */
+  /* Read-only list of everything currently blocked. The REST API only exposes a `blocked` flag on contacts and groups (and a group block endpoint); it has no unblock endpoint and no contact block/unblock, so unblocking must be done from the Signal app. This screen just surfaces who is blocked. */
 
   function nameOf(c) {
     var key = c.number || c.uuid;

@@ -1,8 +1,7 @@
 (function () {
   'use strict';
 
-  /* Thin wrappers over signal-cli-rest-api endpoints.
-     Request shapes verified against bbernhard/signal-cli-rest-api api.go. */
+  /* Thin wrappers over signal-cli-rest-api endpoints. Request shapes verified against bbernhard/signal-cli-rest-api api.go. */
 
   function num() {
     return encodeURIComponent(App.config.number());
@@ -11,6 +10,30 @@
   App.api = {
     about: function () {
       return App.http.get('/v1/about', { timeout: 8000 });
+    },
+
+    /* ---- Gateway pairing (gateway-owned routes, not signal-cli) ---- */
+
+    /* Unauthenticated reachability probe; resolves { ok, gateway }. */
+    health: function (serverUrl) {
+      return App.http.get('/healthz', { baseUrl: serverUrl, noAuth: true, timeout: 8000 });
+    },
+
+    /* Trade a pairing code for a device token. Resolves { token, deviceId, numbers }. */
+    pair: function (serverUrl, code, name) {
+      return App.http.post('/v1/pair', { code: code, name: name },
+        { baseUrl: serverUrl, noAuth: true, timeout: 15000 });
+    },
+
+    /* The Signal numbers on the gateway, using an existing device token. */
+    accounts: function (serverUrl, token) {
+      return App.http.request('GET', '/v1/accounts', null,
+        { baseUrl: serverUrl, authToken: token });
+    },
+
+    /* Revoke this phone's device token on the gateway. */
+    unpair: function () {
+      return App.http.post('/v1/pair/revoke', {});
     },
 
     contacts: function () {
@@ -38,8 +61,7 @@
         encodeURIComponent(groupId) + '/avatar', { binary: true, timeout: 20000 });
     },
 
-    /* payload: { recipients: [..], message, quote_timestamp?, quote_author?,
-       quote_message? } — response: { timestamp } */
+    /* payload: { recipients: [..], message, quote_timestamp?, quote_author?, quote_message? } — response: { timestamp } */
     send: function (payload) {
       var body = Object.assign({ number: App.config.number() }, payload);
       return App.http.post('/v2/send', body, { timeout: 30000 });
@@ -86,8 +108,7 @@
       });
     },
 
-    /* Check whether one or more numbers are registered with Signal.
-       Resolves to an array of { number, registered }. */
+    /* Check whether one or more numbers are registered with Signal. Resolves to an array of { number, registered }. */
     searchNumbers: function (numbers) {
       var list = [].concat(numbers);
       var query = [];
@@ -103,8 +124,7 @@
       return App.http.get('/v1/identities/' + num());
     },
 
-    /* Trust a contact's identity. opts: { trust_all_known_keys?,
-       verified_safety_number? } */
+    /* Trust a contact's identity. opts: { trust_all_known_keys?, verified_safety_number? } */
     trustIdentity: function (target, opts) {
       return App.http.put('/v1/identities/' + num() + '/trust/' +
         encodeURIComponent(target), opts || { trust_all_known_keys: true });
@@ -115,9 +135,7 @@
       return App.http.put('/v1/profiles/' + num(), body || {});
     },
 
-    /* Rename a saved contact and/or set its disappearing-message timer.
-       Pass name === null to leave the name untouched, and
-       expirationInSeconds === null/undefined to leave the timer untouched. */
+    /* Rename a saved contact and/or set its disappearing-message timer. Pass name === null to leave the name untouched, and expirationInSeconds === null/undefined to leave the timer untouched. */
     updateContact: function (recipient, name, expirationInSeconds) {
       var body = { recipient: recipient };
       if (name != null) body.name = name;
@@ -130,8 +148,7 @@
       return App.http.post('/v1/contacts/' + num() + '/sync', {});
     },
 
-    /* Full detail for one group (members, description, admins). groupId is the
-       send id ("group.…"). */
+    /* Full detail for one group (members, description, admins). groupId is the send id ("group.…"). */
     groupDetail: function (groupId) {
       return App.http.get('/v1/groups/' + num() + '/' +
         encodeURIComponent(groupId));
@@ -194,8 +211,7 @@
         { target_author: targetAuthor, timestamp: timestamp });
     },
 
-    /* Set this account's Signal username. Resolves to
-       { username, username_link } — the link is what a QR code encodes. */
+    /* Set this account's Signal username. Resolves to { username, username_link } — the link is what a QR code encodes. */
     setUsername: function (username) {
       return App.http.post('/v1/accounts/' + num() + '/username',
         { username: username });

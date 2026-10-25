@@ -1,13 +1,9 @@
 (function () {
   'use strict';
 
-  /* Per-screen D-pad navigation, ported from the KaiOS demo's useNavigation
-     pattern: focusable elements carry nav-selectable; the current one gets
-     nav-selected="true" (styled via CSS attribute selectors). Each screen
-     owns one Nav instance scoped to its root element.
+  /* Per-screen D-pad navigation, ported from the KaiOS demo's useNavigation pattern: focusable elements carry nav-selectable; the current one gets nav-selected="true" (styled via CSS attribute selectors). Each screen owns one Nav instance scoped to its root element.
 
-     opts: { scrollEl, wrap (default true), cols (default 1),
-             onChange(el, index) } */
+     opts: { scrollEl, wrap (default true), cols (default 1), onChange(el, index) } */
 
   function Nav(root, opts) {
     opts = opts || {};
@@ -53,10 +49,7 @@
         document.activeElement.tagName === 'TEXTAREA')) {
       document.activeElement.blur();
     }
-    // At the ends of the list, snap the scroll container fully to the top or
-    // bottom so non-selectable content there (section headers above the first
-    // item, a status/hint line below the last) becomes visible — otherwise
-    // wrapping back to the first item would leave the header scrolled off.
+    // At the ends of the list, snap the scroll container fully to the top or bottom so non-selectable content there (section headers above the first item, a status/hint line below the last) becomes visible — otherwise wrapping back to the first item would leave the header scrolled off.
     if (index <= 0 && this.scrollEl) {
       this.scrollEl.scrollTop = 0;
     } else if (index >= items.length - 1 && this.scrollEl) {
@@ -82,8 +75,7 @@
     this.select(this.items().length - 1);
   };
 
-  /* Re-apply selection after a list re-render: prefer the remembered
-     data-id, else clamp the previous index. */
+  /* Re-apply selection after a list re-render: prefer the remembered data-id, else clamp the previous index. */
   Nav.prototype.refresh = function () {
     if (this.activeId && this.selectById(this.activeId)) return;
     var idx = this.selectedIndex();

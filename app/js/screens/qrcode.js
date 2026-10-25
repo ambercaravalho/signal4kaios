@@ -1,8 +1,7 @@
 (function () {
   'use strict';
 
-  /* Render a Signal username link as a QR code using the vendored ES5
-     qrcode-generator (global `qrcode`). create(link). */
+  /* Render a Signal username link as a QR code using the vendored ES5 qrcode-generator (global `qrcode`). create(link). */
 
   App.screens.qrcode = {
     create: function (link) {

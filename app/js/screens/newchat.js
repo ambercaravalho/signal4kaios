@@ -1,9 +1,7 @@
 (function () {
   'use strict';
 
-  /* Contact/group picker for starting a conversation that has no local
-     history yet. A query field filters the directory client-side and also
-     lets you start a chat with a typed number or username. */
+  /* Contact/group picker for starting a conversation that has no local history yet. A query field filters the directory client-side and also lets you start a chat with a typed number or username. */
 
   function normalizeNumber(v) {
     var n = v.replace(/[\s()-]/g, '');
@@ -140,9 +138,7 @@
         App.router.replace(App.screens.chat.create(conv.id));
       }
 
-      /* Scanned QR data is usually a signal.me / username link we can't resolve
-         to a recipient, so pull out a phone number if present and otherwise
-         drop the raw text into the field for the user to review. */
+      /* Scanned QR data is usually a signal.me / username link we can't resolve to a recipient, so pull out a phone number if present and otherwise drop the raw text into the field for the user to review. */
       function onScan(text) {
         if (!text) return;
         var m = String(text).match(/\+?\d[\d\s()-]{5,}/);
@@ -185,10 +181,7 @@
             if (!sel) return true;
             var id = sel.getAttribute('data-id');
             if (id === '__query') {
-              // OK on the search box: if the query matched contacts/groups, drop
-              // into the results so the user can pick one (this also blurs the
-              // input). Only start a chat with the literal text when there's
-              // nothing to pick (the sole row is the "Start chat with …" offer).
+              // OK on the search box: if the query matched contacts/groups, drop into the results so the user can pick one (this also blurs the input). Only start a chat with the literal text when there's nothing to pick (the sole row is the "Start chat with …" offer).
               if (resultCount > 0) {
                 nav.select(1); // index 0 is the input; 1 is the first result
                 return true;

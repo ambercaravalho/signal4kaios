@@ -1,15 +1,8 @@
-/* Signal4KaiOS — 240x320 QVGA, Gecko 48: flexbox only, no grid, px only
-   (Gecko 48's rem handling is unreliable). Values are pinned to the KaiOS
-   design guide + KaiUI reference (their rem base is 1rem = 10px, so KaiUI
-   2.8rem -> 28px, 6rem -> 60px, etc.). Colors and metrics come from the token
-   layer below; the native light theme is the default, Signal dark is opt-in
-   via html[data-theme="dark"]. The Signal-blue accent is kept as the highlight
-   color in both themes. */
+/* Signal4KaiOS — 240x320 QVGA, Gecko 48: flexbox only, no grid, px only (Gecko 48's rem handling is unreliable). Values are pinned to the KaiOS design guide + KaiUI reference (their rem base is 1rem = 10px, so KaiUI 2.8rem -> 28px, 6rem -> 60px, etc.). Colors and metrics come from the token layer below; the native light theme is the default, Signal dark is opt-in via html[data-theme="dark"]. The Signal-blue accent is kept as the highlight color in both themes. */
 
 /* ---- Design tokens (defaults = native KaiOS light theme) ---- */
 :root {
-  /* Fixed metrics (KaiUI: header 2.8rem, softkey/tabs 3rem, list item 6rem,
-     separator 2.4rem). --list-item-h is the single knob for list density. */
+  /* Fixed metrics (KaiUI: header 2.8rem, softkey/tabs 3rem, list item 6rem, separator 2.4rem). --list-item-h is the single knob for list density. */
   --hdr-h: 28px;
   --sk-h: 30px;
   --tab-h: 30px;
@@ -69,8 +62,7 @@
   --sk-bg: #cccccc;
   --sk-text: #323232;
 
-  /* The media viewer is always letterboxed on black, so its text stays a
-     fixed light gray regardless of theme. */
+  /* The media viewer is always letterboxed on black, so its text stays a fixed light gray regardless of theme. */
   --viewer-text: #c0c0c4;
 }
 
@@ -136,8 +128,7 @@ html[data-theme="dark"] {
   box-sizing: border-box;
 }
 
-/* Open Sans is the KaiOS system typeface (resolves on device; falls back to
-   sans-serif on desktop dev). Base size is the guide's primary/body 17px. */
+/* Open Sans is the KaiOS system typeface (resolves on device; falls back to sans-serif on desktop dev). Base size is the guide's primary/body 17px. */
 html, body {
   width: 100%;
   height: 100%;
@@ -200,16 +191,13 @@ html, body {
   text-overflow: ellipsis;
 }
 
-/* While scrolling a long title (see marquee.js): left-align and drop the
-   ellipsis so the whole name passes by. */
+/* While scrolling a long title (see marquee.js): left-align and drop the ellipsis so the whole name passes by. */
 .hdr-title.marquee {
   text-align: left;
   text-overflow: clip;
 }
 
-/* Emoji render smaller than surrounding text in the KaiOS system font; bump
-   them up (relative to context) so they line up with the text. Applied by
-   App.util.emojify to message bodies, previews, names, and reactions. */
+/* Emoji render smaller than surrounding text in the KaiOS system font; bump them up (relative to context) so they line up with the text. Applied by App.util.emojify to message bodies, previews, names, and reactions. */
 .emoji {
   font-size: 1.2em;
   line-height: 1;
@@ -223,8 +211,7 @@ html, body {
   margin-left: 4px;
 }
 
-/* Connection status dot: absolutely positioned so it never nudges the
-   centered header title. Pinned to the right of the bar. */
+/* Connection status dot: absolutely positioned so it never nudges the centered header title. Pinned to the right of the bar. */
 .conn-dot {
   position: absolute;
   right: 8px;
@@ -340,8 +327,7 @@ html, body {
   font-size: 18px;
 }
 
-/* Deterministic avatar colors (inline styles are blocked by the privileged
-   CSP, so the hash maps to one of these classes). */
+/* Deterministic avatar colors (inline styles are blocked by the privileged CSP, so the hash maps to one of these classes). */
 .avatar-c0 { background: #d0021b; }
 .avatar-c1 { background: #d97b12; }
 .avatar-c2 { background: #7b9b1a; }
@@ -970,10 +956,7 @@ html, body {
   overflow: hidden;
 }
 
-/* Absolutely fill the viewer and letterbox via object-fit so the aspect ratio
-   is preserved. Percentage max-height on a flex child is unreliable on Gecko
-   48, which stretched the image; anchoring to the positioned .viewer avoids
-   that. */
+/* Absolutely fill the viewer and letterbox via object-fit so the aspect ratio is preserved. Percentage max-height on a flex child is unreliable on Gecko 48, which stretched the image; anchoring to the positioned .viewer avoids that. */
 .viewer img,
 .viewer video {
   position: absolute;

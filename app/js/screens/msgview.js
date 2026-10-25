@@ -1,8 +1,7 @@
 (function () {
   'use strict';
 
-  /* Full-message reader: shows a long message body in a scrollable pane so
-     it can be read end to end. Up/Down scroll the text; Back pops. */
+  /* Full-message reader: shows a long message body in a scrollable pane so it can be read end to end. Up/Down scroll the text; Back pops. */
 
   var SCROLL_STEP = 60; // px per Up/Down press
 

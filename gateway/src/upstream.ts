@@ -1,8 +1,4 @@
-/* One persistent upstream receive WebSocket per Signal number, pointed at
-   signal-cli-rest-api's /v1/receive/<number>. Each frame is assigned a per-number
-   seq, buffered, fanned out to connected app clients, and handed to an optional
-   frame hook (used for Web Push). Reconnects with capped backoff so the buffer
-   keeps filling even while the app is closed. */
+/* One persistent upstream receive WebSocket per Signal number, pointed at signal-cli-rest-api's /v1/receive/<number>. Each frame is assigned a per-number seq, buffered, fanned out to connected app clients, and handed to an optional frame hook (used for Web Push). Reconnects with capped backoff so the buffer keeps filling even while the app is closed. */
 
 import WebSocket from 'ws';
 import { config } from './config';
@@ -103,8 +99,7 @@ function handleFrame(number: string, text: string): void {
   }
 }
 
-/* Resume receivers for every number we already know about (subscriptions or
-   prior app connections) so buffering + push survive a gateway restart. */
+/* Resume receivers for every number we already know about (subscriptions or prior app connections) so buffering + push survive a gateway restart. */
 export function resumeKnown(): void {
   const nums = buffer.allNumbers();
   nums.forEach(ensureNumber);

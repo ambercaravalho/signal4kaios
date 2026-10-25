@@ -1,24 +1,15 @@
 (function () {
   'use strict';
 
-  /* iPod-style back-and-forth scroll for an overflowing element (long header
-     titles, and the highlighted conversation row's name). State lives on the
-     element itself (`__mqTimer`), so any number can run independently and each
-     self-cleans when its node leaves the DOM.
+  /* iPod-style back-and-forth scroll for an overflowing element (long header titles, and the highlighted conversation row's name). State lives on the element itself (`__mqTimer`), so any number can run independently and each self-cleans when its node leaves the DOM.
 
-     Driven by scrollLeft on a timer rather than a CSS keyframe: the distance
-     depends on the measured text width, and animating scrollLeft is CSP-safe
-     and reliable on Gecko 48. Callers stop marquees they no longer want (e.g.
-     on pause) to keep only the visible one running. */
+     Driven by scrollLeft on a timer rather than a CSS keyframe: the distance depends on the measured text width, and animating scrollLeft is CSP-safe and reliable on Gecko 48. Callers stop marquees they no longer want (e.g. on pause) to keep only the visible one running. */
 
   var STEP = 1;        // px moved per tick
   var TICK_MS = 40;    // ~25 fps
   var END_PAUSE = 28;  // ticks paused at each end (~1.1s)
 
-  /* Scroll position keyed by the element's text, so a node that is destroyed
-     and re-created with the same label (e.g. the conversation list rebuilding
-     on every incoming message) resumes where it left off instead of snapping
-     back to the start. Bounded so it can't grow without limit. */
+  /* Scroll position keyed by the element's text, so a node that is destroyed and re-created with the same label (e.g. the conversation list rebuilding on every incoming message) resumes where it left off instead of snapping back to the start. Bounded so it can't grow without limit. */
   var cache = {};
   var cacheKeys = 0;
 

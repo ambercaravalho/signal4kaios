@@ -1,11 +1,7 @@
 (function () {
   'use strict';
 
-  /* In-app notice (KaiOS "In-App Notice" component): a top-of-screen banner
-     with an app glyph plus primary/secondary text. Unlike App.toast (a plain
-     transient line at the bottom) it is non-interactive but styled like a
-     notification. Rendered in the #overlay layer so it floats above the
-     current screen's header.
+  /* In-app notice (KaiOS "In-App Notice" component): a top-of-screen banner with an app glyph plus primary/secondary text. Unlike App.toast (a plain transient line at the bottom) it is non-interactive but styled like a notification. Rendered in the #overlay layer so it floats above the current screen's header.
 
      App.notice.show(primary, secondary, { icon, ms }) */
 

@@ -1,5 +1,4 @@
-/* Minimal timestamped logger. Never log push endpoints, subscription keys, or
-   auth credentials - only counts and coarse status. */
+/* Minimal timestamped logger. Never log push endpoints, subscription keys, or auth credentials - only counts and coarse status. */
 
 function ts(): string {
   return new Date().toISOString();

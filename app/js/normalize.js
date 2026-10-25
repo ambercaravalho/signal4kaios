@@ -1,10 +1,7 @@
 (function () {
   'use strict';
 
-  /* Single choke point that turns raw websocket frames from
-     /v1/receive/{number} into typed events for the store. Envelope shapes
-     vary across signal-cli versions, so ALL parsing lives here and unknown
-     shapes are logged to the debug ring buffer instead of crashing.
+  /* Single choke point that turns raw websocket frames from /v1/receive/{number} into typed events for the store. Envelope shapes vary across signal-cli versions, so ALL parsing lives here and unknown shapes are logged to the debug ring buffer instead of crashing.
 
      Emitted event types:
        message      { convId, groupInternalId?, incoming, author, authorName,
@@ -30,11 +27,7 @@
     return { convId: peerKey(env), groupInternalId: null };
   }
 
-  /* Signal delivers mentions out-of-band: the body carries a U+FFFC
-     object-replacement placeholder at each mention's offset (which renders
-     as a tofu box), and a parallel `mentions` array holds the identities.
-     Splice the readable "@name" back into the text. Offsets are UTF-16 code
-     units, matching JS string indexing. */
+  /* Signal delivers mentions out-of-band: the body carries a U+FFFC object-replacement placeholder at each mention's offset (which renders as a tofu box), and a parallel `mentions` array holds the identities. Splice the readable "@name" back into the text. Offsets are UTF-16 code units, matching JS string indexing. */
   function mentionName(m) {
     if (m.name) return m.name;
     var key = m.number || m.uuid || '';
@@ -61,9 +54,7 @@
     return out;
   }
 
-  /* Map an offset in the original body (with U+FFFC mention placeholders) to the
-     corresponding offset after mentions are spliced into readable "@name" text,
-     mirroring applyMentions so style ranges stay aligned. */
+  /* Map an offset in the original body (with U+FFFC mention placeholders) to the corresponding offset after mentions are spliced into readable "@name" text, mirroring applyMentions so style ranges stay aligned. */
   function remapOffset(pos, mentions) {
     if (!mentions || !mentions.length) return pos;
     var sorted = mentions.slice().sort(function (a, b) {
@@ -93,9 +84,7 @@
     return null;
   }
 
-  /* Turn signal-cli textStyles (start:length:STYLE, in original-body coords)
-     into ranges aligned with the mention-applied body. Never throws: a bad
-     shape is logged and dropped so a malformed frame can't crash the app. */
+  /* Turn signal-cli textStyles (start:length:STYLE, in original-body coords) into ranges aligned with the mention-applied body. Never throws: a bad shape is logged and dropped so a malformed frame can't crash the app. */
   function stylesOf(dm) {
     var raw = dm.textStyles || dm.textStyle;
     if (!raw) return [];
@@ -159,8 +148,7 @@
       return events;
     }
 
-    // Pinned-message updates (groups) sync as body-less dataMessages, so they
-    // must be handled before the empty-dataMessage early-return below.
+    // Pinned-message updates (groups) sync as body-less dataMessages, so they must be handled before the empty-dataMessage early-return below.
     if (dm.pinMessage || dm.unpinMessage) {
       var pin = dm.pinMessage || dm.unpinMessage;
       events.push({

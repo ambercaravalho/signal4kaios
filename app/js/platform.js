@@ -1,22 +1,15 @@
 (function () {
   'use strict';
 
-  /* Platform abstraction over the KaiOS B2G APIs that differ between 2.5 and
-     3.0/4.0. Each helper feature-detects the newer 3.0/4.0 shape first
-     (navigator.b2g.*, WebActivity, ServiceWorker) and falls back to the 2.5
-     shape (MozActivity, navigator.getDeviceStorage, navigator.mozAlarms).
+  /* Platform abstraction over the KaiOS B2G APIs that differ between 2.5 and 3.0/4.0. Each helper feature-detects the newer 3.0/4.0 shape first (navigator.b2g.*, WebActivity, ServiceWorker) and falls back to the 2.5 shape (MozActivity, navigator.getDeviceStorage, navigator.mozAlarms).
 
-     Everything here returns a Promise so callers get one consistent contract
-     regardless of whether the underlying API resolves via a Promise (3.0/4.0)
-     or a DOMRequest (2.5). Nothing throws on desktop / an unsupported build —
-     callers get a rejected Promise they can handle. */
+     Everything here returns a Promise so callers get one consistent contract regardless of whether the underlying API resolves via a Promise (3.0/4.0) or a DOMRequest (2.5). Nothing throws on desktop / an unsupported build — callers get a rejected Promise they can handle. */
 
   function b2g() {
     return (typeof navigator !== 'undefined' && navigator.b2g) || null;
   }
 
-  /* Wrap a value that may be a DOMRequest (2.5) or a Promise (3.0/4.0) in a
-     single Promise. `this.result` / `this.error` are the DOMRequest surface. */
+  /* Wrap a value that may be a DOMRequest (2.5) or a Promise (3.0/4.0) in a single Promise. `this.result` / `this.error` are the DOMRequest surface. */
   function fromRequest(reqOrPromise) {
     if (reqOrPromise && typeof reqOrPromise.then === 'function') {
       return reqOrPromise;
@@ -59,9 +52,7 @@
     return Promise.reject(new Error('web activities unavailable'));
   }
 
-  /* Get a device storage area ("pictures", "music", "videos", "sdcard").
-     Returns the storage object (not a Promise) or null when unavailable, so
-     callers can null-check before adding a file. */
+  /* Get a device storage area ("pictures", "music", "videos", "sdcard"). Returns the storage object (not a Promise) or null when unavailable, so callers can null-check before adding a file. */
   function getDeviceStorage(kind) {
     var api = b2g();
     if (api && api.getDeviceStorage) {
@@ -73,8 +64,7 @@
     return null;
   }
 
-  /* Save a named blob to a device storage area. Resolves with the stored name.
-     Normalizes the DOMRequest (2.5) vs Promise (3.0/4.0) return of addNamed. */
+  /* Save a named blob to a device storage area. Resolves with the stored name. Normalizes the DOMRequest (2.5) vs Promise (3.0/4.0) return of addNamed. */
   function addNamed(storage, blob, name) {
     if (!storage || !storage.addNamed) {
       return Promise.reject(new Error('storage unavailable'));
@@ -113,9 +103,7 @@
     return Promise.reject(new Error('alarms unavailable'));
   }
 
-  /* True wherever a ServiceWorker is available: 3.0/3.1/4.0, and 2.5 once the
-     'serviceworker' permission is granted (it's what exposes
-     navigator.serviceWorker there). False on desktop/simulator without one. */
+  /* True wherever a ServiceWorker is available: 3.0/3.1/4.0, and 2.5 once the 'serviceworker' permission is granted (it's what exposes navigator.serviceWorker there). False on desktop/simulator without one. */
   function hasServiceWorker() {
     return typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
   }

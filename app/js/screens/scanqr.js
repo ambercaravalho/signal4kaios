@@ -5,12 +5,8 @@
      create(onResult) -> onResult is called with the decoded string.
 
      Two paths, because camera support varies across KaiOS 2.5 builds:
-       1. Live preview via getUserMedia (needs the `video-capture` permission).
-          Smoothest, but not every device grants a raw stream to a privileged
-          (non-certified) app.
-       2. Fallback: a MozActivity 'pick' snapshot — the OS camera takes one
-          photo, which we then decode. This reuses the system camera app, so it
-          works wherever the file/photo picker does. */
+       1. Live preview via getUserMedia (needs the `video-capture` permission). Smoothest, but not every device grants a raw stream to a privileged (non-certified) app.
+       2. Fallback: a MozActivity 'pick' snapshot — the OS camera takes one photo, which we then decode. This reuses the system camera app, so it works wherever the file/photo picker does. */
 
   function liveSupported() {
     return !!((navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ||
@@ -111,9 +107,7 @@
         if (onResult) setTimeout(function () { onResult(text); }, 0);
       }
 
-      /* Snapshot fallback: hand off to the OS camera via a 'pick' activity
-         (WebActivity on 3.0/4.0, MozActivity on 2.5 — see App.platform), then
-         decode the returned photo. Works wherever the photo picker does. */
+      /* Snapshot fallback: hand off to the OS camera via a 'pick' activity (WebActivity on 3.0/4.0, MozActivity on 2.5 — see App.platform), then decode the returned photo. Works wherever the photo picker does. */
       function snapFallback() {
         if (typeof WebActivity === 'undefined' && typeof MozActivity === 'undefined') {
           fail(new Error('no camera stream and no pick activity'));
@@ -131,8 +125,7 @@
             if (!finished) { finished = true; App.router.pop(); }
           });
         })['catch'](function (err) {
-          // A rejection here is usually the user backing out of the camera; a
-          // decode error is a real failure. Treat a cancel as a plain pop.
+          // A rejection here is usually the user backing out of the camera; a decode error is a real failure. Treat a cancel as a plain pop.
           if (err && err.message && /decode|read the photo/i.test(err.message)) {
             fail(err);
             return;

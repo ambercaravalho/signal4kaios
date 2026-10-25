@@ -1,16 +1,12 @@
 #!/bin/sh
 # Package the app for KaiOS sideloading, gated on Gecko 48 compatibility.
 #
-# The app targets KaiOS 2.5 (Gecko 48), 3.0/3.1 (Gecko 84), and 4.0 (Gecko 123).
-# The Gecko-48 syntax gate below only scans first-party page code under app/js,
-# which must stay ES5 for 2.5. app/sw.js lives outside app/js (it is 3.0+ only)
-# and is not gated, but is kept ES5-clean for consistency.
+# The app targets KaiOS 2.5 (Gecko 48), 3.0/3.1 (Gecko 84), and 4.0 (Gecko 123). The Gecko-48 syntax gate below only scans first-party page code under app/js, which must stay ES5 for 2.5. app/sw.js lives outside app/js (it is 3.0+ only) and is not gated, but is kept ES5-clean for consistency.
 set -e
 cd "$(dirname "$0")/../.."
 
 # --- Gecko 48 syntax gate -------------------------------------------------
-# KaiOS 2.5 runs Gecko 48: no async/await, no spread/rest (...), no
-# String.padStart, no CSS grid. Fail packaging if any slips in.
+# KaiOS 2.5 runs Gecko 48: no async/await, no spread/rest (...), no String.padStart, no CSS grid. Fail packaging if any slips in.
 if grep -rnE '(^|[^A-Za-z0-9_$])(async|await)[ (]' app/js; then
   echo 'FAIL: async/await is not supported on Gecko 48.' >&2
   exit 1
@@ -29,8 +25,7 @@ if grep -rnE 'display:[[:space:]]*grid' app/css; then
 fi
 
 # --- Manifest / ServiceWorker presence ------------------------------------
-# 2.5 reads manifest.webapp; 3.0/3.1/4.0 read manifest.webmanifest. Ship both so
-# a single package installs on any of them. sw.js backs 3.0+ background wake.
+# 2.5 reads manifest.webapp; 3.0/3.1/4.0 read manifest.webmanifest. Ship both so a single package installs on any of them. sw.js backs 3.0+ background wake.
 for required in app/manifest.webapp app/manifest.webmanifest app/sw.js; do
   if [ ! -f "$required" ]; then
     echo "FAIL: missing $required (needed for cross-version install)." >&2
@@ -39,9 +34,7 @@ for required in app/manifest.webapp app/manifest.webmanifest app/sw.js; do
 done
 
 # --- Version check ---------------------------------------------------------
-# Both manifests must carry the same version (OStore compares the 3.0+
-# b2g_features.version for updates). When RELEASE_TAG is set (CI), the tag must
-# be v<version>, optionally with a pre-release suffix (v1.2.0-rc1).
+# Both manifests must carry the same version (OStore compares the 3.0+ b2g_features.version for updates). When RELEASE_TAG is set (CI), the tag must be v<version>, optionally with a pre-release suffix (v1.2.0-rc1).
 manifest_version() {
   sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -n 1
 }

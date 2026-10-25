@@ -6,6 +6,7 @@ dist/
 
 # Gateway build/runtime and secrets (gateway/, docker/)
 node_modules/
+dist-test/
 data/
 *.log
 .env

@@ -2,8 +2,7 @@
   'use strict';
 
   /* IndexedDB persistence. signal-cli-rest-api has no message-history API,
-     so this database IS the message history: everything received over the
-     websocket (and everything sent) is stored here.
+     so this database IS the message history: everything received over the websocket (and everything sent) is stored here.
 
      Stores:
        messages       keyPath 'id' = convId + '|' + timestamp + '|' + author
@@ -17,12 +16,8 @@
   var DB_VERSION = 2;
   var opened = null;
 
-  /* Each account gets its own database. The first (migrated) account keeps the
-     legacy un-suffixed name so existing history survives the upgrade. */
+  /* Each account gets its own database. */
   function dbName() {
-    if (App.config.activeUsesLegacyDb && App.config.activeUsesLegacyDb()) {
-      return 'signal4kaios';
-    }
     var num = App.config.number();
     return num ? 'signal4kaios:' + num : 'signal4kaios';
   }
@@ -102,9 +97,7 @@
       return tx('messages', 'readwrite', function (s) { s['delete'](id); });
     },
 
-    /* Newest `limit` messages in convId strictly older than beforeTs
-       (pass Infinity-like large number for the first page). Resolves
-       oldest-first for easy DOM append. */
+    /* Newest `limit` messages in convId strictly older than beforeTs (pass Infinity-like large number for the first page). Resolves oldest-first for easy DOM append. */
     getMessagesPage: function (convId, beforeTs, limit) {
       return tx('messages', 'readonly', function (s) {
         var out = { value: [] };
@@ -161,10 +154,7 @@
       });
     },
 
-    /* Delete every message whose disappearing-message deadline has passed.
-       Resolves to the list of removed { id, convId, timestamp } so the store
-       can update open chats and conversation previews. This is a full-store
-       scan — use it for the periodic background sweep, not on a hot path. */
+    /* Delete every message whose disappearing-message deadline has passed. Resolves to the list of removed { id, convId, timestamp } so the store can update open chats and conversation previews. This is a full-store scan — use it for the periodic background sweep, not on a hot path. */
     deleteExpired: function (now) {
       return tx('messages', 'readwrite', function (s) {
         var out = { value: [] };
@@ -182,9 +172,7 @@
       });
     },
 
-    /* Same as deleteExpired but scoped to one conversation via the `conv`
-       index, so it only walks that chat's (pruned, ~500-max) messages. Cheap
-       enough to run when a chat is opened. */
+    /* Same as deleteExpired but scoped to one conversation via the `conv` index, so it only walks that chat's (pruned, ~500-max) messages. Cheap enough to run when a chat is opened. */
     deleteExpiredIn: function (convId, now) {
       return tx('messages', 'readwrite', function (s) {
         var out = { value: [] };
@@ -203,8 +191,7 @@
       });
     },
 
-    /* Case-insensitive substring search over all message bodies.
-       Full-store scan — fine for the pruned volumes this app keeps. */
+    /* Case-insensitive substring search over all message bodies. Full-store scan — fine for the pruned volumes this app keeps. */
     searchMessages: function (query, limit) {
       var q = query.toLowerCase();
       return tx('messages', 'readonly', function (s) {
@@ -235,9 +222,7 @@
       return tx('attachments', 'readonly', function (s) { return reqValue(s.get(id)); });
     },
 
-    /* Keep only the `keep` most recently cached attachment blobs.
-       Avatar cache entries ('avatar:*') are exempt — they are small and
-       bounded by the contact list. */
+    /* Keep only the `keep` most recently cached attachment blobs. Avatar cache entries ('avatar:*') are exempt — they are small and bounded by the contact list. */
     pruneAttachments: function (keep) {
       return getAll('attachments').then(function (rows) {
         rows = rows.filter(function (r) {

@@ -1,9 +1,7 @@
 (function () {
   'use strict';
 
-  /* Archived conversations. Archive/mute are local to this device — the
-     REST API does not expose Signal's synced chat-list state. A chat leaves
-     this list when unarchived here or when any new message arrives in it. */
+  /* Archived conversations. Archive/mute are local to this device — the REST API does not expose Signal's synced chat-list state. A chat leaves this list when unarchived here or when any new message arrives in it. */
 
   App.screens.archived = {
     create: function () {

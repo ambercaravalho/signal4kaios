@@ -6,16 +6,13 @@
       var el = App.util.el('div', 'screen');
       var hdr = App.util.el('div', 'hdr');
       var title = App.util.el('span', 'hdr-title', 'Signal');
-      // Connection status is a single dot (green online, red offline, pulsing
-      // yellow while reconnecting), positioned absolutely so it never shifts
-      // the centered title.
+      // Connection status is a single dot (green online, red offline, pulsing yellow while reconnecting), positioned absolutely so it never shifts the centered title.
       var dot = App.util.el('span', 'conn-dot');
       hdr.appendChild(title);
       hdr.appendChild(dot);
       el.appendChild(hdr);
 
-      // Chats / Archived are two tabs (KaiOS Tab component), switched with the
-      // Left/Right D-pad keys, instead of a separate archived screen.
+      // Chats / Archived are two tabs (KaiOS Tab component), switched with the Left/Right D-pad keys, instead of a separate archived screen.
       var tabs = App.tabs.create(['Chats', 'Archived'], function () {
         render();
         nav.select(0);
@@ -28,8 +25,7 @@
 
       var nav = new App.Nav(el, { scrollEl: list, onChange: marqueeSelected });
 
-      // iPod-style scroll of the highlighted row's name when it's too long to
-      // fit. Only the selected row scrolls; the previous one is reset.
+      // iPod-style scroll of the highlighted row's name when it's too long to fit. Only the selected row scrolls; the previous one is reset.
       var rowMarquee = null;
       function marqueeSelected() {
         if (rowMarquee) { App.marquee.stop(rowMarquee); rowMarquee = null; }
@@ -117,8 +113,7 @@
         var convs = App.store.conversations();
         if (!convs.length) {
           if (!App.store.isReady()) {
-            // Still loading history from IndexedDB: don't flash the empty
-            // state before the store has finished its first read.
+            // Still loading history from IndexedDB: don't flash the empty state before the store has finished its first read.
             list.appendChild(App.util.el('div', 'empty', 'Loading\u2026'));
             App.softkeys.set('Options', '', 'New chat');
             return;
@@ -232,10 +227,7 @@
       var dirty = false;
       var renderTick = null;
 
-      /* Coalesce bursts of store events (a new message often emits
-         'conversations' plus 'typing' plus a receipt in the same tick) into a
-         single render, so the list — and its avatars — rebuild once, not
-         several times in a row. */
+      /* Coalesce bursts of store events (a new message often emits 'conversations' plus 'typing' plus a receipt in the same tick) into a single render, so the list — and its avatars — rebuild once, not several times in a row. */
       function renderIfVisible() {
         if (paused) {
           dirty = true;

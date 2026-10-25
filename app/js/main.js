@@ -3,8 +3,7 @@
 
   var PRUNE_KEEP = 500; // messages kept per conversation
 
-  /* Bring a conversation to the foreground — used by notification clicks.
-     No-op if that chat is already on top of the stack. */
+  /* Bring a conversation to the foreground — used by notification clicks. No-op if that chat is already on top of the stack. */
   App.openConversation = function (convId) {
     if (!convId) return;
     var cur = App.router.top();
@@ -12,10 +11,7 @@
     App.router.push(App.screens.chat.create(convId));
   };
 
-  /* A notification tapped while the app was closed can't postMessage a live
-     window, so sw.js stashes the target conversation in Cache Storage. Read it
-     once on boot (fresh entries only, so an unrelated later launch still lands
-     on the list), clear it, and open the chat. */
+  /* A notification tapped while the app was closed can't postMessage a live window, so sw.js stashes the target conversation in Cache Storage. Read it once on boot (fresh entries only, so an unrelated later launch still lands on the list), clear it, and open the chat. */
   function openPendingConversation() {
     if (typeof caches === 'undefined') return;
     caches.open('s4k-push').then(function (cache) {
@@ -38,11 +34,7 @@
     });
   }
 
-  /* Register the ServiceWorker that shows closed-app push notifications, relays
-     wake alarms, and handles notification clicks. Runs on any KaiOS with a
-     ServiceWorker (2.5 once the 'serviceworker' permission is granted, and
-     3.0/3.1/4.0); feature-detected via App.platform.hasServiceWorker(), so it's a
-     clean no-op on platforms without one. */
+  /* Register the ServiceWorker that shows closed-app push notifications, relays wake alarms, and handles notification clicks. Runs on any KaiOS with a ServiceWorker (2.5 once the 'serviceworker' permission is granted, and 3.0/3.1/4.0); feature-detected via App.platform.hasServiceWorker(), so it's a clean no-op on platforms without one. */
   function registerServiceWorker() {
     if (!App.platform.hasServiceWorker()) return;
     try {
@@ -66,13 +58,10 @@
   function boot() {
     App.util.dbg('boot');
     App.theme.apply();
-    App.config.ensureAuthMode();
-    App.config.ensureAccounts();
     registerServiceWorker();
     App.router.init(document.getElementById('screens'));
 
-    // Surface connection drops as a top-of-screen in-app notice (distinct from
-    // the transient toast). Only fire on an actual open -> offline transition.
+    // Surface connection drops as a top-of-screen in-app notice (distinct from the transient toast). Only fire on an actual open -> offline transition.
     var lastConn = null;
     App.store.on('connection', function (state) {
       if (state === 'offline' && lastConn === 'open') {
@@ -83,15 +72,25 @@
       lastConn = state;
     });
 
+    // The gateway rejected our device token (revoked, or its data was reset): forget it and restart into pairing, which explains what happened.
+    App.http.onUnpaired = function () {
+      App.util.dbg('auth: device token rejected, returning to pairing');
+      App.ws.stop();
+      App.config.forgetPairing(App.config.serverUrl());
+      location.reload();
+    };
+
     if (App.config.isConfigured()) {
       App.router.push(App.screens.conversations.create());
+    } else if (App.config.serverUrl()) {
+      // Set up before, but no longer paired.
+      App.router.push(App.screens.serversettings.create({ firstRun: true, unpaired: true }));
     } else {
       App.router.push(App.screens.welcome.create({ firstRun: true }));
     }
 
     App.store.init().then(function () {
-      // If the app was cold-started by a notification tap, route to that chat
-      // now that history is loaded.
+      // If the app was cold-started by a notification tap, route to that chat now that history is loaded.
       openPendingConversation();
       // Prune old history in the background after startup.
       setTimeout(function () {
@@ -101,9 +100,7 @@
       }, 5000);
     });
 
-    // Background push is always on: subscribe and (re-)register with the gateway
-    // (endpoints can change across reboots/updates). Best-effort, non-blocking;
-    // a clean no-op on KaiOS 2.5 / where Push is unsupported.
+    // Background push is always on: subscribe and (re-)register with the gateway (endpoints can change across reboots/updates). Best-effort, non-blocking; a clean no-op on KaiOS 2.5 / where Push is unsupported.
     if (App.push) App.push.sync();
   }
 

@@ -1,14 +1,11 @@
 (function () {
   'use strict';
 
-  /* Welcome / setup help: explains that the app needs a self-hosted backend
-     before asking for connection details. Shown on first run (unconfigured),
-     and from Settings -> About & setup help.
+  /* Welcome / setup help: explains that the app needs a self-hosted backend before asking for connection details. Shown on first run (unconfigured), and from Settings -> About & setup help.
 
-     create({ firstRun? }) — firstRun ends in the server settings screen;
-     otherwise the last page's Done pops back. */
+     create({ firstRun? }) — firstRun ends in the server settings screen; otherwise the last page's Done pops back. */
 
-  var GUIDE_URL = 'https://github.com/ambercaravalho/signal4kaios/blob/main/docs/getting-started.md';
+  var GUIDE_URL = 'https://github.com/ambercaravalho/signal4kaios/blob/main/docs/setup.md';
 
   var PAGES = [
     {
@@ -25,9 +22,10 @@
       lines: [
         '1. Start the backend with Docker Compose (see the setup guide).',
         '2. Link your Signal account to it as a linked device, like Signal Desktop.',
-        '3. Note the gateway address, e.g. http://192.168.1.100:8090. Use an ' +
-          'https:// address behind a reverse proxy to connect away from home.',
-        'Then enter that address and your Signal number on the next screen.'
+        '3. Note the gateway address (e.g. http://192.168.1.100:8090) and the ' +
+          'pairing code it prints when it starts.',
+        'Then enter both on the next screen. Your Signal number is picked up ' +
+          'from the backend automatically.'
       ]
     },
     {

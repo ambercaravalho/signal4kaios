@@ -1,9 +1,7 @@
 (function () {
   'use strict';
 
-  /* Per-message actions menu, built on the generic menu screen.
-     callbacks: { reply(rec), copy(rec), edit(rec) } — provided by the chat
-     screen. */
+  /* Per-message actions menu, built on the generic menu screen. callbacks: { reply(rec), copy(rec), edit(rec) } — provided by the chat screen. */
 
   /* Compact URL for a menu label/hint: drop the scheme and clip the length. */
   function shortUrl(u) {
@@ -15,8 +13,7 @@
     create: function (rec, callbacks) {
       var conv = App.store.conversation(rec.convId);
 
-      // Items are collected into groups; headers are only rendered when more
-      // than one group ends up with content (see assembly at the end).
+      // Items are collected into groups; headers are only rendered when more than one group ends up with content (see assembly at the end).
       var openGrp = [];    // view / open the message content
       var actionGrp = [];  // react, reply, copy, pin
       var manageGrp = [];  // edit, retry, delete
@@ -47,9 +44,7 @@
         });
       }
 
-      // Any links in the body become "Open link" actions (they open in the
-      // browser). Messages are the D-pad unit in the chat list, so surfacing
-      // links here is how they become clickable.
+      // Any links in the body become "Open link" actions (they open in the browser). Messages are the D-pad unit in the chat list, so surfacing links here is how they become clickable.
       if (!rec.deleted && rec.body) {
         var urls = App.util.extractUrls(rec.body);
         if (urls.length === 1) {
@@ -86,8 +81,7 @@
             onSelect: function () { callbacks.copy(rec); }
           });
         }
-        // Pinned messages are a group-only Signal feature; they sync to the
-        // whole group via the pin-message endpoint.
+        // Pinned messages are a group-only Signal feature; they sync to the whole group via the pin-message endpoint.
         if (conv && conv.type === 'group') {
           if (rec.pinned) {
             actionGrp.push({

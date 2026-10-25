@@ -1,8 +1,7 @@
 (function () {
   'use strict';
 
-  /* Safety numbers: lists known identities from GET /v1/identities/{number}
-     and lets you trust one via PUT /v1/identities/{number}/trust/{target}.
+  /* Safety numbers: lists known identities from GET /v1/identities/{number} and lets you trust one via PUT /v1/identities/{number}/trust/{target}.
      create({ number? }) — when a number is given, only that identity shows. */
 
   App.screens.safety = {

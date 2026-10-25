@@ -1,15 +1,7 @@
-/* Durable store (SQLite via better-sqlite3): the buffered receive frames with a
-   per-number cursor (seq), push subscriptions, and known numbers. */
+/* Durable store (SQLite via better-sqlite3): the buffered receive frames with a per-number cursor (seq), push subscriptions, and known numbers. */
 
-import Database from 'better-sqlite3';
-import * as fs from 'fs';
-import * as path from 'path';
 import { config } from './config';
-
-fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
-
-const db = new Database(config.dbPath);
-db.pragma('journal_mode = WAL');
+import { db } from './db';
 
 db.exec(
   'CREATE TABLE IF NOT EXISTS frames (' +
@@ -27,7 +19,8 @@ db.exec(
   '  endpoint TEXT PRIMARY KEY,' +
   '  number TEXT NOT NULL,' +
   '  sub_json TEXT NOT NULL,' +
-  '  created_at INTEGER NOT NULL' +
+  '  created_at INTEGER NOT NULL,' +
+  '  device_id INTEGER' +
   ');' +
   'CREATE TABLE IF NOT EXISTS numbers (' +
   '  number TEXT PRIMARY KEY,' +
@@ -66,8 +59,7 @@ export interface StoredFrame {
   json: string;
 }
 
-/* Assign the next per-number seq, store the raw frame text, prune to the
-   retention cap, and return the assigned seq. */
+/* Assign the next per-number seq, store the raw frame text, prune to the retention cap, and return the assigned seq. */
 export function addFrame(number: string, json: string): number {
   const seq = nextSeqTx(number);
   insertFrame.run(number, seq, Date.now(), json);
@@ -87,21 +79,27 @@ export function maxSeq(number: string): number {
 /* ---- push subscriptions ---- */
 
 const upsertSub = db.prepare(
-  'INSERT INTO subs (endpoint, number, sub_json, created_at) VALUES (?, ?, ?, ?) ' +
+  'INSERT INTO subs (endpoint, number, sub_json, created_at, device_id) VALUES (?, ?, ?, ?, ?) ' +
   'ON CONFLICT(endpoint) DO UPDATE SET number = excluded.number, ' +
-  'sub_json = excluded.sub_json'
+  'sub_json = excluded.sub_json, device_id = excluded.device_id'
 );
 const deleteSub = db.prepare('DELETE FROM subs WHERE endpoint = ?');
+const deleteDeviceSubs = db.prepare('DELETE FROM subs WHERE device_id = ?');
 const selectSubs = db.prepare('SELECT sub_json FROM subs WHERE number = ?');
 
-export function addSub(number: string, subscription: unknown): void {
+/* deviceId ties the subscription to a paired device so revoking the device also stops its pushes (which can carry message text). */
+export function addSub(number: string, subscription: unknown, deviceId: number): void {
   const endpoint = (subscription as { endpoint?: string }).endpoint;
   if (!endpoint) return;
-  upsertSub.run(endpoint, number, JSON.stringify(subscription), Date.now());
+  upsertSub.run(endpoint, number, JSON.stringify(subscription), Date.now(), deviceId);
 }
 
 export function removeSubByEndpoint(endpoint: string): void {
   deleteSub.run(endpoint);
+}
+
+export function removeSubsForDevice(deviceId: number): void {
+  deleteDeviceSubs.run(deviceId);
 }
 
 export function subsFor(number: string): unknown[] {

@@ -1,10 +1,7 @@
 (function () {
   'use strict';
 
-  /* Emoji reaction picker: a fuller grid of common, widely-rendered emoji
-     (KaiOS 2.5 / Gecko 48 has limited coverage, so this sticks to older,
-     broadly-supported glyphs), plus a "remove my reaction" row when
-     applicable. The list is shared with the composer emoji picker. */
+  /* Emoji reaction picker: a fuller grid of common, widely-rendered emoji (KaiOS 2.5 / Gecko 48 has limited coverage, so this sticks to older, broadly-supported glyphs), plus a "remove my reaction" row when applicable. The list is shared with the composer emoji picker. */
 
   var EMOJI = [
     '❤️', '👍', '👎', '😂',

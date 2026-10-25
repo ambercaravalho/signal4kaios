@@ -10,10 +10,7 @@
 
   var lastDirRefresh = 0; // throttle background refreshes for unknown authors
 
-  /* Best label for a group message author: a saved contact (which already
-     resolves nickname -> profile -> username) wins over the sender's own
-     profile name, then the raw id. Unknown authors kick off a throttled
-     directory refresh so names fill in on later renders. */
+  /* Best label for a group message author: a saved contact (which already resolves nickname -> profile -> username) wins over the sender's own profile name, then the raw id. Unknown authors kick off a throttled directory refresh so names fill in on later renders. */
   function authorLabel(rec) {
     var contact = App.store.contactByKey(rec.author);
     if (contact && contact.name) return contact.name;
@@ -50,8 +47,7 @@
       hdr.appendChild(sub);
       el.appendChild(hdr);
 
-      // Tapping this bar lists pinned messages and jumps to one. It only
-      // becomes nav-selectable while there is something pinned.
+      // Tapping this bar lists pinned messages and jumps to one. It only becomes nav-selectable while there is something pinned.
       var pinnedBar = App.util.el('div', 'pinned-bar hidden');
       pinnedBar.setAttribute('data-id', '__pins');
       el.appendChild(pinnedBar);
@@ -82,9 +78,7 @@
       });
 
       function updateSoftkeys() {
-        // Cohesive layout: Left = Back (cancels a pending edit/reply first),
-        // Center = the primary action for the current selection, Right = the
-        // dynamic chat Menu.
+        // Cohesive layout: Left = Back (cancels a pending edit/reply first), Center = the primary action for the current selection, Right = the dynamic chat Menu.
         var sel = nav.selected();
         var center;
         if (sel === ta) center = 'Send';
@@ -95,9 +89,7 @@
         App.softkeys.set(back, center, 'Menu');
       }
 
-      /* Chat-level actions, built from the current conversation. Opened with the
-         right softkey. Items defer their work so the menu pops first and the
-         next screen/picker layers over the chat (not over the menu). */
+      /* Chat-level actions, built from the current conversation. Opened with the right softkey. Items defer their work so the menu pops first and the next screen/picker layers over the chat (not over the menu). */
       function openChatMenu() {
         var items = [];
         items.push({
@@ -189,9 +181,7 @@
           node.appendChild(App.util.el('div', 'msg-attach', label));
           if ((att.contentType || '').indexOf('image/') === 0 && att.id) {
             node.appendChild(App.util.el('img', 'msg-thumb hidden'));
-            // Defer the actual load until the row is near the viewport, so a
-            // cold open of an image-heavy chat doesn't fire dozens of parallel
-            // downloads/DB reads up front. hydrateVisibleThumbs() picks it up.
+            // Defer the actual load until the row is near the viewport, so a cold open of an image-heavy chat doesn't fire dozens of parallel downloads/DB reads up front. hydrateVisibleThumbs() picks it up.
             node.setAttribute('data-thumb', 'pending');
           }
         }
@@ -220,8 +210,7 @@
         return node;
       }
 
-      /* Show an inline thumbnail: from cache immediately, else auto-download
-         small images. Large ones keep the chip (Enter → View photo). */
+      /* Show an inline thumbnail: from cache immediately, else auto-download small images. Large ones keep the chip (Enter → View photo). */
       function hydrateThumb(node, rec) {
         var att = rec.attachments && rec.attachments[0];
         if (!att || !att.id || rec.deleted) return;
@@ -251,8 +240,7 @@
           return App.api.attachment(att.id).then(function (blob) {
             App.util.dbg('thumb dl ' + Math.round(blob.size / 1024) +
               'KB +' + (Date.now() - td) + 'ms');
-            // Cache without pruning here; pruning once per download meant a
-            // full attachment-store scan per image. Prune runs once on open.
+            // Cache without pruning here; pruning once per download meant a full attachment-store scan per image. Prune runs once on open.
             App.db.putAttachment(att.id, blob, att.contentType);
             return blob;
           });
@@ -272,8 +260,7 @@
         return bottom >= viewTop && top <= viewBottom;
       }
 
-      /* Hydrate thumbnails for rows near the viewport; the rest wait until they
-         are scrolled into range (see onListScroll). */
+      /* Hydrate thumbnails for rows near the viewport; the rest wait until they are scrolled into range (see onListScroll). */
       function hydrateVisibleThumbs() {
         var nodes = list.querySelectorAll('.msg[data-thumb="pending"]');
         for (var i = 0; i < nodes.length; i++) {
@@ -339,8 +326,7 @@
         });
       }
 
-      /* Page older messages until the target timestamp is on screen, then
-         select and scroll to it. Used for "jump to message" from search. */
+      /* Page older messages until the target timestamp is on screen, then select and scroll to it. Used for "jump to message" from search. */
       function jumpToTarget() {
         var id = null;
         Object.keys(msgById).forEach(function (k) {
@@ -393,9 +379,7 @@
         return null;
       }
 
-      /* Refresh the "N pinned" bar from the database. The bar is only made
-         nav-selectable while it is visible (nav.items() does not skip hidden
-         elements). */
+      /* Refresh the "N pinned" bar from the database. The bar is only made nav-selectable while it is visible (nav.items() does not skip hidden elements). */
       function updatePinnedBar() {
         var t0 = Date.now();
         App.db.getPinned(convId).then(function (rows) {
@@ -534,8 +518,7 @@
         editTarget = rec;
         if (rec) {
           pendingQuote = null;
-          // Edit the originally typed text (with any style markers), not the
-          // stripped display body.
+          // Edit the originally typed text (with any style markers), not the stripped display body.
           ta.value = rec.raw != null ? rec.raw : rec.body;
           quoteBar.textContent = 'Editing message';
           quoteBar.classList.remove('hidden');
@@ -575,8 +558,7 @@
         return caption;
       }
 
-      /* Embed a filename in a data URI so signal-cli keeps it (the format the
-         REST API documents: data:<mime>;filename=<name>;base64,<data>). */
+      /* Embed a filename in a data URI so signal-cli keeps it (the format the REST API documents: data:<mime>;filename=<name>;base64,<data>). */
       function withFilename(dataUri, name) {
         if (!name) return dataUri;
         var safe = String(name).replace(/[;,]/g, '_');
@@ -584,9 +566,7 @@
           'data:$1;filename=' + safe + ';base64,');
       }
 
-      /* The OS file picker on real hardware already offers Camera, Recorder,
-         Gallery, Video, etc., so a single "attach a file" path covers photos and
-         voice notes without our own sub-menu. */
+      /* The OS file picker on real hardware already offers Camera, Recorder, Gallery, Video, etc., so a single "attach a file" path covers photos and voice notes without our own sub-menu. */
       function attach() {
         var input = document.createElement('input');
         input.type = 'file';
@@ -670,20 +650,16 @@
           onConnection(App.store.connectionState());
           onTyping(convId);
 
-          // Paint the newest page immediately. Everything that would walk the
-          // whole conversation (expired sweep, pinned-bar scan, prune) is kept
-          // off the cold-open path and deferred until after the first paint.
+          // Paint the newest page immediately. Everything that would walk the whole conversation (expired sweep, pinned-bar scan, prune) is kept off the cold-open path and deferred until after the first paint.
           loadInitial();
 
           setTimeout(function () {
             var tHk = Date.now();
             updatePinnedBar();
-            // Bound the conversation now so a freshly-synced chat's background
-            // walks aren't over thousands of un-pruned rows.
+            // Bound the conversation now so a freshly-synced chat's background walks aren't over thousands of un-pruned rows.
             App.db.pruneConversation(convId, PRUNE_KEEP);
             App.db.pruneAttachments(THUMB_CACHE_KEEP);
-            // Only the expired-message sweep (a full-conversation cursor walk)
-            // when this chat actually uses disappearing messages.
+            // Only the expired-message sweep (a full-conversation cursor walk) when this chat actually uses disappearing messages.
             if (conv && conv.expireTimer) {
               App.store.purgeExpiredConv(convId);
             }
@@ -720,8 +696,7 @@
             openChatMenu();
             return true;
           }
-          // Left softkey (Back): cancel a pending edit/reply first; otherwise
-          // fall through so the router pops the screen.
+          // Left softkey (Back): cancel a pending edit/reply first; otherwise fall through so the router pops the screen.
           if (evt.key === 'SoftLeft') {
             if (editTarget) { setEditing(null); return true; }
             if (pendingQuote) { setQuote(null); return true; }

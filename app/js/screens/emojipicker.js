@@ -1,8 +1,7 @@
 (function () {
   'use strict';
 
-  /* Emoji picker for the composer. Reuses the reaction picker's emoji list and
-     calls onPick(emoji) with the chosen glyph, then pops.
+  /* Emoji picker for the composer. Reuses the reaction picker's emoji list and calls onPick(emoji) with the chosen glyph, then pops.
      create(onPick) */
 
   App.screens.emojipicker = {

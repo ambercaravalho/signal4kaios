@@ -1,9 +1,7 @@
 (function () {
   'use strict';
 
-  /* Value selector (KaiOS "Value Selector" component): a list of options with
-     radio (single) or checkbox (multiple) selection controls. Pushed onto the
-     router stack like the generic menu.
+  /* Value selector (KaiOS "Value Selector" component): a list of options with radio (single) or checkbox (multiple) selection controls. Pushed onto the router stack like the generic menu.
 
      App.valueSelector.open({
        title,

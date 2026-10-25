@@ -37,8 +37,7 @@
       pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
   }
 
-  /* Timestamp for a message bubble. A bare time is meaningless once a message
-     is more than a day old, so anything but today also carries the date:
+  /* Timestamp for a message bubble. A bare time is meaningless once a message is more than a day old, so anything but today also carries the date:
        today      -> "14:32"
        yesterday  -> "Yesterday 14:32"
        this year  -> "10 Jul, 14:32"
@@ -130,16 +129,14 @@
     return 'avatar-c' + (Math.abs(h) % 8);
   }
 
-  /* Non-navigable divider used to group list items under a heading. It has no
-     nav-selectable attribute, so App.Nav skips over it. */
+  /* Non-navigable divider used to group list items under a heading. It has no nav-selectable attribute, so App.Nav skips over it. */
   function sectionHeader(text) {
     return el('div', 'section-title', text);
   }
 
   var URL_RE = /(https?:\/\/[^\s]+)/g;
 
-  /* Pull http(s) URLs out of free text, dropping trailing sentence punctuation
-     so "see http://x.com." doesn't capture the period. */
+  /* Pull http(s) URLs out of free text, dropping trailing sentence punctuation so "see http://x.com." doesn't capture the period. */
   function extractUrls(text) {
     var urls = [];
     if (!text) return urls;
@@ -151,9 +148,7 @@
     return urls;
   }
 
-  /* Append text to a container, turning URLs into selectable link spans
-     (mark them with nav-selectable; each carries the url on `.__url`). Callers
-     handle Enter by checking `selectedEl.__url` and passing it to openUrl. */
+  /* Append text to a container, turning URLs into selectable link spans (mark them with nav-selectable; each carries the url on `.__url`). Callers handle Enter by checking `selectedEl.__url` and passing it to openUrl. */
   function linkify(container, text) {
     if (!text) return;
     URL_RE.lastIndex = 0;
@@ -176,9 +171,7 @@
     }
   }
 
-  /* Open a URL in the phone browser via a KaiOS "view" web activity (WebActivity
-     on 3.0/4.0, MozActivity on 2.5), falling back to window.open on desktop.
-     App.platform.openActivity handles the version differences. */
+  /* Open a URL in the phone browser via a KaiOS "view" web activity (WebActivity on 3.0/4.0, MozActivity on 2.5), falling back to window.open on desktop. App.platform.openActivity handles the version differences. */
   function openUrl(url) {
     if (!url) return;
     App.platform.openActivity('view', { type: 'url', url: url })['catch'](function () {
@@ -186,9 +179,7 @@
     });
   }
 
-  /* Resolve the installed app version from the packaged manifest (3.0+ reads
-     manifest.webmanifest's b2g_features.version; 2.5 only has manifest.webapp).
-     Resolves '' if neither can be read. */
+  /* Resolve the installed app version from the packaged manifest (3.0+ reads manifest.webmanifest's b2g_features.version; 2.5 only has manifest.webapp). Resolves '' if neither can be read. */
   function readJson(path) {
     return new Promise(function (resolve, reject) {
       var xhr = new XMLHttpRequest();
@@ -217,9 +208,7 @@
   }
 
   /* ---- Text styling (bold/italic/etc.) ----
-     Signal carries formatting as body ranges { start, length, style } in UTF-16
-     units — which line up exactly with JS string indices, so no conversion is
-     needed. Supported styles match Signal's set (there is no underline). */
+     Signal carries formatting as body ranges { start, length, style } in UTF-16 units — which line up exactly with JS string indices, so no conversion is needed. Supported styles match Signal's set (there is no underline). */
   var STYLE_CLASS = {
     BOLD: 'fmt-b',
     ITALIC: 'fmt-i',
@@ -228,8 +217,7 @@
     SPOILER: 'fmt-spoiler'
   };
 
-  /* Markers understood by signal-cli-rest-api's "styled" text mode. Longer
-     openers are listed first so ** wins over *. */
+  /* Markers understood by signal-cli-rest-api's "styled" text mode. Longer openers are listed first so ** wins over *. */
   var STYLE_MARKERS = [
     { o: '||', c: '||', s: 'SPOILER' },
     { o: '**', c: '**', s: 'BOLD' },
@@ -262,10 +250,7 @@
     return out;
   }
 
-  /* Parse markdown-style markers into a plain body plus a list of style ranges,
-     mirroring how the server interprets "styled" mode. Used for the local echo
-     of messages we send so our own bubbles show the same formatting the
-     recipient gets. Unmatched markers are left as literal text. */
+  /* Parse markdown-style markers into a plain body plus a list of style ranges, mirroring how the server interprets "styled" mode. Used for the local echo of messages we send so our own bubbles show the same formatting the recipient gets. Unmatched markers are left as literal text. */
   function parseStyledMarkdown(text) {
     var styles = [];
     if (!text) return { body: '', styles: styles };
@@ -294,14 +279,10 @@
     return { body: out, styles: styles };
   }
 
-  /* Match a single emoji (astral-plane glyph, flag pair, or one of the common
-     BMP emoji symbols), including any VS16, skin-tone modifier, and ZWJ
-     sequence that belongs with it. Gecko 48 has no /u flag or \p{}, so this
-     works on UTF-16 surrogate units directly. */
+  /* Match a single emoji (astral-plane glyph, flag pair, or one of the common BMP emoji symbols), including any VS16, skin-tone modifier, and ZWJ sequence that belongs with it. Gecko 48 has no /u flag or \p{}, so this works on UTF-16 surrogate units directly. */
   var EMOJI_RE = /(?:\uD83C[\uDDE6-\uDDFF]){2}|(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u00A9\u00AE\u203C\u2049\u2122\u2139\u2194-\u21AA\u231A\u231B\u2328\u23CF\u23E9-\u23F3\u23F8-\u23FA\u24C2\u25AA\u25AB\u25B6\u25C0\u25FB-\u25FE\u2600-\u27BF\u2934\u2935\u2B05-\u2B07\u2B1B\u2B1C\u2B50\u2B55\u3030\u303D\u3297\u3299])(?:\uFE0F)?(?:\uD83C[\uDFFB-\uDFFF])?(?:\u200D(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?(?:\uD83C[\uDFFB-\uDFFF])?)*/g;
 
-  /* Append text to a container, wrapping emoji runs in <span class="emoji"> so
-     they can be sized up to match the text. Plain text goes in as text nodes. */
+  /* Append text to a container, wrapping emoji runs in <span class="emoji"> so they can be sized up to match the text. Plain text goes in as text nodes. */
   function emojify(container, text) {
     if (!text) return;
     EMOJI_RE.lastIndex = 0;
@@ -320,9 +301,7 @@
     }
   }
 
-  /* Append text to a container, wrapping styled ranges in spans. Overlapping
-     ranges are handled by splitting on every range boundary and applying all
-     classes active over each segment. */
+  /* Append text to a container, wrapping styled ranges in spans. Overlapping ranges are handled by splitting on every range boundary and applying all classes active over each segment. */
   function renderStyledBody(container, text, styles) {
     text = text || '';
     if (!styles || !styles.length) {

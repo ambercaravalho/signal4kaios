@@ -1,10 +1,7 @@
 (function () {
   'use strict';
 
-  /* Full-screen attachment viewer. Downloads via systemXHR, caches the blob
-     in IndexedDB (LRU, ~40 entries). Images display inline, audio and video
-     play in-app with the center key, and anything downloaded can be saved to
-     the phone via DeviceStorage (SoftLeft). */
+  /* Full-screen attachment viewer. Downloads via systemXHR, caches the blob in IndexedDB (LRU, ~40 entries). Images display inline, audio and video play in-app with the center key, and anything downloaded can be saved to the phone via DeviceStorage (SoftLeft). */
 
   var CACHE_KEEP = 150; // shared attachment LRU; matches chat thumbnail cache
 
@@ -113,8 +110,7 @@
 
       function save() {
         if (!loadedBlob) return;
-        // App.platform picks navigator.b2g.getDeviceStorage (3.0/4.0) or
-        // navigator.getDeviceStorage (2.5); null on desktop.
+        // App.platform picks navigator.b2g.getDeviceStorage (3.0/4.0) or navigator.getDeviceStorage (2.5); null on desktop.
         var storage = App.platform.getDeviceStorage(storageFor(type()));
         if (!storage) {
           App.toast('Saving only works on the phone');

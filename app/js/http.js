@@ -1,10 +1,11 @@
 (function () {
   'use strict';
 
-  /* Promise wrapper over XMLHttpRequest. Uses mozSystem XHR when available
-     (privileged KaiOS app: bypasses CORS for cross-origin requests to the
-     signal-cli-rest-api server); falls back to a plain XHR so the app can be
-     developed in a desktop browser behind a CORS proxy. */
+  /* Promise wrapper over XMLHttpRequest. Uses mozSystem XHR when available (privileged KaiOS app: bypasses CORS for cross-origin requests to the gateway); falls back to a plain XHR so the app can be developed in a desktop browser behind a CORS proxy.
+
+     Every request carries the paired device token as Authorization: Bearer. A 401 means the gateway no longer knows this phone (revoked, or the gateway's data was reset): App.http.onUnpaired fires once so the app can send the user back to pairing. */
+
+  var unpairedFired = false;
 
   function makeXhr() {
     try {
@@ -16,55 +17,23 @@
     }
   }
 
-  /* HTTP Basic Auth header for a reverse proxy in front of the server (used
-     only in the 'basic' auth mode). Set explicitly so the request is
-     authenticated on the first try, without depending on a 401 challenge. */
-  function basicAuthHeader() {
-    var user = App.config.authUser();
-    if (!user) return null;
-    try {
-      return 'Basic ' + btoa(user + ':' + App.config.authPass());
-    } catch (e) {
-      App.util.dbg('basic auth: could not encode credentials — ' + e.message);
-      return null;
-    }
-  }
-
-  /* In 'token' auth mode the receive token is sent as a query param on every
-     request, so the same secret authenticates both the API and (in ws.js) the
-     receive WebSocket. Returns the URL with the param appended, or the URL
-     unchanged if no token is set. */
-  function withToken(url) {
-    var token = App.config.receiveToken();
-    if (!token) return url;
-    var param = App.config.tokenParam();
-    var sep = url.indexOf('?') === -1 ? '?' : '&';
-    return url + sep + encodeURIComponent(param) + '=' + encodeURIComponent(token);
-  }
-
+  /* opts: { timeout, binary, baseUrl (override the configured server, for pairing), noAuth (skip the configured token), authToken (send this token instead) } */
   function request(method, path, body, opts) {
     opts = opts || {};
     return new Promise(function (resolve, reject) {
-      var base = App.config.serverUrl();
+      var base = (opts.baseUrl || App.config.serverUrl()).replace(/\/+$/, '');
       if (!base) {
-        reject(new Error('Server URL is not configured'));
+        reject(new Error('Gateway address is not configured'));
         return;
       }
-      var mode = App.config.authMode();
+      var token = opts.authToken || (opts.noAuth ? '' : App.config.deviceToken());
+      // Only the active pairing can trigger the global "unpaired" handling.
+      var isActiveToken = !opts.noAuth && !opts.authToken;
       var xhr = makeXhr();
-      // Build the URL first so the token param (if any) is never in the logged
-      // `path`. The Authorization header is only used in 'basic' mode.
-      var url = base + path;
-      var authHeader = null;
-      if (mode === 'token') {
-        url = withToken(url);
-      } else if (mode === 'basic') {
-        authHeader = basicAuthHeader();
-      }
-      xhr.open(method, url, true);
+      xhr.open(method, base + path, true);
       xhr.timeout = opts.timeout || 15000;
       if (opts.binary) xhr.responseType = 'blob';
-      if (authHeader) xhr.setRequestHeader('Authorization', authHeader);
+      if (token) xhr.setRequestHeader('Authorization', 'Bearer ' + token);
 
       xhr.onload = function () {
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -84,20 +53,16 @@
           }
         } else {
           var msg = 'HTTP ' + xhr.status;
-          if (xhr.status === 401 || xhr.status === 403) {
-            if (mode === 'basic') {
-              msg += ' — check the proxy username/password in Settings';
-            } else if (mode === 'token') {
-              msg += ' — check the receive token and its param name in Settings';
-            } else {
-              msg += ' — the server needs authentication (set it in Settings)';
-            }
-          }
+          if (xhr.status === 401) msg += ': this phone is not paired with the gateway';
           try {
             var parsed = JSON.parse(xhr.responseText);
-            if (parsed && parsed.error) msg += ': ' + parsed.error;
+            if (parsed && parsed.error && xhr.status !== 401) msg += ': ' + parsed.error;
           } catch (e) { /* non-JSON error body */ }
           App.util.dbg('http fail ' + method + ' ' + path + ' -> ' + msg);
+          if (xhr.status === 401 && token && isActiveToken && !unpairedFired && App.http.onUnpaired) {
+            unpairedFired = true;
+            App.http.onUnpaired();
+          }
           var httpErr = new Error(msg);
           httpErr.kind = 'http';
           httpErr.status = xhr.status;
@@ -131,6 +96,8 @@
     get: function (path, opts) { return request('GET', path, null, opts); },
     post: function (path, body, opts) { return request('POST', path, body, opts); },
     put: function (path, body, opts) { return request('PUT', path, body, opts); },
-    del: function (path, body, opts) { return request('DELETE', path, body, opts); }
+    del: function (path, body, opts) { return request('DELETE', path, body, opts); },
+    // Set by main.js: called once when the gateway rejects our device token.
+    onUnpaired: null
   };
 })();

@@ -1,7 +1,4 @@
-/* Generic reverse proxy: every HTTP request the gateway doesn't own is streamed
-   verbatim (method, path, query, headers, body, binary) to signal-cli-rest-api
-   and its response streamed back. signal-cli has no /v1/push/* routes, so there
-   is no collision with the gateway-owned endpoints. */
+/* Generic reverse proxy: every HTTP request the gateway doesn't own is streamed verbatim (method, path, query, headers, body, binary) to signal-cli-rest-api and its response streamed back. signal-cli has no /v1/push/* routes, so there is no collision with the gateway-owned endpoints. */
 
 import * as http from 'http';
 import * as https from 'https';
@@ -17,6 +14,8 @@ export function handle(req: http.IncomingMessage, res: http.ServerResponse): voi
 
   const headers = Object.assign({}, req.headers);
   headers.host = target.host;
+  // The device token authenticates the app to the gateway only.
+  delete headers.authorization;
 
   const options: http.RequestOptions = {
     protocol: target.protocol,

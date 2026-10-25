@@ -1,10 +1,7 @@
 (function () {
   'use strict';
 
-  /* Native-style modal dialog (KaiOS "Dialog" component). Renders a scrim +
-     centered card in the #overlay layer, over the live screen. While open it is
-     modal: the router routes every key here first (see router.js), so the
-     screen beneath never sees them. Actions are driven by the softkeys:
+  /* Native-style modal dialog (KaiOS "Dialog" component). Renders a scrim + centered card in the #overlay layer, over the live screen. While open it is modal: the router routes every key here first (see router.js), so the screen beneath never sees them. Actions are driven by the softkeys:
        SoftRight / Center-Enter -> confirm,  SoftLeft / Back -> cancel.
 
      App.dialog.confirm({ title, message, confirmLabel, onConfirm, onCancel }) */
@@ -16,8 +13,7 @@
     return document.getElementById('overlay');
   }
 
-  /* Softkeys belong to the screen underneath, so snapshot and restore them
-     around the dialog rather than asking that screen to re-render. */
+  /* Softkeys belong to the screen underneath, so snapshot and restore them around the dialog rather than asking that screen to re-render. */
   function snapshot() {
     var c = document.getElementById('sk-center');
     return {
@@ -72,8 +68,7 @@
       return !!state;
     },
 
-    /* Called by the router before the active screen. Returns true for every
-       key so the dialog stays modal. */
+    /* Called by the router before the active screen. Returns true for every key so the dialog stays modal. */
     handleKey: function (evt) {
       if (!state) return false;
       var cb = null;

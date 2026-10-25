@@ -39,9 +39,9 @@ jobs:
           ## Install
 
           - **KaiOS 3.0 / 3.1 / 4.0:** in OStore, add the source \`https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/\` and install Signal4KaiOS.
-          - **KaiOS 2.5:** sideload \`$ASSET\` (unzipped) with WebIDE; see [Getting started](https://github.com/$REPO/blob/main/docs/getting-started.md).
+          - **KaiOS 2.5:** sideload \`$ASSET\` (unzipped) with WebIDE; see [Setup](https://github.com/$REPO/blob/main/docs/setup.md).
 
-          Signal4KaiOS needs your own self-hosted backend (signal-cli-rest-api + gateway). Set it up first: [Getting started](https://github.com/$REPO/blob/main/docs/getting-started.md).
+          Signal4KaiOS needs your own self-hosted backend (signal-cli-rest-api + gateway). Set it up first: [Setup](https://github.com/$REPO/blob/main/docs/setup.md).
           EOF
           PRERELEASE=""
           case "$TAG" in *-*) PRERELEASE="--prerelease" ;; esac
@@ -65,8 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Download from the published release so the metadata only goes live once
-      # the package is reachable at its advertised URL.
+      # Download from the published release so the metadata only goes live once the package is reachable at its advertised URL.
       - name: Download released package
         env:
           GH_TOKEN: ${{ github.token }}

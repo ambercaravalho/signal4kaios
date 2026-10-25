@@ -1,5 +1,4 @@
-/* Gecko 48 compatibility shims. Keep tiny; the packaging grep gate catches
-   post-48 syntax, these cover the few missing runtime methods we rely on. */
+/* Gecko 48 compatibility shims. Keep tiny; the packaging grep gate catches post-48 syntax, these cover the few missing runtime methods we rely on. */
 (function () {
   'use strict';
 

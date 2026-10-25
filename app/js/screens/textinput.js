@@ -1,16 +1,12 @@
 (function () {
   'use strict';
 
-  /* Generic single-field text entry screen. Reused for profile edit, contact
-     rename, and starting a chat by number/username.
+  /* Generic single-field text entry screen. Reused for profile edit, contact rename, and starting a chat by number/username.
 
      create({ title, label, value?, placeholder?, hint?, note?, type?,
               submitLabel?, onSubmit(value, done) })
 
-     onSubmit receives the trimmed value and a `done(errMsg)` callback: call
-     done() to pop the screen, or done('message') to stay open and show an
-     error. If onSubmit is synchronous it may return without using done — the
-     screen pops unless it returns 'keep'. */
+     onSubmit receives the trimmed value and a `done(errMsg)` callback: call done() to pop the screen, or done('message') to stay open and show an error. If onSubmit is synchronous it may return without using done — the screen pops unless it returns 'keep'. */
 
   App.screens.textinput = {
     create: function (opts) {

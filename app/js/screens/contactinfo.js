@@ -1,8 +1,7 @@
 (function () {
   'use strict';
 
-  /* Actions for a direct conversation: rename the saved contact (PUT
-     /v1/contacts + /sync) and view its safety number. create(conv) */
+  /* Actions for a direct conversation: rename the saved contact (PUT /v1/contacts + /sync) and view its safety number. create(conv) */
 
   App.screens.contactinfo = {
     create: function (conv) {

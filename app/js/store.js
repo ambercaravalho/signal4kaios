@@ -1,10 +1,7 @@
 (function () {
   'use strict';
 
-  /* Central state + event hub.
-     Flow: ws frame -> normalize -> applyEvent -> IndexedDB persist -> emit.
-     Screens subscribe to: 'conversations', 'message', 'message-updated',
-     'typing', 'connection'. */
+  /* Central state + event hub. Flow: ws frame -> normalize -> applyEvent -> IndexedDB persist -> emit. Screens subscribe to: 'conversations', 'message', 'message-updated', 'typing', 'connection'. */
 
   var listeners = {};
   var contactsByKey = {};   // number -> contact AND uuid -> contact
@@ -44,8 +41,7 @@
 
   var SELF_NAME = 'Note to Self';
 
-  /* True when a key (number or uuid) refers to this account. Used to relabel
-     the self chat as "Note to Self", matching other Signal clients. */
+  /* True when a key (number or uuid) refers to this account. Used to relabel the self chat as "Note to Self", matching other Signal clients. */
   function isSelfKey(key) {
     var num = App.config.number();
     if (!key || !num) return false;
@@ -73,9 +69,7 @@
 
   function displayName(key) {
     var c = contactOf(key);
-    // Never surface the "Note to Self" label as a person's name (e.g. in group
-    // member lists or message authors). It's the self-conversation title only;
-    // guards against a stale name stored before contactName started skipping it.
+    // Never surface the "Note to Self" label as a person's name (e.g. in group member lists or message authors). It's the self-conversation title only; guards against a stale name stored before contactName started skipping it.
     if (c && c.name && c.name !== SELF_NAME) return c.name;
     return key || '?';
   }
@@ -153,14 +147,11 @@
       body: body.slice(0, 100),
       tag: conv.id,
       icon: '/assets/icons/kaios_112.png',
-      // Route the click reliably (sw.js prefers data.convId over the tag) and
-      // consistently with closed-app push notifications.
+      // Route the click reliably (sw.js prefers data.convId over the tag) and consistently with closed-app push notifications.
       data: { convId: conv.id }
     };
 
-    // Prefer showing through the ServiceWorker (any KaiOS with one) so the
-    // notification and its click survive while the app is backgrounded; the click
-    // is handled by sw.js's notificationclick, keyed on the tag (conversation id).
+    // Prefer showing through the ServiceWorker (any KaiOS with one) so the notification and its click survive while the app is backgrounded; the click is handled by sw.js's notificationclick, keyed on the tag (conversation id).
     if (App.platform.hasServiceWorker() && navigator.serviceWorker) {
       navigator.serviceWorker.ready.then(function (reg) {
         return reg.showNotification(title, opts);
@@ -170,8 +161,7 @@
       return;
     }
 
-    // Fallback (no ServiceWorker available): the page-owned Notification
-    // constructor with an onclick. Only works while the app is running.
+    // Fallback (no ServiceWorker available): the page-owned Notification constructor with an onclick. Only works while the app is running.
     try {
       var n = new Notification(title, opts);
       n.onclick = function () {
@@ -206,9 +196,7 @@
       deleted: false,
       edited: false
     };
-    // Disappearing messages: remember the timer on the record so a background
-    // sweep can delete it, and track the conversation's current interval so
-    // outgoing messages inherit it.
+    // Disappearing messages: remember the timer on the record so a background sweep can delete it, and track the conversation's current interval so outgoing messages inherit it.
     if (ev.expiresInSeconds) {
       rec.expireSecs = ev.expiresInSeconds;
       rec.expiresAt = Date.now() + ev.expiresInSeconds * 1000;
@@ -221,9 +209,7 @@
 
     conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
     conv.lastPreview = previewOf(ev);
-    // New activity brings a chat out of the archive. By default (matching
-    // Signal) muted archived chats stay archived; when the user turns that
-    // option off, muted chats unarchive like any other.
+    // New activity brings a chat out of the archive. By default (matching Signal) muted archived chats stay archived; when the user turns that option off, muted chats unarchive like any other.
     if (!App.config.keepMutedArchived() || !conv.muted) conv.archived = false;
     if (ev.incoming && openConvId !== conv.id) conv.unread = (conv.unread || 0) + 1;
     if (typingMap[conv.id]) {
@@ -234,9 +220,7 @@
 
     emit('message', rec);
     emit('conversations');
-    // During gateway backlog replay (silent), skip the user-facing notification:
-    // these messages were already pushed while the app was closed, so re-notifying
-    // would flood on every reconnect. The unread count above still updates.
+    // During gateway backlog replay (silent), skip the user-facing notification: these messages were already pushed while the app was closed, so re-notifying would flood on every reconnect. The unread count above still updates.
     if (ev.incoming && !silent) notify(conv, rec);
 
     // Viewing this chat right now: mark read immediately.
@@ -245,9 +229,7 @@
     }
   }
 
-  /* Read-modify-write updates to stored messages must not interleave
-     (e.g. a reaction and a read receipt arriving together would clobber
-     each other), so they run through one serial queue. */
+  /* Read-modify-write updates to stored messages must not interleave (e.g. a reaction and a read receipt arriving together would clobber each other), so they run through one serial queue. */
   var mutations = Promise.resolve();
   function enqueueMutation(fn) {
     mutations = mutations.then(fn)['catch'](function (e) {
@@ -371,8 +353,7 @@
     var alt = altKeyOf(ev.peer);
     (ev.timestamps || []).forEach(function (ts) {
       var candidateConvs = [convId, alt];
-      // Also check group conversations: receipts for group messages come
-      // from individual members but reference our sent timestamp.
+      // Also check group conversations: receipts for group messages come from individual members but reference our sent timestamp.
       Object.keys(convs).forEach(function (cid) {
         if (convs[cid].type === 'group') candidateConvs.push(cid);
       });
@@ -398,8 +379,7 @@
     });
   }
 
-  /* A message was read on another linked device. Clear the unread badge for
-     the matching conversation(s) so this device stays in sync. */
+  /* A message was read on another linked device. Clear the unread badge for the matching conversation(s) so this device stays in sync. */
   function applyReadSync(ev) {
     var changed = false;
     (ev.entries || []).forEach(function (entry) {
@@ -433,21 +413,16 @@
     }
   }
 
-  /* Turn one raw signal-cli frame into events and apply them. Pass
-     { silent: true } during gateway backlog replay so already-pushed messages
-     don't re-trigger notifications (unread counts still update). */
+  /* Turn one raw signal-cli frame into events and apply them. Pass { silent: true } during gateway backlog replay so already-pushed messages don't re-trigger notifications (unread counts still update). */
   function ingestRaw(frame, opts) {
     var silent = !!(opts && opts.silent);
     var events = App.normalize.parse(frame, self());
     events.forEach(function (ev) { applyEvent(ev, silent); });
   }
 
-  /* Best display name across the many places Signal keeps names:
-     address-book name → nickname → profile name → username → number. */
+  /* Best display name across the many places Signal keeps names: address-book name → nickname → profile name → username → number. */
   function contactName(c) {
-    // signal-cli labels the account's own contact "Note to Self"; that label
-    // belongs to the self *conversation* only (set via directName), so ignore it
-    // here and fall through to a real name so members/authors show who you are.
+    // signal-cli labels the account's own contact "Note to Self"; that label belongs to the self *conversation* only (set via directName), so ignore it here and fall through to a real name so members/authors show who you are.
     if (c.name && c.name !== SELF_NAME) return c.name;
     var nick = c.nickname || {};
     if (nick.name) return nick.name;
@@ -517,8 +492,7 @@
     });
   }
 
-  /* Shared optimistic-send core: write a pending record, call /v2/send,
-     re-key to the server timestamp, mark sent/failed. */
+  /* Shared optimistic-send core: write a pending record, call /v2/send, re-key to the server timestamp, mark sent/failed. */
   function sendCore(conv, rec, payload, preview) {
     App.db.putMessage(rec);
     conv.lastTs = rec.timestamp;
@@ -571,8 +545,7 @@
       deleted: false,
       edited: false
     };
-    // Inherit the conversation's disappearing-message timer so our own copy
-    // is swept on the same schedule the recipient's will be.
+    // Inherit the conversation's disappearing-message timer so our own copy is swept on the same schedule the recipient's will be.
     if (conv.expireTimer) {
       base.expireSecs = conv.expireTimer;
       base.expiresAt = ts + conv.expireTimer * 1000;
@@ -588,16 +561,14 @@
     return removed;
   }
 
-  /* Full-store sweep of expired disappearing messages. Used on startup and on
-     the periodic timer (not on chat open — that uses purgeExpiredConv). */
+  /* Full-store sweep of expired disappearing messages. Used on startup and on the periodic timer (not on chat open — that uses purgeExpiredConv). */
   function purgeExpired() {
     return App.db.deleteExpired(Date.now()).then(emitRemovals)['catch'](function (e) {
       App.util.dbg('purge expired failed: ' + e.message);
     });
   }
 
-  /* Conversation-scoped expired sweep: cheap enough to run when a chat opens,
-     so an already-expired message never flashes on screen. */
+  /* Conversation-scoped expired sweep: cheap enough to run when a chat opens, so an already-expired message never flashes on screen. */
   function purgeExpiredConv(convId) {
     return App.db.deleteExpiredIn(convId, Date.now()).then(emitRemovals)['catch'](function (e) {
       App.util.dbg('purge conv expired failed: ' + e.message);
@@ -611,11 +582,7 @@
     return conv;
   }
 
-  /* When styled text is enabled, parse the markdown the user typed so our local
-     copy shows the same formatting the recipient will get (the server strips the
-     markers and sends body ranges), and flag the request so the server does that
-     conversion. The typed text is kept on the record as `raw` so retry/edit
-     re-send the markers, not the already-stripped body. */
+  /* When styled text is enabled, parse the markdown the user typed so our local copy shows the same formatting the recipient will get (the server strips the markers and sends body ranges), and flag the request so the server does that conversion. The typed text is kept on the record as `raw` so retry/edit re-send the markers, not the already-stripped body. */
   function styledSend(text) {
     if (App.config.styledText() && text) {
       var parsed = App.util.parseStyledMarkdown(text);
@@ -642,9 +609,7 @@
     return sendCore(conv, rec, payload, st.body);
   }
 
-  /* dataUri: "data:<mime>;base64,…" (a scaled photo, a picked file, or a
-     recorded voice note). meta: optional { contentType, filename, size } used
-     for the optimistic local record and preview. */
+  /* dataUri: "data:<mime>;base64,…" (a scaled photo, a picked file, or a recorded voice note). meta: optional { contentType, filename, size } used for the optimistic local record and preview. */
   function sendAttachment(convId, dataUri, caption, meta) {
     var conv;
     try { conv = convForSend(convId); } catch (e) { return Promise.reject(e); }
@@ -740,9 +705,7 @@
     });
   }
 
-  /* Pin/unpin a group message. Optimistically flip the flag, then call the
-     group pin-message endpoint; revert on failure. Signal only supports pinned
-     messages in groups. */
+  /* Pin/unpin a group message. Optimistically flip the flag, then call the group pin-message endpoint; revert on failure. Signal only supports pinned messages in groups. */
   function setPinned(rec, pinned) {
     var conv = convs[rec.convId];
     if (!conv || !conv.sendId) return Promise.reject(new Error('Cannot pin here'));
@@ -770,8 +733,7 @@
     var hadUnread = conv.unread > 0;
     conv.unread = 0;
 
-    // Send read receipts for incoming messages newer than lastReadTs, unless
-    // the user has disabled read receipts in Settings.
+    // Send read receipts for incoming messages newer than lastReadTs, unless the user has disabled read receipts in Settings.
     App.db.getMessagesPage(convId, 9007199254740991, 25).then(function (rows) {
       var pending = rows.filter(function (r) {
         return r.incoming && r.timestamp > (conv.lastReadTs || 0);
@@ -792,9 +754,7 @@
     if (hadUnread) emit('conversations');
   }
 
-  /* Mark every conversation on the device as read: clears unread markers and,
-     when read receipts are enabled, sends them (bounded per conversation by
-     markRead). Only touches conversations that actually have unread messages. */
+  /* Mark every conversation on the device as read: clears unread markers and, when read receipts are enabled, sends them (bounded per conversation by markRead). Only touches conversations that actually have unread messages. */
   function markAllRead() {
     Object.keys(convs).forEach(function (id) {
       if (convs[id] && convs[id].unread > 0) markRead(id);
@@ -865,9 +825,7 @@
         refreshDirectory()['catch'](function (e) {
           App.util.dbg('directory refresh failed: ' + e.message);
         });
-        // Load the gateway backlog cursor before connecting so the first
-        // /v1/receive request resumes from where we left off instead of
-        // replaying the whole buffer.
+        // Load the gateway backlog cursor before connecting so the first /v1/receive request resumes from where we left off instead of replaying the whole buffer.
         App.ws.loadCursor().then(function () {
           App.ws.connect();
         });
@@ -930,9 +888,7 @@
       emit('conversations');
     },
 
-    /* Record the conversation's disappearing-message interval (seconds) so new
-       outgoing messages inherit it. The server-side change is done by the
-       caller via updateContact / updateGroup. */
+    /* Record the conversation's disappearing-message interval (seconds) so new outgoing messages inherit it. The server-side change is done by the caller via updateContact / updateGroup. */
     setConvExpire: function (convId, secs) {
       var conv = convs[convId];
       if (!conv) return;
@@ -945,8 +901,7 @@
       return (conv && conv.expireTimer) || 0;
     },
 
-    /* Pin/unpin a conversation to the top of the list. Local only — Signal has
-       no REST endpoint for conversation pins, so this does not sync. */
+    /* Pin/unpin a conversation to the top of the list. Local only — Signal has no REST endpoint for conversation pins, so this does not sync. */
     setConvPinned: function (convId, val) {
       var conv = convs[convId];
       if (!conv) return;

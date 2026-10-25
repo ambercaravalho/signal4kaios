@@ -3,16 +3,11 @@
 
   /* Screen-stack router. Screens are objects:
        { el, enter(), resume(), pause(), destroy(), onKey(evt) -> handled }
-     Paused screens keep their (hidden) DOM so scroll/selection survives
-     back-navigation. One global keydown listener dispatches to the top
-     screen; unhandled Backspace pops the stack (KaiOS Back key sends
-     Backspace — preventDefault or the system closes the app). */
+     Paused screens keep their (hidden) DOM so scroll/selection survives back-navigation. One global keydown listener dispatches to the top screen; unhandled Backspace pops the stack (KaiOS Back key sends Backspace — preventDefault or the system closes the app). */
 
   var stack = [];
   var container = null;
-  // When a pop happens (e.g. leaving a chat back to the root), briefly ignore a
-  // follow-up Back on the root so a fast double-press can't accidentally close
-  // the app. KaiOS's Back key auto-repeats/registers quickly, hence the guard.
+  // When a pop happens (e.g. leaving a chat back to the root), briefly ignore a follow-up Back on the root so a fast double-press can't accidentally close the app. KaiOS's Back key auto-repeats/registers quickly, hence the guard.
   var lastPopAt = 0;
   var EXIT_COOLDOWN_MS = 600;
 
@@ -20,9 +15,7 @@
     return stack[stack.length - 1] || null;
   }
 
-  /* Point the marquee at the current screen's header title (after a tick, so
-     layout/measurement is settled). Long titles scroll iPod-style; short ones
-     are left alone. */
+  /* Point the marquee at the current screen's header title (after a tick, so layout/measurement is settled). Long titles scroll iPod-style; short ones are left alone. */
   function refreshTitleMarquee() {
     if (!App.marquee) return;
     var s = top();
@@ -87,9 +80,7 @@
       return;
     }
 
-    // Cohesive Back: the left softkey is Back on every pushed screen. When the
-    // top screen doesn't claim SoftLeft for its own action, treat it like the
-    // hardware Back key and pop.
+    // Cohesive Back: the left softkey is Back on every pushed screen. When the top screen doesn't claim SoftLeft for its own action, treat it like the hardware Back key and pop.
     if (evt.key === 'SoftLeft' && stack.length > 1) {
       evt.preventDefault();
       evt.stopPropagation();
@@ -107,12 +98,10 @@
         evt.preventDefault();
         pop();
       } else if (Date.now() - lastPopAt < EXIT_COOLDOWN_MS) {
-        // Just popped back to the root; swallow a fast follow-up Back so an
-        // accidental double-press doesn't close the app.
+        // Just popped back to the root; swallow a fast follow-up Back so an accidental double-press doesn't close the app.
         evt.preventDefault();
       }
-      // On the root screen (after the cooldown) the default is allowed: KaiOS
-      // backgrounds/closes.
+      // On the root screen (after the cooldown) the default is allowed: KaiOS backgrounds/closes.
     }
   }
 

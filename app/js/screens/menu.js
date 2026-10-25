@@ -3,11 +3,7 @@
 
   /* Generic vertical menu screen.
      create({ title, items: [{ label, hint, onSelect }] })
-     An item with a `section` string instead renders a non-selectable heading
-     used to group the items beneath it (App.Nav skips it).
-     After onSelect the menu pops, so you return to the previous screen — unless
-     onSelect returns 'keep' or pushes another screen onto the stack (detected by
-     a growth in router depth), in which case the menu stays underneath it. */
+     An item with a `section` string instead renders a non-selectable heading used to group the items beneath it (App.Nav skips it). After onSelect the menu pops, so you return to the previous screen — unless onSelect returns 'keep' or pushes another screen onto the stack (detected by a growth in router depth), in which case the menu stays underneath it. */
 
   App.screens.menu = {
     create: function (opts) {
@@ -51,8 +47,7 @@
             if (item && item.onSelect) {
               var before = App.router.depth();
               var res = item.onSelect();
-              // Keep the menu open if asked, or if the handler layered a new
-              // screen on top (otherwise we'd immediately pop that new screen).
+              // Keep the menu open if asked, or if the handler layered a new screen on top (otherwise we'd immediately pop that new screen).
               if (res !== 'keep' && App.router.depth() <= before) {
                 App.router.pop();
               }

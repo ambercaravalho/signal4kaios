@@ -2,36 +2,17 @@
   'use strict';
 
   /* WebSocket manager for ws://<gateway>/v1/receive/<number>. The gateway relays
-     signal-cli's receive stream and buffers it, so on connect it replays the
-     backlog we missed (frames with seq > our cursor) as { t, seq, data }
-     envelopes, sends a 'backlog-done' sentinel, then streams live 'frame'
-     envelopes. We persist the highest applied seq and reconnect with
-     ?since=<seq> to resume without gaps or duplicates. If pointed straight at
-     signal-cli-rest-api (no gateway), a message without a `t` field is treated
-     as a raw frame.
-     Reconnects with exponential backoff + jitter; also reconnects when the
-     app returns to the foreground.
+     signal-cli's receive stream and buffers it, so on connect it replays the backlog we missed (frames with seq > our cursor) as { t, seq, data } envelopes, sends a 'backlog-done' sentinel, then streams live 'frame' envelopes. We persist the highest applied seq and reconnect with ?since=<seq> to resume without gaps or duplicates. If pointed straight at signal-cli-rest-api (no gateway), a message without a `t` field is treated as a raw frame. Reconnects with exponential backoff + jitter; also reconnects when the app returns to the foreground.
 
-     Auth: browsers refuse both custom WebSocket handshake headers and userinfo
-     (user:pass@) in ws:// URLs, so this code can never attach an Authorization
-     header to the handshake — which is exactly why 'basic' auth mode leaves the
-     receive path unauthenticated.
+     Auth: a browser WebSocket can't send an Authorization header, so the device token rides in the subprotocol list (['s4k.v1', 's4k.auth.<token>']) and stays out of the URL. The gateway answers 's4k.v1', or closes with 4401 if the token isn't paired, which sends the user back to pairing. */
 
-     The one thing the WebSocket URL *can* carry is a query string, so 'token'
-     auth mode appends the receive token as ?<tokenParam>=<token> (the same param
-     http.js puts on every HTTP request), and the proxy validates it on the
-     upgrade. For Pangolin set tokenParam to 'p_token' and use its Resource
-     Access Token (<id>.<secret>); note Pangolin path rules match the query-
-     stripped path, so only its access-token feature reads the query.
-     Alternatively exempt the path and protect it at the network level (IP
-     allowlist / tunnel). See docs/remote-access.md. */
+  var PROTOCOL = 's4k.v1';
+  var CLOSE_UNPAIRED = 4401;
 
   var sock = null;
   var attempts = 0;
   var reconnectTimer = null;
   var wanted = false;
-  var opened = false;
-  var warnedAuth = false;
   var everConnected = false; // have we had at least one successful open?
   var lastCloseAt = 0;       // when the socket last dropped (for gap logging)
   var framesThisSession = 0; // frames received since the current open
@@ -48,9 +29,7 @@
     return 'closed';
   }
 
-  /* The backlog cursor is the highest gateway seq we've applied. It's persisted
-     per-account in IndexedDB (via App.db.kv) and loaded once before the first
-     connect so we resume without gaps or duplicates. */
+  /* The backlog cursor is the highest gateway seq we've applied. It's persisted per-account in IndexedDB (via App.db.kv) and loaded once before the first connect so we resume without gaps or duplicates. */
   function loadCursor() {
     if (!App.db || !App.db.kvGet) return Promise.resolve();
     return App.db.kvGet('wsCursor').then(function (v) {
@@ -87,31 +66,17 @@
 
     var url = App.config.wsUrl() + '/v1/receive/' +
       encodeURIComponent(App.config.number());
-    // In 'token' auth mode, authenticate the receive path with the same token
-    // http.js sends on HTTP requests (a browser WebSocket can't send Basic
-    // Auth). Sent as ?<tokenParam>=<token>; redact it from the debug log.
-    var param = App.config.tokenParam();
-    var tok = App.config.authMode() === 'token' ? App.config.receiveToken() : '';
-    if (tok) url += '?' + encodeURIComponent(param) + '=' + encodeURIComponent(tok);
-    // Resume the gateway backlog from the last seq we applied. Appended after the
-    // token so the separator is correct whether or not a token is present.
-    var sinceSep = url.indexOf('?') === -1 ? '?' : '&';
-    url += sinceSep + 'since=' + cursor;
-    // This device's push endpoint (if it has one) lets the gateway skip push
-    // only for the devices actually open, so another device sharing the number
-    // still gets notified. Redacted from the debug log (it's a capability URL).
+    // Resume the gateway backlog from the last seq we applied.
+    url += '?since=' + cursor;
+    // This device's push endpoint (if it has one) lets the gateway skip push only for the devices actually open, so another device sharing the number still gets notified. Redacted from the debug log (it's a capability URL).
     var endpoint = '';
     try { endpoint = window.localStorage.getItem('s4k.pushEndpoint') || ''; } catch (e) { /* unavailable */ }
     if (endpoint) url += '&ep=' + encodeURIComponent(endpoint);
-    var redactRe = new RegExp('([?&]' + param.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=)[^&]*');
-    App.util.dbg('ws: connecting ' + url.replace(redactRe, '$1***').replace(/([?&]ep=)[^&]*/, '$1***'));
+    App.util.dbg('ws: connecting ' + url.replace(/([?&]ep=)[^&]*/, '$1***'));
     App.store.setConnection('connecting');
 
-    var startedAt = Date.now();
-    opened = false;
-
     try {
-      sock = new WebSocket(url);
+      sock = new WebSocket(url, [PROTOCOL, 's4k.auth.' + App.config.deviceToken()]);
     } catch (e) {
       App.util.dbg('ws: constructor failed ' + e.message);
       scheduleReconnect();
@@ -119,15 +84,11 @@
     }
 
     sock.onopen = function () {
-      opened = true;
       attempts = 0;
-      warnedAuth = false;
       framesThisSession = 0;
       if (everConnected && lastCloseAt) {
         App.util.dbg('ws: reconnected after ' + (Date.now() - lastCloseAt) + 'ms gap');
-        // Refresh the directory so contacts/groups that appeared while offline
-        // resolve. Missed messages are backfilled by the gateway's backlog
-        // replay (?since=<cursor>) on this fresh socket.
+        // Refresh the directory so contacts/groups that appeared while offline resolve. Missed messages are backfilled by the gateway's backlog replay (?since=<cursor>) on this fresh socket.
         resync();
       } else {
         App.util.dbg('ws: open');
@@ -145,13 +106,10 @@
         App.util.dbg('ws: non-JSON frame', evt.data);
         return;
       }
-      // Gateway envelope: { t: 'backlog'|'backlog-done'|'frame', seq, data }.
-      // Fall back to treating the message as a raw signal-cli frame so the app
-      // still works if pointed directly at signal-cli-rest-api.
+      // Gateway envelope: { t: 'backlog'|'backlog-done'|'frame', seq, data }. Fall back to treating the message as a raw signal-cli frame so the app still works if pointed directly at signal-cli-rest-api.
       if (msg && msg.t) {
         if (msg.t === 'backlog') {
-          // Already-seen-while-closed messages: apply silently (no notification
-          // flood), just advance the resume cursor.
+          // Already-seen-while-closed messages: apply silently (no notification flood), just advance the resume cursor.
           if (msg.data) App.store.ingestRaw(msg.data, { silent: true });
           updateCursor(msg.seq);
         } else if (msg.t === 'backlog-done') {
@@ -179,25 +137,11 @@
       App.store.setConnection('closed');
       sock = null;
 
-      // A handshake rejected by the proxy closes immediately without ever
-      // opening. When auth is configured, that pattern is the one thing the app
-      // can detect here; the likely cause depends on the auth mode.
-      var mode = App.config.authMode();
-      if (!opened && Date.now() - startedAt < 5000 && mode !== 'none') {
-        if (mode === 'token') {
-          App.util.dbg('ws: closed before opening in token mode — the proxy ' +
-            'likely rejected the token (wrong/expired token, or the wrong param ' +
-            'name — see docs/remote-access.md)');
-        } else {
-          App.util.dbg('ws: closed before opening in Basic Auth mode — Basic ' +
-            'Auth cannot authenticate a WebSocket in any browser, so the proxy ' +
-            'is blocking the receive path. Switch to Receive token mode, or ' +
-            'exempt /v1/receive (see docs/remote-access.md).');
-        }
-        if (!warnedAuth) {
-          warnedAuth = true;
-          App.toast('Live updates blocked by the proxy auth — see Debug log');
-        }
+      if (evt.code === CLOSE_UNPAIRED) {
+        App.util.dbg('ws: gateway rejected this phone (unpaired)');
+        wanted = false;
+        if (App.http.onUnpaired) App.http.onUnpaired();
+        return;
       }
 
       if (wanted) scheduleReconnect();
@@ -217,16 +161,10 @@
     }
   }
 
-  /* KaiOS can suspend a backgrounded app; a mozAlarm wakes it up so the socket
-     can be re-established and queued messages can drain. Feature-detected: on
-     desktop / the simulator without mozAlarms this is a no-op. Full delivery
-     while the app is fully killed also needs a system-message handler, which is
-     a separate (and largely unsupported) concern — this only helps while the
-     app is still resident but suspended. */
+  /* KaiOS can suspend a backgrounded app; a mozAlarm wakes it up so the socket can be re-established and queued messages can drain. Feature-detected: on desktop / the simulator without mozAlarms this is a no-op. Full delivery while the app is fully killed also needs a system-message handler, which is a separate (and largely unsupported) concern — this only helps while the app is still resident but suspended. */
   function scheduleWakeAlarm() {
     var when = new Date(Date.now() + WAKE_ALARM_MS);
-    // App.platform picks navigator.b2g.alarmManager (3.0/4.0) or
-    // navigator.mozAlarms (2.5); rejects (harmless no-op) off-device.
+    // App.platform picks navigator.b2g.alarmManager (3.0/4.0) or navigator.mozAlarms (2.5); rejects (harmless no-op) off-device.
     App.platform.scheduleAlarm(when, { type: 's4k-wake' })['catch'](function (e) {
       App.util.dbg('ws: could not schedule wake alarm ' + (e && e.message));
     });
@@ -272,7 +210,6 @@
   function restart() {
     stop();
     attempts = 0;
-    warnedAuth = false;
     connect();
   }
 
@@ -283,8 +220,7 @@
     }
   });
 
-  // When a wake alarm fires, reconnect (if we still want a connection) and
-  // arm the next alarm.
+  // When a wake alarm fires, reconnect (if we still want a connection) and arm the next alarm.
   function onWake() {
     App.util.dbg('ws: wake alarm fired');
     if (wanted && state() === 'closed') {
@@ -294,8 +230,7 @@
     scheduleWakeAlarm();
   }
 
-  // KaiOS 2.5: the 'alarm' system message is delivered straight to the page via
-  // mozSetMessageHandler. Feature-detected so it is harmless off-device.
+  // KaiOS 2.5: the 'alarm' system message is delivered straight to the page via mozSetMessageHandler. Feature-detected so it is harmless off-device.
   try {
     if (navigator.mozSetMessageHandler) {
       navigator.mozSetMessageHandler('alarm', function (msg) {

@@ -1,7 +1,4 @@
-# Multi-stage build. better-sqlite3 needs a compiler at install time; the final
-# image carries only the built JS and production node_modules.
-# Build context is the repo root (see docker/docker-compose.yml), so gateway
-# sources are copied from gateway/.
+# Multi-stage build. better-sqlite3 needs a compiler at install time; the final image carries only the built JS and production node_modules. Build context is the repo root (see docker/docker-compose.yml), so gateway sources are copied from gateway/.
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \

@@ -1,293 +1,244 @@
 (function () {
   'use strict';
 
-  /* Server & connection settings: the gateway URL, your Signal
-     number, and the connection auth mode (with its credentials), plus Save /
-     Test. Split out of the main Settings menu so the everyday options stay
-     uncluttered.
+  /* Pairing with the gateway: the gateway's address plus the 8-digit pairing code it prints. Pairing returns a device token and the Signal number(s) on the backend; with several numbers the user picks one.
 
-     create({ firstRun?, addAccount? }) — firstRun is the initial setup screen;
-     addAccount starts with blank fields to add another number. */
+     create({ firstRun?, unpaired?, addAccount? })
+       firstRun   — initial setup (root screen, no Back)
+       unpaired   — the gateway stopped accepting this phone; explain and re-pair
+       addAccount — blank URL; reuses an existing pairing when the URL matches
+     With no options (from Settings) it shows the current pairing and offers Unpair this phone. */
 
-  var MODE_LABEL = {
-    none: 'Unauthenticated',
-    basic: 'Basic header auth',
-    token: 'Receive token'
-  };
+  var DEVICE_NAME = 'KaiOS phone';
 
   App.screens.serversettings = {
     create: function (opts) {
       opts = opts || {};
+      var paired = !opts.firstRun && !opts.addAccount && App.config.isConfigured();
+
       var el = App.util.el('div', 'screen');
       var hdr = App.util.el('div', 'hdr');
       hdr.appendChild(App.util.el('span', 'hdr-title',
-        opts.addAccount ? 'Add account' : 'Server & connection'));
+        opts.addAccount ? 'Add account' : (paired ? 'Server & connection' : 'Pair with gateway')));
       el.appendChild(hdr);
 
       var list = App.util.el('div', 'list');
       el.appendChild(list);
 
-      // In "add account" mode start with blank fields so a new account can be
-      // entered without clobbering the current one until Save.
-      var cfg = opts.addAccount ? {} : App.config.get();
-
-      // Current mode + a draft of every credential so switching modes back and
-      // forth within the session doesn't lose what was typed.
-      var mode = cfg.authMode || 'none';
-      var draft = {
-        authUser: cfg.authUser || '',
-        authPass: cfg.authPass || '',
-        receiveToken: cfg.receiveToken || '',
-        tokenParam: cfg.tokenParam || 'token'
-      };
-      // Live input refs for the currently-rendered credential fields.
-      var inputs = {};
-
-      function field(parent, labelText, value, placeholder, type) {
+      function field(labelText, value, placeholder, type) {
         var wrap = App.util.el('div', 'field');
         var label = App.util.el('label', null, labelText);
         var input = App.util.el('input');
         input.type = type || 'text';
         input.value = value || '';
         input.placeholder = placeholder || '';
-        // Connection details (URL, number, tokens) are lowercase/case-exact — stop
-        // the KaiOS keypad starting in capitalized "Abc" mode. This only sets the
-        // default case; an explicit shift still types uppercase for the rare
-        // case-sensitive secret.
+        // URLs are lowercase/case-exact — stop the KaiOS keypad starting in capitalized "Abc" mode.
         input.setAttribute('autocapitalize', 'none');
         input.setAttribute('autocorrect', 'off');
         input.spellcheck = false;
         input.setAttribute('nav-selectable', 'true');
         wrap.appendChild(label);
         wrap.appendChild(input);
-        parent.appendChild(wrap);
+        list.appendChild(wrap);
         return input;
       }
 
-      function action(parent, label, hint) {
+      function action(label, hint) {
         var row = App.util.el('div', 'menu-item', label);
         row.setAttribute('nav-selectable', 'true');
         row.setAttribute('data-id', label);
         if (hint) row.appendChild(App.util.el('span', 'hint', hint));
-        parent.appendChild(row);
+        list.appendChild(row);
         return row;
       }
 
-      function clear(node) {
-        while (node.firstChild) node.removeChild(node.firstChild);
+      function note(text) {
+        list.appendChild(App.util.el('div', 'field-note', text));
       }
 
-      var urlInput = field(list, 'Server URL', cfg.serverUrl,
-        'http://192.168.1.100:8090');
-      var numInput = field(list, 'My Signal number', cfg.number, '+15551234567');
+      if (paired) {
+        list.appendChild(App.util.sectionHeader('Paired'));
+        note('Gateway: ' + App.config.serverUrl());
+        note('Signal number: ' + App.config.number());
+        action('Unpair this phone', 'Stop this phone connecting to the gateway');
+        list.appendChild(App.util.sectionHeader('Pair again'));
+      }
 
-      var modeRow = action(list, 'Connection security', MODE_LABEL[mode]);
-      var modeHint = modeRow.querySelector('.hint');
-
-      // Credential fields + explanatory note for the current mode live here and
-      // are rebuilt whenever the mode changes.
-      var credsWrap = App.util.el('div');
-      list.appendChild(credsWrap);
+      var urlInput = field('Gateway address',
+        opts.addAccount ? '' : App.config.serverUrl(), 'http://192.168.1.100:8090');
+      var codeInput = field('Pairing code', '', '1234-5678', 'tel');
+      note(opts.addAccount
+        ? 'Leave the code empty if this phone is already paired with that gateway.'
+        : 'The gateway prints the code when it first starts (docker compose logs ' +
+          'gateway). Get a new one with: docker compose exec gateway npm run pair');
 
       var status = App.util.el('div', 'status-line', '');
       list.appendChild(status);
 
-      action(list, 'Save', 'Store settings and reconnect');
-      action(list, 'Test connection', 'Check the gateway is reachable');
+      action('Pair', 'Connect this phone to the gateway');
 
       var nav = new App.Nav(el, { scrollEl: list });
-
-      // Capture whatever is typed in the current credential inputs into `draft`
-      // so it survives a mode switch (and a re-render).
-      function captureInputs() {
-        if (inputs.authUser) draft.authUser = inputs.authUser.value.trim();
-        if (inputs.authPass) draft.authPass = inputs.authPass.value;
-        if (inputs.receiveToken) draft.receiveToken = inputs.receiveToken.value.trim();
-        if (inputs.tokenParam) draft.tokenParam = inputs.tokenParam.value.trim();
-      }
-
-      function renderCreds() {
-        clear(credsWrap);
-        inputs = {};
-        if (mode === 'basic') {
-          inputs.authUser = field(credsWrap, 'Proxy username', draft.authUser,
-            'reverse-proxy user');
-          inputs.authPass = field(credsWrap, 'Proxy password', draft.authPass,
-            '', 'password');
-          credsWrap.appendChild(App.util.el('div', 'field-note',
-            'Password-protects the HTTP API, but a browser cannot send Basic ' +
-            'Auth on the WebSocket, so live updates are left unauthenticated. ' +
-            'Lock down /v1/receive separately, or use Receive token instead.'));
-        } else if (mode === 'token') {
-          inputs.receiveToken = field(credsWrap, 'Receive token', draft.receiveToken,
-            'secret sent with every request', 'password');
-          inputs.tokenParam = field(credsWrap, 'Token query param',
-            draft.tokenParam || 'token', 'token (use p_token for Pangolin)');
-          credsWrap.appendChild(App.util.el('div', 'field-note',
-            'The token is sent as ?<param>=<token> on every request, including ' +
-            'the WebSocket, so the proxy authenticates both the API and live ' +
-            'updates with one secret. Use HTTPS/WSS. For Pangolin set the ' +
-            'param to p_token.'));
-        } else {
-          credsWrap.appendChild(App.util.el('div', 'field-note',
-            'No authentication. Anyone who can reach the server can read your ' +
-            'messages and send as you. Use only on a trusted home network or ' +
-            'private VPN.'));
-        }
-      }
-
-      function chooseMode() {
-        captureInputs();
-        App.router.push(App.screens.menu.create({
-          title: 'Connection security',
-          items: [
-            {
-              label: 'Unauthenticated',
-              hint: 'No login. Anyone who can reach the server can read/send. Home/VPN only.',
-              onSelect: function () { setMode('none'); }
-            },
-            {
-              label: 'Basic header auth',
-              hint: 'Password-protects the API, but leaves the live WebSocket unauthenticated.',
-              onSelect: function () { setMode('basic'); }
-            },
-            {
-              label: 'Receive token',
-              hint: 'One token on every request, including the WebSocket. Best option.',
-              onSelect: function () { setMode('token'); }
-            }
-          ]
-        }));
-      }
-
-      function setMode(m) {
-        mode = m;
-        modeHint.textContent = MODE_LABEL[mode];
-        renderCreds();
-      }
+      // A token from a pairing that found no Signal number yet, reused on retry.
+      var pendingToken = null;
+      var busy = false;
 
       function setStatus(text, cls) {
         status.textContent = text;
         status.className = 'status-line' + (cls ? ' ' + cls : '');
       }
 
-      function normalizedNumber() {
-        var n = numInput.value.trim().replace(/[\s()-]/g, '');
-        if (n && n.charAt(0) !== '+') n = '+' + n;
-        return n;
+      // Turn a failed request into what the user should check. Never includes the code or token: err.message only carries the HTTP status.
+      function explain(err) {
+        var kind = err && err.kind;
+        var code = err && err.status;
+        if (kind === 'network' || kind === 'timeout') {
+          return (kind === 'timeout' ? 'No answer from the gateway. ' : 'Cannot reach the gateway. ') +
+            'Check the address and port (default 8090), that the gateway is ' +
+            'running, and that the phone can reach it (same Wi-Fi, or an ' +
+            'https:// address from outside).';
+        }
+        if (code === 403) {
+          return 'Wrong or expired pairing code. Get a new one with: ' +
+            'docker compose exec gateway npm run pair';
+        }
+        if (code === 429) return 'Too many attempts. Wait 15 minutes and try again.';
+        if (code === 401) return 'The gateway no longer accepts this phone. Enter a new pairing code.';
+        if (code === 404) {
+          return 'That address answered, but it is not a Signal4KaiOS gateway. ' +
+            'Use the gateway address with no extra path.';
+        }
+        if (code >= 500) {
+          return 'HTTP ' + code + ': the gateway is up but signal-cli-rest-api is ' +
+            'not responding. Check the backend containers.';
+        }
+        return (err && err.message) || 'Pairing failed';
       }
 
-      // Build the auth-related config patch for the current mode, blanking the
-      // fields that don't apply so a mode switch fully replaces the old creds.
-      function authPatch() {
-        captureInputs();
-        var patch = {
-          authMode: mode,
-          authUser: '',
-          authPass: '',
-          receiveToken: '',
-          tokenParam: ''
-        };
-        if (mode === 'basic') {
-          patch.authUser = draft.authUser;
-          patch.authPass = draft.authPass;
-        } else if (mode === 'token') {
-          patch.receiveToken = draft.receiveToken;
-          patch.tokenParam = draft.tokenParam || 'token';
-        }
-        return patch;
-      }
-
-      function save() {
-        var url = urlInput.value.trim().replace(/\/+$/, '');
-        var n = normalizedNumber();
-        if (!/^https?:\/\//.test(url)) {
-          setStatus('Server URL must start with http:// or https://', 'bad');
-          return;
-        }
-        if (!/^\+\d{6,16}$/.test(n)) {
-          setStatus('Number must look like +15551234567', 'bad');
-          return;
-        }
-        var prevNumber = App.config.number();
-        App.config.set(Object.assign({ serverUrl: url, number: n }, authPatch()));
+      function finish(url, token, number) {
+        var oldToken = App.config.serverUrl() === url ? App.config.deviceToken() : '';
+        App.config.set({ serverUrl: url, number: number, deviceToken: token });
+        App.config.setServerToken(url, token);
         App.config.saveActiveAccount();
-        setStatus('Saved.', 'ok');
-        App.toast('Settings saved');
-
-        // Switching to a different account (or first setup) changes which
-        // IndexedDB and WebSocket we use, so reload to reinitialize cleanly.
-        if (opts.addAccount || opts.firstRun || n !== prevNumber) {
-          location.reload();
-          return;
-        }
-        App.ws.restart();
-        App.store.refreshDirectory()['catch'](function () { /* offline is fine */ });
+        App.toast('Paired');
+        // Re-pairing replaces this phone's old token; revoke it best-effort.
+        var revokeOld = oldToken && oldToken !== token
+          ? App.http.post('/v1/pair/revoke', {}, { baseUrl: url, authToken: oldToken })['catch'](function () {})
+          : Promise.resolve();
+        revokeOld.then(function () { location.reload(); });
       }
 
-      function testConnection() {
-        // Use current field values so testing works before saving.
-        App.config.set(Object.assign({
-          serverUrl: urlInput.value.trim().replace(/\/+$/, ''),
-          number: normalizedNumber()
-        }, authPatch()));
-        setStatus('Testing…');
-        App.api.about().then(function (info) {
-          var v = info && info.version ? ' v' + info.version : '';
-          var modeStr = info && info.mode ? ' (' + info.mode + ' mode)' : '';
-          setStatus('Connected' + v + modeStr, 'ok');
+      function chooseNumber(url, token, numbers) {
+        if (!numbers.length) {
+          pendingToken = { url: url, token: token };
+          setStatus('Paired, but no Signal account is linked on the backend yet. ' +
+            'Link one (see the setup guide), then press Pair again.', 'bad');
+          return;
+        }
+        if (numbers.length === 1) {
+          finish(url, token, numbers[0]);
+          return;
+        }
+        var current = App.config.number();
+        App.router.push(App.screens.menu.create({
+          title: 'Choose number',
+          items: numbers.map(function (n) {
+            return {
+              label: n + (n === current ? ' (current)' : ''),
+              onSelect: function () {
+                finish(url, token, n);
+                return 'keep';
+              }
+            };
+          })
+        }));
+      }
+
+      function pair() {
+        if (busy) return;
+        var url = urlInput.value.trim().replace(/\/+$/, '');
+        var code = codeInput.value.replace(/\D/g, '');
+        if (!/^https?:\/\/[^\s/]+/.test(url)) {
+          setStatus('Gateway address must start with http:// or https://', 'bad');
+          return;
+        }
+        var reuse = (pendingToken && pendingToken.url === url && pendingToken.token) ||
+          (opts.addAccount ? App.config.tokenForServer(url) : '');
+        if (!code && !reuse) {
+          setStatus('Enter the 8-digit pairing code from the gateway.', 'bad');
+          return;
+        }
+        if (code && code.length !== 8) {
+          setStatus('The pairing code has 8 digits.', 'bad');
+          return;
+        }
+        busy = true;
+        setStatus('Connecting\u2026');
+        App.api.health(url).then(function (h) {
+          if (!h || h.gateway !== 'signal4kaios') {
+            var notGateway = new Error('not a gateway');
+            notGateway.status = 404;
+            throw notGateway;
+          }
+          if (code) {
+            setStatus('Pairing\u2026');
+            return App.api.pair(url, code, DEVICE_NAME).then(function (res) {
+              if (!res || !res.token) throw new Error('Unexpected reply from the gateway');
+              return { token: res.token, numbers: res.numbers || [] };
+            });
+          }
+          return App.api.accounts(url, reuse).then(function (numbers) {
+            return { token: reuse, numbers: numbers || [] };
+          });
+        }).then(function (r) {
+          busy = false;
+          var numbers = (r.numbers || []).filter(function (n) { return typeof n === 'string'; });
+          chooseNumber(url, r.token, numbers);
         })['catch'](function (err) {
-          setStatus(explainTestError(err), 'bad');
+          busy = false;
+          setStatus(explain(err), 'bad');
         });
       }
 
-      // Turn a failed /v1/about probe into what the user should check. Never
-      // includes credentials: err.message only carries the HTTP status.
-      function explainTestError(err) {
-        var kind = err && err.kind;
-        var status = err && err.status;
-        if (kind === 'network' || kind === 'timeout') {
-          return (kind === 'timeout' ? 'No answer from the server. ' : 'Cannot reach the server. ') +
-            'Check the address and port (gateway default 8090), that the gateway ' +
-            'is running, and that the phone can reach it (same Wi-Fi, or an ' +
-            'https:// address from outside).';
-        }
-        if (status === 401 || status === 403) return err.message;
-        if (status === 404) {
-          return 'HTTP 404: the server answered but is not the gateway. Use the ' +
-            'gateway address with no extra path, e.g. http://192.168.1.100:8090.';
-        }
-        if (status >= 500) {
-          return 'HTTP ' + status + ': the gateway is up but signal-cli-rest-api ' +
-            'is not responding. Check the backend containers.';
-        }
-        return (err && err.message) || 'Connection failed';
+      function unpair() {
+        App.dialog.confirm({
+          title: 'Unpair this phone?',
+          message: 'It stops receiving messages until you pair it again with a new code.',
+          confirmLabel: 'Unpair',
+          onConfirm: function () {
+            var url = App.config.serverUrl();
+            App.api.unpair()['catch'](function () { /* offline: forget locally anyway */ })
+              .then(function () {
+                App.ws.stop();
+                App.config.forgetPairing(url);
+                location.reload();
+              });
+          }
+        });
       }
 
       function onAction(id) {
-        if (id === 'Connection security') return chooseMode();
-        if (id === 'Save') return save();
-        if (id === 'Test connection') return testConnection();
+        if (id === 'Pair') return pair();
+        if (id === 'Unpair this phone') return unpair();
       }
 
-      renderCreds();
+      function softkeys() {
+        App.softkeys.set(opts.firstRun ? '' : 'Back', 'Select', '');
+      }
 
       return {
         el: el,
         enter: function () {
-          // First-run is the root screen (nothing to go back to); otherwise the
-          // left key is the cohesive Back.
-          App.softkeys.set(opts.firstRun ? '' : 'Back', 'Select', '');
-          if (opts.firstRun) {
-            setStatus('Enter your gateway URL and Signal number.');
+          softkeys();
+          if (opts.unpaired) {
+            setStatus('This phone is no longer paired with the gateway. Enter a new pairing code.', 'bad');
+          } else if (opts.firstRun) {
+            setStatus('Enter the gateway address and the pairing code it shows.');
           } else if (opts.addAccount) {
-            setStatus('Enter the server URL and number for the new account.');
+            setStatus('Enter the gateway address for the new account.');
           }
           nav.select(0);
         },
-        resume: function () {
-          App.softkeys.set(opts.firstRun ? '' : 'Back', 'Select', '');
-        },
+        resume: softkeys,
         onKey: function (evt) {
           var active = document.activeElement;
           var inInput = active && active.tagName === 'INPUT';

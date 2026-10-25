@@ -1,10 +1,7 @@
 (function () {
   'use strict';
 
-  /* Group info & management. Reads members/description/admins/permissions from
-     GET /v1/groups/{number}/{groupid} and offers rename, description,
-     disappearing-message timer, member & admin management, permissions,
-     group-link control, block and leave. create(conv) */
+  /* Group info & management. Reads members/description/admins/permissions from GET /v1/groups/{number}/{groupid} and offers rename, description, disappearing-message timer, member & admin management, permissions, group-link control, block and leave. create(conv) */
 
   function permLabel(perms, key) {
     var v = perms && perms[key];
@@ -37,9 +34,7 @@
         });
       }
 
-      /* Start a 1:1 chat with a member. Member ids are either an E.164 number
-         or a UUID; route each to the right field so the conversation key is
-         consistent with the rest of the app. */
+      /* Start a 1:1 chat with a member. Member ids are either an E.164 number or a UUID; route each to the right field so the conversation key is consistent with the rest of the app. */
       function messageMember(entry) {
         var contact = entry.id.charAt(0) === '+'
           ? { number: entry.id, name: entry.name }
@@ -48,10 +43,7 @@
         App.router.push(App.screens.chat.create(c.id));
       }
 
-      /* Whether the current account is an admin of this group. Admin ids may be
-         E.164 numbers or UUIDs depending on the signal-cli version, so check
-         our number and (if we know it) our own UUID. Admin-only actions are
-         hidden when this is false since the server would reject them. */
+      /* Whether the current account is an admin of this group. Admin ids may be E.164 numbers or UUIDs depending on the signal-cli version, so check our number and (if we know it) our own UUID. Admin-only actions are hidden when this is false since the server would reject them. */
       function amIAdmin() {
         var admins = (detail && detail.admins) || [];
         var me = App.config.number();
@@ -74,8 +66,7 @@
         }).sort(function (a, b) { return a.name.localeCompare(b.name); });
       }
 
-      /* Members can number in the hundreds, so they get their own scrollable
-         screen. Enter opens per-member actions; SoftLeft adds a member. */
+      /* Members can number in the hundreds, so they get their own scrollable screen. Enter opens per-member actions; SoftLeft adds a member. */
       function membersScreen() {
         var mel = App.util.el('div', 'screen');
         var mhdr = App.util.el('div', 'hdr');
@@ -141,8 +132,7 @@
               onSelect: function () { messageMember(entry); }
             });
           }
-          // Admin promotion/demotion and removal are admin-only in Signal, so
-          // only offer them when we're actually an admin.
+          // Admin promotion/demotion and removal are admin-only in Signal, so only offer them when we're actually an admin.
           if (canManage) {
             if (entry.admin) {
               items.push({
@@ -354,8 +344,7 @@
         });
       }
 
-      /* Change one group permission, sending all three values so the others
-         aren't reset to empty by the server. */
+      /* Change one group permission, sending all three values so the others aren't reset to empty by the server. */
       function permMenu(title, key) {
         var perms = (detail && detail.permissions) || {};
         App.valueSelector.open({

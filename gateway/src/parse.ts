@@ -1,8 +1,4 @@
-/* Minimal, defensive envelope parse for building a push notification. This
-   MIRRORS the conversation-id rules in app/js/normalize.js (group -> "g:"+id,
-   otherwise sourceNumber || sourceUuid || source) so a notification click opens
-   the right conversation. It intentionally only fires for incoming user
-   messages; typing/receipts/reactions/syncs return null. Never throws. */
+/* Minimal, defensive envelope parse for building a push notification. This MIRRORS the conversation-id rules in app/js/normalize.js (group -> "g:"+id, otherwise sourceNumber || sourceUuid || source) so a notification click opens the right conversation. It intentionally only fires for incoming user messages; typing/receipts/reactions/syncs return null. Never throws. */
 
 export interface Note {
   title: string;
@@ -27,8 +23,7 @@ export function toNote(text: string): Note | null {
   const env = frame && frame.envelope;
   if (!env) return null;
 
-  // Only top-level incoming dataMessages are user messages; sent syncs, typing,
-  // receipts, and read syncs are not notification-worthy here.
+  // Only top-level incoming dataMessages are user messages; sent syncs, typing, receipts, and read syncs are not notification-worthy here.
   const dm = env.dataMessage;
   if (!dm) return null;
   if (dm.reaction || dm.remoteDelete || dm.pinMessage || dm.unpinMessage) return null;

@@ -1,9 +1,7 @@
 (function () {
   'use strict';
 
-  /* Main settings menu. The gateway connection fields live in their
-     own screen (App.screens.serversettings); everything here is a menu action,
-     a boolean toggle (checkbox), or a value selector. */
+  /* Main settings menu. The gateway connection fields live in their own screen (App.screens.serversettings); everything here is a menu action, a boolean toggle (checkbox), or a value selector. */
 
   App.screens.settings = {
     create: function () {
@@ -24,8 +22,7 @@
         return row;
       }
 
-      /* A menu-item with a trailing checkbox reflecting a boolean config flag.
-         Enter toggles it (handled generically via row.__toggle). */
+      /* A menu-item with a trailing checkbox reflecting a boolean config flag. Enter toggles it (handled generically via row.__toggle). */
       function toggle(label, getFn, setFn) {
         var row = App.util.el('div', 'menu-item toggle');
         row.setAttribute('nav-selectable', 'true');
@@ -53,7 +50,7 @@
       action('Switch account', 'Change or add a number');
 
       list.appendChild(App.util.sectionHeader('Server'));
-      action('Server & connection', 'URL, number, proxy auth');
+      action('Server & connection', 'Gateway and pairing');
 
       list.appendChild(App.util.sectionHeader('Chats'));
       var styledRow = toggle('Text formatting',

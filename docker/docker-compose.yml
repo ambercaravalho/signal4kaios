@@ -1,8 +1,13 @@
-# The gateway is the only service exposed to the app; signal-cli-rest-api sits on
-# an internal-only network the app never reaches.
+# The gateway is the only service exposed to the app; signal-cli-rest-api sits on an internal-only network the app never reaches.
 #
 #   cp docker/.env.example docker/.env   # edit as needed
 #   docker compose -f docker/docker-compose.yml up -d
+#
+# Pairing: on first start the gateway prints a pairing code to enter in the app.
+#   docker compose -f docker/docker-compose.yml logs gateway            # show it
+#   docker compose -f docker/docker-compose.yml exec gateway npm run pair     # new code
+#   docker compose -f docker/docker-compose.yml exec gateway npm run devices  # list phones
+#   docker compose -f docker/docker-compose.yml exec gateway npm run revoke 3 # unpair one
 
 services:
   signal-cli-rest-api:
@@ -14,7 +19,9 @@ services:
       - signal-cli-config:/home/.local/share/signal-cli
     networks:
       - internal
-    # No ports published: only the gateway can reach it.
+    # No ports published: only the gateway can reach it. To link your Signal account once, uncomment this (localhost only), open http://localhost:8080/v1/qrcodelink?device_name=signal4kaios, scan it in Signal -> Linked devices, then comment it out again.
+    # ports:
+    #   - "127.0.0.1:8080:8080"
     restart: unless-stopped
 
   gateway:
@@ -37,8 +44,7 @@ services:
     volumes:
       - gateway-data:/app/data
     ports:
-      # Point the app's Server URL at this. Put a TLS-terminating reverse proxy
-      # in front for remote access (see docs/remote-access.md).
+      # Pair the app with this address. For use away from home, put HTTPS in front (any reverse proxy, or a VPN); see docs/setup.md.
       - "8090:8090"
     networks:
       - internal
