@@ -15,7 +15,7 @@
     "pair": "node dist/cli.js pair",
     "devices": "node dist/cli.js devices",
     "revoke": "node dist/cli.js revoke",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/",
+    "test": "tsc -p tsconfig.test.json && node --test 'dist-test/**/*.test.js'",
     "dev": "node --loader ts-node/esm src/index.ts"
   },
   "dependencies": {
