@@ -42,8 +42,10 @@ echo "adb root + forward tcp:$PORT -> debugger-socket"
 adb root
 adb forward "tcp:$PORT" localfilesystem:/data/local/debugger-socket
 
-echo "Installing app/ via appscmd (port $PORT)"
-"$APPSCMD" --host "localhost:$PORT" install app/ || "$APPSCMD" install app/
+# appscmd talks to the device over adb on its own; just point it at the app
+# folder. (Older docs used a --host flag, but appscmd 0.3.x doesn't accept it.)
+echo "Installing app/ via appscmd"
+"$APPSCMD" install app/
 
 echo
 echo "OK: installed. Reboot the phone for it to take effect."

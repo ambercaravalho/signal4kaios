@@ -73,7 +73,10 @@
 
   function displayName(key) {
     var c = contactOf(key);
-    if (c && c.name) return c.name;
+    // Never surface the "Note to Self" label as a person's name (e.g. in group
+    // member lists or message authors). It's the self-conversation title only;
+    // guards against a stale name stored before contactName started skipping it.
+    if (c && c.name && c.name !== SELF_NAME) return c.name;
     return key || '?';
   }
 
@@ -442,7 +445,10 @@
   /* Best display name across the many places Signal keeps names:
      address-book name → nickname → profile name → username → number. */
   function contactName(c) {
-    if (c.name) return c.name;
+    // signal-cli labels the account's own contact "Note to Self"; that label
+    // belongs to the self *conversation* only (set via directName), so ignore it
+    // here and fall through to a real name so members/authors show who you are.
+    if (c.name && c.name !== SELF_NAME) return c.name;
     var nick = c.nickname || {};
     if (nick.name) return nick.name;
     var nn = [nick.given_name, nick.family_name].filter(Boolean).join(' ');
