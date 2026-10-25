@@ -3,7 +3,7 @@
 
   /* Web Push client (App.push) — the phone side of background / closed-app notifications. Push is ALWAYS ON with no user-facing options: on boot the app fetches the gateway's VAPID public key (GET /v1/push/vapid), subscribes to the KaiOS push service, and registers the subscription with the gateway (POST /v1/push/register) over App.http. The gateway holds the signal-cli receive stream open and turns incoming messages into pushes; the ServiceWorker (sw.js) shows the notification on the 'push' event, even when the app is fully closed.
 
-     Works on every KaiOS with the Push API — 2.5 and 3.0/3.1/4.0 alike (the API is ServiceWorker-based on all of them). The one version difference is how the OS is told to cold-wake the worker for a push: 3.0+ needs a runtime systemMessageManager.subscribe('push') (see subscribeSystemMessages), while 2.5 wires it purely through the manifest ('serviceworker'/'push' permissions and the 'push' message). On desktop/simulator without Push, every call resolves to a clean no-op. */
+     Works on every KaiOS with the Push API — 2.5 and 3.0/3.1/4.0 alike (the API is ServiceWorker-based on all of them, and the OS cold-wakes the worker for a push on its own). 2.5 needs the 'serviceworker' and 'push' permissions in manifest.webapp; 3.0+ grants push to every app. On desktop/simulator without Push, every call resolves to a clean no-op. */
 
   function supported() {
     return typeof navigator !== 'undefined' &&
@@ -83,7 +83,7 @@
     return Promise.resolve(Notification.permission || 'default');
   }
 
-  /* Read the breadcrumb sw.js writes on every 'push' event, so the in-app Debug log can show whether the ServiceWorker is actually receiving pushes on this device (there's no console on the phone). */
+  /* Read the breadcrumbs sw.js writes (push wakes, its own re-subscribes, and the last errors), so the in-app Debug log can show whether the ServiceWorker is actually receiving pushes on this device (there's no console on the phone). */
   function reportPushDebug() {
     if (typeof caches === 'undefined') return Promise.resolve();
     return caches.open('s4k-push').then(function (cache) {
@@ -95,6 +95,14 @@
       var p = info.pushCount || 0;
       App.util.dbg('push: SW push wakes so far — ' + p);
       if (p) App.util.dbg('push: last push wake ' + new Date(info.lastpush).toLocaleString());
+      if (info.resubscribed) {
+        App.util.dbg('push: SW re-subscribed on its own (…' + info.resubscribed.tail + ') ' +
+          new Date(info.resubscribed.ts).toLocaleString());
+      }
+      ['pushError', 'showError', 'resubscribeError'].forEach(function (k) {
+        var e = info[k];
+        if (e) App.util.dbg('push: SW ' + k + ' ' + new Date(e.ts).toLocaleString() + ' — ' + e.msg);
+      });
     })['catch'](function () {});
   }
 
@@ -123,10 +131,10 @@
     return true;
   }
 
-  /* KaiOS 3.0+ only: subscribe the ServiceWorker to the system messages we act on while backgrounded/closed, so the OS wakes it for them. NOTE: 'push' is NOT a systemMessage — it's owned by the Push API (pushManager.subscribe), and subscribing it here throws a SecurityError ("operation is insecure"). We only subscribe the genuine system messages ('notification' for click-wake, 'alarm' for reconnect). Feature-detected: systemMessageManager doesn't exist on 2.5, which wires wake-up through the manifest alone, so this is a clean no-op there. Idempotent, so it's safe to run on every boot. */
+  /* KaiOS 3.0+ only: subscribe the ServiceWorker to the system messages we act on while backgrounded, so the OS wakes it for them. Only 'alarm' (reconnect) applies: 'push' is owned by the Push API (subscribing it throws a SecurityError), and notification clicks reach the worker as 'notificationclick' without a system message. Feature-detected: systemMessageManager doesn't exist on 2.5, so this is a clean no-op there. Idempotent, so it's safe to run on every boot. */
   function subscribeSystemMessages(reg) {
     if (!reg || !reg.systemMessageManager) return Promise.resolve();
-    var names = ['notification', 'alarm'];
+    var names = ['alarm'];
     return Promise.all(names.map(function (n) {
       try {
         return reg.systemMessageManager.subscribe(n)['catch'](function (e) {

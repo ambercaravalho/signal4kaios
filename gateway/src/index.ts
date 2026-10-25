@@ -195,6 +195,7 @@ upstream.setFrameHook(push.onIncoming);
 push.init();
 upstream.resumeKnown();
 wsserver.startRevocationSweep();
+wsserver.startHeartbeat();
 
 server.listen(config.port, function () {
   log.info('gateway listening on :' + config.port + ' -> ' + config.signalCliUrl);

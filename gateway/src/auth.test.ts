@@ -65,6 +65,19 @@ test('revoke removes the device and its push subscriptions', function () {
   assert.equal(buffer.subsFor('+15550001111').length, 0);
 });
 
+test('a new subscription replaces the device\'s older ones but not other devices\'', function () {
+  const a = auth.redeem(auth.issueCode().code, 'Phone A');
+  const b = auth.redeem(auth.issueCode().code, 'Phone B');
+  assert.ok(a && b);
+  const n = '+15550002222';
+  buffer.addSub(n, { endpoint: 'https://push.example/a1' }, a.id);
+  buffer.addSub(n, { endpoint: 'https://push.example/b1' }, b.id);
+  buffer.addSub(n, { endpoint: 'https://push.example/a2' }, a.id);
+  buffer.addSub(n, { endpoint: 'https://push.example/a2' }, a.id);
+  const eps = buffer.subsFor(n).map(function (s) { return (s as { endpoint: string }).endpoint; }).sort();
+  assert.deepEqual(eps, ['https://push.example/a2', 'https://push.example/b1']);
+});
+
 test('verify rejects malformed tokens', function () {
   assert.equal(auth.verify(''), null);
   assert.equal(auth.verify('not-a-token'), null);

@@ -16,6 +16,7 @@
     "pair": "node dist/cli.js pair",
     "devices": "node dist/cli.js devices",
     "revoke": "node dist/cli.js revoke",
+    "push-test": "node dist/cli.js push-test",
     "test": "tsc -p tsconfig.test.json && node --test 'dist-test/**/*.test.js'",
     "dev": "npm run build && node --watch dist/index.js"
   },

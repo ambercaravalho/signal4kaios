@@ -5,6 +5,7 @@
      1. 'push' — the gateway sends an aesgcm-encrypted push for each incoming message (see docs/development.md); this worker shows the notification even when the app is closed. This is the ONLY closed-app notification path.
      2. 'systemmessage' (alarm) — if a window is still open (backgrounded app), relay a wake so ws.js reconnects and drains queued messages. When the app is fully closed, push handles notifications, so the alarm does nothing here.
      3. 'notificationclick' — focus/open the app on the right conversation.
+     4. 'activate' / 'pushsubscriptionchange' — re-subscribe on its own when the OS has dropped or rotated the push subscription.
 
    Kept small, dependency-free, and Gecko-48-safe (var/function only, no arrow functions, template literals, or let/const) since it also runs on KaiOS 2.5. It shares nothing with the page's App.* modules; the page hands over the gateway coordinates (base URL, number, VAPID key, and the paired device token) via Cache Storage so this worker can re-register a rotated push subscription on its own. */
 
@@ -18,8 +19,12 @@ self.addEventListener('install', function () {
   self.skipWaiting();
 });
 
+/* KaiOS 3.0+ deletes every app's push subscription whenever the phone boots after anything but a clean power-off/reboot (b2g crash, battery pull, forced restart), then re-registers this worker from the manifest — which fires 'activate' with the app closed. Re-subscribe here so closed-app notifications survive that without the user opening the app. */
 self.addEventListener('activate', function (event) {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(Promise.all([
+    self.clients.claim(),
+    ensureSubscribed()
+  ]));
 });
 
 function relay(message) {
@@ -33,21 +38,35 @@ function relay(message) {
     });
 }
 
-/* Record each push cold-wake so the page can report it in the in-app Debug log (there's no console on the phone). Best-effort; never blocks. */
-function notePushWake() {
+/* Update the breadcrumb record the page reports in the in-app Debug log (there's no console on the phone). update(info) mutates it in place. Best-effort; never rejects. */
+function noteDebug(update) {
   if (!self.caches) return Promise.resolve();
   return self.caches.open(PUSH_CACHE).then(function (cache) {
     return cache.match(PUSH_DEBUG_KEY).then(function (res) {
       return res ? res.json() : null;
     }).then(function (prev) {
       var info = prev || {};
-      info.pushCount = (info.pushCount || 0) + 1;
-      info.lastpush = Date.now();
+      update(info);
       return cache.put(PUSH_DEBUG_KEY, new Response(JSON.stringify(info), {
         headers: { 'Content-Type': 'application/json' }
       }));
     });
   })['catch'](function () { /* diagnostics only */ });
+}
+
+function notePushWake() {
+  return noteDebug(function (info) {
+    info.pushCount = (info.pushCount || 0) + 1;
+    info.lastpush = Date.now();
+  });
+}
+
+/* field is 'pushError' (decoding the push) or 'showError' (showNotification rejected). */
+function noteError(field, e) {
+  var msg = e ? String((e.name ? e.name + ': ' : '') + (e.message || e)).slice(0, 160) : 'unknown';
+  return noteDebug(function (info) {
+    info[field] = { msg: msg, ts: Date.now() };
+  });
 }
 
 /* KaiOS delivers the 'alarm' system message to the worker as a 'systemmessage' event. Its only remaining job is to nudge a still-open (backgrounded) window to reconnect; the page re-arms the next alarm itself. A fully-closed app is notified via push, not here. */
@@ -87,6 +106,41 @@ function gatewayHeaders(cfg) {
   return h;
 }
 
+/* Re-register a subscription with the gateway (fire-and-forget — we don't need the response). */
+function reRegister(cfg, sub) {
+  var body = {
+    number: cfg.number || '',
+    subscription: (sub && sub.toJSON) ? sub.toJSON() : sub
+  };
+  var url = cfg.serverUrl.replace(/\/+$/, '') + '/v1/push/register';
+  return self.fetch(url, {
+    method: 'POST', mode: 'cors',
+    headers: gatewayHeaders(cfg),
+    body: JSON.stringify(body)
+  })['catch'](function () { return null; });
+}
+
+function subscribeWithCfg(cfg) {
+  var opts = { userVisibleOnly: true };
+  if (cfg.vapidKey) opts.applicationServerKey = urlB64ToUint8Array(cfg.vapidKey);
+  return self.registration.pushManager.subscribe(opts);
+}
+
+/* If the page has set push up before but this worker has no subscription (the boot-time wipe), make a new one and register it. A no-op on first install (no cfg yet) and whenever a subscription already exists. */
+function ensureSubscribed() {
+  return readPushCfg().then(function (cfg) {
+    if (!cfg || !cfg.serverUrl || !self.registration.pushManager) return null;
+    return self.registration.pushManager.getSubscription().then(function (existing) {
+      if (existing) return null;
+      return subscribeWithCfg(cfg).then(function (sub) {
+        return noteDebug(function (info) {
+          info.resubscribed = { tail: String(sub.endpoint || '').slice(-12), ts: Date.now() };
+        }).then(function () { return reRegister(cfg, sub); });
+      });
+    });
+  })['catch'](function (e) { return noteError('resubscribeError', e); });
+}
+
 function showFromPayload(p) {
   var title = (p && p.title) || 'Signal';
   return self.registration.showNotification(title, {
@@ -94,7 +148,7 @@ function showFromPayload(p) {
     tag: (p && p.convId) || 'signal',
     icon: NOTIF_ICON,
     data: { convId: (p && p.convId) || null }
-  });
+  })['catch'](function (e) { return noteError('showError', e); });
 }
 
 /* Web Push. userVisibleOnly means we MUST show a notification for every push, so every branch ends in showNotification. The gateway sends an aesgcm-encrypted JSON payload; a keyless (no-VAPID) gateway can only send empty pushes, which fall back to a generic notice. */
@@ -105,33 +159,20 @@ self.addEventListener('push', function (event) {
     try {
       payload = event.data.json();
     } catch (e) {
+      event.waitUntil(noteError('pushError', e));
       try { payload = { body: event.data.text() }; } catch (e2) { payload = null; }
     }
   }
   event.waitUntil(showFromPayload(payload || { title: 'Signal', body: 'New message' }));
 });
 
-/* The push service can rotate a subscription; re-subscribe and tell the gateway the new endpoint (fire-and-forget — we don't need the response). */
+/* The push service can rotate a subscription; re-subscribe and tell the gateway the new endpoint. */
 self.addEventListener('pushsubscriptionchange', function (event) {
   event.waitUntil(
     readPushCfg().then(function (cfg) {
       if (!cfg || !cfg.serverUrl) return null;
-      function reRegister(sub) {
-        var body = {
-          number: cfg.number || '',
-          subscription: (sub && sub.toJSON) ? sub.toJSON() : sub
-        };
-        var url = cfg.serverUrl.replace(/\/+$/, '') + '/v1/push/register';
-        return self.fetch(url, {
-          method: 'POST', mode: 'cors',
-          headers: gatewayHeaders(cfg),
-          body: JSON.stringify(body)
-        })['catch'](function () { return null; });
-      }
-      if (event.newSubscription) return reRegister(event.newSubscription);
-      var opts = { userVisibleOnly: true };
-      if (cfg.vapidKey) opts.applicationServerKey = urlB64ToUint8Array(cfg.vapidKey);
-      return self.registration.pushManager.subscribe(opts).then(reRegister);
+      if (event.newSubscription) return reRegister(cfg, event.newSubscription);
+      return subscribeWithCfg(cfg).then(function (sub) { return reRegister(cfg, sub); });
     })['catch'](function () { return null; })
   );
 });

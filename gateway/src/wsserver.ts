@@ -15,6 +15,7 @@ export const PROTOCOL = 's4k.v1';
 const AUTH_PREFIX = 's4k.auth.';
 export const CLOSE_UNPAIRED = 4401;
 const REVOCATION_SWEEP_MS = 60 * 1000;
+const HEARTBEAT_MS = 30 * 1000;
 
 const wss = new WebSocketServer({
   noServer: true,
@@ -25,6 +26,8 @@ const wss = new WebSocketServer({
 
 // Device id for every authenticated socket, so a revoke can drop it.
 const socketDevice = new Map<WebSocket, number>();
+// Sockets that have answered the latest heartbeat ping.
+const alive = new WeakSet<WebSocket>();
 
 export function isReceivePath(pathname: string): boolean {
   return /^\/v1\/receive\/[^/]+$/.test(pathname);
@@ -82,6 +85,8 @@ function onConnect(
 
   socketDevice.set(ws, deviceId);
   clients.add(number, ws, endpoint);
+  alive.add(ws);
+  ws.on('pong', function () { alive.add(ws); });
   ws.on('close', function () {
     socketDevice.delete(ws);
     clients.remove(number, ws);
@@ -109,6 +114,21 @@ export function dropDevice(deviceId: number): void {
   socketDevice.forEach(function (id, ws) {
     if (id === deviceId) ws.close(CLOSE_UNPAIRED, 'unpaired');
   });
+}
+
+/* A phone that drops off without a clean close (Wi-Fi sleep, network change) would otherwise stay in `clients` and make push skip it as "open". Ping every socket and terminate any that missed the previous ping; terminate fires 'close', which removes it. */
+export function startHeartbeat(): void {
+  setInterval(function () {
+    socketDevice.forEach(function (_id, ws) {
+      if (!alive.has(ws)) {
+        log.info('ws: dropping unresponsive app socket');
+        ws.terminate();
+        return;
+      }
+      alive.delete(ws);
+      try { ws.ping(); } catch { /* socket closing */ }
+    });
+  }, HEARTBEAT_MS).unref();
 }
 
 /* Revokes from the CLI happen in another process; periodically drop sockets whose device no longer exists. */

@@ -85,13 +85,17 @@ const upsertSub = db.prepare(
 );
 const deleteSub = db.prepare('DELETE FROM subs WHERE endpoint = ?');
 const deleteDeviceSubs = db.prepare('DELETE FROM subs WHERE device_id = ?');
+const deleteOtherDeviceSubs = db.prepare('DELETE FROM subs WHERE device_id = ? AND endpoint != ?');
 const selectSubs = db.prepare('SELECT sub_json FROM subs WHERE number = ?');
 
-/* deviceId ties the subscription to a paired device so revoking the device also stops its pushes (which can carry message text). */
+/* deviceId ties the subscription to a paired device so revoking the device also stops its pushes (which can carry message text). A device has one ServiceWorker and so one live subscription; its older endpoints are dropped here because KaiOS's push service answers 200 even for dead endpoints, so send-time 404/410 pruning never removes them. */
 export function addSub(number: string, subscription: unknown, deviceId: number): void {
   const endpoint = (subscription as { endpoint?: string }).endpoint;
   if (!endpoint) return;
-  upsertSub.run(endpoint, number, JSON.stringify(subscription), Date.now(), deviceId);
+  db.transaction(function () {
+    deleteOtherDeviceSubs.run(deviceId, endpoint);
+    upsertSub.run(endpoint, number, JSON.stringify(subscription), Date.now(), deviceId);
+  })();
 }
 
 export function removeSubByEndpoint(endpoint: string): void {

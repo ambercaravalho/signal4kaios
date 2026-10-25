@@ -2,6 +2,27 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v1.1.3
+
+Push notifications on KaiOS 3.0+ recover on their own after a restart, and the gateway no longer piles up dead push subscriptions. Closed-app notifications on KaiOS 3.0+ phones still depend on KaiOS's push service, which currently accepts pushes for sideloaded apps without delivering them.
+
+### App
+
+- KaiOS 3.0+ deletes every app's push subscription when the phone restarts after anything other than a clean power-off (a crash, a battery pull). The app now re-subscribes and re-registers in the background at boot instead of waiting until you open it.
+- Settings → Debug log also shows push errors and background re-subscribes.
+- Removed unused system-message entries from `manifest.webmanifest`.
+
+### Gateway
+
+- When a phone registers a new push subscription, its older ones are dropped. KaiOS's push service never reports dead subscriptions, so they used to accumulate.
+- Phones that drop off without closing their connection are detected within a minute, so they're no longer treated as "open" and skipped for push.
+- New `npm run push-test [number] [--empty] [--encoding aesgcm|aes128gcm]` sends a test push from the gateway host.
+
+### Upgrading
+
+- In your checkout: `git pull`, then `docker compose -f docker/docker-compose.yml pull` and `docker compose -f docker/docker-compose.yml up -d`.
+- Install the new ZIP on the phone and open the app once.
+
 ## v1.1.2
 
 Setting up the backend takes fewer steps: linking your Signal account is one command, and push notifications need no configuration. The phone app is unchanged apart from its version number.

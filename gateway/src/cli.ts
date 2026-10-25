@@ -3,10 +3,13 @@
      npm run pair            issue a new pairing code
      npm run devices         list paired devices
      npm run revoke <id>     unpair a device
+     npm run push-test [number] [--empty] [--encoding aesgcm|aes128gcm]
+                             send a test push to every subscription (all subscribed numbers if none given)
    In Docker: docker compose exec gateway npm run <command> */
 
 import QRCode from 'qrcode';
 import * as auth from './auth';
+import * as push from './push';
 import * as signal from './signal';
 import { maskNumber } from './log';
 
@@ -63,6 +66,43 @@ function link(deviceName: string): Promise<number> {
   });
 }
 
+/* Pushes a canned note (or an empty tickle with --empty) to every subscription, ignoring the idle gate, and prints what the push service answered. Endpoints are masked by push.sendTest. */
+function pushTest(args: string[]): Promise<number> {
+  let empty = false;
+  let encoding: push.Encoding | undefined;
+  let number = '';
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--empty') empty = true;
+    else if (a === '--encoding') {
+      const v = args[++i];
+      if (v !== 'aesgcm' && v !== 'aes128gcm') {
+        console.error('--encoding must be aesgcm or aes128gcm');
+        return Promise.resolve(1);
+      }
+      encoding = v;
+    } else number = a;
+  }
+  push.init();
+  const numbers = number ? [number] : push.subscribedNumbers();
+  if (!numbers.length) {
+    console.error('No push subscriptions. Open the app on the phone once so it registers.');
+    return Promise.resolve(1);
+  }
+  return Promise.all(numbers.map(function (n) {
+    return push.sendTest(n, empty, encoding).then(function (results) {
+      if (!results.length) console.log(maskNumber(n) + ': no subscriptions');
+      results.forEach(function (r) {
+        console.log(maskNumber(n) + '\t' + r.endpoint + '\t' +
+          (r.statusCode != null ? r.statusCode : '-') + (r.error ? '\t' + r.error : ''));
+      });
+      return results.some(function (r) { return !!r.error; });
+    });
+  })).then(function (failed) {
+    return failed.some(Boolean) ? 1 : 0;
+  });
+}
+
 function main(argv: string[]): number | Promise<number> {
   const cmd = argv[0];
   if (cmd === 'link') {
@@ -98,7 +138,10 @@ function main(argv: string[]): number | Promise<number> {
     console.log('Revoked device ' + id + '. It must pair again to reconnect.');
     return 0;
   }
-  console.error('Usage: cli.js link [name] | pair | devices | revoke <id>');
+  if (cmd === 'push-test') {
+    return pushTest(argv.slice(1));
+  }
+  console.error('Usage: cli.js link [name] | pair | devices | revoke <id> | push-test [number] [--empty] [--encoding aesgcm|aes128gcm]');
   return 1;
 }
 

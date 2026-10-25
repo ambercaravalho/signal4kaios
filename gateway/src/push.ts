@@ -87,13 +87,16 @@ export function unregister(endpoint: string): void {
   log.info('push: unregistered a subscription');
 }
 
-// KaiOS's push service (notification.kaiostech.com) is a fork of Mozilla's old autopush and has two hard rules:
-//   1. It only accepts the legacy 'aesgcm' content encoding (not web-push's default 'aes128gcm'), so we force it below.
+// KaiOS push services are forks of Mozilla's old autopush:
+//   1. The 2.5 service (push.kaiostech.com) only accepts the legacy 'aesgcm' content encoding (not web-push's default 'aes128gcm'), so we force it below; Gecko on 3.0+ decrypts both.
 //   2. An empty "tickle" does NOT reliably cold-wake a stopped ServiceWorker; a real VAPID-signed encrypted payload does. So when VAPID is configured we send the note as an aesgcm payload and the SW shows it directly. Without VAPID the push service only allows empty pushes (a generic notice).
+//   3. The 3.0+ service (notification.kaiostech.com) answers 200 with an empty body to every request, even for an unknown endpoint, and gives no sign of whether it delivered. A 200 here is not proof of delivery; the SW's wake counter (Settings → Debug log) is.
 const PUSH_TTL = 3600;
 
-function sendOptions(): webpush.RequestOptions {
-  return { TTL: PUSH_TTL, contentEncoding: 'aesgcm' };
+export type Encoding = 'aesgcm' | 'aes128gcm';
+
+function sendOptions(encoding: Encoding = 'aesgcm'): webpush.RequestOptions {
+  return { TTL: PUSH_TTL, contentEncoding: encoding };
 }
 
 /* Mask a push endpoint for logs/responses: host + the last 12 chars of the token (enough to compare against the device's current subscription, not enough to be a usable capability URL). */
@@ -112,11 +115,12 @@ function maskEndpoint(endpoint?: string): string {
 function sendTo(
   number: string,
   sub: unknown,
-  payload: string | undefined
+  payload: string | undefined,
+  encoding?: Encoding
 ): Promise<{ statusCode?: number; error?: string; endpoint?: string }> {
   const ep = (sub as { endpoint?: string }).endpoint;
   return webpush
-    .sendNotification(sub as webpush.PushSubscription, payload, sendOptions())
+    .sendNotification(sub as webpush.PushSubscription, payload, sendOptions(encoding))
     .then(function (res) {
       log.info('push: sent to ' + maskNumber(number) + ' ' + maskEndpoint(ep) +
         ' (' + res.statusCode + ')');
@@ -172,13 +176,19 @@ export function onIncoming(number: string, text: string): void {
   subs.forEach(function (sub) { sendTo(number, sub, payload); });
 }
 
-/* Manual test: push a canned note to every subscription for a number, ignoring the idle gate. Returns per-subscription results so a caller can see exactly what the push service reported. Pass empty=true to send a PAYLOADLESS push (a "tickle"): nothing to decrypt, so if it's delivered at all the SW's 'push' event must fire — a pure delivery/wake probe that isolates delivery failures from payload-decryption failures. */
+/* Manual test: push a canned note to every subscription for a number, ignoring the idle gate. Returns per-subscription results so a caller can see exactly what the push service reported. Pass empty=true to send a PAYLOADLESS push (a "tickle"): nothing to decrypt, so if it's delivered at all the SW's 'push' event must fire — a pure delivery/wake probe that isolates delivery failures from payload-decryption failures. encoding overrides the content encoding (default aesgcm) to probe what a push service accepts. */
 export function sendTest(
   number: string,
-  empty?: boolean
+  empty?: boolean,
+  encoding?: Encoding
 ): Promise<Array<{ statusCode?: number; error?: string; endpoint?: string }>> {
   const subs = buffer.subsFor(number);
   const note = { title: 'Signal', body: 'Test notification', convId: '', incoming: true };
   const payload = (!empty && vapidReady) ? JSON.stringify(note) : undefined;
-  return Promise.all(subs.map(function (sub) { return sendTo(number, sub, payload); }));
+  return Promise.all(subs.map(function (sub) { return sendTo(number, sub, payload, encoding); }));
+}
+
+/* Numbers that have at least one push subscription (for the operator CLI). */
+export function subscribedNumbers(): string[] {
+  return buffer.allNumbers().filter(function (n) { return buffer.subsFor(n).length > 0; });
 }
