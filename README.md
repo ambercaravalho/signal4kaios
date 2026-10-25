@@ -30,9 +30,31 @@ single install.
 
 ## Requirements
 
-- A **KaiOS 2.5 / 3.0 / 3.1 / 4.0** phone with the developer/debug menu enabled.
-- **Docker** (with Compose) to run the backend.
-- A desktop to package and sideload the app (WebIDE on 2.5, `appscmd` on 3.0+).
+- A **KaiOS 2.5 / 3.0 / 3.1 / 4.0** phone.
+- **Docker** (with Compose) on a computer or server you control, to run the
+  backend. **The app does nothing without it.**
+- To install: **OStore** on KaiOS 3.0+, or a desktop to sideload (WebIDE on
+  2.5, `appscmd` on 3.0+) with the phone's developer/debug menu enabled.
+
+## Install from OStore (KaiOS 3.0+)
+
+> **Set up the backend first** (steps 1 and 2 of the [Quickstart](#quickstart)).
+> The app can't send or receive anything until it can reach your gateway.
+
+Signal4KaiOS is listed in the community
+[OStore](https://github.com/Samenal-sys/Store) catalogue. You can also add this
+project's own source, which always carries the latest release: in OStore choose
+**Add source** and enter
+
+```text
+https://ambercaravalho.github.io/signal4kaios/
+```
+
+Install **Signal4KaiOS**, open it, and follow the on-screen setup. Use only one
+of the two sources on a given phone, or OStore may report a duplicate install.
+On **KaiOS 2.5**, sideload a ZIP from
+[Releases](https://github.com/ambercaravalho/signal4kaios/releases) instead (see
+[Getting started](docs/getting-started.md#on-kaios-25)).
 
 ## Quickstart
 
@@ -46,10 +68,12 @@ docker compose -f docker/docker-compose.yml up -d
 
 2. **Register or link** your Signal number on signal-cli-rest-api — a one-time
    step covered in [Getting started](docs/getting-started.md).
-3. **Install the app**: `sh app/scripts/package.sh`, then sideload it (WebIDE on
-   2.5, `appscmd` on 3.0/3.1/4.0).
-4. **Point it at the backend**: on first run, set **Server URL** to the gateway
-   (e.g. `http://<host>:8090`) and enter your Signal number.
+3. **Install the app**: from [OStore](#install-from-ostore-kaios-30) on 3.0+,
+   or `sh app/scripts/package.sh` and sideload it (WebIDE on 2.5, `appscmd` on
+   3.0/3.1/4.0).
+4. **Point it at the backend**: the first launch explains what's needed, then
+   asks for the **Server URL** of the gateway (e.g. `http://<host>:8090`) and
+   your Signal number.
 
 Full walkthrough: **[Getting started](docs/getting-started.md)**.
 
@@ -81,7 +105,8 @@ Full docs live in **[`docs/`](docs/README.md)**:
 - **[Gateway](docs/gateway.md)** — the Node/TS backend: HTTP proxy, buffered WS relay, background push.
 - **[Remote access](docs/remote-access.md)** — reverse proxy, auth modes, and the WebSocket caveat.
 - **[Architecture](docs/architecture.md)** — data flow, modules, IndexedDB, event shapes.
-- **[Development](docs/development.md)** — Gecko 48 constraints, cross-version support, packaging, adding a screen.
+- **[Development](docs/development.md)** — Gecko 48 constraints, cross-version support, packaging, releasing, adding a screen.
+- **[Store listing](docs/store-listing.md)** — how releases feed OStore, and notes for catalogue maintainers.
 
 Contributing (or pointing an AI agent at this repo)? Start with
 **[AGENTS.md](AGENTS.md)**.

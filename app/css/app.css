@@ -468,6 +468,39 @@ html, body {
   color: #6aa0ff;
 }
 
+/* Welcome / setup help pages (screens/welcome.js). */
+.welcome-text {
+  margin: 0;
+  padding: 8px 10px 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.welcome .qr-box {
+  padding: 6px 8px 0;
+}
+
+.welcome-qr {
+  width: 130px;
+  height: 130px;
+}
+
+.welcome-url {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+  text-align: center;
+  word-break: break-all;
+}
+
+.welcome-version {
+  padding: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: center;
+}
+
 .archived-row {
   color: var(--text-2);
   font-size: 14px;

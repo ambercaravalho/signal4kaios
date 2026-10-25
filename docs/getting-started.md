@@ -5,17 +5,18 @@ From nothing to a working Signal client on your phone, in three parts: the
 
 - [Requirements](#requirements)
 - [1. Run the backend](#1-run-the-backend)
-- [2. Install (sideload)](#2-install-sideload)
+- [2. Install](#2-install)
 - [3. First-run configuration](#3-first-run-configuration)
 - [Next steps](#next-steps)
 
 ## Requirements
 
 - A phone running **KaiOS 2.5** (Gecko 48), **3.0/3.1** (Gecko 84), or **4.0**
-  (Gecko 123) with the developer/debug menu enabled. One package installs on all
-  of them; only the install tool differs (see below).
+  (Gecko 123). One package installs on all of them; only the install method
+  differs (see below).
 - **Docker** (with Compose) to run the backend from [`docker/`](../docker).
-- A desktop with **ADB**, plus:
+- **On KaiOS 3.0+ with OStore**, nothing else. To sideload instead (and on
+  2.5), the phone's developer/debug menu enabled and a desktop with **ADB**, plus:
   - **KaiOS 2.5** — an old **Firefox (52–59)** for WebIDE.
   - **KaiOS 3.0/3.1/4.0** — the **`appscmd`** tool (WebIDE is gone) and a modern
     **Firefox** for `about:debugging`. On-device debugging must be enabled on the
@@ -43,9 +44,29 @@ should return JSON with the version and `"mode": "json-rpc"` (proxied through th
 gateway). The app's **Test connection** button hits the same endpoint. For
 running the gateway outside Docker, see [Gateway](gateway.md).
 
-## 2. Install (sideload)
+## 2. Install
 
-First, package the app:
+### From OStore (KaiOS 3.0, 3.1, and 4.0)
+
+The easiest route on 3.0+. Signal4KaiOS is in the community
+[OStore](https://github.com/Samenal-sys/Store) catalogue; this project also
+publishes its own source with every release. To use it, open OStore, choose
+**Add source**, and enter:
+
+```text
+https://ambercaravalho.github.io/signal4kaios/
+```
+
+Then install **Signal4KaiOS** and continue with
+[First-run configuration](#3-first-run-configuration). Stick to one source per
+phone: installing the same app from both can trigger a duplicate-install error.
+Updates arrive through OStore's **Check update**.
+
+### Sideload
+
+Prebuilt ZIPs are attached to each
+[GitHub Release](https://github.com/ambercaravalho/signal4kaios/releases) (unzip
+one and point WebIDE/`appscmd` at the folder). Or package from source:
 
 ```sh
 sh app/scripts/package.sh
@@ -55,7 +76,7 @@ This checks for Gecko-48-incompatible syntax, verifies both manifests
 (`manifest.webapp` for 2.5 and `manifest.webmanifest` for 3.0/3.1/4.0) and the
 ServiceWorker are present, and produces `dist/signal4kaios.zip`.
 
-### On KaiOS 2.5
+#### On KaiOS 2.5
 
 1. On the phone, enable debug mode by dialing `*#*#33284#*#*` (a bug icon
    appears in the status bar).
@@ -71,7 +92,7 @@ ServiceWorker are present, and produces `dist/signal4kaios.zip`.
 4. Choose **Open Packaged App**, select the **`app/`** folder, then **Install
    and Run**.
 
-### On KaiOS 3.0, 3.1, and 4.0
+#### On KaiOS 3.0, 3.1, and 4.0
 
 WebIDE no longer works — packaged apps install with **`appscmd`** over the
 adb-forwarded debugger socket. Download the binary for your desktop from
@@ -113,7 +134,9 @@ section of [`app/manifest.webmanifest`](../app/manifest.webmanifest) (3.0/3.1/4.
 
 ## 3. First-run configuration
 
-The first launch opens **Settings**. Fill in:
+The first launch shows a short welcome (what the backend is, and a QR code
+linking back to this guide; reopen it any time from **Settings → About & setup
+help**). Press **Set up** to open the connection settings, and fill in:
 
 - **Server URL** — the **gateway** address, e.g. `http://192.168.1.100:8090` (or
   your public `https://` address behind a reverse proxy).

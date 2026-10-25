@@ -1,0 +1,11 @@
+{
+  "categories": [
+    { "id": "utilities", "name": "Utilities" }
+  ],
+  "app": {
+    "folder": "Signal4KaiOS",
+    "name": "Signal4KaiOS",
+    "category": "utilities",
+    "description": "Requires your own self-hosted backend (signal-cli-rest-api + gateway, two Docker containers); setup guide at github.com/ambercaravalho/signal4kaios. Signal messenger for KaiOS: 1:1 and group chat, reactions, replies, media, disappearing messages, and background push, all keypad-driven."
+  }
+}

@@ -24,6 +24,8 @@ you're doing.
 - **[Development](development.md)** — Gecko 48 constraints, cross-version support
   (2.5 / 3.0 / 3.1 / 4.0), packaging, desktop dev, conventions, and adding a
   screen.
+- **[Store listing](store-listing.md)** — releases, the OStore source, and
+  catalogue-maintainer handoff.
 - **[AGENTS.md](../AGENTS.md)** — condensed rules for AI agents (and a fast
   orientation for humans).
 

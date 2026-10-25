@@ -186,6 +186,36 @@
     });
   }
 
+  /* Resolve the installed app version from the packaged manifest (3.0+ reads
+     manifest.webmanifest's b2g_features.version; 2.5 only has manifest.webapp).
+     Resolves '' if neither can be read. */
+  function readJson(path) {
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', path, true);
+      xhr.onload = function () {
+        try { resolve(JSON.parse(xhr.responseText)); } catch (e) { reject(e); }
+      };
+      xhr.onerror = function () { reject(new Error('read failed')); };
+      xhr.send();
+    });
+  }
+
+  var versionPromise = null;
+  function appVersion() {
+    if (versionPromise) return versionPromise;
+    versionPromise = readJson('/manifest.webmanifest').then(function (m) {
+      var v = m && m.b2g_features && m.b2g_features.version;
+      if (!v) throw new Error('no version');
+      return v;
+    })['catch'](function () {
+      return readJson('/manifest.webapp').then(function (m) {
+        return (m && m.version) || '';
+      });
+    })['catch'](function () { return ''; });
+    return versionPromise;
+  }
+
   /* ---- Text styling (bold/italic/etc.) ----
      Signal carries formatting as body ranges { start, length, style } in UTF-16
      units — which line up exactly with JS string indices, so no conversion is
@@ -343,6 +373,7 @@
     extractUrls: extractUrls,
     linkify: linkify,
     openUrl: openUrl,
+    appVersion: appVersion,
     parseStyledMarkdown: parseStyledMarkdown,
     renderStyledBody: renderStyledBody,
     emojify: emojify,

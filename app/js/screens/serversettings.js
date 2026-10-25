@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* Server & connection settings: the signal-cli-rest-api URL, your Signal
+  /* Server & connection settings: the gateway URL, your Signal
      number, and the connection auth mode (with its credentials), plus Save /
      Test. Split out of the main Settings menu so the everyday options stay
      uncluttered.
@@ -78,7 +78,7 @@
       }
 
       var urlInput = field(list, 'Server URL', cfg.serverUrl,
-        'http://192.168.1.100:4329');
+        'http://192.168.1.100:8090');
       var numInput = field(list, 'My Signal number', cfg.number, '+15551234567');
 
       var modeRow = action(list, 'Connection security', MODE_LABEL[mode]);
@@ -93,7 +93,7 @@
       list.appendChild(status);
 
       action(list, 'Save', 'Store settings and reconnect');
-      action(list, 'Test connection', 'Ping the signal-cli-rest-api server');
+      action(list, 'Test connection', 'Check the gateway is reachable');
 
       var nav = new App.Nav(el, { scrollEl: list });
 
@@ -202,7 +202,7 @@
         var url = urlInput.value.trim().replace(/\/+$/, '');
         var n = normalizedNumber();
         if (!/^https?:\/\//.test(url)) {
-          setStatus('Server URL must start with http://', 'bad');
+          setStatus('Server URL must start with http:// or https://', 'bad');
           return;
         }
         if (!/^\+\d{6,16}$/.test(n)) {
@@ -237,8 +237,31 @@
           var modeStr = info && info.mode ? ' (' + info.mode + ' mode)' : '';
           setStatus('Connected' + v + modeStr, 'ok');
         })['catch'](function (err) {
-          setStatus(err.message, 'bad');
+          setStatus(explainTestError(err), 'bad');
         });
+      }
+
+      // Turn a failed /v1/about probe into what the user should check. Never
+      // includes credentials: err.message only carries the HTTP status.
+      function explainTestError(err) {
+        var kind = err && err.kind;
+        var status = err && err.status;
+        if (kind === 'network' || kind === 'timeout') {
+          return (kind === 'timeout' ? 'No answer from the server. ' : 'Cannot reach the server. ') +
+            'Check the address and port (gateway default 8090), that the gateway ' +
+            'is running, and that the phone can reach it (same Wi-Fi, or an ' +
+            'https:// address from outside).';
+        }
+        if (status === 401 || status === 403) return err.message;
+        if (status === 404) {
+          return 'HTTP 404: the server answered but is not the gateway. Use the ' +
+            'gateway address with no extra path, e.g. http://192.168.1.100:8090.';
+        }
+        if (status >= 500) {
+          return 'HTTP ' + status + ': the gateway is up but signal-cli-rest-api ' +
+            'is not responding. Check the backend containers.';
+        }
+        return (err && err.message) || 'Connection failed';
       }
 
       function onAction(id) {
@@ -256,7 +279,7 @@
           // left key is the cohesive Back.
           App.softkeys.set(opts.firstRun ? '' : 'Back', 'Select', '');
           if (opts.firstRun) {
-            setStatus('Welcome! Enter your signal-cli-rest-api server URL and number.');
+            setStatus('Enter your gateway URL and Signal number.');
           } else if (opts.addAccount) {
             setStatus('Enter the server URL and number for the new account.');
           }

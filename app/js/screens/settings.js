@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* Main settings menu. The signal-cli-rest-api connection fields live in their
+  /* Main settings menu. The gateway connection fields live in their
      own screen (App.screens.serversettings); everything here is a menu action,
      a boolean toggle (checkbox), or a value selector. */
 
@@ -80,6 +80,13 @@
       action('Debug log');
       action('Clear local data', 'Deletes cached messages on this phone');
 
+      list.appendChild(App.util.sectionHeader('Help'));
+      var aboutRow = action('About & setup help', 'What the app needs to work');
+      App.util.appVersion().then(function (v) {
+        var hint = aboutRow.querySelector('.hint');
+        if (v && hint) hint.textContent = 'Version ' + v + ' \u00b7 backend setup';
+      });
+
       var status = App.util.el('div', 'status-line', '');
       list.appendChild(status);
 
@@ -157,6 +164,8 @@
             return;
           case 'Debug log':
             return App.router.push(App.screens.debuglog.create());
+          case 'About & setup help':
+            return App.router.push(App.screens.welcome.create());
           case 'Clear local data':
             App.dialog.confirm({
               title: 'Clear local data?',

@@ -38,12 +38,40 @@ for required in app/manifest.webapp app/manifest.webmanifest app/sw.js; do
   fi
 done
 
+# --- Version check ---------------------------------------------------------
+# Both manifests must carry the same version (OStore compares the 3.0+
+# b2g_features.version for updates). When RELEASE_TAG is set (CI), the tag must
+# be v<version>, optionally with a pre-release suffix (v1.2.0-rc1).
+manifest_version() {
+  sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -n 1
+}
+V_WEBAPP=$(manifest_version app/manifest.webapp)
+V_WEBMANIFEST=$(manifest_version app/manifest.webmanifest)
+if [ -z "$V_WEBAPP" ] || [ "$V_WEBAPP" != "$V_WEBMANIFEST" ]; then
+  echo "FAIL: version mismatch: manifest.webapp=$V_WEBAPP manifest.webmanifest=$V_WEBMANIFEST" >&2
+  exit 1
+fi
+VERSION="$V_WEBAPP"
+if [ -n "$RELEASE_TAG" ]; then
+  case "$RELEASE_TAG" in
+    "v$VERSION"|"v$VERSION"-*) ;;
+    *)
+      echo "FAIL: tag $RELEASE_TAG does not match manifest version $VERSION" >&2
+      exit 1
+      ;;
+  esac
+  ASSET_VERSION="${RELEASE_TAG#v}"
+else
+  ASSET_VERSION="$VERSION"
+fi
+
 # --- Zip -------------------------------------------------------------------
 mkdir -p dist
-rm -f dist/signal4kaios.zip
+rm -f dist/signal4kaios.zip dist/signal4kaios-*.zip
 # Exclude app/scripts (build/deploy helpers) so they don't ship inside the app.
 (cd app && zip -qr ../dist/signal4kaios.zip . -x '*.DS_Store' -x 'scripts/*')
-echo "OK: dist/signal4kaios.zip"
+cp dist/signal4kaios.zip "dist/signal4kaios-$ASSET_VERSION.zip"
+echo "OK: dist/signal4kaios.zip and dist/signal4kaios-$ASSET_VERSION.zip (version $VERSION)"
 echo
 echo "Install on KaiOS 2.5:         WebIDE (old Firefox) -> Open Packaged App -> app/"
 echo "Install on KaiOS 3.0/3.1/4.0: sh app/scripts/install-kaios3plus.sh   (needs adb + appscmd)"

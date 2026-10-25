@@ -98,16 +98,23 @@
             if (parsed && parsed.error) msg += ': ' + parsed.error;
           } catch (e) { /* non-JSON error body */ }
           App.util.dbg('http fail ' + method + ' ' + path + ' -> ' + msg);
-          reject(new Error(msg));
+          var httpErr = new Error(msg);
+          httpErr.kind = 'http';
+          httpErr.status = xhr.status;
+          reject(httpErr);
         }
       };
       xhr.onerror = function () {
         App.util.dbg('http error ' + method + ' ' + path);
-        reject(new Error('Network error (is the server reachable?)'));
+        var netErr = new Error('Network error (is the server reachable?)');
+        netErr.kind = 'network';
+        reject(netErr);
       };
       xhr.ontimeout = function () {
         App.util.dbg('http timeout ' + method + ' ' + path);
-        reject(new Error('Request timed out'));
+        var timeoutErr = new Error('Request timed out');
+        timeoutErr.kind = 'timeout';
+        reject(timeoutErr);
       };
 
       if (body != null) {

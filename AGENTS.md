@@ -149,6 +149,18 @@ Screens are objects from a `create()` factory, registered on
 - Simplest reference: [`screens/menu.js`](app/js/screens/menu.js). Add the new
   file's `<script>` tag to `index.html`.
 
+## Releases and the store
+
+- The app version lives in **both** manifests (`version` in `manifest.webapp`,
+ `b2g_features.version` in `manifest.webmanifest`); keep them equal —
+ `package.sh` fails otherwise. Never change `id` / `origin` (`signal4kaios`);
+ installed phones and OStore update URLs depend on them.
+- Releases are cut by pushing a `v<version>` tag
+ ([`release.yml`](.github/workflows/release.yml)), which publishes the ZIP and
+ rebuilds the OStore source on GitHub Pages. Listing text is in
+ [`store/catalog.json`](store/catalog.json). See
+ [`docs/store-listing.md`](docs/store-listing.md).
+
 ## Definition of done
 
 - Run `sh app/scripts/package.sh` — it must pass the Gecko-48 gate and produce

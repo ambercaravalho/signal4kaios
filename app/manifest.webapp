@@ -1,5 +1,5 @@
 {
-  "version": "0.4.0",
+  "version": "1.0.0",
   "name": "Signal4KaiOS",
   "description": "Signal messenger client for KaiOS, powered by signal-cli-rest-api",
   "type": "privileged",
@@ -14,7 +14,7 @@
   },
   "permissions": {
     "systemXHR": {
-      "description": "Communicate with the signal-cli-rest-api server on the local network"
+      "description": "Connect to your self-hosted Signal gateway server"
     },
     "desktop-notification": {
       "description": "Show notifications for new Signal messages"

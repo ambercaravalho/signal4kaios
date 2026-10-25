@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Package and publish release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      asset: ${{ steps.pkg.outputs.asset }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package (Gecko-48 gate + version check)
+        id: pkg
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          sh app/scripts/package.sh
+          echo "asset=signal4kaios-${RELEASE_TAG#v}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          ASSET: ${{ steps.pkg.outputs.asset }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat > notes.md <<EOF
+          ## Install
+
+          - **KaiOS 3.0 / 3.1 / 4.0:** in OStore, add the source \`https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/\` and install Signal4KaiOS.
+          - **KaiOS 2.5:** sideload \`$ASSET\` (unzipped) with WebIDE; see [Getting started](https://github.com/$REPO/blob/main/docs/getting-started.md).
+
+          Signal4KaiOS needs your own self-hosted backend (signal-cli-rest-api + gateway). Set it up first: [Getting started](https://github.com/$REPO/blob/main/docs/getting-started.md).
+          EOF
+          PRERELEASE=""
+          case "$TAG" in *-*) PRERELEASE="--prerelease" ;; esac
+          gh release create "$TAG" "dist/$ASSET" \
+            --title "Signal4KaiOS $TAG" \
+            --notes-file notes.md \
+            --generate-notes \
+            $PRERELEASE
+
+  store-source:
+    name: Publish OStore source (GitHub Pages)
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Download from the published release so the metadata only goes live once
+      # the package is reachable at its advertised URL.
+      - name: Download released package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          ASSET: ${{ needs.release.outputs.asset }}
+        run: |
+          mkdir -p dist
+          gh release download "$TAG" --pattern "$ASSET" --dir dist
+
+      - name: Build OStore source
+        env:
+          TAG: ${{ github.ref_name }}
+          ASSET: ${{ needs.release.outputs.asset }}
+          REPO: ${{ github.repository }}
+        run: |
+          sh scripts/build-store-source.sh "dist/$ASSET" \
+            "https://github.com/$REPO/releases/download/$TAG/$ASSET" _site
+
+      - name: Attach store-entry.json to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" dist/store-entry.json --clobber
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4

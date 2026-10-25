@@ -14,7 +14,7 @@
     { "src": "/assets/icons/kaios_112.png", "type": "image/png", "sizes": "112x112" }
   ],
   "b2g_features": {
-    "version": "0.5.0",
+    "version": "1.0.0",
     "type": "privileged",
     "origin": "signal4kaios",
     "subtitle": "Signal client",
@@ -25,7 +25,7 @@
     "cursor": false,
     "permissions": {
       "systemXHR": {
-        "description": "Communicate with the signal-cli-rest-api server on the local network"
+        "description": "Connect to your self-hosted Signal gateway server"
       },
       "desktop-notification": {
         "description": "Show notifications for new Signal messages"

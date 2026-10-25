@@ -90,8 +90,27 @@ library in [`app/vendor/`](../app/vendor) to keep prebuilt files (e.g. the `jsQR
 decoder) out of the gate — they're still zipped and loaded via `<script>`. Keep
 your own code in `app/js` so it stays gated.
 
+It also checks that `manifest.webapp`'s `version` matches
+`b2g_features.version` in `manifest.webmanifest`, and writes a versioned copy,
+`dist/signal4kaios-<version>.zip`, next to the plain one.
+
+### Releasing
+
+Releases are tag-driven
+([`.github/workflows/release.yml`](../.github/workflows/release.yml)):
+
+1. Bump `version` in **both** manifests to the same new value (it must be higher
+   than the last release, or OStore won't offer the update). Never change the
+   app `id` / `origin` — installed phones are tied to them.
+2. Commit, then tag and push: `git tag v1.2.0 && git push origin v1.2.0`
+   (pre-releases may use a suffix, e.g. `v1.2.0-rc1`).
+3. CI runs the packaging gate with `RELEASE_TAG` set (it fails if the tag doesn't
+   match the manifests), publishes a GitHub Release with
+   `signal4kaios-<version>.zip` and `store-entry.json`, then rebuilds the OStore
+   source on GitHub Pages. See [Store listing](store-listing.md).
+
 Install/sideload steps are in
-[Getting started → Install](getting-started.md#2-install-sideload). Re-sideload
+[Getting started → Install](getting-started.md#2-install). Re-sideload
 after any change to manifest permissions (`manifest.webapp` on 2.5,
 `manifest.webmanifest` on 3.0+).
 
