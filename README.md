@@ -25,11 +25,10 @@ The phone app is only a client. Your Signal account lives on [signal-cli-rest-ap
 
    ```sh
    git clone --depth 1 https://github.com/ambercaravalho/signal4kaios.git && cd signal4kaios
-   cp docker/.env.example docker/.env
    docker compose -f docker/docker-compose.yml up -d
    ```
 
-2. **Link your Signal account** to it as a linked device, like Signal Desktop.
+2. **Link your Signal account** to it as a linked device, like Signal Desktop: run `docker compose -f docker/docker-compose.yml exec gateway npm run link` and scan the QR code it shows from Signal's **Linked devices** screen.
 3. **Install the app and pair it.** Get the ZIP from [Releases](https://github.com/ambercaravalho/signal4kaios/releases). On KaiOS 3.0+, copy it to the phone and install it from OStore's **Manual Install** tab (or sideload with `appscmd`); on 2.5, sideload it with WebIDE (see [Setup](docs/setup.md#3-install-the-app)). Open the app and enter the gateway's address plus the pairing code it prints (`docker compose -f docker/docker-compose.yml logs gateway`).
 
 The full walkthrough, including use away from home, is in **[Setup](docs/setup.md)**.

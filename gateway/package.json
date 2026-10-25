@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "link": "node dist/cli.js link",
     "pair": "node dist/cli.js pair",
     "devices": "node dist/cli.js devices",
     "revoke": "node dist/cli.js revoke",
@@ -20,12 +21,14 @@
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
+    "qrcode": "^1.5.4",
     "web-push": "^3.6.7",
     "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.5",
+    "@types/qrcode": "^1.5.6",
     "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.2",
     "typescript": "^7.0.2"

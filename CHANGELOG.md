@@ -2,11 +2,25 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
-## Unreleased
+## v1.1.2
+
+Setting up the backend takes fewer steps: linking your Signal account is one command, and push notifications need no configuration. The phone app is unchanged apart from its version number.
+
+### Gateway
+
+- Linking your Signal account is one command: `docker compose -f docker/docker-compose.yml exec gateway npm run link` shows a QR code in the terminal and waits until you've scanned it. You no longer edit `docker-compose.yml` to open a port or visit a URL in a browser.
+- The gateway generates its push (VAPID) keys on first start and keeps them in its data volume, so notifications show the message text without any setup and `docker/.env` is optional. Keys you've already set in `docker/.env` keep working.
+- Pairing keeps finding your Signal number after the next signal-cli-rest-api release, which changes how it lists accounts.
 
 ### Removed
 
 - The OStore source at `ambercaravalho.github.io/signal4kaios`. Current OStore builds can't add custom sources, so it couldn't be used. On KaiOS 3.0+, install and update by copying the ZIP from Releases to the phone and using OStore's **Manual Install** tab → **Install app from sdcard** (see [Setup](https://github.com/ambercaravalho/signal4kaios/blob/main/docs/setup.md#3-install-the-app)).
+
+### Upgrading
+
+- In your checkout: `git pull`, then `docker compose -f docker/docker-compose.yml pull` and `docker compose -f docker/docker-compose.yml up -d`. Your linked Signal account and paired phones carry over.
+- If you published signal-cli-rest-api's port for linking, `git pull` removes it from `docker/docker-compose.yml`; if you have local edits there, delete the `ports` lines under `signal-cli-rest-api` yourself.
+- If you never set VAPID keys, open the app once after upgrading so it picks up the gateway's new keys; notifications then include the message text.
 
 ## v1.1.1
 

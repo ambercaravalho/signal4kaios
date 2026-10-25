@@ -151,6 +151,7 @@ sequenceDiagram
 - **Device tokens** are 32 random bytes (hex). Only SHA-256 hashes of codes and tokens are stored (`devices`, `pairing_codes` tables). Tokens don't expire; `npm run revoke <id>` or `POST /v1/pair/revoke` removes the device and its push subscriptions, and its open sockets close within a minute.
 - **WebSocket auth:** browsers can't set headers on a WebSocket, so the app offers subprotocols `['s4k.v1', 's4k.auth.<token>']`. The gateway answers `s4k.v1` (never echoing the token). A bad token gets the upgrade accepted and then closed with **4401**, which the app treats as "unpaired" rather than "offline".
 - The operator CLI ([`cli.ts`](../gateway/src/cli.ts)) shares the SQLite file (WAL mode) with the running server.
+- **Account linking:** `npm run link [name]` calls signal-cli's `GET /v1/qrcodelink/raw` over the internal network ([`signal.ts`](../gateway/src/signal.ts)), draws the `sgnl://linkdevice` URI as a terminal QR code, and polls `/v1/accounts` until a new number appears (3-minute limit). signal-cli's port is never published. `/v1/accounts` is parsed in both its `["+1…"]` (≤ 0.101) and `[{ number, aci }]` shapes; numberless accounts are skipped.
 
 ### HTTP surface
 
@@ -159,7 +160,7 @@ sequenceDiagram
 | `GET /healthz` | none | `{ ok, gateway: 'signal4kaios' }`; the app's reachability probe |
 | `POST /v1/pair` | none | `{ code, name }` → `{ token, deviceId, numbers }`; 403 bad code, 429 throttled |
 | `POST /v1/pair/revoke` | token | Unpair the calling device |
-| `GET /v1/push/vapid` | token | `{ publicKey }` (empty if no VAPID) |
+| `GET /v1/push/vapid` | token | `{ publicKey }` (empty only if VAPID setup failed) |
 | `POST /v1/push/register` | token | `{ number, subscription }`, tied to the device |
 | `POST /v1/push/unregister` | token | `{ endpoint }` |
 | `POST /v1/push/test` | token | `{ number, empty? }`: push a test note, return per-subscription status |
@@ -180,7 +181,7 @@ The app ingests `backlog` silently (no notification), persists the cursor from e
 
 On boot the app fetches the VAPID key, subscribes, and registers; it caches the gateway URL, number, VAPID key, and device token in Cache Storage so `sw.js` can re-register a rotated subscription while closed. On 3.0+ it also calls `systemMessageManager.subscribe` for `notification` and `alarm`.
 
-KaiOS's push service (`notification.kaiostech.com`) only accepts **`aesgcm`** encoding and only delivers a **payload** when VAPID-signed. With VAPID the gateway sends the note as an encrypted payload; without it, an empty push shows a generic "New message". With `PUSH_WHEN_IDLE_ONLY=true` (default), devices with the app open are skipped. Debug with the gateway log (`push: sent … (201)`) or `POST /v1/push/test`.
+KaiOS's push service (`notification.kaiostech.com`) only accepts **`aesgcm`** encoding and only delivers a **payload** when VAPID-signed. With VAPID the gateway sends the note as an encrypted payload; without it, an empty push shows a generic "New message". VAPID keys come from `VAPID_PUBLIC` / `VAPID_PRIVATE` if both are set; otherwise the gateway generates a pair on first start and stores it in the `settings` table, so it survives restarts and image updates. A changed key makes the app re-subscribe on its next launch. With `PUSH_WHEN_IDLE_ONLY=true` (default), devices with the app open are skipped. Debug with the gateway log (`push: sent … (201)`) or `POST /v1/push/test`.
 
 ### Configuration
 
@@ -188,10 +189,10 @@ KaiOS's push service (`notification.kaiostech.com`) only accepts **`aesgcm`** en
 |---|---|---|
 | `PORT` | `8090` | Listen port |
 | `SIGNAL_CLI_URL` | `http://127.0.0.1:8080` | signal-cli-rest-api base URL |
-| `DB_PATH` | `./data/gateway.db` | SQLite: buffer, subscriptions, devices, codes |
+| `DB_PATH` | `./data/gateway.db` | SQLite: buffer, subscriptions, devices, codes, generated VAPID keys |
 | `RETENTION_PER_NUMBER` | `500` | Frames buffered per number |
 | `PUSH_WHEN_IDLE_ONLY` | `true` | Skip push for devices with the app open |
-| `VAPID_PUBLIC` / `VAPID_PRIVATE` / `VAPID_SUBJECT` | empty / empty / `mailto:admin@example.com` | VAPID keys (`npx web-push generate-vapid-keys`) |
+| `VAPID_PUBLIC` / `VAPID_PRIVATE` / `VAPID_SUBJECT` | generated / generated / `mailto:admin@example.com` | Optional VAPID keys (`npx web-push generate-vapid-keys`); generated and stored when unset |
 
 ### Security notes
 
@@ -208,9 +209,10 @@ KaiOS's push service (`notification.kaiostech.com`) only accepts **`aesgcm`** en
 cd gateway
 npm install
 npm run build      # type-check + compile to dist/
-npm test           # auth tests (node:test)
+npm test           # unit tests (node:test)
 SIGNAL_CLI_URL=http://127.0.0.1:8080 npm start
-npm run pair       # in another shell: issue a pairing code
+npm run link       # in another shell: link a Signal account (same SIGNAL_CLI_URL)
+npm run pair       # issue a pairing code
 ```
 
 To run your local gateway changes in Docker instead of the published image, add the build override from the repo root: `docker compose -f docker/docker-compose.yml -f docker/docker-compose.build.yml up -d --build`. It tags the result `signal4kaios-gateway:local`, so `docker compose pull` won't replace it.

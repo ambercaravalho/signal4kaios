@@ -16,11 +16,10 @@ The backend is two containers: **signal-cli-rest-api**, which holds your Signal 
 ```sh
 git clone --depth 1 https://github.com/ambercaravalho/signal4kaios.git
 cd signal4kaios
-cp docker/.env.example docker/.env
 docker compose -f docker/docker-compose.yml up -d
 ```
 
-Run the `docker compose` commands in this guide from the `signal4kaios` folder. The gateway listens on port **8090**. For notifications with the message text (not just "New message"), set a VAPID key pair in `docker/.env` before starting: generate one with `npx web-push generate-vapid-keys`.
+Run the `docker compose` commands in this guide from the `signal4kaios` folder. The gateway listens on port **8090**. No configuration is needed: the gateway generates its push keys on first start and keeps them in its data volume. To change a default, copy `docker/.env.example` to `docker/.env` and edit it.
 
 To update later, pull the repo and the new images, then recreate the containers:
 
@@ -34,10 +33,11 @@ docker compose -f docker/docker-compose.yml up -d
 
 Link the backend to your Signal account as a linked device, the same way you'd add Signal Desktop. This is a one-time step:
 
-1. In `docker/docker-compose.yml`, uncomment the `ports` lines under `signal-cli-rest-api` (they publish its API on `localhost` only) and run `docker compose -f docker/docker-compose.yml up -d` again.
-2. On the same computer, open `http://localhost:8080/v1/qrcodelink?device_name=signal4kaios`.
-3. In Signal on your main phone, go to **Settings → Linked devices → Link a new device** and scan the QR code.
-4. Comment the `ports` lines out again and re-run `up -d`.
+```sh
+docker compose -f docker/docker-compose.yml exec gateway npm run link
+```
+
+A QR code appears in the terminal. In Signal on your main phone, go to **Settings → Linked devices → Link a new device** and scan it. The command waits until the link finishes and prints the linked number. If the QR code is hard to scan, make the terminal window larger or its font smaller.
 
 To register a number directly instead of linking, see [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api).
 
@@ -101,6 +101,7 @@ Start with **Settings → Debug log** on the phone: it records network errors, W
 - **"Paired, but no Signal account is linked."** Finish [step 2](#2-link-your-signal-account), then press **Pair** again; no new code is needed.
 - **"HTTP 502" or the gateway is up but nothing loads.** signal-cli-rest-api isn't responding; check its container log.
 - **The app went back to the pairing screen.** The gateway no longer recognizes this phone: it was revoked, or the gateway's data volume was reset. Pair again with a new code.
-- **Notifications say only "New message".** Set VAPID keys (see [step 1](#1-start-the-backend)) and restart the gateway.
+- **`npm run link` says "No new account showed up".** The QR code expired before it was scanned, or the scan failed on the phone. Run the command again and scan the new code.
+- **Notifications say only "New message".** The gateway couldn't set up its push keys; check its log for `push:` errors. If you set `VAPID_PUBLIC` / `VAPID_PRIVATE` in `docker/.env`, set both or neither.
 - **Live messages don't arrive through a reverse proxy.** The proxy isn't passing WebSocket upgrades on `/v1/receive/...`.
 - **Old messages are missing.** Expected: history only exists from when you started using the app, and the gateway replays at most the last 500 messages you missed while offline.

@@ -1,8 +1,11 @@
 # The gateway is the only service exposed to the app; signal-cli-rest-api sits on an internal-only network the app never reaches. Both run from published images; nothing is built locally. From the repo root:
 #
-#   cp docker/.env.example docker/.env   # edit as needed
 #   docker compose -f docker/docker-compose.yml up -d
 #   docker compose -f docker/docker-compose.yml pull   # update later (then up -d again)
+#   cp docker/.env.example docker/.env   # optional: only to override defaults
+#
+# Link your Signal account once (shows a QR code to scan in Signal -> Linked devices):
+#   docker compose -f docker/docker-compose.yml exec gateway npm run link
 #
 # Pairing: on first start the gateway prints a pairing code to enter in the app.
 #   docker compose -f docker/docker-compose.yml logs gateway            # show it
@@ -23,9 +26,7 @@ services:
       - signal-cli-config:/home/.local/share/signal-cli
     networks:
       - internal
-    # No ports published: only the gateway can reach it. To link your Signal account once, uncomment this (localhost only), open http://localhost:8080/v1/qrcodelink?device_name=signal4kaios, scan it in Signal -> Linked devices, then comment it out again.
-    # ports:
-    #   - "127.0.0.1:8080:8080"
+    # No ports published: only the gateway can reach it (linking goes through `npm run link` in the gateway).
     restart: unless-stopped
 
   gateway:
@@ -38,7 +39,7 @@ services:
       - DB_PATH=/app/data/gateway.db
       - RETENTION_PER_NUMBER=500
       - PUSH_WHEN_IDLE_ONLY=true
-      # Generate with: npx web-push generate-vapid-keys
+      # Optional: generated on first start and saved in gateway-data if left empty.
       - VAPID_PUBLIC=${VAPID_PUBLIC:-}
       - VAPID_PRIVATE=${VAPID_PRIVATE:-}
       - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@example.com}

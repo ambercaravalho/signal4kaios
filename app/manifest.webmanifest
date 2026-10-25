@@ -14,7 +14,7 @@
     { "src": "/assets/icons/kaios_112.png", "type": "image/png", "sizes": "112x112" }
   ],
   "b2g_features": {
-    "version": "1.1.1",
+    "version": "1.1.2",
     "type": "privileged",
     "origin": "signal4kaios",
     "subtitle": "Signal client",

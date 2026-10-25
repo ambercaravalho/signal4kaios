@@ -9,6 +9,7 @@ import * as proxy from './proxy';
 import * as wsserver from './wsserver';
 import * as upstream from './upstream';
 import * as push from './push';
+import * as signal from './signal';
 
 const MAX_BODY_BYTES = 1024 * 1024; // pairing and push bodies are tiny
 
@@ -54,11 +55,7 @@ function readJson(req: http.IncomingMessage): Promise<any> {
 
 /* The Signal numbers registered/linked on signal-cli, for the pairing reply. */
 function signalAccounts(): Promise<string[]> {
-  return fetch(config.signalCliUrl + '/v1/accounts')
-    .then(function (r) { return r.ok ? r.json() : []; })
-    .then(function (list: unknown) {
-      return Array.isArray(list) ? list.filter(function (n) { return typeof n === 'string'; }) : [];
-    })
+  return signal.listAccounts()
     ['catch'](function (e: unknown) {
       log.error('pair: could not list signal-cli accounts', e);
       return [] as string[];

@@ -2,6 +2,7 @@
 
 import webpush from 'web-push';
 import { config } from './config';
+import { getSetting, setSetting } from './db';
 import { log, maskNumber } from './log';
 import * as buffer from './buffer';
 import * as clients from './clients';
@@ -10,23 +11,65 @@ import { toNote } from './parse';
 
 // Whether VAPID is configured. KaiOS only delivers a *payload* push when it is VAPID-signed; without VAPID it allows empty "tickles" only.
 let vapidReady = false;
+let activePublicKey = '';
+
+const VAPID_SETTING = 'vapid_keys';
+
+export interface VapidKeys {
+  publicKey: string;
+  privateKey: string;
+  source: 'env' | 'stored' | 'generated';
+}
+
+/* Keys from VAPID_PUBLIC/VAPID_PRIVATE win; otherwise reuse the pair stored in the gateway DB, generating and storing one on first start. Keys must stay stable: the app's push subscriptions are bound to the public key. */
+export function resolveVapidKeys(
+  envPublic: string = config.vapidPublic,
+  envPrivate: string = config.vapidPrivate
+): VapidKeys {
+  if (envPublic && envPrivate) {
+    return { publicKey: envPublic, privateKey: envPrivate, source: 'env' };
+  }
+  const raw = getSetting(VAPID_SETTING);
+  if (raw) {
+    try {
+      const k = JSON.parse(raw) as { publicKey?: unknown; privateKey?: unknown };
+      if (typeof k.publicKey === 'string' && typeof k.privateKey === 'string') {
+        return { publicKey: k.publicKey, privateKey: k.privateKey, source: 'stored' };
+      }
+    } catch {
+      // Unreadable value: replace it with a fresh pair below.
+    }
+  }
+  const gen = webpush.generateVAPIDKeys();
+  setSetting(VAPID_SETTING, JSON.stringify({ publicKey: gen.publicKey, privateKey: gen.privateKey }));
+  return { publicKey: gen.publicKey, privateKey: gen.privateKey, source: 'generated' };
+}
 
 export function init(): void {
-  if (config.vapidPublic && config.vapidPrivate) {
-    try {
-      webpush.setVapidDetails(config.vapidSubject, config.vapidPublic, config.vapidPrivate);
-      vapidReady = true;
-      log.info('push: VAPID configured');
-    } catch (e) {
-      log.error('push: invalid VAPID keys', e);
-    }
-  } else {
-    log.info('push: no VAPID keys (empty tickles only — set VAPID for payloads)');
+  if (!!config.vapidPublic !== !!config.vapidPrivate) {
+    log.warn('push: only one of VAPID_PUBLIC / VAPID_PRIVATE is set; ignoring both');
+  }
+  let keys: VapidKeys;
+  try {
+    keys = resolveVapidKeys();
+  } catch (e) {
+    log.error('push: could not load or generate VAPID keys (empty tickles only)', e);
+    return;
+  }
+  try {
+    webpush.setVapidDetails(config.vapidSubject, keys.publicKey, keys.privateKey);
+    vapidReady = true;
+    activePublicKey = keys.publicKey;
+    log.info(keys.source === 'env' ? 'push: using VAPID keys from the environment'
+      : keys.source === 'stored' ? 'push: using saved VAPID keys'
+        : 'push: generated and saved VAPID keys');
+  } catch (e) {
+    log.error('push: invalid VAPID keys (empty tickles only)', e);
   }
 }
 
 export function vapidPublicKey(): string {
-  return config.vapidPublic || '';
+  return activePublicKey;
 }
 
 /* Register (or refresh) a subscription for a number and make sure we are buffering that number so closed-app pushes can be produced. */
