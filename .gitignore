@@ -15,5 +15,5 @@ data/
 .env.test.local
 .env.production.local
 
-# OStore source build output (scripts/build-store-source.sh)
+# OStore source build output (store/build-store-source.sh)
 _site/

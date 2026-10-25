@@ -87,7 +87,7 @@ jobs:
           ASSET: ${{ needs.release.outputs.asset }}
           REPO: ${{ github.repository }}
         run: |
-          sh scripts/build-store-source.sh "dist/$ASSET" \
+          sh store/build-store-source.sh "dist/$ASSET" \
             "https://github.com/$REPO/releases/download/$TAG/$ASSET" _site
 
       - name: Attach store-entry.json to the release

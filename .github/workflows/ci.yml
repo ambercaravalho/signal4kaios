@@ -17,7 +17,7 @@ jobs:
       - run: sh app/scripts/package.sh
       - name: Store source builds
         run: |
-          sh scripts/build-store-source.sh dist/signal4kaios.zip \
+          sh store/build-store-source.sh dist/signal4kaios.zip \
             https://example.invalid/signal4kaios.zip /tmp/site
 
   gateway:

@@ -2,7 +2,7 @@
 # Build the OStore source (webapps.json + Apps-directory/) for a released package.
 #
 # Usage:
-#   sh scripts/build-store-source.sh <zip> <package_url> [out_dir]
+#   sh store/build-store-source.sh <zip> <package_url> [out_dir]
 #
 #   <zip>          the packaged app, e.g. dist/signal4kaios-1.2.0.zip
 #   <package_url>  the public HTTPS URL of that ZIP (the GitHub Release asset)
@@ -23,7 +23,7 @@ PACKAGE_URL="$2"
 OUT="${3:-_site}"
 
 if [ -z "$ZIP" ] || [ -z "$PACKAGE_URL" ]; then
-  echo 'Usage: sh scripts/build-store-source.sh <zip> <package_url> [out_dir]' >&2
+  echo 'Usage: sh store/build-store-source.sh <zip> <package_url> [out_dir]' >&2
   exit 1
 fi
 if [ ! -f "$ZIP" ]; then

@@ -239,7 +239,7 @@ Runs the Gecko 48 gate on `app/js` and `app/css`, checks that both manifests hav
 3. Commit, then `git tag v1.2.0 && git push origin v1.2.0` (pre-releases: `v1.2.0-rc1`; these also update the store source).
 4. CI packages with `RELEASE_TAG` set, publishes a GitHub Release titled with the tag, carrying the changelog section, install instructions, the ZIP, and `store-entry.json`, then rebuilds the OStore source on GitHub Pages at `https://ambercaravalho.github.io/signal4kaios/`.
 
-[`scripts/build-store-source.sh`](../scripts/build-store-source.sh) generates the source (`webapps.json`, `Apps-directory/Signal4KaiOS/{manifest,update}.webmanifest`) from [`store/catalog.json`](../store/catalog.json), which holds the listing text.
+[`store/build-store-source.sh`](../store/build-store-source.sh) generates the source (`webapps.json`, `Apps-directory/Signal4KaiOS/{manifest,update}.webmanifest`) from [`store/catalog.json`](../store/catalog.json), which holds the listing text.
 
 **For the community catalogue** ([Samenal-sys/Store](https://github.com/Samenal-sys/Store)): each release's `store-entry.json` is the complete `webapps.json` app entry (`package_url`, `sha256`, …). The maintainer also updates `Apps-directory/Signal4KaiOS/update.webmanifest` (`version`, `package_path`, exact `packaged_size` / `size`, `b2g_features`), which can be copied from our Pages source. The folder name and update path must stay stable, since KaiOS records that URL at install. One source per phone: installs from the two sources record different update URLs.
 
