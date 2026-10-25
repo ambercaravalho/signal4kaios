@@ -1,13 +1,17 @@
-# The gateway is the only service exposed to the app; signal-cli-rest-api sits on an internal-only network the app never reaches.
+# The gateway is the only service exposed to the app; signal-cli-rest-api sits on an internal-only network the app never reaches. Both run from published images; nothing is built locally. From the repo root:
 #
 #   cp docker/.env.example docker/.env   # edit as needed
 #   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml pull   # update later (then up -d again)
 #
 # Pairing: on first start the gateway prints a pairing code to enter in the app.
 #   docker compose -f docker/docker-compose.yml logs gateway            # show it
 #   docker compose -f docker/docker-compose.yml exec gateway npm run pair     # new code
 #   docker compose -f docker/docker-compose.yml exec gateway npm run devices  # list phones
 #   docker compose -f docker/docker-compose.yml exec gateway npm run revoke 3 # unpair one
+#
+# To build the gateway from this checkout instead of pulling it, add the build override:
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.build.yml up -d --build
 
 services:
   signal-cli-rest-api:
@@ -25,10 +29,7 @@ services:
     restart: unless-stopped
 
   gateway:
-    build:
-      # Context is the repo root so the image can copy from gateway/.
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/ambercaravalho/signal4kaios-gateway:latest
     depends_on:
       - signal-cli-rest-api
     environment:

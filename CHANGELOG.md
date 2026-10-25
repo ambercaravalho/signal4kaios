@@ -2,6 +2,19 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v1.1.1
+
+The backend is easier to run: the gateway now ships as a prebuilt image. The phone app is unchanged.
+
+### Gateway
+
+- The gateway is now a prebuilt image, `ghcr.io/ambercaravalho/signal4kaios-gateway`, for x86-64 and 64-bit ARM (e.g. Raspberry Pi). `docker compose up` pulls it instead of building it, so starting and updating the backend no longer needs a compiler or a long local build (see [Setup](https://github.com/ambercaravalho/signal4kaios/blob/main/docs/setup.md)).
+- The gateway runs on Node 26, with its dependencies updated.
+
+### Upgrading
+
+- In your checkout: `git pull`, then `docker compose -f docker/docker-compose.yml pull` and `docker compose -f docker/docker-compose.yml up -d`. Your linked Signal account and paired phones carry over.
+
 ## v1.1.0
 
 Pairing replaces reverse-proxy authentication. Setting up a phone is now two fields: the gateway's address and a one-time code.

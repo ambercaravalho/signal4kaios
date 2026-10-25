@@ -18,7 +18,7 @@ jobs:
     outputs:
       asset: ${{ steps.pkg.outputs.asset }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Package (Gecko-48 gate + version check)
         id: pkg
@@ -69,7 +69,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Download from the published release so the metadata only goes live once the package is reachable at its advertised URL.
       - name: Download released package
@@ -96,9 +96,9 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: gh release upload "$TAG" dist/store-entry.json --clobber
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

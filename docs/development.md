@@ -202,7 +202,7 @@ KaiOS's push service (`notification.kaiostech.com`) only accepts **`aesgcm`** en
 
 ## Developing and testing
 
-**Gateway:**
+**Gateway** (Node 26 or newer):
 
 ```sh
 cd gateway
@@ -212,6 +212,8 @@ npm test           # auth tests (node:test)
 SIGNAL_CLI_URL=http://127.0.0.1:8080 npm start
 npm run pair       # in another shell: issue a pairing code
 ```
+
+To run your local gateway changes in Docker instead of the published image, add the build override from the repo root: `docker compose -f docker/docker-compose.yml -f docker/docker-compose.build.yml up -d --build`. It tags the result `signal4kaios-gateway:local`, so `docker compose pull` won't replace it.
 
 **App on the desktop:** `http.js` falls back to a plain XHR when `mozSystem` isn't available, so you can iterate in a browser behind a CORS proxy:
 
@@ -237,7 +239,20 @@ Runs the Gecko 48 gate on `app/js` and `app/css`, checks that both manifests hav
 1. Bump `version` in **both** manifests (it must increase, or OStore won't offer the update). Never change the app `id` / `origin` (`signal4kaios`).
 2. Add a `## v1.2.0` section to [`CHANGELOG.md`](../CHANGELOG.md) describing the release for users. It becomes the release notes, and the release fails without it.
 3. Commit, then `git tag v1.2.0 && git push origin v1.2.0` (pre-releases: `v1.2.0-rc1`; these also update the store source).
-4. CI packages with `RELEASE_TAG` set, publishes a GitHub Release titled with the tag, carrying the changelog section, install instructions, the ZIP, and `store-entry.json`, then rebuilds the OStore source on GitHub Pages at `https://ambercaravalho.github.io/signal4kaios/`.
+4. CI packages with `RELEASE_TAG` set, publishes a GitHub Release titled with the tag, carrying the changelog section, install instructions, the ZIP, and `store-entry.json`, then rebuilds the OStore source on GitHub Pages at `https://ambercaravalho.github.io/signal4kaios/`. The same tag also publishes the gateway image (below).
+
+**Gateway image.** [`gateway-image.yml`](../.github/workflows/gateway-image.yml) builds [`docker/Dockerfile`](../docker/Dockerfile) for `linux/amd64` and `linux/arm64` and pushes it to `ghcr.io/ambercaravalho/signal4kaios-gateway`, which [`docker/docker-compose.yml`](../docker/docker-compose.yml) pulls as `:latest`:
+
+| Trigger | Tags |
+|---|---|
+| Release tag `v1.2.0` | `1.2.0`, `1.2`, `latest`, `sha-<commit>` |
+| Pre-release tag `v1.2.0-rc1` | `1.2.0-rc1`, `sha-<commit>` (never `latest`) |
+| Push to `main` touching `gateway/` or `docker/` | `edge`, `sha-<commit>` |
+| Pull request touching `gateway/` or `docker/` | Built for amd64 only, not pushed |
+
+The first push creates the package as private. Once, in the repo's **Packages → signal4kaios-gateway → Package settings**, set its visibility to **Public** so `docker compose pull` works without logging in.
+
+**Dependency updates.** [Dependabot](../.github/dependabot.yml) opens weekly PRs for the gateway's npm packages (minor and patch grouped into one PR, majors separately), the Dockerfile's Node base image, and the workflows' actions (grouped). CI and the image build run on each one. Node majors (the base image and `@types/node`) are ignored so the gateway doesn't land on a non-LTS release; move to the next LTS by hand, updating the Dockerfile, `engines` in [`gateway/package.json`](../gateway/package.json), `@types/node`, and `node-version` in [`ci.yml`](../.github/workflows/ci.yml) together.
 
 [`store/build-store-source.sh`](../store/build-store-source.sh) generates the source (`webapps.json`, `Apps-directory/Signal4KaiOS/{manifest,update}.webmanifest`) from [`store/catalog.json`](../store/catalog.json), which holds the listing text.
 

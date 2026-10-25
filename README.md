@@ -21,9 +21,10 @@ The phone app is only a client. Your Signal account lives on [signal-cli-rest-ap
 
 ## Quickstart
 
-1. **Start the backend** on a computer with Docker:
+1. **Start the backend** on a computer with Docker. Both containers are prebuilt images, so nothing is built locally:
 
    ```sh
+   git clone --depth 1 https://github.com/ambercaravalho/signal4kaios.git && cd signal4kaios
    cp docker/.env.example docker/.env
    docker compose -f docker/docker-compose.yml up -d
    ```

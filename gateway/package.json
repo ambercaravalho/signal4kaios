@@ -6,7 +6,7 @@
   "license": "GPL-3.0-or-later",
   "type": "commonjs",
   "engines": {
-    "node": ">=24"
+    "node": ">=26"
   },
   "main": "dist/index.js",
   "scripts": {
@@ -16,19 +16,18 @@
     "devices": "node dist/cli.js devices",
     "revoke": "node dist/cli.js revoke",
     "test": "tsc -p tsconfig.test.json && node --test 'dist-test/**/*.test.js'",
-    "dev": "node --loader ts-node/esm src/index.ts"
+    "dev": "npm run build && node --watch dist/index.js"
   },
   "dependencies": {
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.3",
     "web-push": "^3.6.7",
-    "ws": "^8.21.1"
+    "ws": "^8.22.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^26.1.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.5",
     "@types/web-push": "^3.6.4",
-    "@types/ws": "^8.18.1",
-    "ts-node": "^10.9.2",
+    "@types/ws": "^8.18.2",
     "typescript": "^7.0.2"
   }
 }

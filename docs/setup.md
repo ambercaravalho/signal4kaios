@@ -11,14 +11,24 @@ Also: [Using it away from home](#using-it-away-from-home) · [Managing paired ph
 
 ## 1. Start the backend
 
-The backend is two containers: **signal-cli-rest-api**, which holds your Signal account, and the **gateway**, which is the only thing the phone talks to. From a checkout of this repo:
+The backend is two containers: **signal-cli-rest-api**, which holds your Signal account, and the **gateway**, which is the only thing the phone talks to. Both are prebuilt images (the gateway is published to `ghcr.io/ambercaravalho/signal4kaios-gateway` for x86-64 and 64-bit ARM such as a Raspberry Pi), so nothing is built on your machine:
 
 ```sh
+git clone --depth 1 https://github.com/ambercaravalho/signal4kaios.git
+cd signal4kaios
 cp docker/.env.example docker/.env
 docker compose -f docker/docker-compose.yml up -d
 ```
 
-The gateway listens on port **8090**. For notifications with the message text (not just "New message"), set a VAPID key pair in `docker/.env` before starting: generate one with `npx web-push generate-vapid-keys`.
+Run the `docker compose` commands in this guide from the `signal4kaios` folder. The gateway listens on port **8090**. For notifications with the message text (not just "New message"), set a VAPID key pair in `docker/.env` before starting: generate one with `npx web-push generate-vapid-keys`.
+
+To update later, pull the repo and the new images, then recreate the containers:
+
+```sh
+git pull
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml up -d
+```
 
 ## 2. Link your Signal account
 
@@ -84,7 +94,7 @@ A revoked phone is disconnected within a minute, stops receiving notifications, 
 
 Start with **Settings → Debug log** on the phone: it records network errors, WebSocket connects and closes, and unrecognized message shapes.
 
-- **"Cannot reach the gateway."** Check the address and port, that both containers are running (`docker compose ... ps`), and that the phone is on the same network (or that your HTTPS address works from a browser).
+- **"Cannot reach the gateway."** Check the address and port, that both containers are running (`docker compose -f docker/docker-compose.yml ps`), and that the phone is on the same network (or that your HTTPS address works from a browser).
 - **"Wrong or expired pairing code."** Codes last 15 minutes and work once. Five wrong tries burn a code. Get a new one with `npm run pair`.
 - **"Paired, but no Signal account is linked."** Finish [step 2](#2-link-your-signal-account), then press **Pair** again; no new code is needed.
 - **"HTTP 502" or the gateway is up but nothing loads.** signal-cli-rest-api isn't responding; check its container log.

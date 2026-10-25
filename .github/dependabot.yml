@@ -1,0 +1,31 @@
+# The KaiOS app (app/) has no dependencies; this covers the gateway, its Docker image, and the workflows.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /gateway
+    schedule:
+      interval: weekly
+    groups:
+      gateway-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # @types/node tracks the Node runtime's major (the Dockerfile base image and engines), which is bumped by hand.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+    ignore:
+      # Majors include odd-numbered, non-LTS Node releases; move to the next LTS by hand.
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

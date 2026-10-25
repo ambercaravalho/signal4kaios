@@ -1,0 +1,11 @@
+# Override that builds the gateway from this checkout instead of pulling the published image. From the repo root:
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.build.yml up -d --build
+
+services:
+  gateway:
+    # A local tag, so `docker compose pull` never replaces the build with the published image.
+    image: signal4kaios-gateway:local
+    build:
+      # Context is the repo root so the image can copy from gateway/.
+      context: ..
+      dockerfile: docker/Dockerfile

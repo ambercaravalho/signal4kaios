@@ -1,22 +1,22 @@
-# Multi-stage build. better-sqlite3 needs a compiler at install time; the final image carries only the built JS and production node_modules. Build context is the repo root (see docker/docker-compose.yml), so gateway sources are copied from gateway/.
-FROM node:24-bookworm-slim AS build
+# Multi-stage build. better-sqlite3 needs a compiler at install time; the final image carries only the built JS and production node_modules. Build context is the repo root (see docker/docker-compose.build.yml and .github/workflows/gateway-image.yml), so gateway sources are copied from gateway/.
+FROM node:26-trixie-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
-COPY gateway/package.json gateway/package-lock.json* ./
-RUN npm install
+COPY gateway/package.json gateway/package-lock.json ./
+RUN npm ci
 COPY gateway/tsconfig.json ./
 COPY gateway/src ./src
 RUN npm run build
 
-FROM node:24-bookworm-slim AS deps
+FROM node:26-trixie-slim AS deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
-COPY gateway/package.json gateway/package-lock.json* ./
-RUN npm install --omit=dev
+COPY gateway/package.json gateway/package-lock.json ./
+RUN npm ci --omit=dev
 
-FROM node:24-bookworm-slim
+FROM node:26-trixie-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
