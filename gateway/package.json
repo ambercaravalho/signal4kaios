@@ -24,7 +24,7 @@
     "better-sqlite3": "^13.0.3",
     "qrcode": "^1.5.4",
     "web-push": "^3.6.7",
-    "ws": "^8.22.0"
+    "ws": "^8.22.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
