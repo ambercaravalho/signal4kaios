@@ -17,12 +17,18 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
 
-      - name: Package (Gecko-48 gate + version check)
+      - name: Install, test, and package
         id: pkg
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          npm ci
+          npm test
           sh app/scripts/package.sh
           echo "asset=signal4kaios-${RELEASE_TAG#v}.zip" >> "$GITHUB_OUTPUT"
 
@@ -42,10 +48,7 @@ jobs:
 
           ### Install
 
-          - **KaiOS 3.0 / 3.1 / 4.0:** copy \`$ASSET\` (still zipped) to the phone and install it from OStore's **Manual Install** tab → **Install app from sdcard**, or sideload it (unzipped) with \`appscmd\`; see [Setup](https://github.com/$REPO/blob/main/docs/setup.md#3-install-the-app).
-          - **KaiOS 2.5:** sideload \`$ASSET\` (unzipped) with WebIDE; see [Setup](https://github.com/$REPO/blob/main/docs/setup.md#3-install-the-app).
-
-          Signal4KaiOS needs your own self-hosted backend (signal-cli-rest-api + gateway). Set it up first: [Setup](https://github.com/$REPO/blob/main/docs/setup.md).
+          - **KaiOS 3.0 / 3.1 / 4.0:** copy \`$ASSET\` (still zipped) to the phone and install it from OStore's **Manual Install** tab → **Install app from sdcard**, or sideload it (unzipped) with \`appscmd\`; see [Setup](https://github.com/$REPO/blob/main/docs/setup.md).
           EOF
           PRERELEASE=""
           case "$TAG" in *-*) PRERELEASE="--prerelease" ;; esac

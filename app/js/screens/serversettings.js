@@ -1,38 +1,39 @@
 (function () {
   'use strict';
 
-  /* Pairing with the gateway: the gateway's address plus the 8-digit pairing code it prints. Pairing returns a device token and the Signal number(s) on the backend; with several numbers the user picks one.
+  /* Link with Signal (`App.screens.serversettings`):
+     Connects directly to Signal's provisioning WebSocket (`wss://chat.signal.org/v1/websocket/provisioning/`),
+     renders the `sgnl://linkdevice` QR code on the phone screen, decrypts the provisioning envelope on-device,
+     uploads PreKeys, and requests an initial contact/group sync from the primary phone.
 
-     create({ firstRun?, unpaired?, addAccount? })
-       firstRun   — initial setup (root screen, no Back)
-       unpaired   — the gateway stopped accepting this phone; explain and re-pair
-       addAccount — blank URL; reuses an existing pairing when the URL matches
-     With no options (from Settings) it shows the current pairing and offers Unpair this phone. */
+     When opened from Settings while already linked, displays account details, PreKey replenishment,
+     contact/group sync request, and Unlink this phone. */
 
-  var DEVICE_NAME = 'KaiOS phone';
+  var DEFAULT_DEVICE_NAME = 'Signal4KaiOS';
 
   App.screens.serversettings = {
     create: function (opts) {
       opts = opts || {};
-      var paired = !opts.firstRun && !opts.addAccount && App.config.isConfigured();
+      var linked = !opts.firstRun && !opts.addAccount && App.config.isConfigured();
 
       var el = App.util.el('div', 'screen');
       var hdr = App.util.el('div', 'hdr');
       hdr.appendChild(App.util.el('span', 'hdr-title',
-        opts.addAccount ? 'Add account' : (paired ? 'Server & connection' : 'Pair with gateway')));
+        opts.addAccount ? 'Add account' : (linked ? 'Linked account' : 'Link with Signal')));
       el.appendChild(hdr);
 
       var list = App.util.el('div', 'list');
       el.appendChild(list);
 
-      function field(labelText, value, placeholder, type) {
+      var provSession = null;
+
+      function field(labelText, value, placeholder) {
         var wrap = App.util.el('div', 'field');
         var label = App.util.el('label', null, labelText);
         var input = App.util.el('input');
-        input.type = type || 'text';
+        input.type = 'text';
         input.value = value || '';
         input.placeholder = placeholder || '';
-        // URLs are lowercase/case-exact — stop the KaiOS keypad starting in capitalized "Abc" mode.
         input.setAttribute('autocapitalize', 'none');
         input.setAttribute('autocorrect', 'off');
         input.spellcheck = false;
@@ -56,173 +57,144 @@
         list.appendChild(App.util.el('div', 'field-note', text));
       }
 
-      if (paired) {
-        list.appendChild(App.util.sectionHeader('Paired'));
-        note('Gateway: ' + App.config.serverUrl());
-        note('Signal number: ' + App.config.number());
-        action('Unpair this phone', 'Stop this phone connecting to the gateway');
-        list.appendChild(App.util.sectionHeader('Pair again'));
+      if (linked) {
+        list.appendChild(App.util.sectionHeader('Linked device'));
+        note('Signal number: ' + (App.config.number() || 'Linked'));
+        if (App.config.aci()) note('Account UUID: ' + App.config.aci());
+        note('Device ID: ' + App.config.deviceId());
+        action('Sync contacts & groups', 'Request latest directory from primary phone');
+        action('Refresh PreKeys', 'Upload fresh encryption PreKeys');
+        action('Unlink this phone', 'Remove this linked device and local keys');
+        list.appendChild(App.util.sectionHeader('Relink'));
       }
 
-      var urlInput = field('Gateway address',
-        opts.addAccount ? '' : App.config.serverUrl(), 'http://192.168.1.100:8090');
-      var codeInput = field('Pairing code', '', '1234-5678', 'tel');
-      note(opts.addAccount
-        ? 'Leave the code empty if this phone is already paired with that gateway.'
-        : 'The gateway prints the code when it first starts (docker compose logs ' +
-          'gateway). Get a new one with: docker compose exec gateway npm run pair');
+      var qrBox = App.util.el('div', 'qr-box');
+      qrBox.setAttribute('nav-selectable', 'true');
+      qrBox.setAttribute('data-id', 'Generate QR code');
+      list.appendChild(qrBox);
 
       var status = App.util.el('div', 'status-line', '');
       list.appendChild(status);
 
-      action('Pair', 'Connect this phone to the gateway');
+      var nameInput = field('Device name', DEFAULT_DEVICE_NAME, 'Signal4KaiOS');
+      note('Open Signal on your main phone \u2192 Settings \u2192 Linked devices \u2192 Link a new device, then scan the QR code above.');
+
+      action('Generate QR code', 'Start a new linking QR session');
 
       var nav = new App.Nav(el, { scrollEl: list });
-      // A token from a pairing that found no Signal number yet, reused on retry.
-      var pendingToken = null;
-      var busy = false;
 
       function setStatus(text, cls) {
         status.textContent = text;
         status.className = 'status-line' + (cls ? ' ' + cls : '');
       }
 
-      // Turn a failed request into what the user should check. Never includes the code or token: err.message only carries the HTTP status.
-      function explain(err) {
-        var kind = err && err.kind;
-        var code = err && err.status;
-        if (kind === 'network' || kind === 'timeout') {
-          return (kind === 'timeout' ? 'No answer from the gateway. ' : 'Cannot reach the gateway. ') +
-            'Check the address and port (default 8090), that the gateway is ' +
-            'running, and that the phone can reach it (same Wi-Fi, or an ' +
-            'https:// address from outside).';
+      function renderQrImage(sgnlUri) {
+        qrBox.textContent = '';
+        if (typeof qrcode === 'undefined') {
+          qrBox.appendChild(App.util.el('div', 'field-note', sgnlUri));
+          return;
         }
-        if (code === 403) {
-          return 'Wrong or expired pairing code. Get a new one with: ' +
-            'docker compose exec gateway npm run pair';
+        try {
+          var qr = qrcode(0, 'L');
+          qr.addData(sgnlUri);
+          qr.make();
+          var img = App.util.el('img', 'qr-img welcome-qr');
+          img.src = qr.createDataURL(4, 2);
+          qrBox.appendChild(img);
+        } catch (e) {
+          App.util.dbg('link qr render failed: ' + e.message);
+          qrBox.appendChild(App.util.el('div', 'field-note', sgnlUri));
         }
-        if (code === 429) return 'Too many attempts. Wait 15 minutes and try again.';
-        if (code === 401) return 'The gateway no longer accepts this phone. Enter a new pairing code.';
-        if (code === 404) {
-          return 'That address answered, but it is not a Signal4KaiOS gateway. ' +
-            'Use the gateway address with no extra path.';
-        }
-        if (code >= 500) {
-          return 'HTTP ' + code + ': the gateway is up but signal-cli-rest-api is ' +
-            'not responding. Check the backend containers.';
-        }
-        return (err && err.message) || 'Pairing failed';
       }
 
-      function finish(url, token, number) {
-        var oldToken = App.config.serverUrl() === url ? App.config.deviceToken() : '';
-        App.config.set({ serverUrl: url, number: number, deviceToken: token });
-        App.config.setServerToken(url, token);
-        App.config.saveActiveAccount();
-        App.toast('Paired');
-        // Re-pairing replaces this phone's old token; revoke it best-effort.
-        var revokeOld = oldToken && oldToken !== token
-          ? App.http.post('/v1/pair/revoke', {}, { baseUrl: url, authToken: oldToken })['catch'](function () {})
-          : Promise.resolve();
-        revokeOld.then(function () { location.reload(); });
+      function stopProvisioning() {
+        if (provSession) {
+          provSession.cancel();
+          provSession = null;
+        }
       }
 
-      function chooseNumber(url, token, numbers) {
-        if (!numbers.length) {
-          pendingToken = { url: url, token: token };
-          setStatus('Paired, but no Signal account is linked on the backend yet. ' +
-            'Link one (see the setup guide), then press Pair again.', 'bad');
+      function startLinking() {
+        stopProvisioning();
+        if (!App.signal || !App.signal.startProvisioning) {
+          setStatus('Signal encryption engine not loaded.', 'bad');
           return;
         }
-        if (numbers.length === 1) {
-          finish(url, token, numbers[0]);
-          return;
-        }
-        var current = App.config.number();
-        App.router.push(App.screens.menu.create({
-          title: 'Choose number',
-          items: numbers.map(function (n) {
-            return {
-              label: n + (n === current ? ' (current)' : ''),
-              onSelect: function () {
-                finish(url, token, n);
-                return 'keep';
-              }
-            };
-          })
-        }));
-      }
+        qrBox.textContent = '';
+        qrBox.appendChild(App.util.el('div', 'field-note', 'Connecting to Signal\u2026'));
+        setStatus('Connecting to Signal provisioning service\u2026');
 
-      function pair() {
-        if (busy) return;
-        var url = urlInput.value.trim().replace(/\/+$/, '');
-        var code = codeInput.value.replace(/\D/g, '');
-        if (!/^https?:\/\/[^\s/]+/.test(url)) {
-          setStatus('Gateway address must start with http:// or https://', 'bad');
-          return;
-        }
-        var reuse = (pendingToken && pendingToken.url === url && pendingToken.token) ||
-          (opts.addAccount ? App.config.tokenForServer(url) : '');
-        if (!code && !reuse) {
-          setStatus('Enter the 8-digit pairing code from the gateway.', 'bad');
-          return;
-        }
-        if (code && code.length !== 8) {
-          setStatus('The pairing code has 8 digits.', 'bad');
-          return;
-        }
-        busy = true;
-        setStatus('Connecting\u2026');
-        App.api.health(url).then(function (h) {
-          if (!h || h.gateway !== 'signal4kaios') {
-            var notGateway = new Error('not a gateway');
-            notGateway.status = 404;
-            throw notGateway;
-          }
-          if (code) {
-            setStatus('Pairing\u2026');
-            return App.api.pair(url, code, DEVICE_NAME).then(function (res) {
-              if (!res || !res.token) throw new Error('Unexpected reply from the gateway');
-              return { token: res.token, numbers: res.numbers || [] };
+        var devName = (nameInput.value || '').trim() || DEFAULT_DEVICE_NAME;
+        provSession = App.signal.startProvisioning(devName, {
+          onStatus: function (msg) {
+            setStatus(msg);
+          },
+          onQrUrl: function (sgnlUri) {
+            renderQrImage(sgnlUri);
+            setStatus('Scan this QR code from Signal \u2192 Linked devices.');
+          },
+          onLinked: function (creds) {
+            provSession = null;
+            App.config.set({
+              number: creds.number || creds.aci,
+              aci: creds.aci,
+              deviceId: creds.deviceId,
+              deviceToken: creds.password
             });
+            App.config.saveActiveAccount();
+            setStatus('Linked! Requesting contact & group sync\u2026', 'ok');
+            App.toast('Linked with Signal');
+            App.signal.requestSync()['catch'](function () {}).then(function () {
+              location.reload();
+            });
+          },
+          onError: function (err) {
+            provSession = null;
+            setStatus((err && err.message) || 'Linking failed. Press Generate QR code to retry.', 'bad');
           }
-          return App.api.accounts(url, reuse).then(function (numbers) {
-            return { token: reuse, numbers: numbers || [] };
-          });
-        }).then(function (r) {
-          busy = false;
-          var numbers = (r.numbers || []).filter(function (n) { return typeof n === 'string'; });
-          chooseNumber(url, r.token, numbers);
-        })['catch'](function (err) {
-          busy = false;
-          setStatus(explain(err), 'bad');
         });
       }
 
-      function unpair() {
+      function unlink() {
         App.dialog.confirm({
-          title: 'Unpair this phone?',
-          message: 'It stops receiving messages until you pair it again with a new code.',
-          confirmLabel: 'Unpair',
+          title: 'Unlink this phone?',
+          message: 'Deletes encryption keys and messages stored on this phone.',
+          confirmLabel: 'Unlink',
           onConfirm: function () {
-            var url = App.config.serverUrl();
-            App.api.unpair()['catch'](function () { /* offline: forget locally anyway */ })
-              .then(function () {
-                App.ws.stop();
-                App.config.forgetPairing(url);
-                location.reload();
-              });
+            stopProvisioning();
+            App.ws.stop();
+            App.api.unpair().then(function () {
+              App.config.forgetPairing();
+              location.reload();
+            });
           }
         });
       }
 
       function onAction(id) {
-        if (id === 'Pair') return pair();
-        if (id === 'Unpair this phone') return unpair();
+        if (id === 'Generate QR code') return startLinking();
+        if (id === 'Unlink this phone') return unlink();
+        if (id === 'Sync contacts & groups') {
+          setStatus('Requesting sync from primary device\u2026');
+          App.signal.requestSync().then(function () {
+            setStatus('Sync requested. Make sure your main phone is online.', 'ok');
+          })['catch'](function (e) {
+            setStatus((e && e.message) || 'Sync request failed', 'bad');
+          });
+          return;
+        }
+        if (id === 'Refresh PreKeys') {
+          setStatus('Uploading PreKeys\u2026');
+          App.signal.replenishPreKeys().then(function () {
+            setStatus('PreKeys refreshed.', 'ok');
+          })['catch'](function (e) {
+            setStatus((e && e.message) || 'PreKey upload failed', 'bad');
+          });
+        }
       }
 
       function softkeys() {
-        App.softkeys.set(opts.firstRun ? '' : 'Back', 'Select', '');
+        App.softkeys.set(opts.firstRun ? '' : 'Back', 'Select', 'Refresh QR');
       }
 
       return {
@@ -230,28 +202,32 @@
         enter: function () {
           softkeys();
           if (opts.unpaired) {
-            setStatus('This phone is no longer paired with the gateway. Enter a new pairing code.', 'bad');
-          } else if (opts.firstRun) {
-            setStatus('Enter the gateway address and the pairing code it shows.');
-          } else if (opts.addAccount) {
-            setStatus('Enter the gateway address for the new account.');
+            setStatus('This phone was unlinked from your Signal account. Scan the QR code to link again.', 'bad');
           }
           nav.select(0);
+          if (!linked || opts.firstRun || opts.addAccount || opts.unpaired) {
+            startLinking();
+          }
         },
         resume: softkeys,
+        destroy: stopProvisioning,
         onKey: function (evt) {
           var active = document.activeElement;
           var inInput = active && active.tagName === 'INPUT';
 
+          if (evt.key === 'SoftRight') {
+            startLinking();
+            return true;
+          }
           if (evt.key === 'ArrowLeft' || evt.key === 'ArrowRight') {
-            if (inInput) return false; // move the text cursor
+            if (inInput) return false;
           }
           if (nav.handleKey(evt)) return true;
           if (evt.key === 'Enter') {
             var sel = nav.selected();
             if (!sel) return true;
             if (sel.tagName === 'INPUT') {
-              nav.move(1); // jump to the next field/action
+              nav.move(1);
               return true;
             }
             onAction(sel.getAttribute('data-id'));

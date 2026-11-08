@@ -2,6 +2,22 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.0.0
+
+Signal4KaiOS is now a standalone on-device Signal client for KaiOS 3.0, 3.1, and 4.0. The self-hosted Docker backend (`signal-cli-rest-api` and the gateway) and KaiOS 2.5 support have been removed; all Signal encryption and decryption now happen directly on the phone.
+
+### On-device Signal protocol
+
+- Link your phone directly to your Signal account by scanning a QR code shown on the KaiOS screen from Signal on your main phone (**Settings → Linked devices → Link a new device**). No computer, server, or Docker container is required.
+- Full on-device Signal Protocol engine: Curve25519 / XEdDSA, X3DH key agreement, Double Ratchet sessions, Sealed Sender (Unidentified Delivery), Group Sender Keys, 60-digit Safety Number computation and QR verification, and AES-256-CBC + HMAC-SHA256 attachment encryption against Signal's CDN.
+- Direct WebSocket connection to Signal's servers (`chat.signal.org`): messages sent while your phone is offline are held by Signal's servers and decrypted when you reconnect.
+- Contacts and groups sync directly from your primary Signal device over encrypted sync blobs.
+
+### Platform changes
+
+- Targets **KaiOS 3.0, 3.1, and 4.0** (Gecko 84 and Gecko 123). **KaiOS 2.5 support is dropped.**
+- Removed `gateway/`, `docker/`, and `app/manifest.webapp`.
+
 ## v1.1.3
 
 Push notifications on KaiOS 3.0+ recover on their own after a restart, and the gateway no longer piles up dead push subscriptions. Closed-app notifications on KaiOS 3.0+ phones still depend on KaiOS's push service, which currently accepts pushes for sideloaded apps without delivering them.

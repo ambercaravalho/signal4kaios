@@ -1,9 +1,9 @@
 (function () {
   'use strict';
 
-  /* Welcome / setup help: explains that the app needs a self-hosted backend before asking for connection details. Shown on first run (unconfigured), and from Settings -> About & setup help.
-
-     create({ firstRun? }) — firstRun ends in the server settings screen; otherwise the last page's Done pops back. */
+  /* Welcome / setup help for Signal4KaiOS v2.0.0: explains that the app runs Signal encryption
+     directly on the phone (no computer, gateway, or server needed) and walks the user into
+     linking with their Signal account via QR code. */
 
   var GUIDE_URL = 'https://github.com/ambercaravalho/signal4kaios/blob/main/docs/setup.md';
 
@@ -11,29 +11,23 @@
     {
       title: 'Welcome',
       lines: [
-        'Signal4KaiOS is a Signal client. Your Signal account does not live on ' +
-          'this phone: it runs on a backend that you host yourself.',
-        'You need a computer or server (home PC, Raspberry Pi, or VPS) running ' +
-          'two Docker containers: signal-cli-rest-api and the Signal4KaiOS gateway.'
+        'Signal4KaiOS v2.0.0 is a standalone Signal client for KaiOS 3.0, 3.1, and 4.0.',
+        'All Signal encryption and decryption run directly on this phone. No computer, Docker server, or gateway is required.'
       ]
     },
     {
-      title: 'Before you continue',
+      title: 'How to link',
       lines: [
-        '1. Start the backend with Docker Compose (see the setup guide).',
-        '2. Link your Signal account to it as a linked device, like Signal Desktop.',
-        '3. Note the gateway address (e.g. http://192.168.1.100:8090) and the ' +
-          'pairing code it prints when it starts.',
-        'Then enter both on the next screen. Your Signal number is picked up ' +
-          'from the backend automatically.'
+        '1. Open Signal on your main phone.',
+        '2. Go to Settings \u2192 Linked devices \u2192 Link a new device.',
+        '3. On the next screen, this phone will display a QR code. Scan it with your main phone to link your account.'
       ]
     },
     {
-      title: 'Setup guide',
+      title: 'User guide',
       qr: true,
       lines: [
-        'Scan this with another phone or computer to read the full setup ' +
-          'guide, or press Open guide.'
+        'Scan this QR code or press Open guide for documentation and tips.'
       ]
     }
   ];
@@ -85,7 +79,7 @@
 
       function setSoftkeys() {
         var left = page > 0 ? 'Previous' : (opts.firstRun ? '' : 'Back');
-        var center = isLast() ? (opts.firstRun ? 'Set up' : 'Done') : 'Next';
+        var center = isLast() ? (opts.firstRun ? 'Link device' : 'Done') : 'Next';
         var right = isLast() ? 'Open guide' : (opts.firstRun ? 'Skip' : '');
         App.softkeys.set(left, center, right);
       }

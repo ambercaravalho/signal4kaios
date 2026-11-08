@@ -2,6 +2,7 @@
   'use strict';
 
   var KEY = 's4k.config';
+  var DEFAULT_SIGNAL_SERVER = 'https://chat.signal.org';
 
   function read() {
     try {
@@ -24,19 +25,27 @@
     },
 
     serverUrl: function () {
-      return (read().serverUrl || '').replace(/\/+$/, '');
+      return (read().serverUrl || DEFAULT_SIGNAL_SERVER).replace(/\/+$/, '');
     },
 
     number: function () {
       return read().number || '';
     },
 
-    /* The device token from pairing with the gateway. Sent on every request (Authorization: Bearer on HTTP, a subprotocol on the WebSocket). SECURITY-REVIEW: a long-lived credential; never log it. */
+    aci: function () {
+      return read().aci || '';
+    },
+
+    deviceId: function () {
+      return read().deviceId || 0;
+    },
+
+    /* Signal device signaling password from linking. Stored locally in config/IndexedDB; never logged. */
     deviceToken: function () {
       return read().deviceToken || '';
     },
 
-    /* Signal username and its shareable link (from the set-username endpoint). Cached here because the REST API has no GET for the current username. */
+    /* Signal username and its shareable link (from the set-username endpoint). */
     username: function () {
       return read().username || '';
     },
@@ -45,7 +54,7 @@
       return read().usernameLink || '';
     },
 
-    /* Profile name and about text. The REST API has no GET for your own profile, so we remember what was last set here to pre-fill the editors and to satisfy the API (which requires a name on every profile update). */
+    /* Profile name and about text. */
     profileName: function () {
       return read().profileName || '';
     },
@@ -80,7 +89,8 @@
     },
 
     isConfigured: function () {
-      return !!(App.config.serverUrl() && App.config.number() && App.config.deviceToken());
+      var c = read();
+      return !!((c.number || c.aci) && c.deviceToken && c.deviceId);
     },
 
     wsUrl: function () {
@@ -88,22 +98,10 @@
     },
 
     /* ---- Multi-account ----
-       The active account's credentials live at the top level (so all the accessors above keep working); `accounts` holds every saved account so the user can switch between them. Each account has its own IndexedDB. */
+       The active account's credentials live at the top level; `accounts` holds every saved account so the user can switch between them. Each account has its own IndexedDB. */
 
     accounts: function () {
       return read().accounts || [];
-    },
-
-    /* The device token already paired with this gateway (from any saved account), so adding a second number on the same server needs no code. */
-    tokenForServer: function (serverUrl) {
-      var url = (serverUrl || '').replace(/\/+$/, '');
-      var accounts = read().accounts || [];
-      for (var i = 0; i < accounts.length; i++) {
-        if (accounts[i].serverUrl === url && accounts[i].deviceToken) {
-          return accounts[i].deviceToken;
-        }
-      }
-      return '';
     },
 
     /* Insert or update the active account in the accounts list. */
@@ -112,12 +110,14 @@
       c.accounts = c.accounts || [];
       var entry = {
         number: c.number || '',
-        serverUrl: c.serverUrl || '',
+        aci: c.aci || '',
+        deviceId: c.deviceId || 0,
+        serverUrl: c.serverUrl || DEFAULT_SIGNAL_SERVER,
         deviceToken: c.deviceToken || ''
       };
       var found = false;
       for (var i = 0; i < c.accounts.length; i++) {
-        if (c.accounts[i].number === entry.number) {
+        if (c.accounts[i].number === entry.number || (entry.aci && c.accounts[i].aci === entry.aci)) {
           c.accounts[i] = entry;
           found = true;
           break;
@@ -127,20 +127,17 @@
       write(c);
     },
 
-    /* Set the device token for a gateway on the active config and every saved account on that server (one pairing covers all its numbers). */
-    setServerToken: function (serverUrl, token) {
+    /* Drop the linked device credentials for the active account (after unlinking or a 401). */
+    forgetPairing: function () {
       var c = read();
-      var url = (serverUrl || '').replace(/\/+$/, '');
-      if ((c.serverUrl || '') === url) c.deviceToken = token || '';
-      (c.accounts || []).forEach(function (a) {
-        if (a.serverUrl === url) a.deviceToken = token || '';
+      var activeNum = c.number;
+      var activeAci = c.aci;
+      c.deviceToken = '';
+      c.deviceId = 0;
+      c.accounts = (c.accounts || []).filter(function (a) {
+        return a.number !== activeNum && (!activeAci || a.aci !== activeAci);
       });
       write(c);
-    },
-
-    /* Drop the pairing for a gateway (after unpairing or a 401). */
-    forgetPairing: function (serverUrl) {
-      App.config.setServerToken(serverUrl, '');
     },
 
     /* Make a saved account active. Caller should reload so the correct IndexedDB and WebSocket connection are used. */
@@ -149,8 +146,10 @@
       var accounts = c.accounts || [];
       for (var i = 0; i < accounts.length; i++) {
         if (accounts[i].number === number) {
-          c.serverUrl = accounts[i].serverUrl || '';
+          c.serverUrl = accounts[i].serverUrl || DEFAULT_SIGNAL_SERVER;
           c.number = accounts[i].number || '';
+          c.aci = accounts[i].aci || '';
+          c.deviceId = accounts[i].deviceId || 0;
           c.deviceToken = accounts[i].deviceToken || '';
           write(c);
           return true;

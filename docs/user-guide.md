@@ -150,7 +150,7 @@ Local, case-insensitive substring search across all message history on the phone
 
 Grouped into sections; SoftLeft anywhere in Settings jumps to **My QR code**.
 
-- **Server & connection** — the gateway you're paired with and your number; pair again or **Unpair this phone**.
+- **Linked account** — your linked Signal number, device ID, **Sync contacts & groups**, **Refresh PreKeys**, and **Unlink this phone**.
 - **Privacy** — read receipts, typing indicators, and **Blocked** (see [Blocking](#blocking)).
 - **Chats** — **Keep muted chats archived** (on by default).
 - **Composer** — the text-formatting (markdown) toggle.
@@ -161,9 +161,9 @@ Grouped into sections; SoftLeft anywhere in Settings jumps to **My QR code**.
 
 ## Notifications and reconnect
 
-Backgrounded, new messages raise a system notification (unless muted); group notifications are prefixed with the sender's name. On **KaiOS 3.0+**, the gateway also sends background push, so you're notified even when the app is fully **closed** — this is always on, with nothing to configure.
+Backgrounded, new messages raise a system notification (unless muted); group notifications are prefixed with the sender's name.
 
-If the connection drops or the app is suspended, it retries with backoff, reconnects on foreground, and uses a periodic wake alarm to reconnect on its own. On reconnect the gateway replays the backlog you missed while offline (up to its buffer limit), so recent messages are backfilled; older history beyond that buffer is not.
+If the connection drops or the app is suspended, it retries with backoff, reconnects on foreground, and uses a periodic wake alarm (`navigator.b2g.alarmManager`) to reconnect on its own. Signal's servers hold messages sent to you while your phone is offline and deliver them over the WebSocket when you reconnect.
 
 ## What lives on the phone
 

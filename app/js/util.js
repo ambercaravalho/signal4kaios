@@ -179,7 +179,7 @@
     });
   }
 
-  /* Resolve the installed app version from the packaged manifest (3.0+ reads manifest.webmanifest's b2g_features.version; 2.5 only has manifest.webapp). Resolves '' if neither can be read. */
+  /* Resolve the installed app version from manifest.webmanifest's b2g_features.version. */
   function readJson(path) {
     return new Promise(function (resolve, reject) {
       var xhr = new XMLHttpRequest();
@@ -196,13 +196,7 @@
   function appVersion() {
     if (versionPromise) return versionPromise;
     versionPromise = readJson('/manifest.webmanifest').then(function (m) {
-      var v = m && m.b2g_features && m.b2g_features.version;
-      if (!v) throw new Error('no version');
-      return v;
-    })['catch'](function () {
-      return readJson('/manifest.webapp').then(function (m) {
-        return (m && m.version) || '';
-      });
+      return (m && m.b2g_features && m.b2g_features.version) || '';
     })['catch'](function () { return ''; });
     return versionPromise;
   }

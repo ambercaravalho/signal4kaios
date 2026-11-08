@@ -47,10 +47,8 @@
 
       list.appendChild(App.util.sectionHeader('Account'));
       action('Edit profile', 'Set your Signal name');
+      action('Linked account', 'QR link, sync & PreKeys');
       action('Switch account', 'Change or add a number');
-
-      list.appendChild(App.util.sectionHeader('Server'));
-      action('Server & connection', 'Gateway and pairing');
 
       list.appendChild(App.util.sectionHeader('Chats'));
       var styledRow = toggle('Text formatting',
@@ -78,10 +76,10 @@
       action('Clear local data', 'Deletes cached messages on this phone');
 
       list.appendChild(App.util.sectionHeader('Help'));
-      var aboutRow = action('About & setup help', 'What the app needs to work');
+      var aboutRow = action('About & setup help', 'On-device Signal encryption');
       App.util.appVersion().then(function (v) {
         var hint = aboutRow.querySelector('.hint');
-        if (v && hint) hint.textContent = 'Version ' + v + ' \u00b7 backend setup';
+        if (v && hint) hint.textContent = 'Version ' + v + ' \u00b7 on-device E2EE';
       });
 
       var status = App.util.el('div', 'status-line', '');
@@ -141,6 +139,7 @@
 
       function onAction(id) {
         switch (id) {
+          case 'Linked account':
           case 'Server & connection':
             return App.router.push(App.screens.serversettings.create());
           case 'Theme':

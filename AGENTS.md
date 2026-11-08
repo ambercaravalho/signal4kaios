@@ -4,85 +4,43 @@ Instructions for AI agents working in this repository. Read this before making a
 
 ## What this is
 
-**signal4kaios** is a Signal client for **KaiOS 2.5** feature phones that also runs on **KaiOS 3.0, 3.1, and 4.0**. The app talks to a single backend, the **[gateway](docs/development.md#the-gateway)** (a Node/TS service), which in turn fronts a self-hosted [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) server (in `json-rpc` mode): the gateway authenticates paired phones, reverse-proxies HTTP, relays the receive WebSocket with a buffered backlog, and sends background Web Push. The app is packaged as a **privileged** KaiOS app and distributed as a ZIP on GitHub Releases, installed via OStore's Manual Install (3.0+) or sideloaded. One package ships both manifests ([`manifest.webapp`](app/manifest.webapp) for 2.5, [`manifest.webmanifest`](app/manifest.webmanifest) for 3.0+); the OS reads whichever it understands.
+**signal4kaios** (v2.0.0+) is a standalone Signal client for **KaiOS 3.0, 3.1, and 4.0** feature phones. Support for KaiOS 2.5, the self-hosted gateway, and `signal-cli-rest-api` has been removed. All Signal Protocol cryptography (XEdDSA, X3DH, Double Ratchet, Sealed Sender, Sender Keys, Attachment crypto, Safety Numbers, and Linked Device QR provisioning) runs directly on the phone.
 
-The **KaiOS app** (`app/`) has **no build step, bundler, package manager, dependency, or `package.json`** — it is plain files served as-is. Don't introduce npm, transpilers, frameworks, or a build pipeline **into the app**.
+The app is packaged as a **privileged** KaiOS 3.0+ app ([`app/manifest.webmanifest`](app/manifest.webmanifest)) and distributed as a ZIP on GitHub Releases, installed via OStore's Manual Install or sideloaded with `appscmd`.
 
-The **[gateway](gateway/)** is a **separate** Node/TypeScript component with its own `package.json`, `tsc` build, and npm dependencies. It runs server-side, so the Gecko-48 constraints below and the "no build step" rule do **not** apply to it, and it is outside the packaging gate (which only scans `app/`). Run `npm run build && npm test` in `gateway/` after changing it.
+## Build & platform constraints
 
-## Non-negotiable platform constraints
-
-KaiOS 2.5 runs **Gecko 48** (~Firefox 48, ES5-era). The app also targets KaiOS 3.0/3.1 (Gecko 84) and 4.0 (Gecko 123), but 2.5 is the lowest common denominator, so **all first-party page code (`app/js`) must stay ES5-clean**. Newer syntax breaks silently on the phone even though it runs on your desktop. [`app/scripts/package.sh`](app/scripts/package.sh) hard-fails packaging on these four, so treat them as bans:
-
-- No `async` / `await` — use Promises with `.then()` / `.catch()`.
-- No spread / rest `...` (anywhere) — use `Object.assign`, `.apply`, etc.
-- No `String.prototype.padStart` / `padEnd` (unreliable on Gecko 48).
-- No CSS `display: grid` — use flexbox.
-
-These the gate does **not** catch but you must still uphold:
-
-- No ES modules (`import` / `export`) — every file is a plain script.
-- No arrow functions, template literals, `let`/`const`, classes, or generators — use `var` and `function`.
-- No inline event handlers or inline `<script>` / `<style>` (the privileged CSP forbids them). Keep JS/CSS in local files; bind events with `addEventListener`.
-
-When in doubt, run `sh app/scripts/package.sh`. The gate scans only first-party code (`app/js`, `app/css`); vendored third-party libraries go in `app/vendor/` (outside the gate). Don't move first-party code into `vendor/` to dodge checks.
+- **Target engine:** KaiOS 3.0 / 3.1 (Gecko 84) and KaiOS 4.0 (Gecko 123), supporting ES2020 and WebCrypto (`crypto.subtle`).
+- **Privileged CSP:** No inline event handlers, no inline `<script>` or `<style>`, and no `eval()` / `new Function()`.
+- **On-device Signal engine (`src/engine/`):** Written in TypeScript using `@noble/curves` and `@noble/hashes` plus a zero-`eval` protobuf wire codec ([`src/engine/proto.ts`](src/engine/proto.ts)), bundled by `esbuild` into `app/vendor/signal-engine.bundle.js` (`npm run build`), exposing `window.App.signal`.
+- Always run `npm run typecheck && npm test && sh app/scripts/package.sh` after changes.
 
 ## Architecture at a glance
 
 ```
-ws.js ──▶ normalize.js ──▶ store.js ──▶ IndexedDB (db.js)
-(receive)  (frame→events)     │
-                              └──▶ emits events ──▶ js/screens/* patch the DOM
+Signal WSS ──▶ ws.js ──▶ App.signal (src/engine/) ──▶ normalize.js ──▶ store.js ──▶ IndexedDB (db.js)
+                                                                          │
+                                                                          └──▶ js/screens/* patch the DOM
 ```
 
-- Receive: [`ws.js`](app/js/ws.js) connects to the gateway's `/v1/receive` and parses its envelope (`{ t: 'backlog'|'backlog-done'|'frame', seq, data }`), replaying the missed backlog silently before live frames and persisting a `since` cursor (`wsCursor` in `kv`). Each `data` frame → [`normalize.js`](app/js/normalize.js) (typed events) → [`store.js`](app/js/store.js) (apply, persist via [`db.js`](app/js/db.js), emit) → screens re-render.
-- Send: screens call `App.store.send*` → optimistic record → [`api.js`](app/js/api.js) → [`http.js`](app/js/http.js) (mozSystem XHR), all proxied by the gateway.
-- Push: [`push.js`](app/js/push.js) auto-subscribes on boot (always on, no UI), fetching the gateway VAPID key and registering via `App.http`; [`sw.js`](app/sw.js) shows the notification while the app is closed.
-
-See [`docs/development.md`](docs/development.md) for the module reference and the gateway, pairing, and WS protocols.
+- **Provisioning:** [`screens/serversettings.js`](app/js/screens/serversettings.js) calls `App.signal.startProvisioning`, which connects to `wss://chat.signal.org/v1/websocket/provisioning/`, renders the `sgnl://linkdevice` QR code on the phone, decrypts `ProvisionMessage`, registers the linked device (`PUT /v1/devices/{code}`), uploads PreKeys (`PUT /v2/keys`), and requests contact/group sync from the primary device.
+- **Receive:** [`ws.js`](app/js/ws.js) connects to `wss://chat.signal.org/v1/websocket/`, passes binary `Envelope` frames to `App.signal.processIncomingEnvelope`, feeds normalized frames to [`normalize.js`](app/js/normalize.js) → [`store.js`](app/js/store.js) → [`db.js`](app/js/db.js), and ACKs the frame to Signal's server only after decryption and persistence complete.
+- **Send:** Screens call `App.store.send*` → [`api.js`](app/js/api.js) → `App.signal` → [`http.js`](app/js/http.js) (`mozSystem` XHR directly to `https://chat.signal.org` and `https://cdn.signal.org`).
 
 ## Conventions
 
-- **No hard line wrapping in prose**: don't break Markdown paragraphs, list items, or code comments at 80 columns (or any fixed width). Write each paragraph, list item, or comment sentence as one line and let the editor soft-wrap it. Only break lines where the structure requires it (new paragraph, list item, heading, code block).
-- **Module shape**: every file is an IIFE (`(function () { 'use strict'; ... })();`) attaching its public surface to the global `App` (e.g. `App.store`, `App.util`), created in [`polyfills.js`](app/js/polyfills.js).
-- **No implicit globals**: reach other modules only through `App.*`.
-- **Load order is manual**: scripts load in the order listed in [`app/index.html`](app/index.html); a module must appear after everything it uses. Add a `<script>` tag for every new `js/` file.
-- **DOM**: build nodes with `App.util.el(tag, className, text)`; don't use `innerHTML` with untrusted content.
-- **Diagnostics**: log to the in-app ring buffer with `App.util.dbg(msg, data)` (Settings → Debug log) — the primary debugging tool, since there's no console on the phone. Use `App.toast(msg)` for user-facing notices.
-- **Config** (gateway URL, number, device token) is in `localStorage` via [`config.js`](app/js/config.js); all message/contact data is in IndexedDB via [`db.js`](app/js/db.js).
-- **Version-specific KaiOS APIs go through [`platform.js`](app/js/platform.js)** (`App.platform`). Never call `MozActivity`, `navigator.getDeviceStorage`, or `navigator.mozAlarms` directly — `App.platform` feature-detects the 3.0+ shape (`WebActivity`, `navigator.b2g.*`, ServiceWorker) first and falls back to the 2.5 shape, always returning a Promise. [`sw.js`](app/sw.js) is 3.0+-only (registered from [`main.js`](app/js/main.js)) and relays the `alarm` system message and notification clicks back to the page.
-
-## Rules for specific areas
-
-- **Envelope parsing belongs only in `normalize.js`.** signal-cli shapes vary across versions, so all parsing is centralized there. Log unknown shapes with `App.util.dbg` and skip them — **never let a malformed frame throw.**
-- **Message mutations must be serialized.** Read-modify-write updates (reactions, receipts, edits, deletes) go through `enqueueMutation` in [`store.js`](app/js/store.js) so concurrent frames can't clobber each other.
-- **IndexedDB is the only local message history.** signal-cli has no history endpoint; history accrues from first use and is pruned to ~500 messages per conversation. The gateway buffers recently-received frames (default 500/number) and replays the backlog the app missed while offline over the WS `since` cursor, but that is a short reconnect buffer, **not** full history — don't assume older messages can be backfilled.
-- **Auth is pairing, enforced by the gateway.** The gateway issues a one-time 8-digit code ([`gateway/src/auth.ts`](gateway/src/auth.ts)); the app trades it at `POST /v1/pair` for a device token (`App.config.deviceToken()`). **Every** app request carries that token: `Authorization: Bearer` on HTTP ([`http.js`](app/js/http.js), and [`sw.js`](app/sw.js)'s push fetches), and the `s4k.auth.<token>` subprotocol on the WebSocket ([`ws.js`](app/js/ws.js)) — never a URL query param. Only `/healthz`, `POST /v1/pair`, and CORS preflights are open. A 401 or WS close `4401` means unpaired: the app forgets the token and returns to pairing. The gateway stores only hashes and strips `Authorization` before proxying. There are no reverse-proxy auth modes; a proxy is only for HTTPS.
-
-## Adding a screen
-
-Screens are objects from a `create()` factory, registered on `App.screens.<name>` and driven by [`router.js`](app/js/router.js). Contract:
-
-```js
-{ el, enter(), resume(), pause(), destroy(), onKey(evt) /* -> true if handled */ }
-```
-
-- D-pad nav: mark focusable nodes `nav-selectable` and use an `App.Nav` instance ([`nav.js`](app/js/nav.js)); it manages `nav-selected` and scrolling.
-- Softkeys: `App.softkeys.set(left, center, right)` ([`softkeys.js`](app/js/softkeys.js)).
-- `onKey` returns `true` when handled; unhandled `Backspace` pops the stack (KaiOS's Back sends Backspace).
-- Simplest reference: [`screens/menu.js`](app/js/screens/menu.js). Add the new file's `<script>` tag to `index.html`.
-
-## Releases
-
-- The app version lives in **both** manifests (`version` in `manifest.webapp`, `b2g_features.version` in `manifest.webmanifest`); keep them equal — `package.sh` fails otherwise. Never change `id` / `origin` (`signal4kaios`); installed phones depend on them.
-- Releases are cut by pushing a `v<version>` tag ([`release.yml`](.github/workflows/release.yml)), which publishes the ZIP as a GitHub Release. The same tag publishes the gateway image to `ghcr.io/ambercaravalho/signal4kaios-gateway` ([`gateway-image.yml`](.github/workflows/gateway-image.yml)); `main` publishes it as `edge`. Users clone the repo and [`docker/docker-compose.yml`](docker/docker-compose.yml) pulls the image; building locally is only for development ([`docker/docker-compose.build.yml`](docker/docker-compose.build.yml)). Release notes come from the tag's `## v<version>` section in [`CHANGELOG.md`](CHANGELOG.md); write it before tagging or the release fails. See [`docs/development.md`](docs/development.md#packaging-and-releasing).
+- **No hard line wrapping in prose**: don't break Markdown paragraphs, list items, or code comments at 80 columns. Write each paragraph, list item, or comment sentence as one line and let the editor soft-wrap it.
+- **UI module shape**: files in `app/js/` are IIFEs attaching their public surface to `window.App`, loaded in the order listed in [`app/index.html`](app/index.html).
+- **DOM**: build nodes with `App.util.el(tag, className, text)`; never use `innerHTML` with untrusted content.
+- **Diagnostics**: log to the in-app ring buffer with `App.util.dbg(msg, data)` (Settings → Debug log). Use `App.toast(msg)` for user-facing notices.
+- **KaiOS B2G APIs**: go through [`platform.js`](app/js/platform.js) (`App.platform`).
 
 ## Definition of done
 
-- Run `sh app/scripts/package.sh` — it must pass the Gecko-48 gate and produce `dist/signal4kaios.zip`.
-- Prefer verifying in the KaiOS 2.5 simulator (kaiosrt via WebIDE); the desktop doesn't enforce the privileged CSP and `http.js` falls back to plain XHR there (use a CORS proxy — see [`docs/development.md`](docs/development.md)).
-- Re-sideload after any `manifest.webapp` permission change.
+- `npm run typecheck` passes with no errors.
+- `npm test` passes all unit tests.
+- `sh app/scripts/package.sh` builds `app/vendor/signal-engine.bundle.js` and produces `dist/signal4kaios.zip` and `dist/signal4kaios-2.0.0.zip`.
 
 ## Security baseline
 
-The enterprise product-security rules apply: no hardcoded secrets, treat all external input (WebSocket frames, API responses) as untrusted, and never log credentials. The device token and pairing codes must never be logged (via `App.util.dbg` or the gateway log); the gateway's pairing banner is the only place a code is printed.
+The enterprise product-security rules apply: no hardcoded secrets, treat all external input (WebSocket frames, protobuf payloads, API responses) as untrusted, and never log private keys, signaling passwords, or credentials via `App.util.dbg` or console output.

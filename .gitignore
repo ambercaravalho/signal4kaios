@@ -1,10 +1,11 @@
 # Packaged app output (produced by app/scripts/package.sh)
 dist/
+app/vendor/signal-engine.bundle.js
 
 # OS cruft
 .DS_Store
 
-# Gateway build/runtime and secrets (gateway/, docker/)
+# Build/test artifacts
 node_modules/
 dist-test/
 data/

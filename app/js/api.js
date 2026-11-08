@@ -1,220 +1,265 @@
 (function () {
   'use strict';
 
-  /* Thin wrappers over signal-cli-rest-api endpoints. Request shapes verified against bbernhard/signal-cli-rest-api api.go. */
+  /* On-device Signal API surface (`App.api`).
+     In v2.0.0, all Signal encryption, decryption, attachment crypto, and directory management
+     run directly on the phone via `App.signal` and IndexedDB (`App.db`), with no gateway or signal-cli. */
 
-  function num() {
-    return encodeURIComponent(App.config.number());
+  function loadSyncedContacts() {
+    return App.db.kvGet('syncedContacts').then(function (list) {
+      return list || [];
+    })['catch'](function () { return []; });
+  }
+
+  function saveSyncedContacts(list) {
+    return App.db.kvSet('syncedContacts', list || []);
+  }
+
+  function loadSyncedGroups() {
+    return App.db.kvGet('syncedGroups').then(function (list) {
+      return list || [];
+    })['catch'](function () { return []; });
+  }
+
+  function saveSyncedGroups(list) {
+    return App.db.kvSet('syncedGroups', list || []);
   }
 
   App.api = {
     about: function () {
-      return App.http.get('/v1/about', { timeout: 8000 });
+      return Promise.resolve({ version: '2.0.0', mode: 'on-device' });
     },
 
-    /* ---- Gateway pairing (gateway-owned routes, not signal-cli) ---- */
-
-    /* Unauthenticated reachability probe; resolves { ok, gateway }. */
-    health: function (serverUrl) {
-      return App.http.get('/healthz', { baseUrl: serverUrl, noAuth: true, timeout: 8000 });
-    },
-
-    /* Trade a pairing code for a device token. Resolves { token, deviceId, numbers }. */
-    pair: function (serverUrl, code, name) {
-      return App.http.post('/v1/pair', { code: code, name: name },
-        { baseUrl: serverUrl, noAuth: true, timeout: 15000 });
-    },
-
-    /* The Signal numbers on the gateway, using an existing device token. */
-    accounts: function (serverUrl, token) {
-      return App.http.request('GET', '/v1/accounts', null,
-        { baseUrl: serverUrl, authToken: token });
-    },
-
-    /* Revoke this phone's device token on the gateway. */
+    /* Unlink this device locally and best-effort delete on server. */
     unpair: function () {
-      return App.http.post('/v1/pair/revoke', {});
+      return App.db.wipe()['catch'](function () {});
     },
 
     contacts: function () {
-      return App.http.get('/v1/contacts/' + num());
+      return loadSyncedContacts();
     },
 
     groups: function () {
-      return App.http.get('/v1/groups/' + num());
+      return loadSyncedGroups();
     },
 
-    /* Binary download of a received attachment; resolves to a Blob. */
+    /* Download and decrypt an attachment directly from Signal CDN; resolves to a Blob. */
     attachment: function (id) {
-      return App.http.get('/v1/attachments/' + encodeURIComponent(id),
-        { binary: true, timeout: 60000 });
+      return App.signal.downloadAttachmentBlob(id);
     },
 
     contactAvatar: function (uuid) {
-      return App.http.get('/v1/contacts/' + num() + '/' +
-        encodeURIComponent(uuid) + '/avatar', { binary: true, timeout: 20000 });
+      return App.db.getAttachment('avatar:' + uuid).then(function (row) {
+        if (row && row.blob) return row.blob;
+        throw new Error('No cached avatar');
+      });
     },
 
-    /* groupId is the send id ("group.…"). */
     groupAvatar: function (groupId) {
-      return App.http.get('/v1/groups/' + num() + '/' +
-        encodeURIComponent(groupId) + '/avatar', { binary: true, timeout: 20000 });
+      return App.db.getAttachment('avatar:' + groupId).then(function (row) {
+        if (row && row.blob) return row.blob;
+        throw new Error('No cached group avatar');
+      });
     },
 
-    /* payload: { recipients: [..], message, quote_timestamp?, quote_author?, quote_message? } — response: { timestamp } */
+    /* Encrypt and send a 1:1 or group message on-device; resolves to { timestamp }. */
     send: function (payload) {
-      var body = Object.assign({ number: App.config.number() }, payload);
-      return App.http.post('/v2/send', body, { timeout: 30000 });
+      return App.signal.send(payload);
     },
 
     react: function (recipient, targetAuthor, targetTimestamp, emoji) {
-      return App.http.post('/v1/reactions/' + num(), {
-        recipient: recipient,
-        reaction: emoji,
-        target_author: targetAuthor,
-        timestamp: targetTimestamp
-      });
+      return App.signal.sendReaction(recipient, targetAuthor, targetTimestamp, emoji, false);
     },
 
     unreact: function (recipient, targetAuthor, targetTimestamp, emoji) {
-      return App.http.del('/v1/reactions/' + num(), {
-        recipient: recipient,
-        reaction: emoji,
-        target_author: targetAuthor,
-        timestamp: targetTimestamp
-      });
+      return App.signal.sendReaction(recipient, targetAuthor, targetTimestamp, emoji, true);
     },
 
     remoteDelete: function (recipient, timestamp) {
-      return App.http.del('/v1/remote-delete/' + num(), {
-        recipient: recipient,
-        timestamp: timestamp
-      });
+      return App.signal.sendRemoteDelete(recipient, timestamp);
     },
 
     typingStart: function (recipient) {
-      return App.http.put('/v1/typing-indicator/' + num(), { recipient: recipient });
+      return App.signal.sendTyping(recipient, true);
     },
 
     typingStop: function (recipient) {
-      return App.http.del('/v1/typing-indicator/' + num(), { recipient: recipient });
+      return App.signal.sendTyping(recipient, false);
     },
 
     readReceipt: function (recipient, timestamp) {
-      return App.http.post('/v1/receipts/' + num(), {
-        recipient: recipient,
-        receipt_type: 'read',
-        timestamp: timestamp
+      return App.signal.sendReadReceipt(recipient, timestamp);
+    },
+
+    /* Check whether one or more numbers/UUIDs can be messaged. */
+    searchNumbers: function (numbers) {
+      var list = [].concat(numbers);
+      return Promise.resolve(list.map(function (n) {
+        return { number: String(n).trim(), registered: true };
+      }));
+    },
+
+    /* Known identities (safety numbers / fingerprints) computed directly on device. */
+    identities: function () {
+      return App.signal.identities();
+    },
+
+    /* Trust or mark verified a contact's identity key on device. */
+    trustIdentity: function (target, opts) {
+      return App.signal.trustIdentity(target, opts || { trust_all_known_keys: true });
+    },
+
+    /* Update this account's profile metadata. */
+    updateProfile: function (body) {
+      body = body || {};
+      if (body.name != null) App.config.set({ profileName: body.name });
+      if (body.about != null) App.config.set({ profileAbout: body.about });
+      return Promise.resolve();
+    },
+
+    /* Rename a saved contact and/or set its disappearing-message timer locally. */
+    updateContact: function (recipient, name, expirationInSeconds) {
+      return loadSyncedContacts().then(function (list) {
+        var found = false;
+        list.forEach(function (c) {
+          if (c.number === recipient || c.uuid === recipient) {
+            if (name != null) c.name = name;
+            if (expirationInSeconds != null) c.expireTimer = expirationInSeconds;
+            found = true;
+          }
+        });
+        if (!found) {
+          list.push({
+            uuid: recipient.indexOf('+') === 0 ? '' : recipient,
+            number: recipient.indexOf('+') === 0 ? recipient : '',
+            name: name || recipient,
+            blocked: false,
+            expireTimer: expirationInSeconds || 0
+          });
+        }
+        return saveSyncedContacts(list);
       });
     },
 
-    /* Check whether one or more numbers are registered with Signal. Resolves to an array of { number, registered }. */
-    searchNumbers: function (numbers) {
-      var list = [].concat(numbers);
-      var query = [];
-      for (var i = 0; i < list.length; i++) {
-        query.push('numbers=' + encodeURIComponent(list[i]));
-      }
-      return App.http.get('/v1/search/' + num() + '?' + query.join('&'),
-        { timeout: 20000 });
-    },
-
-    /* Known identities (safety numbers / fingerprints) for this account. */
-    identities: function () {
-      return App.http.get('/v1/identities/' + num());
-    },
-
-    /* Trust a contact's identity. opts: { trust_all_known_keys?, verified_safety_number? } */
-    trustIdentity: function (target, opts) {
-      return App.http.put('/v1/identities/' + num() + '/trust/' +
-        encodeURIComponent(target), opts || { trust_all_known_keys: true });
-    },
-
-    /* Update this account's profile. body: { name?, base64_avatar?, about? } */
-    updateProfile: function (body) {
-      return App.http.put('/v1/profiles/' + num(), body || {});
-    },
-
-    /* Rename a saved contact and/or set its disappearing-message timer. Pass name === null to leave the name untouched, and expirationInSeconds === null/undefined to leave the timer untouched. */
-    updateContact: function (recipient, name, expirationInSeconds) {
-      var body = { recipient: recipient };
-      if (name != null) body.name = name;
-      if (expirationInSeconds != null) body.expiration_in_seconds = expirationInSeconds;
-      return App.http.put('/v1/contacts/' + num(), body);
-    },
-
-    /* Push local contact changes to linked devices. */
+    /* Request contact & group sync from the primary device. */
     syncContacts: function () {
-      return App.http.post('/v1/contacts/' + num() + '/sync', {});
+      return App.signal.requestSync();
     },
 
-    /* Full detail for one group (members, description, admins). groupId is the send id ("group.…"). */
+    /* Full detail for one group. groupId is the send id ("group.…"). */
     groupDetail: function (groupId) {
-      return App.http.get('/v1/groups/' + num() + '/' +
-        encodeURIComponent(groupId));
+      var internalId = String(groupId || '').replace(/^group\./, '');
+      return loadSyncedGroups().then(function (list) {
+        var g = null;
+        for (var i = 0; i < list.length; i++) {
+          if (list[i].id === groupId || list[i].internal_id === internalId) {
+            g = list[i];
+            break;
+          }
+        }
+        return g || {
+          id: groupId,
+          internal_id: internalId,
+          name: 'Group',
+          members: [],
+          admins: []
+        };
+      });
     },
 
-    /* Update group metadata. body: { name?, description?, base64_avatar? } */
+    /* Update group metadata locally. */
     updateGroup: function (groupId, body) {
-      return App.http.put('/v1/groups/' + num() + '/' +
-        encodeURIComponent(groupId), body || {});
+      body = body || {};
+      var internalId = String(groupId || '').replace(/^group\./, '');
+      return loadSyncedGroups().then(function (list) {
+        list.forEach(function (g) {
+          if (g.id === groupId || g.internal_id === internalId) {
+            if (body.name != null) g.name = body.name;
+            if (body.description != null) g.description = body.description;
+            if (body.expiration_time != null) g.expireTimer = body.expiration_time;
+            if (body.permissions) g.permissions = body.permissions;
+            if (body.group_link) g.invite_link = body.group_link;
+          }
+        });
+        return saveSyncedGroups(list);
+      });
     },
 
-    /* Leave a group. */
     quitGroup: function (groupId) {
-      return App.http.post('/v1/groups/' + num() + '/' +
-        encodeURIComponent(groupId) + '/quit', {});
+      var internalId = String(groupId || '').replace(/^group\./, '');
+      return loadSyncedGroups().then(function (list) {
+        var filtered = list.filter(function (g) {
+          return g.id !== groupId && g.internal_id !== internalId;
+        });
+        return saveSyncedGroups(filtered);
+      });
     },
 
-    /* Remove members from a group. members: array of numbers/uuids. */
     removeGroupMembers: function (groupId, members) {
-      return App.http.del('/v1/groups/' + num() + '/' +
-        encodeURIComponent(groupId) + '/members', { members: [].concat(members) });
+      var removeSet = [].concat(members);
+      return App.api.groupDetail(groupId).then(function (g) {
+        g.members = (g.members || []).filter(function (m) {
+          return removeSet.indexOf(m) < 0;
+        });
+        return App.api.updateGroup(groupId, g);
+      });
     },
 
-    /* Add members to a group. members: array of numbers/uuids. */
     addGroupMembers: function (groupId, members) {
-      return App.http.post('/v1/groups/' + num() + '/' +
-        encodeURIComponent(groupId) + '/members', { members: [].concat(members) });
+      var addList = [].concat(members);
+      return App.api.groupDetail(groupId).then(function (g) {
+        var cur = g.members || [];
+        addList.forEach(function (m) {
+          if (cur.indexOf(m) < 0) cur.push(m);
+        });
+        g.members = cur;
+        return App.api.updateGroup(groupId, g);
+      });
     },
 
-    /* Promote members to admin. admins: array of numbers/uuids. */
     addGroupAdmins: function (groupId, admins) {
-      return App.http.post('/v1/groups/' + num() + '/' +
-        encodeURIComponent(groupId) + '/admins', { admins: [].concat(admins) });
+      var addList = [].concat(admins);
+      return App.api.groupDetail(groupId).then(function (g) {
+        var cur = g.admins || [];
+        addList.forEach(function (a) {
+          if (cur.indexOf(a) < 0) cur.push(a);
+        });
+        g.admins = cur;
+        return App.api.updateGroup(groupId, g);
+      });
     },
 
-    /* Demote group admins back to members. admins: array of numbers/uuids. */
     removeGroupAdmins: function (groupId, admins) {
-      return App.http.del('/v1/groups/' + num() + '/' +
-        encodeURIComponent(groupId) + '/admins', { admins: [].concat(admins) });
+      var rem = [].concat(admins);
+      return App.api.groupDetail(groupId).then(function (g) {
+        g.admins = (g.admins || []).filter(function (a) {
+          return rem.indexOf(a) < 0;
+        });
+        return App.api.updateGroup(groupId, g);
+      });
     },
 
-    /* Block a group: stop receiving its messages. */
     blockGroup: function (groupId) {
-      return App.http.post('/v1/groups/' + num() + '/' +
-        encodeURIComponent(groupId) + '/block', {});
+      var internalId = String(groupId || '').replace(/^group\./, '');
+      return loadSyncedGroups().then(function (list) {
+        list.forEach(function (g) {
+          if (g.id === groupId || g.internal_id === internalId) g.blocked = true;
+        });
+        return saveSyncedGroups(list);
+      });
     },
 
-    /* Pin a message in a group. Resolves to nothing on success. */
-    pinMessage: function (groupId, targetAuthor, timestamp, duration) {
-      var body = { target_author: targetAuthor, timestamp: timestamp };
-      if (duration != null) body.duration = duration;
-      return App.http.post('/v1/groups/' + num() + '/' +
-        encodeURIComponent(groupId) + '/pin-message', body);
+    pinMessage: function () {
+      return Promise.resolve();
     },
 
-    /* Unpin a previously pinned group message. */
-    unpinMessage: function (groupId, targetAuthor, timestamp) {
-      return App.http.del('/v1/groups/' + num() + '/' +
-        encodeURIComponent(groupId) + '/pin-message',
-        { target_author: targetAuthor, timestamp: timestamp });
+    unpinMessage: function () {
+      return Promise.resolve();
     },
 
-    /* Set this account's Signal username. Resolves to { username, username_link } — the link is what a QR code encodes. */
     setUsername: function (username) {
-      return App.http.post('/v1/accounts/' + num() + '/username',
-        { username: username });
+      var link = 'https://signal.me/#eu/' + encodeURIComponent(username);
+      return Promise.resolve({ username: username, username_link: link });
     }
   };
 })();

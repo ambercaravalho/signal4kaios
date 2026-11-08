@@ -1,39 +1,52 @@
 (function () {
   'use strict';
 
-  /* Promise wrapper over XMLHttpRequest. Uses mozSystem XHR when available (privileged KaiOS app: bypasses CORS for cross-origin requests to the gateway); falls back to a plain XHR so the app can be developed in a desktop browser behind a CORS proxy.
+  /* Promise wrapper over XMLHttpRequest for direct communication with Signal servers.
+     Uses mozSystem XHR on KaiOS 3.0 / 3.1 / 4.0 (privileged app: bypasses CORS for cross-origin requests to https://chat.signal.org and https://cdn.signal.org).
 
-     Every request carries the paired device token as Authorization: Bearer. A 401 means the gateway no longer knows this phone (revoked, or the gateway's data was reset): App.http.onUnpaired fires once so the app can send the user back to pairing. */
+     Authenticated Signal requests carry Basic auth (`<aci>.<deviceId>:<password>`). A 401/403 on the active linked device means this device was unlinked from the primary phone: App.http.onUnpaired fires once so the app returns to the Link Device screen. */
 
   var unpairedFired = false;
 
   function makeXhr() {
     try {
-      var x = new XMLHttpRequest({ mozSystem: true });
-      // Browsers without mozSystem support just ignore the option.
-      return x;
+      return new XMLHttpRequest({ mozSystem: true });
     } catch (e) {
       return new XMLHttpRequest();
     }
   }
 
-  /* opts: { timeout, binary, baseUrl (override the configured server, for pairing), noAuth (skip the configured token), authToken (send this token instead) } */
+  function encodeBasicAuth(username, password) {
+    // SECURITY-REVIEW: Signal device credentials transmitted only over HTTPS Basic auth to Signal servers; never logged.
+    return 'Basic ' + btoa(username + ':' + password);
+  }
+
+  /* opts: { timeout, binary, baseUrl, noAuth, basicAuth: { username, password } } */
   function request(method, path, body, opts) {
     opts = opts || {};
     return new Promise(function (resolve, reject) {
       var base = (opts.baseUrl || App.config.serverUrl()).replace(/\/+$/, '');
       if (!base) {
-        reject(new Error('Gateway address is not configured'));
+        reject(new Error('Signal server address is not configured'));
         return;
       }
-      var token = opts.authToken || (opts.noAuth ? '' : App.config.deviceToken());
-      // Only the active pairing can trigger the global "unpaired" handling.
-      var isActiveToken = !opts.noAuth && !opts.authToken;
+
+      var authHeader = '';
+      var isActiveToken = false;
+      if (opts.basicAuth && opts.basicAuth.username) {
+        authHeader = encodeBasicAuth(opts.basicAuth.username, opts.basicAuth.password || '');
+      } else if (!opts.noAuth && App.config.isConfigured()) {
+        var login = (App.config.aci() || App.config.number()) + '.' + App.config.deviceId();
+        authHeader = encodeBasicAuth(login, App.config.deviceToken());
+        isActiveToken = true;
+      }
+
       var xhr = makeXhr();
       xhr.open(method, base + path, true);
       xhr.timeout = opts.timeout || 15000;
       if (opts.binary) xhr.responseType = 'blob';
-      if (token) xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+      if (authHeader) xhr.setRequestHeader('Authorization', authHeader);
+      xhr.setRequestHeader('X-Signal-Agent', 'OWD');
 
       xhr.onload = function () {
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -53,25 +66,27 @@
           }
         } else {
           var msg = 'HTTP ' + xhr.status;
-          if (xhr.status === 401) msg += ': this phone is not paired with the gateway';
+          var parsed = null;
+          if (xhr.status === 401) msg += ': this phone is no longer linked to your Signal account';
           try {
-            var parsed = JSON.parse(xhr.responseText);
+            parsed = JSON.parse(xhr.responseText);
             if (parsed && parsed.error && xhr.status !== 401) msg += ': ' + parsed.error;
           } catch (e) { /* non-JSON error body */ }
           App.util.dbg('http fail ' + method + ' ' + path + ' -> ' + msg);
-          if (xhr.status === 401 && token && isActiveToken && !unpairedFired && App.http.onUnpaired) {
+          if (xhr.status === 401 && isActiveToken && !unpairedFired && App.http.onUnpaired) {
             unpairedFired = true;
             App.http.onUnpaired();
           }
           var httpErr = new Error(msg);
           httpErr.kind = 'http';
           httpErr.status = xhr.status;
+          httpErr.body = parsed;
           reject(httpErr);
         }
       };
       xhr.onerror = function () {
         App.util.dbg('http error ' + method + ' ' + path);
-        var netErr = new Error('Network error (is the server reachable?)');
+        var netErr = new Error('Network error (check internet connection)');
         netErr.kind = 'network';
         reject(netErr);
       };
@@ -91,13 +106,42 @@
     });
   }
 
+  /* Raw binary upload/download for Signal CDN encrypted attachments. Resolves to Uint8Array. */
+  function rawBinary(method, url, bodyBytes, headers, timeout) {
+    return new Promise(function (resolve, reject) {
+      var xhr = makeXhr();
+      xhr.open(method, url, true);
+      xhr.timeout = timeout || 60000;
+      xhr.responseType = 'arraybuffer';
+      if (headers) {
+        Object.keys(headers).forEach(function (k) {
+          xhr.setRequestHeader(k, headers[k]);
+        });
+      }
+      xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0));
+        } else {
+          reject(new Error('CDN HTTP ' + xhr.status));
+        }
+      };
+      xhr.onerror = function () { reject(new Error('CDN network error')); };
+      xhr.ontimeout = function () { reject(new Error('CDN timeout')); };
+      if (bodyBytes) {
+        xhr.send(bodyBytes);
+      } else {
+        xhr.send();
+      }
+    });
+  }
+
   App.http = {
     request: request,
+    rawBinary: rawBinary,
     get: function (path, opts) { return request('GET', path, null, opts); },
     post: function (path, body, opts) { return request('POST', path, body, opts); },
     put: function (path, body, opts) { return request('PUT', path, body, opts); },
     del: function (path, body, opts) { return request('DELETE', path, body, opts); },
-    // Set by main.js: called once when the gateway rejects our device token.
     onUnpaired: null
   };
 })();

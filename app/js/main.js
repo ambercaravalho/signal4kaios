@@ -72,18 +72,18 @@
       lastConn = state;
     });
 
-    // The gateway rejected our device token (revoked, or its data was reset): forget it and restart into pairing, which explains what happened.
+    // Signal server rejected our linked device credentials (unlinked from primary phone): forget pairing and return to Link screen.
     App.http.onUnpaired = function () {
-      App.util.dbg('auth: device token rejected, returning to pairing');
+      App.util.dbg('auth: linked device rejected, returning to link screen');
       App.ws.stop();
-      App.config.forgetPairing(App.config.serverUrl());
+      App.config.forgetPairing();
       location.reload();
     };
 
     if (App.config.isConfigured()) {
       App.router.push(App.screens.conversations.create());
-    } else if (App.config.serverUrl()) {
-      // Set up before, but no longer paired.
+    } else if (App.config.number() || App.config.aci()) {
+      // Linked before, but unlinked.
       App.router.push(App.screens.serversettings.create({ firstRun: true, unpaired: true }));
     } else {
       App.router.push(App.screens.welcome.create({ firstRun: true }));

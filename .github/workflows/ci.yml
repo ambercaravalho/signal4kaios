@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, v2.0.0]
   pull_request:
 
 permissions:
@@ -10,25 +10,15 @@ permissions:
 
 jobs:
   app:
-    name: App packaging gate
+    name: Build, test & package app
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: sh app/scripts/package.sh
-
-  gateway:
-    name: Gateway build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: gateway
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 26
+          node-version: 24
           cache: npm
-          cache-dependency-path: gateway/package-lock.json
       - run: npm ci
-      - run: npm run build
+      - run: npm run typecheck
       - run: npm test
+      - run: sh app/scripts/package.sh

@@ -10,9 +10,14 @@
        contacts       keyPath 'id' (uuid preferred, else number)
        kv             keyPath 'k'
        attachments    keyPath 'id' (v2) — LRU blob cache for viewed media
+       signal_keystore    keyPath 'k' (v3) — local Signal identity & registration state
+       signal_identities  keyPath 'address' (v3) — remote peer identity keys & trust status
+       signal_sessions    keyPath 'address' (v3) — Double Ratchet session state (<aci>.<deviceId>)
+       signal_prekeys     keyPath 'id' (v3) — one-time, signed, and PQ PreKeys
+       signal_sender_keys keyPath 'id' (v3) — group SenderKey state
   */
 
-  var DB_VERSION = 2;
+  var DB_VERSION = 3;
   var opened = null;
 
   /* Each account gets its own database. */
@@ -42,6 +47,21 @@
         }
         if (!db.objectStoreNames.contains('attachments')) {
           db.createObjectStore('attachments', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('signal_keystore')) {
+          db.createObjectStore('signal_keystore', { keyPath: 'k' });
+        }
+        if (!db.objectStoreNames.contains('signal_identities')) {
+          db.createObjectStore('signal_identities', { keyPath: 'address' });
+        }
+        if (!db.objectStoreNames.contains('signal_sessions')) {
+          db.createObjectStore('signal_sessions', { keyPath: 'address' });
+        }
+        if (!db.objectStoreNames.contains('signal_prekeys')) {
+          db.createObjectStore('signal_prekeys', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('signal_sender_keys')) {
+          db.createObjectStore('signal_sender_keys', { keyPath: 'id' });
         }
       };
       req.onsuccess = function () { resolve(req.result); };
@@ -261,6 +281,68 @@
     kvGet: function (k) {
       return tx('kv', 'readonly', function (s) { return reqValue(s.get(k)); })
         .then(function (row) { return row ? row.v : undefined; });
+    },
+
+    /* ---- On-device Signal Protocol stores (v3) ---- */
+
+    signalKeySet: function (k, v) {
+      return tx('signal_keystore', 'readwrite', function (s) { s.put({ k: k, v: v }); });
+    },
+
+    signalKeyGet: function (k) {
+      return tx('signal_keystore', 'readonly', function (s) { return reqValue(s.get(k)); })
+        .then(function (row) { return row ? row.v : undefined; });
+    },
+
+    signalKeyAll: function () { return getAll('signal_keystore'); },
+
+    putIdentity: function (rec) {
+      return tx('signal_identities', 'readwrite', function (s) { s.put(rec); });
+    },
+
+    getIdentity: function (address) {
+      return tx('signal_identities', 'readonly', function (s) { return reqValue(s.get(address)); });
+    },
+
+    allIdentities: function () { return getAll('signal_identities'); },
+
+    putSession: function (address, data) {
+      return tx('signal_sessions', 'readwrite', function (s) { s.put({ address: address, data: data, updatedAt: Date.now() }); });
+    },
+
+    getSession: function (address) {
+      return tx('signal_sessions', 'readonly', function (s) { return reqValue(s.get(address)); })
+        .then(function (row) { return row ? row.data : undefined; });
+    },
+
+    deleteSession: function (address) {
+      return tx('signal_sessions', 'readwrite', function (s) { s['delete'](address); });
+    },
+
+    allSessions: function () { return getAll('signal_sessions'); },
+
+    putPreKey: function (id, data) {
+      return tx('signal_prekeys', 'readwrite', function (s) { s.put({ id: id, data: data }); });
+    },
+
+    getPreKey: function (id) {
+      return tx('signal_prekeys', 'readonly', function (s) { return reqValue(s.get(id)); })
+        .then(function (row) { return row ? row.data : undefined; });
+    },
+
+    deletePreKey: function (id) {
+      return tx('signal_prekeys', 'readwrite', function (s) { s['delete'](id); });
+    },
+
+    allPreKeys: function () { return getAll('signal_prekeys'); },
+
+    putSenderKey: function (id, data) {
+      return tx('signal_sender_keys', 'readwrite', function (s) { s.put({ id: id, data: data }); });
+    },
+
+    getSenderKey: function (id) {
+      return tx('signal_sender_keys', 'readonly', function (s) { return reqValue(s.get(id)); })
+        .then(function (row) { return row ? row.data : undefined; });
     },
 
     wipe: function () {

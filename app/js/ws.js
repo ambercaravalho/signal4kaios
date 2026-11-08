@@ -1,25 +1,30 @@
 (function () {
   'use strict';
 
-  /* WebSocket manager for ws://<gateway>/v1/receive/<number>. The gateway relays signal-cli's receive stream and buffers it, so on connect it replays the backlog we missed (frames with seq > our cursor) as { t, seq, data } envelopes, sends a 'backlog-done' sentinel, then streams live 'frame' envelopes. We persist the highest applied seq and reconnect with ?since=<seq> to resume without gaps or duplicates. If pointed straight at signal-cli-rest-api (no gateway), a message without a `t` field is treated as a raw frame. Reconnects with exponential backoff + jitter; also reconnects when the app returns to the foreground.
+  /* Direct Signal WebSocket manager (`wss://chat.signal.org/v1/websocket/`).
+     Connects directly to Signal servers using the linked device's credentials (`login=<aci>.<deviceId>&password=<password>`),
+     receives binary `WebSocketMessage` protobuf frames, decrypts `PUT /api/v1/message` envelopes on-device via `App.signal`,
+     and sends a 200 OK `WebSocketResponseMessage` ACK only after the message is decrypted and ingested into IndexedDB.
 
-     Auth: a browser WebSocket can't send an Authorization header, so the device token rides in the subprotocol list (['s4k.v1', 's4k.auth.<token>']) and stays out of the URL. The gateway answers 's4k.v1', or closes with 4401 if the token isn't paired, which sends the user back to pairing. */
+     While our device is offline, Signal servers queue incoming envelopes and replay them when we connect,
+     sending `PUT /api/v1/queue/empty` once the initial offline backlog has drained. */
 
-  var PROTOCOL = 's4k.v1';
-  var CLOSE_UNPAIRED = 4401;
+  var CLOSE_UNAUTHORIZED = 4001;
+  var CLOSE_FORBIDDEN = 4003;
 
   var sock = null;
   var attempts = 0;
   var reconnectTimer = null;
+  var keepaliveTimer = null;
   var wanted = false;
-  var everConnected = false; // have we had at least one successful open?
-  var lastCloseAt = 0;       // when the socket last dropped (for gap logging)
-  var framesThisSession = 0; // frames received since the current open
-  var cursor = 0;            // highest gateway seq applied (backlog resume point)
-  var cursorTimer = null;    // debounces persisting the cursor to IndexedDB
+  var everConnected = false;
+  var lastCloseAt = 0;
+  var framesThisSession = 0;
+  var drainingQueue = true; // true until `/api/v1/queue/empty` arrives on a new connection
 
-  var HEARTBEAT_MS = 30000;  // safety-net poll for a silently-dead socket
-  var WAKE_ALARM_MS = 300000; // how far ahead to schedule the wake alarm
+  var HEARTBEAT_MS = 30000;
+  var KEEPALIVE_MS = 25000;
+  var WAKE_ALARM_MS = 300000;
   var heartbeatTimer = null;
 
   function state() {
@@ -28,27 +33,26 @@
     return 'closed';
   }
 
-  /* The backlog cursor is the highest gateway seq we've applied. It's persisted per-account in IndexedDB (via App.db.kv) and loaded once before the first connect so we resume without gaps or duplicates. */
   function loadCursor() {
-    if (!App.db || !App.db.kvGet) return Promise.resolve();
-    return App.db.kvGet('wsCursor').then(function (v) {
-      cursor = (typeof v === 'number' && v > 0) ? v : 0;
-      App.util.dbg('ws: cursor loaded (' + cursor + ')');
-    })['catch'](function () { cursor = 0; });
+    return Promise.resolve();
   }
 
-  function updateCursor(seq) {
-    if (typeof seq === 'number' && seq > cursor) cursor = seq;
+  function sendKeepalive() {
+    if (!sock || sock.readyState !== WebSocket.OPEN || !App.signal) return;
+    try {
+      sock.send(App.signal.encodeWsKeepalive());
+    } catch (e) {
+      App.util.dbg('ws: keepalive send failed ' + e.message);
+    }
   }
 
-  function persistCursor() {
-    if (cursorTimer || !App.db || !App.db.kvSet) return;
-    cursorTimer = setTimeout(function () {
-      cursorTimer = null;
-      App.db.kvSet('wsCursor', cursor)['catch'](function (e) {
-        App.util.dbg('ws: cursor persist failed ' + (e && e.message));
-      });
-    }, 1000);
+  function sendAck(reqId, status, message) {
+    if (!sock || sock.readyState !== WebSocket.OPEN || reqId === undefined || !App.signal) return;
+    try {
+      sock.send(App.signal.encodeWsAck(reqId, status || 200, message || 'OK'));
+    } catch (e) {
+      App.util.dbg('ws: ack failed ' + e.message);
+    }
   }
 
   function connect() {
@@ -63,19 +67,19 @@
       reconnectTimer = null;
     }
 
-    var url = App.config.wsUrl() + '/v1/receive/' +
-      encodeURIComponent(App.config.number());
-    // Resume the gateway backlog from the last seq we applied.
-    url += '?since=' + cursor;
-    // This device's push endpoint (if it has one) lets the gateway skip push only for the devices actually open, so another device sharing the number still gets notified. Redacted from the debug log (it's a capability URL).
-    var endpoint = '';
-    try { endpoint = window.localStorage.getItem('s4k.pushEndpoint') || ''; } catch (e) { /* unavailable */ }
-    if (endpoint) url += '&ep=' + encodeURIComponent(endpoint);
-    App.util.dbg('ws: connecting ' + url.replace(/([?&]ep=)[^&]*/, '$1***'));
+    var loginId = (App.config.aci() || App.config.number()) + '.' + App.config.deviceId();
+    // SECURITY-REVIEW: credentials passed to Signal WSS endpoint; redacted from debug logs.
+    var url = App.config.wsUrl() + '/v1/websocket/?agent=OWD' +
+      '&login=' + encodeURIComponent(loginId) +
+      '&password=' + encodeURIComponent(App.config.deviceToken());
+
+    App.util.dbg('ws: connecting ' + App.config.wsUrl() + '/v1/websocket/?agent=OWD&login=' + loginId);
     App.store.setConnection('connecting');
+    drainingQueue = true;
 
     try {
-      sock = new WebSocket(url, [PROTOCOL, 's4k.auth.' + App.config.deviceToken()]);
+      sock = new WebSocket(url);
+      sock.binaryType = 'arraybuffer';
     } catch (e) {
       App.util.dbg('ws: constructor failed ' + e.message);
       scheduleReconnect();
@@ -87,57 +91,81 @@
       framesThisSession = 0;
       if (everConnected && lastCloseAt) {
         App.util.dbg('ws: reconnected after ' + (Date.now() - lastCloseAt) + 'ms gap');
-        // Refresh the directory so contacts/groups that appeared while offline resolve. Missed messages are backfilled by the gateway's backlog replay (?since=<cursor>) on this fresh socket.
         resync();
       } else {
         App.util.dbg('ws: open');
       }
       everConnected = true;
       scheduleWakeAlarm();
+      if (keepaliveTimer) clearInterval(keepaliveTimer);
+      keepaliveTimer = setInterval(sendKeepalive, KEEPALIVE_MS);
       App.store.setConnection('open');
     };
 
     sock.onmessage = function (evt) {
-      var msg;
-      try {
-        msg = JSON.parse(evt.data);
-      } catch (e) {
-        App.util.dbg('ws: non-JSON frame', evt.data);
-        return;
-      }
-      // Gateway envelope: { t: 'backlog'|'backlog-done'|'frame', seq, data }. Fall back to treating the message as a raw signal-cli frame so the app still works if pointed directly at signal-cli-rest-api.
-      if (msg && msg.t) {
-        if (msg.t === 'backlog') {
-          // Already-seen-while-closed messages: apply silently (no notification flood), just advance the resume cursor.
-          if (msg.data) App.store.ingestRaw(msg.data, { silent: true });
-          updateCursor(msg.seq);
-        } else if (msg.t === 'backlog-done') {
-          App.util.dbg('ws: backlog replay complete (seq ' + (msg.seq || 0) + ')');
-          updateCursor(msg.seq);
-          persistCursor();
-        } else if (msg.t === 'frame') {
+      if (!App.signal) return;
+
+      // Support JSON fallback for local testing/simulators if non-binary
+      if (typeof evt.data === 'string') {
+        try {
+          var jsonMsg = JSON.parse(evt.data);
           framesThisSession += 1;
-          if (msg.data) App.store.ingestRaw(msg.data);
-          updateCursor(msg.seq);
-          persistCursor();
-        } else {
-          App.util.dbg('ws: unknown envelope type ' + msg.t);
+          App.store.ingestRaw(jsonMsg);
+        } catch (e) {
+          App.util.dbg('ws: non-JSON text frame');
         }
         return;
       }
-      framesThisSession += 1;
-      App.store.ingestRaw(msg);
+
+      var wsMsg;
+      try {
+        wsMsg = App.signal.decodeWsFrame(evt.data);
+      } catch (e) {
+        App.util.dbg('ws: failed to decode protobuf frame ' + e.message);
+        return;
+      }
+
+      // WebSocketRequestMessage from Signal server (type === 1)
+      if (wsMsg && wsMsg.type === 1 && wsMsg.request) {
+        var req = wsMsg.request;
+        if (req.path === '/api/v1/queue/empty') {
+          drainingQueue = false;
+          sendAck(req.id, 200, 'OK');
+          App.util.dbg('ws: offline queue drain complete');
+          return;
+        }
+        if (req.path === '/api/v1/message' && req.body) {
+          var isSilent = drainingQueue;
+          framesThisSession += 1;
+          App.signal.processIncomingEnvelope(req.body).then(function (frame) {
+            if (frame) {
+              App.store.ingestRaw(frame, { silent: isSilent });
+            }
+            sendAck(req.id, 200, 'OK');
+          })['catch'](function (err) {
+            App.util.dbg('ws: envelope decrypt error: ' + (err && err.message));
+            // ACK malformed/unrecoverable frame so it does not block the queue forever
+            sendAck(req.id, 200, 'OK');
+          });
+          return;
+        }
+        sendAck(req.id, 200, 'OK');
+      }
     };
 
     sock.onclose = function (evt) {
       lastCloseAt = Date.now();
+      if (keepaliveTimer) {
+        clearInterval(keepaliveTimer);
+        keepaliveTimer = null;
+      }
       App.util.dbg('ws: closed (code ' + evt.code + ', ' +
         framesThisSession + ' frames this session)');
       App.store.setConnection('closed');
       sock = null;
 
-      if (evt.code === CLOSE_UNPAIRED) {
-        App.util.dbg('ws: gateway rejected this phone (unpaired)');
+      if (evt.code === CLOSE_UNAUTHORIZED || evt.code === CLOSE_FORBIDDEN) {
+        App.util.dbg('ws: Signal server rejected credentials (unlinked)');
         wanted = false;
         if (App.http.onUnpaired) App.http.onUnpaired();
         return;
@@ -148,7 +176,6 @@
 
     sock.onerror = function () {
       App.util.dbg('ws: error');
-      // onclose follows and handles the reconnect.
     };
   }
 
@@ -160,10 +187,8 @@
     }
   }
 
-  /* KaiOS can suspend a backgrounded app; a mozAlarm wakes it up so the socket can be re-established and queued messages can drain. Feature-detected: on desktop / the simulator without mozAlarms this is a no-op. Full delivery while the app is fully killed also needs a system-message handler, which is a separate (and largely unsupported) concern — this only helps while the app is still resident but suspended. */
   function scheduleWakeAlarm() {
     var when = new Date(Date.now() + WAKE_ALARM_MS);
-    // App.platform picks navigator.b2g.alarmManager (3.0/4.0) or navigator.mozAlarms (2.5); rejects (harmless no-op) off-device.
     App.platform.scheduleAlarm(when, { type: 's4k-wake' })['catch'](function (e) {
       App.util.dbg('ws: could not schedule wake alarm ' + (e && e.message));
     });
@@ -198,6 +223,10 @@
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    if (keepaliveTimer) {
+      clearInterval(keepaliveTimer);
+      keepaliveTimer = null;
+    }
     if (sock) {
       sock.onclose = null;
       try { sock.close(); } catch (e) { /* already closed */ }
@@ -219,7 +248,6 @@
     }
   });
 
-  // When a wake alarm fires, reconnect (if we still want a connection) and arm the next alarm.
   function onWake() {
     App.util.dbg('ws: wake alarm fired');
     if (wanted && state() === 'closed') {
@@ -229,20 +257,7 @@
     scheduleWakeAlarm();
   }
 
-  // KaiOS 2.5: the 'alarm' system message is delivered straight to the page via mozSetMessageHandler. Feature-detected so it is harmless off-device.
-  try {
-    if (navigator.mozSetMessageHandler) {
-      navigator.mozSetMessageHandler('alarm', function (msg) {
-        var data = msg && msg.data;
-        if (data && data.type !== 's4k-wake') return;
-        onWake();
-      });
-    }
-  } catch (e) {
-    App.util.dbg('ws: alarm handler unavailable ' + e.message);
-  }
-
-  // KaiOS 3.0/4.0: the 'alarm' system message goes to the ServiceWorker (sw.js), which relays it to open clients via postMessage. Listen for that relay.
+  // KaiOS 3.0 / 3.1 / 4.0: the 'alarm' system message goes to the ServiceWorker (sw.js), which relays it to open clients via postMessage.
   try {
     if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
       navigator.serviceWorker.addEventListener('message', function (evt) {
