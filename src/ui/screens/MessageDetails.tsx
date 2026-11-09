@@ -1,6 +1,7 @@
 import { useRef, useState } from 'preact/hooks';
 import { useStoreEvent, useTicker } from '../app/hooks';
 import { useKeys } from '../app/router';
+import { Icon } from '../components/Icon';
 import { RichText } from '../components/RichText';
 import { Screen } from '../components/Screen';
 import { config } from '../data/config';
@@ -41,6 +42,7 @@ export function MessageDetailsScreen(props: { msg: Message }) {
   if (!m.incoming && STATUS_LABEL[m.status]) fields.push([S.status, STATUS_LABEL[m.status]]);
   if (m.edited) fields.push([S.edited, S.yes]);
   if (m.expiresAt) fields.push([S.disappearsIn, fmtDuration((m.expiresAt - Date.now()) / 1000)]);
+  const privately = !!m.sealed && config.sealedSenderIndicators();
 
   return (
     <Screen title={S.messageDetails}>
@@ -52,6 +54,14 @@ export function MessageDetailsScreen(props: { msg: Message }) {
             <div class="details-value">{v}</div>
           </div>
         ))}
+        {privately && (
+          <div class="details-row">
+            <div class="details-label">{S.delivery}</div>
+            <div class="details-value">
+              <Icon name="lock" /> {S.deliveredPrivately}
+            </div>
+          </div>
+        )}
         {!m.deleted && m.history && m.history.length > 0 && (
           <div class="details-row">
             <div class="details-label">{S.earlierVersions}</div>

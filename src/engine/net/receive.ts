@@ -275,6 +275,7 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
     sourceDevice: env.sourceDevice || 1,
     timestamp: env.timestamp || Date.now(),
   };
+  if (env.type === Envelope_Type.UNIDENTIFIED_SENDER) frameEnv.sealed = true;
   const c = content.content;
 
   switch (c.case) {
@@ -339,6 +340,7 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
             destinationNumber: s.destinationE164 || undefined,
             destinationUuid: destination && isAci(destination) ? destination : undefined,
             timestamp: num(s.timestamp) || innerDm.timestamp || Date.now(),
+            sealed: s.unidentifiedStatus.length > 0 && s.unidentifiedStatus.every((u) => !!u.unidentified),
           };
         }
       }

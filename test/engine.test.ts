@@ -180,11 +180,11 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
     const put = (key: Uint8Array, record: any) => putRaw(key, toBinary(StorageRecordSchema, create(StorageRecordSchema, { record })));
     const contactBytes = toBinary(
       ContactRecordSchema,
-      create(ContactRecordSchema, { aci: ALICE, e164: '+15553334444', givenName: 'Clara', familyName: 'Oswald', profileKey, blocked: true })
+      create(ContactRecordSchema, { aci: ALICE, e164: '+15553334444', givenName: 'Clara', familyName: 'Oswald', profileKey, blocked: true, systemGivenName: 'Clara' })
     );
     await putRaw(contactKey, rawContactRecord(concatBytes(contactBytes, UNKNOWN_FIELD)));
     await put(groupKey, { case: 'groupV2', value: { masterKey: groupMasterKey, archived: true, markedUnread: true } });
-    await put(accountKey, { case: 'account', value: { givenName: 'Me', readReceipts: true, linkPreviews: true, sealedSenderIndicators: true, noteToSelfMarkedUnread: true } });
+    await put(accountKey, { case: 'account', value: { givenName: 'Me', readReceipts: true, linkPreviews: true, sealedSenderIndicators: true, noteToSelfMarkedUnread: true, universalExpireTimer: 86400 } });
     records.set(toBase64(stickerKey), randomBytes(40));
 
     const urls: string[] = [];
@@ -265,6 +265,8 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(res.contacts[0].aci, ALICE);
       assert.equal(res.contacts[0].givenName, 'Clara');
       assert.equal(res.contacts[0].blocked, true);
+      assert.equal(res.contacts[0].whitelisted, false);
+      assert.equal(res.contacts[0].systemContact, true);
       assert.deepEqual(res.contacts[0].profileKey, srv.profileKey);
       assert.deepEqual(res.groupsV2[0].masterKey, srv.groupMasterKey);
       assert.equal(res.groupsV2[0].archived, true);
@@ -273,6 +275,7 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(res.account?.readReceipts, true);
       assert.equal(res.account?.linkPreviews, true);
       assert.equal(res.account?.sealedSenderIndicators, true);
+      assert.equal(res.account?.universalExpireTimer, 86400);
       assert.equal(res.account?.noteToSelfMarkedUnread, true);
 
       srv.urls.length = 0;
@@ -290,7 +293,8 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
         { type: 'contact', aci: ALICE, update: (c) => { c.blocked = false; c.nickname = create(ContactRecord_NameSchema, { given: 'Clara O.' }); } },
         { type: 'contact', aci: ALICE, update: (c) => { c.archived = true; } },
         { type: 'groupV2', masterKey: newGroup, update: (g) => { g.mutedUntilTimestamp = 99n; } },
-        { type: 'account', update: (a) => { a.username = 'clara.42'; } },
+        { type: 'account', update: (a) => { a.username = 'clara.42'; a.universalExpireTimer = 3600; a.sealedSenderIndicators = false; } },
+        { type: 'contact', aci: ALICE, update: (c) => { c.whitelisted = true; } },
       ]);
       assert.equal(changed, true);
       assert.equal(srv.version(), 8n);
@@ -313,6 +317,9 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(res.groupsV2.length, 2);
       assert.equal(res.groupsV2.find((g) => toBase64(g.masterKey) === toBase64(newGroup))?.mutedUntilTimestamp, 99);
       assert.equal(res.account?.username, 'clara.42');
+      assert.equal(res.account?.universalExpireTimer, 3600);
+      assert.equal(res.account?.sealedSenderIndicators, false);
+      assert.equal(res.contacts[0].whitelisted, true);
     });
   }
 

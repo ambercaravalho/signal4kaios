@@ -208,6 +208,7 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
     edited: false,
   };
   if (ev.contactCard) rec.contactCard = ev.contactCard;
+  if (ev.sealed) rec.sealed = true;
   if (ev.expiresInSeconds) {
     rec.expireSecs = ev.expiresInSeconds;
     rec.expiresAt = Date.now() + ev.expiresInSeconds * 1000;
@@ -569,6 +570,7 @@ function sendCore(conv: Conversation, rec: Message, payload: SendPayload, previe
         persistConv(conv);
       }
       rec.status = 'sent';
+      if (res && res.sealed) rec.sealed = true;
       db.putMessage(rec);
       emit('message-updated', rec, oldId);
       return rec;
@@ -634,6 +636,19 @@ function convForSend(convId: string): Conversation {
   return conv;
 }
 
+/** Signal-Desktop's universal timer: our first message in a 1:1 chat with no history and no timer starts the account's default timer first. */
+function withDefaultTimer(conv: Conversation, send: () => Promise<Message>): Promise<Message> {
+  const secs = config.defaultExpireTimer();
+  if (!secs || conv.type !== 'direct' || conv.expireTimer || conv.lastTs > 0 || isSelfConv(conv) || !conv.sendId) return send();
+  return signal
+    .setDirectExpireTimer(conv.sendId, secs)
+    .then(
+      () => setConvExpire(conv.id, secs),
+      (e) => dbg('default timer failed: ' + (e && e.message))
+    )
+    .then(send);
+}
+
 /** With styled text on, typed markers become formatting locally and in what's sent. */
 function styled(text: string): { body: string; styles: StyleRange[] } {
   if (config.styledText() && text) return parseStyledMarkdown(text);
@@ -647,18 +662,20 @@ export function sendText(convId: string, text: string, quote?: Quote | null, men
   } catch (e) {
     return Promise.reject(e);
   }
-  const st = styled(text);
-  const wire = encodeMentions(st.body, st.styles, mentions);
-  const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, quote: quote || null });
-  if (wire.mentions.length) rec.mentions = mentions;
-  const payload: SendPayload = { recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0 };
-  if (quote) {
-    payload.quote_timestamp = quote.timestamp;
-    payload.quote_author = quote.author;
-    payload.quote_message = quote.text;
-    if (quote.attachments && quote.attachments.length) payload.quote_attachments = quote.attachments;
-  }
-  return sendCore(conv, rec, payload, st.body);
+  return withDefaultTimer(conv, () => {
+    const st = styled(text);
+    const wire = encodeMentions(st.body, st.styles, mentions);
+    const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, quote: quote || null });
+    if (wire.mentions.length) rec.mentions = mentions;
+    const payload: SendPayload = { recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0 };
+    if (quote) {
+      payload.quote_timestamp = quote.timestamp;
+      payload.quote_author = quote.author;
+      payload.quote_message = quote.text;
+      if (quote.attachments && quote.attachments.length) payload.quote_attachments = quote.attachments;
+    }
+    return sendCore(conv, rec, payload, st.body);
+  });
 }
 
 /** `dataUri` is "data:<mime>;base64,…" (a scaled photo, a picked file, or a voice note). View-once media goes without a caption, as in Signal. */
@@ -674,11 +691,13 @@ export function sendAttachment(convId: string, dataUri: string, caption: string,
   const att: Attachment = { id: '', contentType, filename, size: meta.size || 0, voiceNote: !!meta.voiceNote };
   if (meta.viewOnce) att.viewOnce = true;
   const text = meta.viewOnce ? '' : caption || '';
-  const st = styled(text);
-  const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: [att] });
-  const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, base64_attachments: [dataUri] };
-  if (meta.viewOnce) payload.view_once = true;
-  return sendCore(conv, rec, payload, st.body || attachmentLabel([att]));
+  return withDefaultTimer(conv, () => {
+    const st = styled(text);
+    const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: [att] });
+    const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, base64_attachments: [dataUri] };
+    if (meta.viewOnce) payload.view_once = true;
+    return sendCore(conv, rec, payload, st.body || attachmentLabel([att]));
+  });
 }
 
 export function sendEdit(rec: Message, newText: string, mentions: PickedMention[] = []): Promise<Message> {
@@ -715,10 +734,12 @@ export function forwardMessage(convId: string, m: Message, dataUri?: string): Pr
   }
   const src = dataUri ? m.attachments[0] : undefined;
   const attachments: Attachment[] = src ? [{ id: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: !!src.voiceNote }] : [];
-  const rec = newOutgoingRec(conv, { body: m.body, styles: m.styles || [], attachments });
-  const payload: SendPayload = { recipients: [conv.sendId!], message: m.body, styles: m.styles || [], expire_timer: conv.expireTimer || 0 };
-  if (dataUri) payload.base64_attachments = [dataUri];
-  return sendCore(conv, rec, payload, previewOf(rec));
+  return withDefaultTimer(conv, () => {
+    const rec = newOutgoingRec(conv, { body: m.body, styles: m.styles || [], attachments });
+    const payload: SendPayload = { recipients: [conv.sendId!], message: m.body, styles: m.styles || [], expire_timer: conv.expireTimer || 0 };
+    if (dataUri) payload.base64_attachments = [dataUri];
+    return sendCore(conv, rec, payload, previewOf(rec));
+  });
 }
 
 export function retryMessage(rec: Message): Promise<Message> {

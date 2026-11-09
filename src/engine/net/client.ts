@@ -221,9 +221,9 @@ export class SignalClient {
   }
 
   /**
-   * Encrypt and deliver a Content to all devices of `recipientId` (an ACI) via `PUT /v1/messages/{recipientId}`, using Sealed Sender when we know the recipient's profile key, and handling 409 (missing/extra devices) and 410 (stale devices) by updating sessions and retrying.
+   * Encrypt and deliver a Content to all devices of `recipientId` (an ACI) via `PUT /v1/messages/{recipientId}`, using Sealed Sender when we know the recipient's profile key, and handling 409 (missing/extra devices) and 410 (stale devices) by updating sessions and retrying. Resolves to whether it went sealed.
    */
-  async sendContentToRecipient(recipientId: string, content: Content, timestamp: number, online = false): Promise<void> {
+  async sendContentToRecipient(recipientId: string, content: Content, timestamp: number, online = false): Promise<boolean> {
     if (!isAci(recipientId)) throw new Error('Signal recipients are addressed by ACI; unknown service ID ' + recipientId);
     const auth = await this.authHeader();
     const local = await localIdentity(this.store);
@@ -239,7 +239,7 @@ export class SignalClient {
 
     let devices = await this.devicesFor(recipientId);
     for (let attempt = 0; attempt < 4; attempt++) {
-      if (devices.length === 0) return;
+      if (devices.length === 0) return false;
       const messages = [];
       for (const devId of devices) {
         await this.ensureSession(recipientId, devId);
@@ -272,7 +272,7 @@ export class SignalClient {
             : { baseUrl: this.serverUrl, basicAuth: auth, timeout: 20000 }
         );
         this.deviceLists.set(recipientId, devices);
-        return;
+        return !!accessKey;
       } catch (err: any) {
         const status = err && err.status;
         const body = err && err.body;
@@ -298,25 +298,28 @@ export class SignalClient {
         throw err;
       }
     }
+    return false;
   }
 
   /**
    * Send a group Content to every member as individual Sealed Sender (or identified) 1:1 messages. Signal's multi-recipient sender-key endpoint needs group send endorsements we don't hold, and a raw SenderKeyMessage via /v1/messages is not a valid envelope, so groups use pairwise fanout. Errors for single members are collected; the call fails only if no member received it.
    */
-  async sendGroupContent(recipients: string[], content: Content, timestamp: number, online = false): Promise<void> {
+  async sendGroupContent(recipients: string[], content: Content, timestamp: number, online = false): Promise<boolean> {
     const auth = await this.authHeader();
     const targets = recipients.filter((p) => p && p !== auth.aci && isAci(p));
     let lastError: unknown = null;
     let delivered = 0;
+    let sealed = 0;
     for (const peer of targets) {
       try {
-        await this.sendContentToRecipient(peer, content, timestamp, online);
+        if (await this.sendContentToRecipient(peer, content, timestamp, online)) sealed++;
         delivered++;
       } catch (err) {
         lastError = err;
       }
     }
     if (targets.length > 0 && delivered === 0 && lastError) throw lastError;
+    return targets.length > 0 && sealed === targets.length;
   }
 
   /**

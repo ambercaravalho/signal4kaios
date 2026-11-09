@@ -18,6 +18,8 @@ export interface MessageEvent {
   attachments: Attachment[];
   expiresInSeconds: number;
   contactCard?: ContactCard;
+  /** Delivered without revealing the sender to Signal's servers (Sealed Sender). */
+  sealed?: boolean;
 }
 
 export interface NoticeEvent {
@@ -253,6 +255,7 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
     expiresInSeconds: num(dm.expiresInSeconds),
   };
   if (card) ev.contactCard = card;
+  if (incoming ? env.sealed === true : dm.sealed === true) ev.sealed = true;
   return [ev];
 }
 

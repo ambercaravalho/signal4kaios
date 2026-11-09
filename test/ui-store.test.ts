@@ -121,6 +121,37 @@ describe('store', () => {
     assert.equal((await db.getMessage(ALICE + '|5000|' + ME))!.status, 'read');
   });
 
+  it('starts the default timer on the first message to a new chat and keeps private delivery', async () => {
+    const sent: any[] = [];
+    const timers: Array<[string, number]> = [];
+    (signal as any).setDirectExpireTimer = async (sendId: string, secs: number) => {
+      timers.push([sendId, secs]);
+    };
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 5060 + sent.length, sealed: true };
+    };
+    config.set({ defaultExpireTimer: 86400 });
+    const conv = store.conversationWith({ number: '+15550009' });
+    const rec = await store.sendText(conv.id, 'first');
+    await store.sendText(conv.id, 'second');
+    config.set({ defaultExpireTimer: 0 });
+    assert.deepEqual(timers, [[conv.sendId, 86400]]);
+    assert.equal(sent[0].expire_timer, 86400);
+    assert.equal(sent[1].expire_timer, 86400);
+    assert.equal(store.conversation(conv.id)!.expireTimer, 86400);
+    assert.equal(rec.sealed, true);
+    assert.equal((await db.getMessage(rec.id))!.sealed, true);
+    (signal as any).sendDeleteForMe = async () => {};
+    await store.deleteChat(conv.id);
+
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, sealed: true, timestamp: 1800, dataMessage: { timestamp: 1800, message: 'quiet' } } });
+    store.ingestRaw(incoming(1900, 'loud'));
+    await settle();
+    assert.equal((await db.getMessage(ALICE + '|1800|' + ALICE))!.sealed, true);
+    assert.equal((await db.getMessage(ALICE + '|1900|' + ALICE))!.sealed, undefined);
+  });
+
   it('sends picked mentions and quoted attachment types, and keeps them for a retry', async () => {
     const sent: any[] = [];
     (signal as any).send = async (payload: any) => {

@@ -345,12 +345,12 @@ async function addressableMessages(refs: MessageRef[]): Promise<AddressableMessa
   return out;
 }
 
-async function deliver(target: { isGroup: boolean; peers: string[] }, content: Content, ts: number, online = false): Promise<void> {
-  if (target.isGroup) {
-    await client.sendGroupContent(target.peers, content, ts, online);
-  } else {
-    for (const peer of target.peers) await client.sendContentToRecipient(peer, content, ts, online);
-  }
+/** Resolves to whether every recipient got it sealed. */
+async function deliver(target: { isGroup: boolean; peers: string[] }, content: Content, ts: number, online = false): Promise<boolean> {
+  if (target.isGroup) return client.sendGroupContent(target.peers, content, ts, online);
+  let sealed = target.peers.length > 0;
+  for (const peer of target.peers) if (!(await client.sendContentToRecipient(peer, content, ts, online))) sealed = false;
+  return sealed;
 }
 
 /**
@@ -537,6 +537,7 @@ async function syncFromStorageService(): Promise<boolean> {
     if (res.account.typingIndicators !== undefined) patch.typingIndicators = res.account.typingIndicators;
     if (res.account.linkPreviews !== undefined) patch.linkPreviews = res.account.linkPreviews;
     if (res.account.sealedSenderIndicators !== undefined) patch.sealedSenderIndicators = res.account.sealedSenderIndicators;
+    if (res.account.universalExpireTimer !== undefined) patch.defaultExpireTimer = res.account.universalExpireTimer;
     if (Object.keys(patch).length > 0) host().config.set(patch);
     const acc = await store.getAccount();
     if (acc && res.account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!res.account.noteToSelfArchived, markedUnread: !!res.account.noteToSelfMarkedUnread });
@@ -795,7 +796,7 @@ export const signalBridge = {
     edit_timestamp?: number;
     mentions?: Array<{ start: number; length: number; uuid: string }>;
     view_once?: boolean;
-  }): Promise<{ timestamp: number }> {
+  }): Promise<{ timestamp: number; sealed: boolean }> {
     const ts = Date.now();
     const bodyText = payload.message || '';
     const styles = payload.styles || [];
@@ -848,9 +849,9 @@ export const signalBridge = {
         })
       : dataContent(dm);
 
-    await deliver(target, content, ts);
+    const sealed = await deliver(target, content, ts);
     await client.sendSyncMessage(syncSent(target.isGroup ? '' : target.peers[0], ts, dm, payload.edit_timestamp), ts);
-    return { timestamp: ts };
+    return { timestamp: ts, sealed };
   },
 
   async sendReaction(recipient: string, targetAuthor: string, targetTimestamp: number, emoji: string, remove: boolean): Promise<void> {
@@ -1249,6 +1250,31 @@ export const signalBridge = {
       });
     }
     await storageQueue.enqueue(mutations);
+  },
+
+  /** The disappearing-message timer new 1:1 chats start with (`AccountRecord.universalExpireTimer`), shared with our other devices. */
+  async setUniversalExpireTimer(seconds: number): Promise<void> {
+    const secs = Math.max(0, Math.floor(seconds) || 0);
+    await storageQueue.enqueue([
+      {
+        type: 'account',
+        update: (a) => {
+          a.universalExpireTimer = secs;
+        },
+      },
+    ]);
+  },
+
+  /** Whether messages show when they were delivered privately (`AccountRecord.sealedSenderIndicators`), shared with our other devices. */
+  async setSealedSenderIndicators(on: boolean): Promise<void> {
+    await storageQueue.enqueue([
+      {
+        type: 'account',
+        update: (a) => {
+          a.sealedSenderIndicators = on;
+        },
+      },
+    ]);
   },
 
   /** Block a group like Signal-Desktop's "Block and leave": leave it if we're still in it, then `GroupV2Record.blocked` in Storage Service and the Blocked sync. Unblocking only clears the block. */

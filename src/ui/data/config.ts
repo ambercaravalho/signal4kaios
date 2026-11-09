@@ -31,8 +31,9 @@ interface ConfigData {
   typingIndicators?: boolean;
   /** Synced from the phone; Beacon doesn't make link previews yet. */
   linkPreviews?: boolean;
-  /** Synced from the phone; Beacon doesn't show sealed sender indicators yet. */
   sealedSenderIndicators?: boolean;
+  /** Seconds; the disappearing-message timer new 1:1 chats start with. */
+  defaultExpireTimer?: number;
   keepMutedArchived?: boolean;
   accounts?: SavedAccount[];
   [k: string]: unknown;
@@ -126,6 +127,11 @@ export const config = {
 
   sealedSenderIndicators(): boolean {
     return read().sealedSenderIndicators === true;
+  },
+
+  defaultExpireTimer(): number {
+    const v = read().defaultExpireTimer;
+    return typeof v === 'number' && v > 0 ? Math.floor(v) : 0;
   },
 
   /** Muted chats stay archived when new messages arrive, as in Signal. */

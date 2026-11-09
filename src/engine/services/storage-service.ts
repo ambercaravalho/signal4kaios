@@ -80,6 +80,8 @@ export interface StorageAccountRecord {
   typingIndicators?: boolean;
   linkPreviews?: boolean;
   sealedSenderIndicators?: boolean;
+  /** Disappearing-message timer for new 1:1 chats, in seconds; 0 is off. */
+  universalExpireTimer?: number;
   username?: string;
   usernameLink?: { entropy: Uint8Array; serverId: Uint8Array };
   pinnedConversations: StoragePinnedConversation[];
@@ -302,6 +304,7 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
         typingIndicators: a.typingIndicators,
         linkPreviews: a.linkPreviews,
         sealedSenderIndicators: a.sealedSenderIndicators,
+        universalExpireTimer: a.universalExpireTimer,
         username: opt(a.username, ''),
         usernameLink: link && link.entropy.length === 32 && link.serverId.length === 16 ? { entropy: link.entropy, serverId: link.serverId } : undefined,
         pinnedConversations: pinned,
