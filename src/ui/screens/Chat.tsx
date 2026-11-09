@@ -282,10 +282,11 @@ function readAsDataUrl(file: File): Promise<string> {
 }
 
 /** The OS picker on KaiOS already offers the camera, recorder, and gallery, so one file input covers photos, voice notes, and files. */
-function chooseFile(): Promise<File | null> {
+function chooseFile(accept?: string): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
+    if (accept) input.accept = accept;
     input.className = 'hidden';
     document.body.appendChild(input);
     input.addEventListener('change', () => {
@@ -550,20 +551,29 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     store.sendText(convId, text, q, mentions).catch((e) => toast(sendError(e)));
   }
 
-  async function attach(): Promise<void> {
-    const file = await chooseFile();
+  /** View-once media goes without a caption, so the draft stays in the composer. */
+  async function attach(viewOnce: boolean): Promise<void> {
+    const file = await chooseFile(viewOnce ? 'image/*,video/*' : undefined);
     if (!file) return;
+    const type = file.type || 'application/octet-stream';
+    if (viewOnce && type.indexOf('image/') !== 0 && type.indexOf('video/') !== 0) return toast(S.viewOnceOnlyMedia);
     if (file.size > MAX_FILE_BYTES) return toast(S.fileTooLarge);
     toast(S.preparingFile);
     try {
       const uri = withFilename(await readAsDataUrl(file), file.name);
-      const caption = draft.trim();
-      clearComposer();
-      store.setDraft(convId, '', []);
-      await store.sendAttachment(convId, uri, caption, { contentType: file.type || 'application/octet-stream', filename: file.name, size: file.size });
+      const caption = viewOnce ? '' : draft.trim();
+      if (!viewOnce) {
+        clearComposer();
+        store.setDraft(convId, '', []);
+      }
+      await store.sendAttachment(convId, uri, caption, { contentType: type, filename: file.name, size: file.size, viewOnce });
     } catch (e) {
       toast(sendError(e));
     }
+  }
+
+  function openAttachment(m: Message, att: Attachment): void {
+    router.push(ViewerScreen, { att, title: authorName(m), onOpened: () => store.markViewed(m) });
   }
 
   async function mention(): Promise<void> {
@@ -636,7 +646,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
         },
       },
       DIVIDER,
-      !m.deleted && att && { label: attachmentAction(att), onSelect: () => router.push(ViewerScreen, { att, title: authorName(m) }) },
+      !m.deleted && att && { label: attachmentAction(att), onSelect: () => openAttachment(m, att) },
       urls.length > 0 && { label: S.openLink, onSelect: () => openLinks(urls) },
       !m.deleted && !!m.body && { label: S.copyText, onSelect: () => copyText(m) },
       canChange(m) && !m.attachments.length && {
@@ -679,7 +689,8 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   function chatOptions(): void {
     showOptions([
-      canCompose && { label: S.attach, onSelect: attach },
+      canCompose && { label: S.attach, onSelect: () => attach(false) },
+      canCompose && { label: S.attachViewOnce, onSelect: () => attach(true) },
       canCompose && { label: S.insertEmoji, onSelect: () => pickEmoji().then((e) => e && insertText(e)) },
       canCompose && conv && conv.type === 'group' && { label: S.mention, onSelect: mention },
       DIVIDER,

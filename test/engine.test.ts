@@ -661,6 +661,21 @@ describe('Sync and service IDs', () => {
     assert.deepEqual(quoted.quote, { id: 7, authorUuid: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }] });
   });
 
+  it('turns viewed and view-once-open syncs into normalize frames', () => {
+    const env = { sourceUuid: BOB, sourceDevice: 2, timestamp: 1000 } as any;
+    const sync = contentToNormalizedFrame(
+      env,
+      create(ContentSchema, {
+        content: {
+          case: 'syncMessage',
+          value: { viewed: [{ senderAciBinary: uuidToBytes(ALICE), timestamp: 5n }], content: { case: 'viewOnceOpen', value: { senderAci: ALICE, timestamp: 6n } } },
+        },
+      })
+    ).envelope.syncMessage;
+    assert.deepEqual(sync.viewedMessages, [{ sender: ALICE, senderUuid: ALICE, timestamp: 5 }]);
+    assert.deepEqual(sync.viewOnceOpen, { sender: ALICE, senderUuid: ALICE, timestamp: 6 });
+  });
+
   it('reads service IDs from strings or 16/17-byte binaries', () => {
     const raw = uuidToBytes(ALICE);
     assert.equal(serviceIdFrom(undefined, raw), ALICE);

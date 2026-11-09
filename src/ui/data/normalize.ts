@@ -38,7 +38,14 @@ export type StoreEvent =
   | { type: 'timer'; convId: string; seconds: number }
   | { type: 'typing'; convId: string; author: string; started: boolean }
   | { type: 'receipt'; peer: string; kind: 'read' | 'delivery' | 'other'; timestamps: number[] }
-  | { type: 'readSync'; entries: Array<{ sender: string; timestamp: number }> };
+  | { type: 'readSync'; entries: SyncRef[] }
+  | { type: 'viewedSync'; entries: SyncRef[]; viewOnce: boolean };
+
+/** A message our other device read or opened: who sent it and when. */
+export interface SyncRef {
+  sender: string;
+  timestamp: number;
+}
 
 type NameOf = (key: string) => string;
 type Conv = { convId: string | null; groupInternalId: string | null };
@@ -253,6 +260,17 @@ export function parseFrame(frame: any, selfNumber: string, nameOf: NameOf): Stor
   return events;
 }
 
+function syncRefs(list: unknown): SyncRef[] {
+  if (!Array.isArray(list)) return [];
+  const out: SyncRef[] = [];
+  for (const r of list) {
+    if (!r) continue;
+    const sender = str(r.senderNumber) || str(r.senderUuid) || str(r.sender);
+    if (sender && r.timestamp) out.push({ sender, timestamp: num(r.timestamp) });
+  }
+  return out;
+}
+
 function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEvent[] {
   if (env.notice) return noticeEvent(env, env.notice, { convId: peerKey(env), groupInternalId: null }, peerKey(env) || '');
   if (env.dataMessage) return dataMessageEvents(env, env.dataMessage, true, nameOf);
@@ -270,7 +288,7 @@ function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEven
     const peer = peerKey(env);
     if (!peer) return [];
     const timestamps: number[] = Array.isArray(rm.timestamps) ? rm.timestamps.map(num) : rm.when ? [num(rm.when)] : [];
-    return [{ type: 'receipt', peer, kind: rm.isRead ? 'read' : rm.isDelivery ? 'delivery' : 'other', timestamps }];
+    return [{ type: 'receipt', peer, kind: rm.isRead || rm.isViewed ? 'read' : rm.isDelivery ? 'delivery' : 'other', timestamps }];
   }
 
   if (env.syncMessage) {
@@ -282,16 +300,15 @@ function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEven
       if (sent.editMessage) return editEvent(env, sent.editMessage, selfNumber, nameOf, conv);
       return dataMessageEvents(env, sent, false, nameOf, selfNumber, conv);
     }
-    if (Array.isArray(sm.readMessages)) {
-      const entries: Array<{ sender: string; timestamp: number }> = [];
-      for (const r of sm.readMessages) {
-        const sender = str(r.senderNumber) || str(r.senderUuid) || str(r.sender);
-        if (sender && r.timestamp) entries.push({ sender, timestamp: num(r.timestamp) });
-      }
-      return entries.length ? [{ type: 'readSync', entries }] : [];
-    }
-    dbg('normalize: unhandled sync message ' + Object.keys(sm).join(','));
-    return [];
+    const out: StoreEvent[] = [];
+    const read = syncRefs(sm.readMessages);
+    if (read.length) out.push({ type: 'readSync', entries: read });
+    const viewed = syncRefs(sm.viewedMessages);
+    if (viewed.length) out.push({ type: 'viewedSync', entries: viewed, viewOnce: false });
+    const opened = syncRefs(sm.viewOnceOpen ? [sm.viewOnceOpen] : undefined);
+    if (opened.length) out.push({ type: 'viewedSync', entries: opened, viewOnce: true });
+    if (!out.length) dbg('normalize: unhandled sync message ' + Object.keys(sm).join(','));
+    return out;
   }
 
   dbg('normalize: unhandled envelope ' + Object.keys(env).join(','));

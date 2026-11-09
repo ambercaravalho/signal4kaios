@@ -79,6 +79,7 @@ export interface StorageAccountRecord {
   usernameLink?: { entropy: Uint8Array; serverId: Uint8Array };
   pinnedConversations: StoragePinnedConversation[];
   noteToSelfArchived?: boolean;
+  noteToSelfMarkedUnread?: boolean;
 }
 
 export interface StorageSyncResult {
@@ -297,6 +298,7 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
         usernameLink: link && link.entropy.length === 32 && link.serverId.length === 16 ? { entropy: link.entropy, serverId: link.serverId } : undefined,
         pinnedConversations: pinned,
         noteToSelfArchived: a.noteToSelfArchived,
+        noteToSelfMarkedUnread: a.noteToSelfMarkedUnread,
       };
     }
   }

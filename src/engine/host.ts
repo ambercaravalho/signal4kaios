@@ -48,13 +48,14 @@ export interface HostConfig {
   set(patch: Record<string, unknown>): void;
 }
 
-/** Archive and mute state for one chat, keyed the way the app's store finds conversations (a contact's ACI or number, or a group's internal ID). `muted` is left out where Signal has no mute state (Note to Self). */
+/** Archive, mute, and marked-unread state for one chat, keyed the way the app's store finds conversations (a contact's ACI or number, or a group's internal ID). `muted` is left out where Signal has no mute state (Note to Self). */
 export interface ChatStateEntry {
   uuid?: string;
   number?: string;
   groupInternalId?: string;
   archived: boolean;
   muted?: boolean;
+  markedUnread?: boolean;
 }
 
 export type PinnedChat = { uuid?: string; number?: string; groupInternalId?: string };

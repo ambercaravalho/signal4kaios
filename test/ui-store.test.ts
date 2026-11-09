@@ -169,4 +169,68 @@ describe('store', () => {
     }
     assert.equal(store.setConvPinned(ALICE, true), false);
   });
+
+  it('marks a chat unread, syncs it, and clears it when the chat is read', () => {
+    const synced: any[] = [];
+    (signal as any).syncChatState = async (s: any) => {
+      synced.push(s);
+    };
+    (signal as any).sendReadReceipt = async () => {};
+    store.markRead(ALICE);
+    synced.length = 0;
+    store.setMarkedUnread(ALICE, true);
+    assert.equal(store.conversation(ALICE)!.markedUnread, true);
+    assert.deepEqual(synced, [{ type: 'direct', sendId: ALICE, markedUnread: true }]);
+    store.markRead(ALICE);
+    assert.equal(store.conversation(ALICE)!.markedUnread, false);
+    assert.deepEqual(synced[1], { type: 'direct', sendId: ALICE, markedUnread: false });
+    store.applyChatState([{ number: ALICE, archived: false, markedUnread: true }], null);
+    assert.equal(store.conversation(ALICE)!.markedUnread, true);
+    assert.equal(synced.length, 2);
+  });
+
+  it('sends view-once media without a caption', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 8000 };
+    };
+    const rec = await store.sendAttachment(ALICE, 'data:image/jpeg;base64,AAAA', 'a caption', { contentType: 'image/jpeg', viewOnce: true });
+    assert.equal(sent[0].view_once, true);
+    assert.equal(sent[0].message, '');
+    assert.equal(rec.body, '');
+    assert.equal(rec.attachments[0].viewOnce, true);
+  });
+
+  it('reports opened media once and drops view-once copies opened on another device', async () => {
+    const viewed: any[] = [];
+    (signal as any).sendViewed = async (to: string, ts: number, opts: any) => {
+      viewed.push([to, ts, opts]);
+    };
+    const cleared: Array<[string, number]> = [];
+    const putAttachment = db.putAttachment;
+    (db as any).putAttachment = async (id: string, blob: Blob) => {
+      cleared.push([id, blob.size]);
+    };
+    try {
+      store.ingestRaw(incoming(9000, '', { attachments: [{ id: 'att-voice', contentType: 'audio/aac', voiceNote: true }] }));
+      store.ingestRaw(incoming(9100, '', { attachments: [{ id: 'att-once', contentType: 'image/jpeg' }], viewOnce: true }));
+      store.ingestRaw(incoming(9200, '', { attachments: [{ id: 'att-photo', contentType: 'image/jpeg' }] }));
+      await settle();
+      const voice = (await db.getMessage(ALICE + '|9000|' + ALICE))!;
+      store.markViewed(voice);
+      store.markViewed(voice);
+      store.markViewed((await db.getMessage(ALICE + '|9200|' + ALICE))!);
+      await settle();
+      assert.deepEqual(viewed, [[ALICE, 9000, { receipt: true, viewOnce: false }]]);
+      assert.equal((await db.getMessage(ALICE + '|9000|' + ALICE))!.viewed, true);
+
+      store.ingestRaw({ envelope: { sourceNumber: ME, syncMessage: { viewOnceOpen: { senderNumber: ALICE, timestamp: 9100 } } } });
+      await settle();
+      assert.equal((await db.getMessage(ALICE + '|9100|' + ALICE))!.viewed, true);
+      assert.deepEqual(cleared, [['att-once', 0]]);
+    } finally {
+      (db as any).putAttachment = putAttachment;
+    }
+  });
 });

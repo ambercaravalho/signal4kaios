@@ -54,6 +54,17 @@ describe('parseFrame', () => {
     assert.deepEqual(rs, { type: 'readSync', entries: [{ sender: '+4', timestamp: 3 }] });
   });
 
+  it('counts viewed receipts as read and parses viewed and view-once syncs', () => {
+    const env = { sourceNumber: '+3' };
+    const [rc] = parseFrame({ envelope: { ...env, receiptMessage: { isViewed: true, timestamps: [7] } } }, '+1', nameOf);
+    assert.deepEqual(rc, { type: 'receipt', peer: '+3', kind: 'read', timestamps: [7] });
+    const evs = parseFrame({ envelope: { ...env, syncMessage: { viewedMessages: [{ senderUuid: 'aci-4', timestamp: 5 }], viewOnceOpen: { sender: 'aci-5', timestamp: 6 } } } }, '+1', nameOf);
+    assert.deepEqual(evs, [
+      { type: 'viewedSync', entries: [{ sender: 'aci-4', timestamp: 5 }], viewOnce: false },
+      { type: 'viewedSync', entries: [{ sender: 'aci-5', timestamp: 6 }], viewOnce: true },
+    ]);
+  });
+
   it('turns notices into notice events and drops unknown kinds', () => {
     const [ev] = parseFrame({ envelope: { sourceNumber: '+3', timestamp: 8, notice: { kind: 'missedCall', video: true, timestamp: 9 } } }, '+1', nameOf);
     assert.deepEqual(ev, { type: 'notice', convId: '+3', groupInternalId: null, author: '+3', timestamp: 9, notice: { kind: 'missedCall', video: true } });

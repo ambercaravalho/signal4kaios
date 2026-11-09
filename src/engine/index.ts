@@ -42,9 +42,10 @@ import {
   uploadOwnProfile,
 } from './services/profiles';
 import { generatePreKeyUpload } from './protocol/prekeys';
-import { create, decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, isAci, serviceIdFrom } from './net/proto';
+import { create, decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, fromBinary, isAci, serviceIdFrom } from './net/proto';
 import { compareScannedSafetyNumber } from './protocol/protocol';
-import { ProvisioningCallbacks, ProvisioningSession, startDeviceProvisioning } from './net/provisioning';
+import { decryptDeviceName, ProvisioningCallbacks, ProvisioningSession, startDeviceProvisioning } from './net/provisioning';
+import { DeviceNameSchema } from './gen/DeviceName_pb';
 import { IndexedDbSignalStore, TrustLevel } from './protocol/store';
 import { mutateStorage, pullFromStorageService, StorageMutation, StorageWriteQueue } from './services/storage-service';
 import { AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema, ContactRecord_NameSchema } from './gen/SignalStorage_pb';
@@ -59,6 +60,7 @@ type DataMessageInit = MessageInitShape<typeof DataMessageSchema>;
 type BodyRangeInit = MessageInitShape<typeof BodyRangeSchema>;
 type PinnedConversationInit = MessageInitShape<typeof AccountRecord_PinnedConversationSchema>;
 
+const MAX_DEVICE_NAME = 64;
 
 function parseDataUri(dataUri: string): { contentType: string; filename?: string; bytes: Uint8Array } {
   const comma = dataUri.indexOf(',');
@@ -450,7 +452,7 @@ async function syncFromStorageService(): Promise<boolean> {
         profileKey: sc.profileKey ? toBase64(sc.profileKey) : prev.profileKey,
       });
 
-      if (sc.changed) chatState.push({ uuid: sc.aci || '', number: sc.e164 || '', archived: !!sc.archived, muted: (sc.mutedUntilTimestamp || 0) > Date.now() });
+      if (sc.changed) chatState.push({ uuid: sc.aci || '', number: sc.e164 || '', archived: !!sc.archived, muted: (sc.mutedUntilTimestamp || 0) > Date.now(), markedUnread: !!sc.markedUnread });
     }
     await host().db.kvSet('syncedContacts', Array.from(byId.values()));
   }
@@ -473,7 +475,7 @@ async function syncFromStorageService(): Promise<boolean> {
         blocked: gv2.blocked ?? prev.blocked ?? false,
         archived: gv2.archived ?? prev.archived ?? false,
       });
-      if (gv2.changed) chatState.push({ groupInternalId: keys.internalId, archived: !!gv2.archived, muted: (gv2.mutedUntilTimestamp || 0) > Date.now() });
+      if (gv2.changed) chatState.push({ groupInternalId: keys.internalId, archived: !!gv2.archived, muted: (gv2.mutedUntilTimestamp || 0) > Date.now(), markedUnread: !!gv2.markedUnread });
     }
     await host().db.kvSet('syncedGroups', Array.from(byGrpId.values()));
     for (const gv2 of res.groupsV2) {
@@ -497,7 +499,7 @@ async function syncFromStorageService(): Promise<boolean> {
     if (res.account.typingIndicators !== undefined) patch.typingIndicators = res.account.typingIndicators;
     if (Object.keys(patch).length > 0) host().config.set(patch);
     const acc = await store.getAccount();
-    if (acc && res.account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!res.account.noteToSelfArchived });
+    if (acc && res.account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!res.account.noteToSelfArchived, markedUnread: !!res.account.noteToSelfMarkedUnread });
   }
 
   invalidateBlocked();
@@ -509,6 +511,19 @@ async function syncFromStorageService(): Promise<boolean> {
     : null;
   host().applyChatState(chatState, pinned);
   return true;
+}
+
+/** Signal-Desktop `onDeviceNameChangeSync`: the phone renamed this device, so read the new name back from the server. */
+async function refreshOwnDeviceName(): Promise<void> {
+  const acc = await store.getAccount();
+  if (!acc) return;
+  // SECURITY-REVIEW: the device list is fetched with this device's credentials; the name is decrypted with our ACI identity key, which stays in the protocol store.
+  const res = await httpJson('GET', '/v1/devices', null, { basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password } });
+  const devices: any[] = res && Array.isArray(res.devices) ? res.devices : [];
+  const ours = devices.find((d) => d && d.id === acc.deviceId);
+  if (!ours || typeof ours.name !== 'string' || !ours.name) return;
+  const name = (await decryptDeviceName(fromBinary(DeviceNameSchema, fromBase64(ours.name)), acc.aciIdentityKeyPair.privKey)).trim();
+  if (name) host().config.set({ deviceName: name.slice(0, MAX_DEVICE_NAME) });
 }
 
 async function handleIncomingSyncMessage(env: IncomingEnvelope, content: Content): Promise<void> {
@@ -569,6 +584,12 @@ async function handleIncomingSyncMessage(env: IncomingEnvelope, content: Content
       host().config.set({ sendReadReceipts: cfg.readReceipts, typingIndicators: cfg.typingIndicators });
       break;
     }
+    case 'usernameChange':
+      syncFromStorageService().catch(() => {});
+      break;
+    case 'deviceNameChange':
+      if (c.value.deviceId === acc.deviceId) refreshOwnDeviceName().catch((e: any) => host().dbg('device name refresh failed: ' + (e && e.message)));
+      break;
     case 'keys': {
       const k = c.value;
       let masterKey: Uint8Array | undefined;
@@ -718,6 +739,7 @@ export const signalBridge = {
     base64_attachments?: string[];
     edit_timestamp?: number;
     mentions?: Array<{ start: number; length: number; uuid: string }>;
+    view_once?: boolean;
   }): Promise<{ timestamp: number }> {
     const ts = Date.now();
     const bodyText = payload.message || '';
@@ -752,6 +774,7 @@ export const signalBridge = {
       attachments: uploadedAttachments,
       bodyRanges: stylesToBodyRanges(styles, mentions),
       groupV2: target.groupV2,
+      isViewOnce: payload.view_once && uploadedAttachments.length > 0 ? true : undefined,
     };
 
     if (payload.quote_timestamp) {
@@ -847,6 +870,30 @@ export const signalBridge = {
     );
     await client.sendSyncMessage(
       create(ContentSchema, { content: { case: 'syncMessage', value: { read: [{ senderAci: aci, timestamp: BigInt(timestamp) }] } } }),
+      now
+    );
+  },
+
+  /** We opened a voice message, video, or view-once media: a VIEWED receipt to the sender when `receipt` is set, and a Viewed sync (plus ViewOnceOpen for view-once) to our other devices, as Signal-Desktop does. */
+  async sendViewed(recipient: string, timestamp: number, opts: { receipt: boolean; viewOnce: boolean }): Promise<void> {
+    const now = Date.now();
+    const aci = await resolveAci(recipient);
+    if (!aci) return;
+    if (opts.receipt && !(await isBlockedRecipient(aci)) && !(await isBlockedRecipient(recipient))) {
+      await client.sendContentToRecipient(
+        aci,
+        create(ContentSchema, { content: { case: 'receiptMessage', value: { type: ReceiptMessage_Type.VIEWED, timestamp: [BigInt(timestamp)] } } }),
+        now
+      );
+    }
+    const ref = { senderAci: aci, timestamp: BigInt(timestamp) };
+    await client.sendSyncMessage(
+      create(ContentSchema, {
+        content: {
+          case: 'syncMessage',
+          value: { viewed: [ref], content: opts.viewOnce ? { case: 'viewOnceOpen', value: ref } : { case: undefined } },
+        },
+      }),
       now
     );
   },
@@ -1027,15 +1074,15 @@ export const signalBridge = {
     await changeGroup(groupSendId, (snap) => leaveActions(snap));
   },
 
-  /** Block a group like Signal-Desktop's "Block and leave": leave it if we're still in it, then `GroupV2Record.blocked` in Storage Service and the Blocked sync. Unblocking only clears the block. */
-  /** Publish a chat's archive, mute, or pinned state to Storage Service so the account's other devices match. Only the fields that are set change. */
-  async syncChatState(chat: { type: 'direct' | 'group'; sendId: string; archived?: boolean; muted?: boolean; pinned?: boolean }): Promise<void> {
+  /** Publish a chat's archive, mute, marked-unread, or pinned state to Storage Service so the account's other devices match. Only the fields that are set change. */
+  async syncChatState(chat: { type: 'direct' | 'group'; sendId: string; archived?: boolean; muted?: boolean; markedUnread?: boolean; pinned?: boolean }): Promise<void> {
     const mutations: StorageMutation[] = [];
-    const setState = (r: { archived: boolean; mutedUntilTimestamp: bigint }) => {
+    const setState = (r: { archived: boolean; mutedUntilTimestamp: bigint; markedUnread: boolean }) => {
       if (chat.archived !== undefined) r.archived = chat.archived;
       if (chat.muted !== undefined) r.mutedUntilTimestamp = chat.muted ? BigInt(Number.MAX_SAFE_INTEGER) : 0n;
+      if (chat.markedUnread !== undefined) r.markedUnread = chat.markedUnread;
     };
-    const stateChanged = chat.archived !== undefined || chat.muted !== undefined;
+    const stateChanged = chat.archived !== undefined || chat.muted !== undefined || chat.markedUnread !== undefined;
     let isPin: (p: AccountRecord_PinnedConversation) => boolean;
     let pin: PinnedConversationInit;
 
@@ -1049,8 +1096,14 @@ export const signalBridge = {
       const ids = await contactIds(chat.sendId);
       if (!ids.aci && !ids.e164) throw new Error('No Signal account known for ' + chat.sendId);
       const self = !!acc && (ids.aci === acc.aci || (!!ids.e164 && ids.e164 === acc.number));
-      if (self && chat.archived !== undefined) {
-        mutations.push({ type: 'account', update: (a) => { a.noteToSelfArchived = !!chat.archived; } });
+      if (self && (chat.archived !== undefined || chat.markedUnread !== undefined)) {
+        mutations.push({
+          type: 'account',
+          update: (a) => {
+            if (chat.archived !== undefined) a.noteToSelfArchived = chat.archived;
+            if (chat.markedUnread !== undefined) a.noteToSelfMarkedUnread = chat.markedUnread;
+          },
+        });
       } else if (!self && stateChanged) {
         mutations.push({ type: 'contact', aci: ids.aci || undefined, e164: ids.e164 || undefined, update: setState });
       }
@@ -1076,6 +1129,7 @@ export const signalBridge = {
     await storageQueue.enqueue(mutations);
   },
 
+  /** Block a group like Signal-Desktop's "Block and leave": leave it if we're still in it, then `GroupV2Record.blocked` in Storage Service and the Blocked sync. Unblocking only clears the block. */
   async setGroupBlocked(groupSendId: string, blocked: boolean): Promise<void> {
     const masterKey = await groupMasterKey(groupSendId);
     if (blocked) {

@@ -42,10 +42,16 @@ function convRow(conv: Conversation, archived: boolean): ActionRow {
     ) : (
       <EmojiText text={conv.lastPreview || ''} />
     ),
-    badge: <Badge count={conv.unread} />,
+    badge: <Badge count={conv.unread} dot={conv.markedUnread} />,
     action: S.open,
     onSelect: () => openChat(conv.id),
   };
+}
+
+function readToggle(conv: Conversation) {
+  return conv.unread > 0 || conv.markedUnread
+    ? { label: S.markAsRead, onSelect: () => store.markRead(conv.id) }
+    : { label: S.markAsUnread, onSelect: () => store.setMarkedUnread(conv.id, true) };
 }
 
 function homeOptions(conv: Conversation | undefined): void {
@@ -54,6 +60,7 @@ function homeOptions(conv: Conversation | undefined): void {
     conv && { label: conv.pinned ? S.unpinChat : S.pinChat, onSelect: () => store.setConvPinned(conv.id, !conv.pinned) || toast(S.pinLimit) },
     conv && { label: S.archive, onSelect: () => store.setArchived(conv.id, true) },
     conv && { label: conv.muted ? S.unmute : S.muteNotifications, onSelect: () => store.setMuted(conv.id, !conv.muted) },
+    conv && readToggle(conv),
     DIVIDER,
     { label: S.markAllRead, onSelect: () => store.markAllRead() },
     DIVIDER,
@@ -107,6 +114,7 @@ export function ArchivedScreen() {
             { label: S.chatSettings, onSelect: () => router.push(ChatSettingsScreen, { convId: conv.id }) },
             { label: S.unarchive, onSelect: () => store.setArchived(conv.id, false) },
             { label: conv.muted ? S.unmute : S.muteNotifications, onSelect: () => store.setMuted(conv.id, !conv.muted) },
+            readToggle(conv),
           ]);
           return true;
         }}

@@ -6,7 +6,7 @@ import { config } from './config';
 import { db, type ExpiredRef } from './db';
 import { dbg } from './log';
 import { fmt, S } from '../strings';
-import { parseFrame, type MessageEvent, type NoticeEvent, type StoreEvent } from './normalize';
+import { parseFrame, type MessageEvent, type NoticeEvent, type StoreEvent, type SyncRef } from './normalize';
 import { hasServiceWorker } from './platform';
 import { encodeMentions, parseStyledMarkdown, type PickedMention, type StyleRange } from './styled';
 import type { Attachment, Connection, Contact, Conversation, GroupRef, Message, Notice, Quote } from './types';
@@ -363,6 +363,48 @@ function applyReadSync(entries: Array<{ sender: string; timestamp: number }>): v
   if (changed) emit('conversations');
 }
 
+/** Another of our devices opened these; view-once media also loses its copy here. */
+function applyViewedSync(entries: SyncRef[], viewOnce: boolean): void {
+  for (const entry of entries) {
+    const authors = [entry.sender, altKeyOf(entry.sender)];
+    const candidates = authors.concat(Object.keys(convs).filter((cid) => convs[cid].type === 'group'));
+    enqueueMutation(async () => {
+      let rec: Message | undefined;
+      for (const cid of candidates) {
+        if (cid && (rec = await findMessage(cid, entry.timestamp, authors))) break;
+      }
+      if (!rec || !rec.incoming) return;
+      const att = rec.attachments[0];
+      if (viewOnce && att && att.viewOnce && att.id) await db.putAttachment(att.id, new Blob([]), '');
+      if (rec.viewed) return;
+      rec.viewed = true;
+      emit('message-updated', rec, undefined);
+      await db.putMessage(rec);
+    });
+  }
+}
+
+function tracksViews(att: Attachment | undefined): boolean {
+  if (!att) return false;
+  const type = att.contentType || '';
+  return !!att.viewOnce || !!att.voiceNote || type.indexOf('audio/') === 0 || type.indexOf('video/') === 0;
+}
+
+/** The first time we open a received voice message, video, or view-once media: tell the sender (when read receipts are on) and our other devices. */
+export function markViewed(m: Message): void {
+  const att = m.attachments[0];
+  if (!m.incoming || m.viewed || !tracksViews(att)) return;
+  m.viewed = true;
+  enqueueMutation(async () => {
+    const rec = await db.getMessage(m.id);
+    if (!rec || rec.viewed) return;
+    rec.viewed = true;
+    emit('message-updated', rec, undefined);
+    await db.putMessage(rec);
+  });
+  signal.sendViewed(m.author, m.timestamp, { receipt: config.sendReadReceipts(), viewOnce: !!att.viewOnce }).catch((e) => dbg('viewed receipt failed ' + (e && e.message)));
+}
+
 export function applyEvent(ev: StoreEvent, silent: boolean): void {
   switch (ev.type) {
     case 'message':
@@ -399,6 +441,8 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
       return applyReceipt(ev.peer, ev.kind, ev.timestamps);
     case 'readSync':
       return applyReadSync(ev.entries);
+    case 'viewedSync':
+      return applyViewedSync(ev.entries, ev.viewOnce);
     case 'timer': {
       const conv = convs[ev.convId];
       if (!conv || (conv.expireTimer || 0) === ev.seconds) return;
@@ -586,8 +630,8 @@ export function sendText(convId: string, text: string, quote?: Quote | null, men
   return sendCore(conv, rec, payload, st.body);
 }
 
-/** `dataUri` is "data:<mime>;base64,…" (a scaled photo, a picked file, or a voice note). */
-export function sendAttachment(convId: string, dataUri: string, caption: string, meta: { contentType?: string; filename?: string; size?: number; voiceNote?: boolean } = {}): Promise<Message> {
+/** `dataUri` is "data:<mime>;base64,…" (a scaled photo, a picked file, or a voice note). View-once media goes without a caption, as in Signal. */
+export function sendAttachment(convId: string, dataUri: string, caption: string, meta: { contentType?: string; filename?: string; size?: number; voiceNote?: boolean; viewOnce?: boolean } = {}): Promise<Message> {
   let conv: Conversation;
   try {
     conv = convForSend(convId);
@@ -597,9 +641,12 @@ export function sendAttachment(convId: string, dataUri: string, caption: string,
   const contentType = meta.contentType || 'image/jpeg';
   const filename = meta.filename || 'photo.jpg';
   const att: Attachment = { id: '', contentType, filename, size: meta.size || 0, voiceNote: !!meta.voiceNote };
-  const st = styled(caption || '');
-  const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: caption || '', attachments: [att] });
+  if (meta.viewOnce) att.viewOnce = true;
+  const text = meta.viewOnce ? '' : caption || '';
+  const st = styled(text);
+  const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: [att] });
   const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, base64_attachments: [dataUri] };
+  if (meta.viewOnce) payload.view_once = true;
   return sendCore(conv, rec, payload, st.body || attachmentLabel([att]));
 }
 
@@ -702,7 +749,7 @@ export function setMessagePinned(rec: Message, pinned: boolean): Promise<void> {
 }
 
 /* Local archive, mute, and pin changes are published to Storage Service; changes that came from there go through applyChatState and never echo back. */
-function syncChatState(conv: Conversation, fields: { archived?: boolean; muted?: boolean; pinned?: boolean }): void {
+function syncChatState(conv: Conversation, fields: { archived?: boolean; muted?: boolean; markedUnread?: boolean; pinned?: boolean }): void {
   if (!conv.sendId) return;
   signal.syncChatState(Object.assign({ type: conv.type, sendId: conv.sendId }, fields)).catch((err) => dbg('chat state sync failed: ' + (err && err.message)));
 }
@@ -723,6 +770,10 @@ export function applyChatState(states: ChatStateEntry[], pinned: PinnedChat[] | 
     }
     if (s.muted !== undefined && !!conv.muted !== s.muted) {
       conv.muted = s.muted;
+      changed[conv.id] = conv;
+    }
+    if (s.markedUnread !== undefined && !!conv.markedUnread !== s.markedUnread) {
+      conv.markedUnread = s.markedUnread;
       changed[conv.id] = conv;
     }
   }
@@ -769,6 +820,16 @@ export function setMuted(convId: string, val: boolean): void {
   syncChatState(conv, { muted: val });
 }
 
+/** Flag a chat as unread without touching its messages, as Signal's "Mark as unread". */
+export function setMarkedUnread(convId: string, val: boolean): void {
+  const conv = convs[convId];
+  if (!conv || !!conv.markedUnread === val) return;
+  conv.markedUnread = val;
+  persistConv(conv);
+  emit('conversations');
+  syncChatState(conv, { markedUnread: val });
+}
+
 /** Pin a chat to the top of the list; false when Signal's limit is reached. */
 export function setConvPinned(convId: string, val: boolean): boolean {
   const conv = convs[convId];
@@ -802,8 +863,12 @@ export function setConversationName(convId: string, name: string): void {
 export function markRead(convId: string): void {
   const conv = convs[convId];
   if (!conv) return;
-  const hadUnread = conv.unread > 0;
+  const hadUnread = conv.unread > 0 || !!conv.markedUnread;
   conv.unread = 0;
+  if (conv.markedUnread) {
+    conv.markedUnread = false;
+    syncChatState(conv, { markedUnread: false });
+  }
   db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, 25).then((rows) => {
     const pending = rows.filter((r) => r.incoming && r.timestamp > (conv.lastReadTs || 0));
     if (config.sendReadReceipts()) {
@@ -816,7 +881,7 @@ export function markRead(convId: string): void {
 }
 
 export function markAllRead(): void {
-  for (const id of Object.keys(convs)) if (convs[id].unread > 0) markRead(id);
+  for (const id of Object.keys(convs)) if (convs[id].unread > 0 || convs[id].markedUnread) markRead(id);
 }
 
 /** The direct chat with a contact, created empty if needed. */

@@ -284,12 +284,13 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
           };
         }
       }
-      if (sm.read.length > 0) {
-        syncOut.readMessages = sm.read.map((r) => {
-          const sender = serviceIdFrom(r.senderAci, r.senderAciBinary);
-          return { sender, senderUuid: sender || undefined, timestamp: num(r.timestamp) };
-        });
-      }
+      const ref = (r: { senderAci: string; senderAciBinary: Uint8Array; timestamp: bigint }) => {
+        const sender = serviceIdFrom(r.senderAci, r.senderAciBinary);
+        return { sender, senderUuid: sender || undefined, timestamp: num(r.timestamp) };
+      };
+      if (sm.read.length > 0) syncOut.readMessages = sm.read.map(ref);
+      if (sm.viewed.length > 0) syncOut.viewedMessages = sm.viewed.map(ref);
+      if (sm.content.case === 'viewOnceOpen') syncOut.viewOnceOpen = ref(sm.content.value);
       frameEnv.syncMessage = syncOut;
       break;
     }

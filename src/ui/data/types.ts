@@ -57,6 +57,8 @@ export interface Message {
   expireSecs?: number;
   expiresAt?: number;
   notice?: Notice;
+  /** A received voice message, video, or view-once media was opened, here or on another device. */
+  viewed?: boolean;
 }
 
 export interface Conversation {
@@ -74,6 +76,8 @@ export interface Conversation {
   archived?: boolean;
   muted?: boolean;
   pinned?: boolean;
+  /** "Mark as unread" with nothing actually unread; opening the chat clears it. */
+  markedUnread?: boolean;
   expireTimer?: number;
   /** Unsent text in the composer, kept until it's sent or cleared. */
   draft?: string;
