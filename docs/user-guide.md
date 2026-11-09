@@ -96,7 +96,7 @@ Camera support varies by device: the app uses the live camera when it can and fa
 
 With the app in the background, new messages raise a system notification (unless the chat is muted); group notifications start with the sender's name.
 
-When the app is closed, a KaiOS wake alarm checks Signal's server every few minutes and shows **New Signal message** if anything is waiting; opening the app decrypts it. The app also reconnects with backoff when the connection drops. Signal holds messages for you while the phone is off.
+Keep the app open in the background to get notifications. When the app is fully closed, a KaiOS wake alarm still tries to check Signal's server every few minutes, but that check can't reach Signal yet, so it doesn't notify you (see [Known limitations](#known-limitations)). Nothing is lost: Signal holds your messages until the app connects again, and opening it delivers them. The app also reconnects with backoff when the connection drops.
 
 ## What lives on the phone
 
@@ -111,3 +111,4 @@ signal4kaios doesn't yet support every Signal feature. Calls, stories, link prev
 | Action | What happens now |
 | --- | --- |
 | Starting a chat by phone number | Works for numbers in your synced contacts and for Signal usernames. Other numbers aren't looked up in Signal's directory, because the phone can't run Signal's contact discovery yet ([details](development.md#phone-number-lookup-cdsi-spike-findings)). |
+| New-message check while the app is closed | Doesn't notify you. The app reaches Signal through its own secure connection, which the KaiOS background worker can't use, and the worker's browser connection can't sign in to Signal. Leave the app running in the background for notifications ([details](architecture.md#network)). |
