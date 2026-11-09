@@ -2,6 +2,12 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.5.0
+
+### Changed
+
+- **Message options lead with the main action.** OK on a photo now has **View photo** first (likewise Play video, Play voice message, and Open file), so OK twice opens it. A message that didn't send has **Retry** first, and a shortened message, a shared contact, or a link puts that action ahead of React and Reply.
+
 ## v2.4.0
 
 The second round of Signal features from the roadmap. Install over v2.3.0; your chats and settings carry over.

@@ -7,7 +7,7 @@ import { ConnectionBanner } from '../components/ConnectionBanner';
 import { pickEmoji, pickReaction } from '../components/Emoji';
 import { Icon } from '../components/Icon';
 import { Spinner } from '../components/List';
-import { confirm, DIVIDER, pick, showOptions } from '../components/Overlays';
+import { confirm, DIVIDER, type MenuEntry, pick, showOptions } from '../components/Overlays';
 import { RichText } from '../components/RichText';
 import { Screen } from '../components/Screen';
 import { TextField } from '../components/TextField';
@@ -178,6 +178,20 @@ function ContactCardView(props: { card: ContactCard }) {
 /** The Signal user a shared contact's number belongs to, when it's someone we already know. */
 function cardContact(card: ContactCard) {
   return store.contactsList().find((c) => !!c.uuid && !!c.number && card.phones.some((p) => p.replace(/[\s()-]/g, '') === c.number));
+}
+
+export type MainAction = 'retry' | 'attachment' | 'card' | 'readFull' | 'openLink';
+
+/** What someone most likely wants from a message, in the order its options menu leads with them. */
+export function mainActions(m: Message, clipped: boolean): MainAction[] {
+  if (m.deleted) return m.status === 'failed' ? ['retry'] : [];
+  const out: MainAction[] = [];
+  if (m.status === 'failed') out.push('retry');
+  if (m.attachments[0]) out.push('attachment');
+  if (m.contactCard) out.push('card');
+  if (clipped) out.push('readFull');
+  if (extractUrls(m.body).length) out.push('openLink');
+  return out;
 }
 
 function canForward(m: Message): boolean {
@@ -652,7 +666,17 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     const urls = m.deleted ? [] : extractUrls(m.body);
     const att = m.attachments[0];
     const settled = m.status !== 'failed' && m.status !== 'pending' && !request;
+    const main: Record<MainAction, MenuEntry[]> = {
+      retry: [{ label: S.retry, onSelect: () => store.retryMessage(m).catch((e) => toast(sendError(e))) }],
+      attachment: [att && { label: attachmentAction(att), onSelect: () => openAttachment(m, att) }],
+      card: contactCardOptions(m),
+      readFull: [{ label: S.readFull, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) }],
+      openLink: [{ label: S.openLink, onSelect: () => openLinks(urls) }],
+    };
+    const lead = mainActions(m, clippedIds.current.has(m.id));
     showOptions([
+      ...lead.reduce<MenuEntry[]>((acc, k) => acc.concat(main[k]), []),
+      DIVIDER,
       !m.deleted && settled && { label: S.react, onSelect: () => react(m) },
       !m.deleted && settled && {
         label: S.reply,
@@ -664,9 +688,6 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
         },
       },
       DIVIDER,
-      !m.deleted && att && { label: attachmentAction(att), onSelect: () => openAttachment(m, att) },
-      ...contactCardOptions(m),
-      urls.length > 0 && { label: S.openLink, onSelect: () => openLinks(urls) },
       !m.deleted && !!m.body && { label: S.copyText, onSelect: () => copyText(m.body) },
       settled && canForward(m) && { label: S.forward, onSelect: () => router.push(ForwardScreen, { msg: m }) },
       canChange(m) && !m.attachments.length && (m.history || []).length < store.MAX_EDITS && {
@@ -680,10 +701,8 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
           setFocusedId(null);
         },
       },
-      m.status === 'failed' && { label: S.retry, onSelect: () => store.retryMessage(m).catch((e) => toast(sendError(e))) },
       DIVIDER,
       !m.deleted && settled && { label: m.pinned ? S.unpinMessage : S.pinMessage, onSelect: () => store.setMessagePinned(m, !m.pinned).catch((e) => toast(sendError(e))) },
-      clippedIds.current.has(m.id) && { label: S.readFull, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) },
       { label: S.messageDetails, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) },
       DIVIDER,
       deleteForMeItem(m),

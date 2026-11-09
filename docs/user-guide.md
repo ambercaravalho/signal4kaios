@@ -43,15 +43,13 @@ A new chat from someone who isn't in your contacts shows **Message request** und
 
 Messages run oldest to newest with the message box at the bottom; moving up past the top loads older messages. The time, the disappearing-message timer, and the ticks sit at the end of the last line of text. A long message is shortened to fit the screen and ends with **Read more**; a message still too tall to fit scrolls a step at a time as you press Up or Down. Sent messages show a clock while sending, one tick when sent, two when delivered, and two blue ticks when read. A message that didn't send says **Not sent**.
 
-OK on a message opens its options:
+OK on a message opens its options. The first one is what the message is most likely for, so OK twice opens a photo: **Retry** on a message that didn't send, then **View photo**, **Play video**, **Play voice message**, or **Open file**, the shared contact's action, **Read full message** on a shortened message, and **Open link**. After those:
 
 - **React**: pick from six quick reactions or any emoji; pick your current reaction again to remove it.
-- **Reply**, **Copy text**, and **Open link** when the message has links.
-- **View photo**, **Play video**, **Play voice message**, or **Open file** for attachments.
+- **Reply** and **Copy text**.
 - **Forward** sends the text (with its formatting) or the attachment to another chat, contact, or group after you confirm. View-once media and files sent from this phone can't be forwarded.
 - **Edit** (up to 10 times) and **Delete for everyone** on your own messages for 24 hours, as in Signal. Group admins also get **Delete for everyone** on other people's messages for 24 hours; those read **An admin deleted this message.**
-- **Retry** on a message that didn't send.
-- **Pin message** (for everyone in the chat), **Read full message** on a shortened message, **Message details**, and **Delete for me**, which also deletes the message on your other linked devices.
+- **Pin message** (for everyone in the chat), **Message details**, and **Delete for me**, which also deletes the message on your other linked devices.
 - **Message details** shows the full text, when it was sent, its status, reactions, when it disappears, earlier versions of an edited message, and **Delivered privately** when **Private delivery icon** is on in **Settings → Privacy**.
 - **Shared contacts** show as a card; OK offers **Message** them when they're in your Signal contacts, or **Copy number**.
 
