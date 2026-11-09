@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, v2.0.0]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -22,8 +22,8 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Install protoc and binaryen
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler binaryen
+      - name: Install protoc, binaryen, and LLVM
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler binaryen clang llvm
 
       - name: Install the pinned Rust toolchain
         working-directory: native/libsignal-wasm

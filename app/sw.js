@@ -50,7 +50,8 @@ function readWakeCfg() {
 
 /* Probe Signal's WebSocket while the app is closed to see if any queued `/api/v1/message` envelopes
    arrive before `/api/v1/queue/empty`. Does NOT send 200 OK ACKs so the envelopes stay safely on the server
-   until the user opens the app (or the page decrypts them). */
+   until the user opens the app (or the page decrypts them).
+   Workers have no TCPSocket, so this can't use the app's pinned TLS client: it only connects on phones whose certificate store already trusts Signal's root, and otherwise fails quietly. */
 function probeOfflineQueue(cfg) {
   return new Promise(function (resolve) {
     if (!cfg || !cfg.wsUrl || !cfg.login || !cfg.password || typeof WebSocket === 'undefined') {

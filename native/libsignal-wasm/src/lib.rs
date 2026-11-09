@@ -20,6 +20,7 @@ mod provisioning;
 mod sealed;
 mod session;
 mod store;
+mod tls;
 mod username;
 mod zk;
 

@@ -53,6 +53,7 @@ import { AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchem
 import { deleteUsername as deleteAccountUsername, setUsername as setAccountUsername, usernameLinkUrl } from './services/usernames';
 import { SignalClient } from './net/client';
 import { DEFAULT_SIGNAL_SERVER } from './net/http';
+import { net } from './net/transport';
 import { IncomingEnvelope, parseContactsSyncBlob } from './net/receive';
 
 type DataMessageInit = MessageInitShape<typeof DataMessageSchema>;
@@ -649,6 +650,7 @@ function dataContent(dm: DataMessageInit): Content {
 export const signalBridge = {
   store,
   client,
+  net,
 
   /** Loads the libsignal WebAssembly module. Resolves to the pinned libsignal version; rejects with a `LibsignalUnavailableError` whose `reason` drives the failure screen. */
   ready(): Promise<string> {

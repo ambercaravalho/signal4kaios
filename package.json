@@ -9,6 +9,7 @@
     "build": "esbuild engine/index.ts --bundle --format=iife --target=es2020 --log-override:empty-import-meta=silent --outfile=app/vendor/signal-engine.bundle.js",
     "typecheck": "tsc --noEmit",
     "test": "esbuild test/*.test.ts --bundle --platform=node --format=cjs --target=node20 --log-override:empty-import-meta=silent --external:@signalapp/libsignal-client --external:'@signalapp/libsignal-client/*' --outdir=dist-test && node --test 'dist-test/*.test.js'",
+    "test:live": "esbuild test/live/*.live.ts --bundle --platform=node --format=cjs --target=node20 --log-override:empty-import-meta=silent --outdir=dist-test/live && node --test 'dist-test/live/*.live.js'",
     "package": "sh scripts/package.sh"
   },
   "engines": {

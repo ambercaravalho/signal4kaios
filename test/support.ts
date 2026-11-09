@@ -1,6 +1,7 @@
 /* Shared helpers for the Node unit tests: loads the libsignal wasm build and creates linked test accounts. */
 
 import { readFileSync } from 'node:fs';
+import { connect as netConnect } from 'node:net';
 import { join } from 'node:path';
 
 import type { MessageInitShape } from '@bufbuild/protobuf';
@@ -11,6 +12,7 @@ import { create, toBinary } from '../engine/net/proto';
 import { generatePreKeyUpload } from '../engine/protocol/prekeys';
 import { localIdentity, parsePreKeyResponse, processPreKeyBundle } from '../engine/protocol/protocol';
 import { MemorySignalStore } from '../engine/protocol/store';
+import { ByteStream, Connector, TransportError } from '../engine/net/transport/stream';
 
 export function loadWasmForTests(): string {
   return loadLibsignalSync(readFileSync(join(process.cwd(), 'app/vendor/libsignal_wasm_bg.wasm')));
@@ -71,4 +73,63 @@ export function contentBytes(init: MessageInitShape<typeof ContentSchema>): Uint
 
 export function envelopeBytes(init: MessageInitShape<typeof EnvelopeSchema>): Uint8Array {
   return toBinary(EnvelopeSchema, create(EnvelopeSchema, init));
+}
+
+/** A `Connector` over Node's `net`, standing in for KaiOS `TCPSocket`. `route` can send a TLS host name to a different address. */
+export function nodeConnector(route?: (host: string, port: number) => { host: string; port: number }): Connector {
+  return (host, port, timeoutMs) =>
+    new Promise((resolve, reject) => {
+      const target = route ? route(host, port) : { host, port };
+      const sock = netConnect(target.port, target.host);
+      let closed = false;
+      const timer = setTimeout(() => {
+        sock.destroy();
+        reject(new TransportError('timeout', 'connect timed out'));
+      }, timeoutMs);
+      const stream: ByteStream = {
+        write(data) {
+          if (closed) return true;
+          return sock.write(Buffer.from(data));
+        },
+        close() {
+          if (closed) return;
+          closed = true;
+          sock.destroy();
+          const cb = stream.onClose;
+          stream.onClose = null;
+          if (cb) cb(null);
+        },
+        onData: null,
+        onClose: null,
+        onDrain: null,
+      };
+      sock.on('connect', () => {
+        clearTimeout(timer);
+        resolve(stream);
+      });
+      sock.on('data', (d: Buffer) => {
+        if (stream.onData) stream.onData(new Uint8Array(d));
+      });
+      sock.on('drain', () => {
+        if (stream.onDrain) stream.onDrain();
+      });
+      sock.on('error', (e) => {
+        clearTimeout(timer);
+        if (!closed && stream.onClose) {
+          closed = true;
+          const cb = stream.onClose;
+          stream.onClose = null;
+          cb(new TransportError('network', e.message));
+        } else {
+          reject(new TransportError('network', e.message));
+        }
+      });
+      sock.on('close', () => {
+        if (closed) return;
+        closed = true;
+        const cb = stream.onClose;
+        stream.onClose = null;
+        if (cb) cb(null);
+      });
+    });
 }

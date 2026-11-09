@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build the libsignal wasm wrapper: cargo (wasm32) -> wasm-bindgen (--target web) -> optional wasm-opt -> app/vendor.
 #
-# Requires the Rust toolchain pinned in rust-toolchain.toml (rustup installs it automatically), protoc (libsignal's build scripts compile .proto files), and wasm-bindgen-cli matching the wasm-bindgen version pinned in Cargo.toml.
+# Requires the Rust toolchain pinned in rust-toolchain.toml (rustup installs it automatically), protoc (libsignal's build scripts compile .proto files), wasm-bindgen-cli matching the wasm-bindgen version pinned in Cargo.toml, and a clang that can target wasm32 plus llvm-ar (ring, used by the pinned TLS client, compiles C).
 set -eu
 cd "$(dirname "$0")"
 
@@ -17,6 +17,31 @@ case "$(wasm-bindgen --version)" in
     exit 1
     ;;
 esac
+
+# Apple's clang and ar can't build or archive wasm32 objects, so prefer Homebrew LLVM, then whatever is on PATH.
+find_llvm_tool() {
+  for dir in /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin; do
+    if [ -x "$dir/$1" ]; then echo "$dir/$1"; return; fi
+  done
+  for name in "$1" $(ls /usr/bin/"$1"-[0-9]* 2>/dev/null | sort -V -r); do
+    if command -v "$name" >/dev/null 2>&1; then command -v "$name"; return; fi
+  done
+}
+if [ -z "${CC_wasm32_unknown_unknown:-}" ]; then
+  CC_wasm32_unknown_unknown=$(find_llvm_tool clang)
+fi
+if [ -z "${AR_wasm32_unknown_unknown:-}" ]; then
+  AR_wasm32_unknown_unknown=$(find_llvm_tool llvm-ar)
+fi
+if [ -z "$CC_wasm32_unknown_unknown" ] || ! "$CC_wasm32_unknown_unknown" --print-targets 2>/dev/null | grep -q wasm32; then
+  echo "FAIL: no clang that targets wasm32. Install LLVM (macOS: brew install llvm; Debian/Ubuntu: apt install clang llvm)." >&2
+  exit 1
+fi
+if [ -z "$AR_wasm32_unknown_unknown" ]; then
+  echo "FAIL: llvm-ar not found. Install LLVM (macOS: brew install llvm; Debian/Ubuntu: apt install llvm)." >&2
+  exit 1
+fi
+export CC_wasm32_unknown_unknown AR_wasm32_unknown_unknown
 
 cargo build --release --locked
 wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/release/libsignal_wasm.wasm

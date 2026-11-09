@@ -27,6 +27,9 @@
       "systemXHR": {
         "description": "Connect directly to Signal servers and CDN"
       },
+      "tcp-socket": {
+        "description": "Connect securely to Signal servers using Signal's own certificate"
+      },
       "desktop-notification": {
         "description": "Show notifications for new Signal messages"
       },

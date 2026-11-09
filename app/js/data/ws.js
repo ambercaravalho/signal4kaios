@@ -22,19 +22,22 @@
   var framesThisSession = 0;
   var drainingQueue = true; // true until `/api/v1/queue/empty` arrives on a new connection
 
+  var SOCK_CONNECTING = 0;
+  var SOCK_OPEN = 1;
+
   var HEARTBEAT_MS = 30000;
   var KEEPALIVE_MS = 25000;
   var WAKE_ALARM_MS = 300000;
   var heartbeatTimer = null;
 
   function state() {
-    if (sock && sock.readyState === WebSocket.OPEN) return 'open';
-    if (sock && sock.readyState === WebSocket.CONNECTING) return 'connecting';
+    if (sock && sock.readyState === SOCK_OPEN) return 'open';
+    if (sock && sock.readyState === SOCK_CONNECTING) return 'connecting';
     return 'closed';
   }
 
   function sendKeepalive() {
-    if (!sock || sock.readyState !== WebSocket.OPEN || !App.signal) return;
+    if (!sock || sock.readyState !== SOCK_OPEN || !App.signal) return;
     try {
       sock.send(App.signal.encodeWsKeepalive());
     } catch (e) {
@@ -43,7 +46,7 @@
   }
 
   function sendAck(reqId, status, message) {
-    if (!sock || sock.readyState !== WebSocket.OPEN || reqId === undefined || !App.signal) return;
+    if (!sock || sock.readyState !== SOCK_OPEN || reqId === undefined || !App.signal) return;
     try {
       sock.send(App.signal.encodeWsAck(reqId, status || 200, message || 'OK'));
     } catch (e) {
@@ -55,7 +58,7 @@
     wanted = true;
     startHeartbeat();
     if (!App.config.isConfigured()) return;
-    if (sock && (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING)) {
+    if (sock && (sock.readyState === SOCK_OPEN || sock.readyState === SOCK_CONNECTING)) {
       return;
     }
     if (reconnectTimer) {
@@ -74,8 +77,12 @@
     drainingQueue = true;
 
     try {
-      sock = new WebSocket(url);
-      sock.binaryType = 'arraybuffer';
+      if (App.signal && App.signal.net) {
+        sock = App.signal.net.openWebSocket(url);
+      } else {
+        sock = new WebSocket(url);
+        sock.binaryType = 'arraybuffer';
+      }
     } catch (e) {
       App.util.dbg('ws: constructor failed ' + e.message);
       scheduleReconnect();
@@ -226,6 +233,7 @@
 
   function restart() {
     stop();
+    if (App.signal && App.signal.net) App.signal.net.reset();
     attempts = 0;
     connect();
   }

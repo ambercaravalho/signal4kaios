@@ -16,9 +16,8 @@ import { libsignal } from '../protocol/libsignal';
 import { generateKyberPreKeys, generateOneTimePreKeys, generateSignedPreKey, ONE_TIME_PRE_KEY_COUNT } from '../protocol/prekeys';
 import { create, decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, fromBinary, serviceIdFrom, toBinary } from './proto';
 import type { AccountCredentials, KeyPair, SignalProtocolStore } from '../protocol/store';
-import { DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SignalHttpJsonFn } from './http';
-
-const USER_AGENT = 'Signal4KaiOS/2.0.0';
+import { DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SIGNAL_USER_AGENT, SignalHttpJsonFn } from './http';
+import { net, SOCKET_OPEN, SocketLike } from './transport';
 
 /** Signal-Desktop `getCapabilities` for a linked device without a PIN. */
 export function linkedDeviceCapabilities(hasE164: boolean): Record<string, boolean> {
@@ -128,7 +127,7 @@ export async function finishLinking(
     profileKey: prov.profileKey.length === 32 ? prov.profileKey : undefined,
     masterKey: provisionedMasterKey(prov),
     accountEntropyPool: prov.accountEntropyPool || undefined,
-    userAgent: USER_AGENT,
+    userAgent: SIGNAL_USER_AGENT,
   };
 
   const aciSignedPreKey = await generateSignedPreKey(store, 'aci', aciIdentity);
@@ -212,7 +211,7 @@ export function startDeviceProvisioning(
   const httpBase = (serverOptions?.httpUrl || DEFAULT_SIGNAL_SERVER).replace(/\/+$/, '');
   const receiver = new libsignal.ProvisioningReceiver();
   let closed = false;
-  let sock: WebSocket | null = null;
+  let sock: SocketLike | null = null;
   let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 
   function cleanup() {
@@ -246,24 +245,23 @@ export function startDeviceProvisioning(
   }
 
   function sendWsAck(id?: bigint) {
-    if (!sock || sock.readyState !== WebSocket.OPEN || id === undefined) return;
+    if (!sock || sock.readyState !== SOCKET_OPEN || id === undefined) return;
     sock.send(encodeWebSocketResponse(id, 200, 'OK'));
   }
 
   try {
-    sock = new WebSocket(`${wsBase}/v1/websocket/provisioning/?agent=OWD`);
-    sock.binaryType = 'arraybuffer';
+    sock = net.openWebSocket(`${wsBase}/v1/websocket/provisioning/?agent=OWD`);
 
     sock.onopen = () => {
       if (callbacks.onStatus) callbacks.onStatus('Waiting for provisioning QR code\u2026');
       keepaliveTimer = setInterval(() => {
-        if (sock && sock.readyState === WebSocket.OPEN) {
+        if (sock && sock.readyState === SOCKET_OPEN) {
           sock.send(encodeWebSocketRequest('GET', '/v1/keepalive', BigInt(Date.now())));
         }
       }, 25000);
     };
 
-    sock.onmessage = (evt: MessageEvent) => {
+    sock.onmessage = (evt: { data: any }) => {
       if (closed) return;
       try {
         const wsMsg = decodeWebSocketMessage(new Uint8Array(evt.data as ArrayBuffer));
@@ -294,8 +292,9 @@ export function startDeviceProvisioning(
       // Handled in onclose
     };
 
-    sock.onclose = (evt: CloseEvent) => {
-      fail(new Error(`Provisioning connection closed (code ${evt.code || 1006}). Check network and try again.`));
+    sock.onclose = (evt) => {
+      const detail = evt.code === 1015 && evt.reason ? `: ${evt.reason}` : '';
+      fail(new Error(`Provisioning connection closed (code ${evt.code || 1006}${detail}). Check network and try again.`));
     };
   } catch (err) {
     fail(err);
