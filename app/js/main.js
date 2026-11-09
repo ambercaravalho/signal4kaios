@@ -14,7 +14,7 @@
   /* A notification tapped while the app was closed can't postMessage a live window, so sw.js stashes the target conversation in Cache Storage. Read it once on boot (fresh entries only, so an unrelated later launch still lands on the list), clear it, and open the chat. */
   function openPendingConversation() {
     if (typeof caches === 'undefined') return;
-    caches.open('s4k-push').then(function (cache) {
+    caches.open('s4k-wake').then(function (cache) {
       return cache.match('/__s4k_pending_conv').then(function (res) {
         if (!res) return null;
         return res.json().then(function (info) {
@@ -34,7 +34,7 @@
     });
   }
 
-  /* Register the ServiceWorker that shows closed-app push notifications, relays wake alarms, and handles notification clicks. Runs on any KaiOS with a ServiceWorker (2.5 once the 'serviceworker' permission is granted, and 3.0/3.1/4.0); feature-detected via App.platform.hasServiceWorker(), so it's a clean no-op on platforms without one. */
+  /* Register the ServiceWorker that relays wake alarms, shows closed-app notifications, and handles notification clicks. Feature-detected via App.platform.hasServiceWorker(), so it's a no-op in a desktop browser without one. */
   function registerServiceWorker() {
     if (!App.platform.hasServiceWorker()) return;
     try {
@@ -68,7 +68,7 @@
         // A pre-libsignal database was upgraded and its protocol state discarded: the old link can't be used any more.
         if (App.db.signalStateWasReset() && App.config.isConfigured()) {
           App.util.dbg('boot: protocol state reset by the libsignal upgrade, relink required');
-          App.config.forgetPairing();
+          App.config.forgetAccount();
         }
       }, function (e) {
         App.util.dbg('boot: database open failed ' + (e && e.message));
@@ -91,11 +91,11 @@
       lastConn = state;
     });
 
-    // Signal server rejected our linked device credentials (unlinked from primary phone): forget pairing and return to Link screen.
-    App.http.onUnpaired = function () {
+    // Signal server rejected our linked device credentials (unlinked from primary phone): forget the account and return to the Link screen.
+    App.http.onUnlinked = function () {
       App.util.dbg('auth: linked device rejected, returning to link screen');
       App.ws.stop();
-      App.config.forgetPairing();
+      App.config.forgetAccount();
       location.reload();
     };
 
@@ -103,7 +103,7 @@
       App.router.push(App.screens.conversations.create());
     } else if (App.config.number() || App.config.aci()) {
       // Linked before, but unlinked.
-      App.router.push(App.screens.serversettings.create({ firstRun: true, unpaired: true }));
+      App.router.push(App.screens.link.create({ firstRun: true, unlinked: true }));
     } else {
       App.router.push(App.screens.welcome.create({ firstRun: true }));
     }
@@ -119,8 +119,8 @@
       }, 5000);
     });
 
-    // Background push is always on: subscribe and re-register (endpoints can change across reboots/updates). Best-effort, non-blocking; a clean no-op where Push is unsupported.
-    if (App.push) App.push.sync();
+    // Re-arm closed-app wake on every start (KaiOS drops alarm subscriptions across reboots). Best-effort and non-blocking.
+    if (App.wake) App.wake.sync();
   }
 
   window.addEventListener('load', boot);

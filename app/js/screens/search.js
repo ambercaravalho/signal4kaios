@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* Local message search: scans the IndexedDB message store (there is no server-side content search in signal-cli-rest-api). */
+  /* Local message search: scans the IndexedDB message store (Signal keeps no message history on its servers). */
 
   App.screens.search = {
     create: function () {

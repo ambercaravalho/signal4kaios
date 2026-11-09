@@ -41,7 +41,7 @@ jobs:
           npm run build:wasm
           npm run typecheck
           npm test
-          SKIP_WASM_BUILD=1 sh app/scripts/package.sh
+          SKIP_WASM_BUILD=1 sh scripts/package.sh
           echo "asset=signal4kaios-${RELEASE_TAG#v}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release

@@ -47,7 +47,7 @@ jobs:
       - run: npm ci
       - run: npm run build:wasm
       - name: Generated protobuf codecs are up to date
-        run: npm run gen:protos && git diff --exit-code -- src/engine/gen
+        run: npm run gen:protos && git diff --exit-code -- engine/gen
       - run: npm run typecheck
       - run: npm test
-      - run: SKIP_WASM_BUILD=1 sh app/scripts/package.sh
+      - run: SKIP_WASM_BUILD=1 sh scripts/package.sh

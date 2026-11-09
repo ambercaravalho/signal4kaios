@@ -1,9 +1,9 @@
 (function () {
   'use strict';
 
-  /* Edit this account's Signal profile via PUT /v1/profiles/{number}.
+  /* Edit this account's Signal profile via App.api.updateProfile (encrypted and uploaded on-device).
 
-     The REST API exposes no GET for your own profile, so we can't read the live values back. Instead we pre-fill the editors from what was last set on this device (cached in config) and, for the name, fall back to this account's own entry in the contact directory when signal-cli includes it. The API also requires a non-empty name on every profile update, so `name` is always sent alongside `about`. */
+     The editors pre-fill from what was last set on this device (cached in config) and, for the name, fall back to this account's own entry in the synced contacts. A Signal profile always carries a name, so `name` is sent with every update. */
 
   function currentName() {
     var cached = App.config.profileName();
@@ -17,7 +17,7 @@
     return App.config.profileAbout();
   }
 
-  /* Send the profile, always including the name (the API rejects updates with an empty name). `patch` overrides one field; the rest come from cache. `about` is only sent when the user edited it or we have a cached value, so a name-only edit never blanks an about that was set from another device. */
+  /* Send the profile, always including the name (a profile without a name is rejected). `patch` overrides one field; the rest come from cache. `about` is only sent when the user edited it or we have a cached value, so a name-only edit never blanks an about that was set from another device. */
   function saveProfile(patch, done) {
     var name = ('name' in patch) ? patch.name : currentName();
     name = (name || '').replace(/^\s+|\s+$/g, '');
@@ -68,7 +68,7 @@
     }));
   }
 
-  /* Show the QR code for this account's Signal username link. The REST API has no GET for the current username, so if none is cached we prompt to set one (the set-username endpoint returns the shareable link) and cache it. */
+  /* Show the QR code for this account's Signal username link. If none is cached we prompt for one and cache the link App.api.setUsername returns. Username reservation is not implemented on-device yet, so that link is only built locally. */
   function showQr() {
     var link = App.config.usernameLink();
     if (link) {

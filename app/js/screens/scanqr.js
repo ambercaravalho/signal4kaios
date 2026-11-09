@@ -4,26 +4,16 @@
   /* Scan a QR code and decode it with the vendored jsQR decoder (global `jsQR`).
      create(onResult) -> onResult is called with the decoded string.
 
-     Two paths, because camera support varies across KaiOS 2.5 builds:
+     Two paths, because camera support varies across KaiOS devices:
        1. Live preview via getUserMedia (needs the `video-capture` permission). Smoothest, but not every device grants a raw stream to a privileged (non-certified) app.
-       2. Fallback: a MozActivity 'pick' snapshot — the OS camera takes one photo, which we then decode. This reuses the system camera app, so it works wherever the file/photo picker does. */
+       2. Fallback: a WebActivity 'pick' snapshot — the OS camera takes one photo, which we then decode. This reuses the system camera app, so it works wherever the file/photo picker does. */
 
   function liveSupported() {
-    return !!((navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ||
-      navigator.getUserMedia || navigator.mozGetUserMedia ||
-      navigator.webkitGetUserMedia);
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
 
   function getStream() {
-    var constraints = { video: { facingMode: 'environment' } };
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      return navigator.mediaDevices.getUserMedia(constraints);
-    }
-    var legacy = navigator.getUserMedia || navigator.mozGetUserMedia ||
-      navigator.webkitGetUserMedia;
-    return new Promise(function (resolve, reject) {
-      legacy.call(navigator, constraints, resolve, reject);
-    });
+    return navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
   }
 
   /* Decode a still image Blob. Resolves with the QR text or null if none found. */
@@ -107,9 +97,9 @@
         if (onResult) setTimeout(function () { onResult(text); }, 0);
       }
 
-      /* Snapshot fallback: hand off to the OS camera via a 'pick' activity (WebActivity on 3.0/4.0, MozActivity on 2.5 — see App.platform), then decode the returned photo. Works wherever the photo picker does. */
+      /* Snapshot fallback: hand off to the OS camera via a 'pick' activity (a KaiOS WebActivity, see App.platform), then decode the returned photo. Works wherever the photo picker does. */
       function snapFallback() {
-        if (typeof WebActivity === 'undefined' && typeof MozActivity === 'undefined') {
+        if (typeof WebActivity === 'undefined') {
           fail(new Error('no camera stream and no pick activity'));
           return;
         }

@@ -1,6 +1,6 @@
 'use strict';
 
-/* ServiceWorker for signal4kaios v2.0.0 (KaiOS 3.0 / 3.1 / 4.0).
+/* ServiceWorker for signal4kaios (KaiOS 3.0 / 3.1 / 4.0).
    Handles:
      1. 'systemmessage' (alarm) —
         - If a window client is open, relays `{ type: 's4k-wake' }` so `ws.js` reconnects and drains messages.
@@ -12,7 +12,7 @@
 */
 
 var NOTIF_ICON = '/assets/icons/kaios_112.png';
-var PUSH_CACHE = 's4k-push';
+var WAKE_CACHE = 's4k-wake';
 var WAKE_CFG_KEY = '/__s4k_wake_cfg';
 var PENDING_CONV_KEY = '/__s4k_pending_conv';
 var WAKE_ALARM_MS = 300000; // 5 minutes
@@ -41,7 +41,7 @@ function scheduleNextAlarm() {
 
 function readWakeCfg() {
   if (!self.caches) return Promise.resolve(null);
-  return self.caches.open(PUSH_CACHE).then(function (cache) {
+  return self.caches.open(WAKE_CACHE).then(function (cache) {
     return cache.match(WAKE_CFG_KEY);
   }).then(function (res) {
     return res ? res.json() : null;
@@ -141,7 +141,7 @@ self.addEventListener('systemmessage', function (event) {
 
 function savePendingConv(convId) {
   if (!convId || !self.caches) return Promise.resolve();
-  return self.caches.open(PUSH_CACHE).then(function (cache) {
+  return self.caches.open(WAKE_CACHE).then(function (cache) {
     return cache.put(PENDING_CONV_KEY, new Response(
       JSON.stringify({ convId: convId, ts: Date.now() }),
       { headers: { 'Content-Type': 'application/json' } }

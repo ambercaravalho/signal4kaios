@@ -1,63 +1,116 @@
 # Setup
 
-From nothing to Signal on your KaiOS 3.0, 3.1, or 4.0 phone. In v2.0.0, **no computer, Docker container, or gateway server is needed** — all Signal encryption and decryption happen directly on the phone.
+Install signal4kaios on a KaiOS 3.0, 3.1, or 4.0 phone and link it to your Signal account. The phone does all Signal encryption itself; nothing else needs to run.
 
-1. [Install the app](#1-install-the-app)
-2. [Link your Signal account](#2-link-your-signal-account)
-3. [Syncing contacts and groups](#3-syncing-contacts-and-groups)
-4. [Troubleshooting](#4-troubleshooting)
+- [Requirements](#requirements)
+- [1. Install the app](#1-install-the-app)
+- [2. Link your Signal account](#2-link-your-signal-account)
+- [3. Contacts and groups sync](#3-contacts-and-groups-sync)
 - [KaiOS 4.0: enable WebAssembly](#kaios-40-enable-webassembly)
+- [Troubleshooting](#troubleshooting)
+
+## Requirements
+
+| | |
+| --- | --- |
+| **Phone** | KaiOS 3.0, 3.1, or 4.0 with Wi-Fi or mobile data |
+| **Signal account** | An existing account on a primary phone (Android or iPhone) to link from |
+| **KaiOS 4.0 only** | Root access, which installing third-party privileged apps already needs |
 
 ## 1. Install the app
 
-Download `signal4kaios-2.0.0.zip` from [Releases](https://github.com/ambercaravalho/signal4kaios/releases), or build one locally with `npm install && npm run package`.
+Download `signal4kaios-<version>.zip` from [Releases](https://github.com/ambercaravalho/signal4kaios/releases), or [build it yourself](development.md#build-and-test).
 
-**With OStore (easiest, no computer needed).** Copy the ZIP as-is (do not unzip it) onto the phone's storage or SD card. In OStore, open the **Manual Install** tab, choose **Install app from sdcard**, and pick the ZIP. To update later, repeat with the newer ZIP.
+**OStore (no computer).** Copy the ZIP as-is (don't unzip it) to the phone's storage or SD card, then in OStore open **Manual Install → Install app from sdcard** and pick it. To update, repeat with the newer ZIP.
 
-**Sideloading over USB with `appscmd`.** Enable debug mode on the phone, connect it over USB, get [`appscmd`](https://github.com/kaiostech/appscmd), and run:
+**Sideload over USB.** Enable debugging on the phone, install [adb](https://developer.android.com/tools/adb) and [`appscmd`](https://github.com/kaiostech/appscmd), and from a checkout of this repo run:
 
 ```sh
-APPSCMD=/path/to/appscmd sh app/scripts/install-kaios3plus.sh
+APPSCMD=/path/to/appscmd sh scripts/install.sh
 ```
 
-On **KaiOS 4.0**, also do the one-time [enable WebAssembly](#kaios-40-enable-webassembly) step before first launch.
+> [!IMPORTANT]
+> On KaiOS 4.0, do the [WebAssembly step](#kaios-40-enable-webassembly) before the first launch.
 
 ## 2. Link your Signal account
 
-Signal4KaiOS links to your existing Signal account as a linked device, just like Signal Desktop:
+1. Open **Signal4KaiOS** and step through the welcome pages to **Link with Signal**. The phone shows a QR code.
+2. On your main phone, open Signal → **Settings → Linked devices → Link a new device** ([Signal's guide](https://support.signal.org/hc/en-us/articles/360007320551)).
+3. Scan the QR code on the KaiOS screen.
 
-1. Open **Signal4KaiOS** on your KaiOS phone and step through the Welcome screen to **Link with Signal**.
-2. The phone connects to Signal's provisioning service and displays a QR code on screen.
-3. On your main phone, open Signal and go to **Settings → Linked devices → Link a new device**.
-4. Scan the QR code displayed on your KaiOS phone.
+The KaiOS phone then registers itself as a linked device, uploads its encryption keys, and opens the conversation list.
 
-Once scanned, your KaiOS phone decrypts the provisioning envelope, generates and uploads its own encryption PreKeys to Signal, and opens the conversation list.
+## 3. Contacts and groups sync
 
-## 3. Syncing contacts and groups
+Right after linking, the app asks your main phone for contacts, the blocked list, settings, and account keys, then reads contacts and groups from Signal's encrypted Storage Service. Keep Signal open on the main phone for a moment. Group names and members come from Signal's group server, so a group can show as "Group" for a few seconds the first time.
 
-Right after linking, Signal4KaiOS asks your main phone for your contacts, blocked list, settings, and account keys, and reads your contacts and groups from Signal's encrypted Storage Service. Keep Signal open on your main phone for a moment so it can answer. Group names and member lists are then fetched from Signal's group server, so a group may show as "Group" for a few seconds the first time.
-
-You can trigger a fresh sync at any time from **Settings → Linked account → Sync contacts & groups** or **Settings → Refresh contacts & groups**.
-
-## 4. Troubleshooting
-
-Start with **Settings → Debug log** on the phone: it records WebSocket connection state, PreKey status, and decryption diagnostics.
-
-- **QR code does not appear on the Link screen.** Check that your phone has an active Wi-Fi or mobile data connection, then press **SoftRight (Refresh QR)** or select **Generate QR code**.
-- **The app returned to the Link screen.** Your KaiOS device was unlinked from your main phone (in Signal → Settings → Linked devices), or you updated from an earlier v2.0.0 build whose encryption state is not compatible with the official libsignal engine. Scan the QR code to link again.
-- **"Cannot start" screen on KaiOS 4.0.** WebAssembly is blocked by the system content security policy; follow [KaiOS 4.0: enable WebAssembly](#kaios-40-enable-webassembly).
-- **Contacts or group names show as numbers or UUIDs.** Open **Settings → Linked account → Sync contacts & groups** while your main phone is online.
-- **Old messages from before linking are missing.** Expected: Signal does not store message history on its servers, so history on a linked device accrues from the moment it is linked. Messages sent to you while the KaiOS phone is turned off are queued by Signal's servers and delivered when you open the app.
+To sync again later, use **Settings → Linked account → Sync contacts & groups**.
 
 ## KaiOS 4.0: enable WebAssembly
 
-Signal4KaiOS runs Signal's official encryption library ([libsignal](https://github.com/signalapp/libsignal)) as WebAssembly. KaiOS 3.0 and 3.1 allow this out of the box. KaiOS 4.0 serves apps through `api-daemon` with a content security policy that has no `'wasm-unsafe-eval'`, so the app shows a **Cannot start** screen until you allow it. Installing third-party privileged apps on KaiOS 4.0 already needs a rooted phone, and the same root access is what this step uses.
+KaiOS 4.0 serves apps through [`api-daemon`](https://github.com/kaiostech/api-daemon), whose content security policy has no `'wasm-unsafe-eval'`, so the app shows a **Cannot start** screen until you allow WebAssembly. KaiOS 3.0 and 3.1 need nothing.
 
-1. Connect the phone over USB with debugging enabled and open a root shell: `adb root` (or `adb shell` then `su`).
-2. Find the active config: `adb shell ps -A | grep api-daemon` shows the path the daemon was started with. On most builds it is `/system/api-daemon/config.toml`; some builds keep an updatable copy under `/data/local/service/api-daemon/config.toml`.
+> [!WARNING]
+> This edits a system file on a rooted phone. Keep a copy of the original, and expect a system update to undo it.
+
+1. Connect the phone with debugging enabled and get a root shell: `adb root`, or `adb shell` then `su`.
+2. Find the config the daemon uses: `adb shell ps -A | grep api-daemon`. It is usually `/system/api-daemon/config.toml`; some builds use `/data/local/service/api-daemon/config.toml`.
 3. Pull it: `adb pull /system/api-daemon/config.toml`.
-4. In the `[vhost]` section, add `'wasm-unsafe-eval'` to the `script-src` list of the `csp` value. Leave everything else as it is. For example, `script-src 'self' http://127.0.0.1 http://shared.localhost;` becomes `script-src 'self' 'wasm-unsafe-eval' http://127.0.0.1 http://shared.localhost;`.
-5. Push it back: `adb shell mount -o remount,rw /system`, then `adb push config.toml /system/api-daemon/config.toml`, then `adb shell mount -o remount,ro /system`.
-6. Reboot the phone and open Signal4KaiOS.
+4. In the `[vhost]` section, add `'wasm-unsafe-eval'` to `script-src` in the `csp` value and change nothing else:
 
-`'wasm-unsafe-eval'` only permits compiling WebAssembly; it does not re-enable JavaScript `eval`, and the app's own manifest CSP still forbids inline scripts. A system update may restore the original config, in which case repeat these steps.
+   ```diff
+   - csp = "default-src * data: blob:; script-src 'self' http://127.0.0.1 http://shared.localhost; ..."
+   + csp = "default-src * data: blob:; script-src 'self' 'wasm-unsafe-eval' http://127.0.0.1 http://shared.localhost; ..."
+   ```
+
+5. Push it back:
+
+   ```sh
+   adb shell mount -o remount,rw /system
+   adb push config.toml /system/api-daemon/config.toml
+   adb shell mount -o remount,ro /system
+   ```
+
+6. Reboot and open Signal4KaiOS.
+
+> [!NOTE]
+> `'wasm-unsafe-eval'` only allows compiling WebAssembly. It does not allow JavaScript `eval`, and the app's own CSP still forbids inline scripts.
+
+## Troubleshooting
+
+Start with **Settings → Debug log**: it records the connection state, PreKey status, and decryption errors (never keys or passwords).
+
+<details>
+<summary><strong>No QR code on the Link screen</strong></summary>
+
+Check that the phone is online, then press **SoftRight (Refresh QR)** or select **Generate QR code**.
+
+</details>
+
+<details>
+<summary><strong>The app went back to the Link screen</strong></summary>
+
+The phone was removed under **Linked devices** on your main phone, or you upgraded from an early v2.0.0 build whose encryption state isn't compatible with libsignal. Scan the QR code to link again.
+
+</details>
+
+<details>
+<summary><strong>"Cannot start" screen</strong></summary>
+
+On KaiOS 4.0, WebAssembly is blocked; follow [KaiOS 4.0: enable WebAssembly](#kaios-40-enable-webassembly). On other versions, the screen says whether the module is missing (reinstall the ZIP) or the browser engine is too old.
+
+</details>
+
+<details>
+<summary><strong>Contacts or groups show as numbers or IDs</strong></summary>
+
+Run **Settings → Linked account → Sync contacts & groups** while your main phone is online.
+
+</details>
+
+<details>
+<summary><strong>Messages from before linking are missing</strong></summary>
+
+Expected. Signal doesn't keep message history on its servers, so a linked device only has messages from the moment it was linked. Messages sent while the KaiOS phone is off are queued by Signal and arrive when you open the app.
+
+</details>

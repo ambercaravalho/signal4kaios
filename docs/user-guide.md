@@ -1,172 +1,118 @@
 # User guide
 
-Everything the app can do, and how to drive it from the keypad. No touchscreen required. Setting up, and fixing connection problems, is in [Setup](setup.md).
+Everything the app does, driven from the keypad. Installing and linking are in [Setup](setup.md).
 
 - [Keys](#keys)
-- [The conversation list](#the-conversation-list)
-- [Inside a chat](#inside-a-chat)
-- [Messaging features](#messaging-features)
-- [Disappearing messages](#disappearing-messages)
-- [Pinning](#pinning)
-- [Media and attachments](#media-and-attachments)
-- [QR codes](#qr-codes)
-- [Starting a new chat](#starting-a-new-chat)
-- [Organizing chats](#organizing-chats)
-- [Contacts and your profile](#contacts-and-your-profile)
-- [Groups](#groups)
-- [Blocking](#blocking)
-- [Accounts](#accounts)
-- [Search](#search)
+- [Conversation list](#conversation-list)
+- [Chats](#chats)
+- [Media](#media)
+- [Starting a chat](#starting-a-chat)
+- [Contacts, groups, and your profile](#contacts-groups-and-your-profile)
 - [Settings](#settings)
-- [Notifications and reconnect](#notifications-and-reconnect)
+- [Notifications](#notifications)
 - [What lives on the phone](#what-lives-on-the-phone)
+- [Known limitations](#known-limitations)
 
 ## Keys
 
 | Key | Conversation list | Inside a chat |
-|---|---|---|
-| **Up / Down** | Move the selection | Move through messages / composer |
-| **Center** | Open chat (or the archived list) | Send (composer) · options (on a message) · view pinned (on the pinned bar) |
-| **SoftLeft** | Options: info, pin, archive, mute, search, settings | Emoji picker (composer), or cancel reply/edit |
-| **SoftRight** | New chat | Attach a file (system picker) |
-| **Back** | Exit app | Back to the list |
+| --- | --- | --- |
+| **Up / Down** | Move the selection | Move between messages and the composer |
+| **Center** | Open the chat | **Send** (composer), **Options** (message), or **View pinned** (pinned bar) |
+| **SoftLeft** | **Options** for the selected chat | **Back**, or cancel a pending reply or edit |
+| **SoftRight** | **New chat** | **Menu**: Attach, Emoji, Mention, Contact/Group info, Pinned messages |
+| **Back** | Exit | Back to the list |
 
-Context menus and pickers add their own keys:
+Other screens:
 
-- **Message options** (Center on a message): view/play the attachment, open any links, react, reply, copy to composer, pin/unpin (groups only), edit, delete for everyone, retry, "who reacted", and an **Info** line (full timestamp, delivery status, and the disappearing countdown when a timer is set).
-- **Attachment viewer**: Center plays/pauses audio and video; SoftLeft saves the file to the phone.
-- **New chat**: SoftLeft opens the QR scanner.
-- **Archived list**: its own SoftLeft menu (unarchive, mute).
-- **Reaction / emoji picker**: a grid of common emoji; Center picks the highlighted one. The reaction picker adds a "Remove my reaction" row if you've already reacted.
+| Screen | Keys |
+| --- | --- |
+| **Message options** (Center on a message) | View full message, open links, React, Reply, Copy to composer, Edit, Retry send, Delete for everyone, Reactions, and **Info** (timestamp, delivery state, disappearing countdown) |
+| **Attachment viewer** | Center plays or pauses audio and video; SoftRight **Save** stores the file on the phone |
+| **New chat** | SoftRight **Scan** opens the QR scanner |
+| **Settings** | SoftRight **QR code** shows your username QR code |
 
-Note: KaiOS delivers Back as Backspace. In a non-empty text field it edits text; otherwise it goes back a screen.
+> [!TIP]
+> KaiOS sends Back as Backspace. In a non-empty text field it deletes text; otherwise it goes back a screen.
 
-## The conversation list
+## Conversation list
 
-The home screen. Each row shows an avatar (real profile photo when available, else colored initials), the name, last-activity time, a message preview, and — when relevant — an unread badge, a typing indicator, a 📌 pinned icon, and a 🔇 muted icon. Pinned chats sort to the top. The header shows connection status: `● online`, `connecting…`, or `offline`.
+Each row shows the avatar (profile photo or colored initials), name, time, preview, and badges for unread, typing, 📌 pinned, and 🔇 muted. Pinned chats sort first. The header shows `● online`, `connecting…`, or `offline`.
 
-A chat with your own number appears as **Note to Self** with a 📔 notebook icon. If any chats are archived, an **"📁 Archived chats"** row sits at the bottom.
+Your own number appears as **Note to Self** (📔). Archived chats sit behind an **📁 Archived chats** row at the bottom.
 
-## Inside a chat
+**Options** (SoftLeft) on a chat: Contact/Group info, Pin or Unpin chat, Archive or Unarchive, Mute or Unmute, Mark all as read, Search messages, and Settings.
 
-Messages run oldest-at-top to newest-at-bottom, composer below; scrolling up pages in older history from storage. Group sender names resolve from your address book, nicknames, and Signal profiles.
+## Chats
 
-Outgoing delivery ticks progress `pending → sent ✓ → delivered ✓✓ → read (blue)`. Failed sends are marked and can be retried from the message options.
+Messages run oldest to newest with the composer at the bottom; scrolling up loads older history. Delivery ticks go `pending → sent ✓ → delivered ✓✓ → read` (blue). A failed send is marked and can be retried from its options.
 
-## Messaging features
+- **Reactions**: a grid of common emoji with a "Remove my reaction" row; **Reactions (n)** shows who reacted.
+- **Replies, edits, and delete for everyone**, including edits and deletes from others and from your other devices.
+- **Read receipts and typing indicators**: turn yours off in **Settings → Privacy**; you still see other people's.
+- **Text formatting**: type `**bold**`, `*italic*`, `~strikethrough~`, `` `monospace` ``, or `||spoiler||` (highlight a spoiler to reveal it). Prefix a marker with `\` to type it literally. Toggle in **Settings → Chats → Text formatting**.
+- **Mentions**: **Menu → Mention (@)** in a group inserts a member.
+- **Disappearing messages**: set the timer under **Contact info** or **Group info → Disappearing messages** (Off, 30s, 5m, 1h, 8h, 1 day, 1 week, 4 weeks). Messages you send carry the timer, and the phone deletes expired messages on a periodic sweep and when you open the chat.
+- **Read state syncs**: reading a chat on another of your devices clears its unread badge here.
 
-- **Send/receive text in real time** — receive is over the WebSocket (`json-rpc` mode).
-- **1:1 and group chats.**
-- **Emoji** — SoftLeft in the composer opens a picker; the chosen emoji drops in at the cursor.
-- **Reactions** — a grid well beyond ❤️👍👎😂😮😢, with a remove option. A message's **Reactions** option shows who reacted and with what.
-- **Read receipts and typing indicators** — toggle either off in **Settings → Privacy** (you'll still see others').
-- **Formatted text** — type Signal's markers and they send as real formatting: `**bold**`, `*italic*`, `~strikethrough~`, `` `monospace` ``, and `||spoiler||` (highlight a message to reveal spoilers). Prefix a marker with `\` to type it literally. Formatting others send renders here too; toggle sending in **Settings → Composer**.
-- **Quote/reply**, **copy to composer**, **delete for everyone**, and **retry**.
-- **Edit sent messages**, and see edits from others or from your other devices.
-- **Read status syncs across devices** — reading a chat on Signal Desktop clears its unread badge here too.
+## Media
 
-## Disappearing messages
+**Menu → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file); the file is sent with its original name.
 
-Set the timer from **Contact info** (direct) or **Group info** (group) → **Disappearing messages**, then pick an interval (Off, 30s, 5m, 1h, 8h, 1 day, 1 week, 4 weeks). The change is applied on Signal, so it takes effect for everyone in the conversation.
+- Photos show as inline thumbnails; small images download automatically. Viewed media is cached in IndexedDB.
+- Voice notes, audio, and video play in the viewer (Center to play or pause). Video depends on the device's codecs; H.264 MP4 is the safe choice.
+- **Save** puts a file in the phone's gallery, music, videos, or files.
+- Stickers display as images. View-once media is removed from the cache after you view it.
 
-New messages carry the timer, and the app deletes them from the phone once the interval elapses (enforced on a periodic sweep and on chat open). To see how long a specific message has left, open its **options → Info**.
+## Starting a chat
 
-## Pinning
+**New chat** (SoftRight on the list) filters your contacts and groups as you type. Pick **Start chat with …** to message a number or a Signal username, or press **Scan** to read a QR code. A scanned phone number is placed in the field; anything else is shown for you to review.
 
-Two independent kinds:
+Camera support varies by device: the app uses the live camera when it can and falls back to taking one photo.
 
-- **Pinned messages (groups only)** — a message's **options → Pin message** uses Signal's group pin feature, so it **syncs to everyone**; pins from others or your other devices show up here too. Pinned messages get a 📌 marker and a **"N pinned"** bar at the top of the chat — select it to list them and jump to one. Signal has no 1:1 message pin, so the action is group-only.
-- **Pinned conversations (local)** — from the list's **SoftLeft → Options → Pin chat**, pin a chat to the top. This is **local to this phone** (Signal exposes no sync for chat-list pins).
+## Contacts, groups, and your profile
 
-## Media and attachments
-
-Press **SoftRight** in the composer to attach a file. This opens the KaiOS system picker, which on real hardware offers Camera, Recorder, Gallery, Video, and any file. The chosen file is sent as-is, keeping its original filename.
-
-- **Inline photo thumbnails** in chat; small images auto-download for inline view. All viewed media is cached offline in IndexedDB.
-- **Voice, audio, and video** play in the viewer — open the message's options, choose **Play video** / **Play audio**, then Center to play/pause. (Video decoding depends on device codecs; H.264 MP4 is the safe bet on KaiOS.)
-- **Save any attachment** to the phone (gallery/music/videos/files via DeviceStorage) with SoftLeft in the viewer.
-- **Real profile photos** for contacts and groups, with a colored-initials fallback.
-
-## QR codes
-
-- **Show your code**: **Settings → Profile → Edit profile → My QR code** renders your Signal username link as a QR code. If you have no username yet, the app asks for one first (created on Signal, link cached on the phone). SoftLeft opens the link directly.
-- **Scan a code**: **New chat → SoftLeft**, point the camera at a QR. A phone number drops into the field ready to start a chat; anything else is placed there for you to review.
-
-Both are **best-effort** — camera and decoder support vary by device and KaiOS version (the live camera path is generally smoother on 3.0/3.1/4.0), and the app backs out cleanly when scanning isn't available.
-
-## Starting a new chat
-
-Press **SoftRight** on the list to open **New chat**:
-
-- **Search as you type** to filter your contacts and groups.
-- **Start by number or username** — pick "Start chat with …". Phone numbers are checked against the Signal directory first, so you know immediately if one isn't registered.
-- **Scan a QR code** — SoftLeft (see [QR codes](#qr-codes)).
-
-## Organizing chats
-
-Conversation info and actions live under the list's **SoftLeft → Options** menu ("Contact info" or "Group info").
-
-- **Pin** a chat to the top (see [Pinning](#pinning)).
-- **Archive** — archived chats hide behind the "Archived chats" row. A new message brings a chat back, **unless it's also muted** and **Keep muted chats archived** is on (the default, matching Signal). Turn that off in **Settings → Chats** to let muted chats resurface.
-- **Mute** — keeps counting unread but stops notifications (🔇).
-
-Archive, mute, and pin state is **local to this phone** — the REST API doesn't expose Signal's synced chat-list state.
-
-## Contacts and your profile
-
-**Contact info** on a direct chat lets you **rename the contact** (saved on Signal and synced to your devices), set [disappearing messages](#disappearing-messages), and **verify their safety number**.
-
-Edit **your own** profile in **Settings → Profile → Edit profile**: set your display name or "about", or open **My QR code** (see [QR codes](#qr-codes)). The REST API can't *read* your current profile back, so the editors pre-fill from what you last set here (your name may also be seeded from this account's directory entry). Signal requires a name on every profile change, so set your **Name** before or together with **About** — a name-only save won't erase an "about" set elsewhere.
-
-## Groups
-
-**Group info** on a group chat shows members and description, and lets you:
-
-- **Manage members** on their own screen — Center on anyone for **Message**, **Make admin** / **Remove admin**, and **Remove from group** (admins are badged). SoftLeft **adds a member** by number or username.
-- **Rename** the group or **edit its description** (open description links with Center).
-- **Set [disappearing messages](#disappearing-messages)** for the group.
-- **Permissions** — who can add members, edit the group, and send messages (Everyone or Only admins).
-- **Group link** — turn the invite link off / on / on-with-admin-approval, and open the current link to share it.
-- **Block the group**, or **Leave** it (both archive it here).
-
-Member, admin, permission, link, and block changes go through Signal and apply group-wide, subject to your admin rights (the server rejects actions you can't make).
-
-## Blocking
-
-**Settings → Blocked** lists everyone currently blocked — people and groups — as reported by the server. It's **read-only** here:
-
-- **Block a group** from its **Group info → Block group**.
-- **Blocking/unblocking a person**, and **unblocking a group**, must be done from the Signal app or another linked device — the REST API doesn't expose those.
-
-## Accounts
-
-**Settings → Accounts → Switch account** lists your saved numbers and lets you **Add account**. Each keeps its **own local history**, so switching is clean — the app reloads into the account you pick.
-
-## Search
-
-Local, case-insensitive substring search across all message history on the phone (**SoftLeft → Options → Search messages**). Open a result and the app jumps straight to that message, paging back through history until it's on screen.
+- **Contact info**: rename the contact on this phone, set disappearing messages, and verify the [safety number](https://support.signal.org/hc/en-us/articles/360007060632) (60 digits or QR code).
+- **Group info**: members (admins are badged), description, disappearing messages, permissions, group link, and **Leave** or **Block**.
+- **Your profile**: **Settings → Edit profile** sets your name and "about". Signal requires a name, so set it before or together with "about".
+- **Blocked**: **Settings → Privacy → Blocked** lists the people and groups blocked on your account.
 
 ## Settings
 
-Grouped into sections; SoftLeft anywhere in Settings jumps to **My QR code**.
+| Section | Items |
+| --- | --- |
+| **Account** | Edit profile; **Linked account** (QR link, Sync contacts & groups, Refresh PreKeys, Unlink this phone); Switch account |
+| **Chats** | Text formatting; Keep muted chats archived (on by default) |
+| **Privacy** | Read receipts; Typing indicators; Blocked |
+| **Appearance** | Theme (light or dark) |
+| **Data** | Refresh contacts & groups; Debug log; Clear local data |
+| **Help** | About & setup help, with the app version |
 
-- **Linked account** — your linked Signal number, device ID, **Sync contacts & groups**, **Refresh PreKeys**, and **Unlink this phone**.
-- **Privacy** — read receipts, typing indicators, and **Blocked** (see [Blocking](#blocking)).
-- **Chats** — **Keep muted chats archived** (on by default).
-- **Composer** — the text-formatting (markdown) toggle.
-- **Profile** — edit name/about and **My QR code** (see [QR codes](#qr-codes)).
-- **Accounts** — switch or add accounts.
-- **Data** — refresh contacts & groups, the debug log, and Clear local data.
-- **Help** — **About & setup help** reopens the welcome pages and shows the app version.
+**Switch account** lists saved accounts and **Add account** links another. Each account has its own local history, and switching reloads the app.
 
-## Notifications and reconnect
+## Notifications
 
-Backgrounded, new messages raise a system notification (unless muted); group notifications are prefixed with the sender's name.
+With the app in the background, new messages raise a system notification (unless the chat is muted); group notifications start with the sender's name.
 
-If the connection drops or the app is suspended, it retries with backoff, reconnects on foreground, and uses a periodic wake alarm (`navigator.b2g.alarmManager`) to reconnect on its own. Signal's servers hold messages sent to you while your phone is offline and deliver them over the WebSocket when you reconnect.
+When the app is closed, a KaiOS wake alarm checks Signal's server every few minutes and shows **New Signal message** if anything is waiting; opening the app decrypts it. The app also reconnects with backoff when the connection drops. Signal holds messages for you while the phone is off.
 
 ## What lives on the phone
 
-Message history lives on the phone in IndexedDB — the REST API has no history endpoint, so history accrues from the moment you start using the app and is pruned to about **500 messages per conversation**; viewed media sits in a small LRU cache. Wipe everything with **Settings → Clear local data**.
+Message history exists only on the phone, in IndexedDB, starting from when you linked. It is pruned to about **500 messages per conversation**, and viewed media is kept in a small cache. **Settings → Clear local data** wipes it.
 
-Messages that vanish on their own have a disappearing-message timer; check **Contact/Group info → Disappearing messages**. If a message, reaction, or receipt doesn't show up, **Settings → Debug log** records any message shape the app didn't recognize.
+Archive, mute, and chat pins are local to this phone and don't sync to your other devices. **Settings → Debug log** records connection events and any message the app couldn't read.
+
+## Known limitations
+
+> [!NOTE]
+> These actions only change local state on this phone today. Use the Signal app on your main phone for anything that must reach other people or devices.
+
+| Action | What happens now |
+| --- | --- |
+| Renaming a contact | Saved on this phone only |
+| Group rename, description, members, admins, permissions, and group link | Shown from the group's Signal state, but edits are saved on this phone only |
+| Leave group, block group | Marks the group left or blocked on this phone; Signal isn't told |
+| Blocking or unblocking people | Not available; the blocked list is read-only |
+| Pinning messages | Not sent |
+| Setting a username, and the username QR code | Not registered with Signal; looking up other people's usernames works |
+| Starting a chat by phone number | Works for numbers in your synced contacts; other numbers aren't looked up in Signal's directory |

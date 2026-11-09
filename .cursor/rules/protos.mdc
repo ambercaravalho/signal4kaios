@@ -1,0 +1,11 @@
+---
+description: Vendored Signal .proto files and code generation
+globs: protos/**,buf.yaml,buf.gen.yaml
+alwaysApply: false
+---
+
+# Protobuf schemas (`protos/`)
+
+- Files are copied **unmodified** from Signal-Desktop (`protos/signal-desktop/`) and libsignal (`protos/libsignal/`) at the tags recorded in `buf.yaml`. Never hand-edit them.
+- To update: copy the same files from the new tags, update the tags in `buf.yaml` and `docs/development.md`, then run `npm run gen:protos`.
+- Generated code goes to `engine/gen/` (`buf.gen.yaml`, protoc-gen-es with `target=ts`). It is committed, and CI fails if a fresh generation differs.

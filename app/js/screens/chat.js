@@ -565,7 +565,7 @@
         return caption;
       }
 
-      /* Embed a filename in a data URI so signal-cli keeps it (the format the REST API documents: data:<mime>;filename=<name>;base64,<data>). */
+      /* Embed the filename in the data URI (data:<mime>;filename=<name>;base64,<data>) so App.signal can put it in the AttachmentPointer. */
       function withFilename(dataUri, name) {
         if (!name) return dataUri;
         var safe = String(name).replace(/[;,]/g, '_');

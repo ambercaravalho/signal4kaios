@@ -1,0 +1,14 @@
+---
+description: CI workflows, packaging and install scripts, and release steps
+globs: .github/**,scripts/**
+alwaysApply: false
+---
+
+# CI, scripts, and releases
+
+- `ci.yml` and `release.yml` install `protoc`, the Rust toolchain from `native/libsignal-wasm/rust-toolchain.toml`, and `wasm-bindgen-cli` at the version pinned in `Cargo.toml` (run `cargo install` from the repo root, not the crate folder), then run `npm ci`, `build:wasm`, `typecheck`, `test`, and `SKIP_WASM_BUILD=1 sh scripts/package.sh`.
+- CI also runs `npm run gen:protos && git diff --exit-code -- engine/gen`.
+- `scripts/package.sh` must keep failing on `eval(` / `new Function(` in shipped scripts and on missing `manifest.webmanifest`, `sw.js`, bundle, or wasm. It zips `app/` plus `LICENSE` and `NOTICE`.
+- `scripts/install.sh` sideloads with `appscmd` over adb; keep it POSIX `sh`.
+- Releasing: bump `b2g_features.version` in `app/manifest.webmanifest` and `version` in `package.json` together, add a `## v<version>` section to `CHANGELOG.md`, then push tag `v<version>`. Never change the manifest `id` or `origin` (`signal4kaios`); installed phones key on them.
+- Pin third-party actions by major version, as the workflows do today, and keep the cargo cache key on `Cargo.lock`, `rust-toolchain.toml`, and the wasm-bindgen version.

@@ -1,0 +1,469 @@
+/* Outbound Signal client: device fanout with 409/410 handling, Sealed Sender delivery, retry receipts, attachment upload and download, and identity verification. */
+
+import { constantTimeEqual, fromBase64, toBase64 } from '../bytes';
+import { decryptAttachment, encryptAttachment } from '../crypto/attachment';
+import { padMessagePlaintext } from '../crypto/primitives';
+import {
+  AttachmentPointer,
+  AttachmentPointerSchema,
+  Content,
+  ContentSchema,
+  Envelope_Type,
+  SyncMessage_Request_Type,
+} from '../gen/SignalService_pb';
+import { libsignal } from '../protocol/libsignal';
+import { create, toBinary } from './proto';
+import {
+  CIPHERTEXT_PLAINTEXT,
+  decryptionErrorContent,
+  deleteSession,
+  encryptForDevice,
+  errorCode,
+  hasUsableSession,
+  localIdentity,
+  parsePreKeyResponse,
+  processPreKeyBundle,
+  safetyNumber,
+  sealedEncryptForDevice,
+  senderCertificateExpiration,
+} from '../protocol/protocol';
+import type { SignalProtocolStore } from '../protocol/store';
+import { DEFAULT_SIGNAL_SERVER, SIGNAL_CDNS, SignalHttpBinaryFn, SignalHttpJsonFn, SignalHttpRawFn } from './http';
+import { isAci } from './proto';
+import { AttachmentDescriptor, attachmentCdnKey, decodeAttachmentDescriptor, decryptEnvelope, DecryptedEnvelope, DecryptFailure } from './receive';
+import type { TrustLevel } from '../protocol/store';
+
+/** Thrown when a recipient's identity key changed after the user marked it verified: sending waits until the user reviews the new safety number. */
+export class IdentityChangedError extends Error {
+  constructor(readonly recipient: string) {
+    super(`Safety number with ${recipient} changed; verify it before sending`);
+    this.name = 'UntrustedIdentity';
+  }
+}
+
+/**
+ * High-level SignalClient coordinating outbound encryption, device fanout, attachment upload/download, and identity verification.
+ */
+export class SignalClient {
+  private deviceLists = new Map<string, number[]>();
+  private profileKeys = new Map<string, Uint8Array>();
+  private cachedSenderCert: { cert: Uint8Array; expiresAt: number } | null = null;
+  private decryptQueue: Promise<any> = Promise.resolve();
+
+  constructor(
+    public readonly store: SignalProtocolStore,
+    private readonly httpJson: SignalHttpJsonFn,
+    private readonly httpBinary: SignalHttpBinaryFn,
+    private readonly httpRaw?: SignalHttpRawFn,
+    private readonly serverUrl = DEFAULT_SIGNAL_SERVER
+  ) {}
+
+  setPeerProfileKey(peerId: string, profileKey: Uint8Array): void {
+    if (profileKey && profileKey.length === 32) {
+      this.profileKeys.set(peerId, profileKey);
+    }
+  }
+
+  getPeerProfileKey(peerId: string): Uint8Array | undefined {
+    return this.profileKeys.get(peerId);
+  }
+
+  /** Our server-issued SenderCertificate for Sealed Sender, cached until an hour before it expires. */
+  private async getSenderCertificate(): Promise<Uint8Array | null> {
+    if (this.cachedSenderCert && this.cachedSenderCert.expiresAt > Date.now()) {
+      return this.cachedSenderCert.cert;
+    }
+    try {
+      const auth = await this.authHeader();
+      const res = await this.httpJson('GET', '/v1/certificate/delivery?includeE164=false', null, {
+        baseUrl: this.serverUrl,
+        basicAuth: auth,
+        timeout: 10000,
+      });
+      if (res && typeof res.certificate === 'string') {
+        const cert = fromBase64(res.certificate);
+        this.cachedSenderCert = { cert, expiresAt: senderCertificateExpiration(cert) - 3600 * 1000 };
+        return cert;
+      }
+    } catch {
+      // Fall back to identified delivery if the certificate fetch fails
+    }
+    return null;
+  }
+
+  /**
+   * Send a PlaintextContent DecryptionErrorMessage retry receipt to the device whose message failed to decrypt, prompting it to resend over a fresh session.
+   */
+  async sendDecryptionErrorReceipt(failure: DecryptFailure): Promise<void> {
+    if (failure.ciphertextType === CIPHERTEXT_PLAINTEXT) return;
+    try {
+      const auth = await this.authHeader();
+      const content = decryptionErrorContent(failure.ciphertext, failure.ciphertextType, failure.timestamp, failure.senderDeviceId);
+      await this.httpJson(
+        'PUT',
+        `/v1/messages/${encodeURIComponent(failure.senderName)}`,
+        {
+          messages: [
+            {
+              type: Envelope_Type.PLAINTEXT_CONTENT,
+              destinationDeviceId: failure.senderDeviceId,
+              destinationRegistrationId: await this.sessionRegistrationId(failure.senderName, failure.senderDeviceId),
+              content: toBase64(content),
+            },
+          ],
+          timestamp: Date.now(),
+          online: false,
+          urgent: false,
+        },
+        { baseUrl: this.serverUrl, basicAuth: auth, timeout: 10000 }
+      );
+    } catch {
+      // Best-effort retry receipt
+    }
+  }
+
+  private async sessionRegistrationId(name: string, deviceId: number): Promise<number> {
+    const rec = await this.store.loadSession(name, deviceId);
+    if (!rec) return 0;
+    try {
+      return libsignal.sessionRecordRemoteRegistrationId(rec);
+    } catch {
+      return 0;
+    }
+  }
+
+  private async authHeader(): Promise<{ username: string; password: string; aci: string; number: string; deviceId: number }> {
+    const acc = await this.store.getAccount();
+    if (!acc) throw new Error('This phone is not linked to a Signal account');
+    return {
+      username: `${acc.aci}.${acc.deviceId}`,
+      password: acc.password,
+      aci: acc.aci,
+      number: acc.number,
+      deviceId: acc.deviceId,
+    };
+  }
+
+  /**
+   * Enqueue an incoming binary Envelope for strictly serialized decryption. Sends a DecryptionErrorMessage retry receipt when the ciphertext fails to decrypt.
+   */
+  enqueueDecryptEnvelope(envelopeBytes: Uint8Array): Promise<DecryptedEnvelope | null> {
+    const next = this.decryptQueue.then(async () => {
+      try {
+        const res = await decryptEnvelope(this.store, envelopeBytes);
+        const c = res && res.content.content;
+        if (res && c && c.case === 'dataMessage' && c.value.profileKey.length === 32 && res.envelope.sourceUuid) {
+          this.setPeerProfileKey(res.envelope.sourceUuid, c.value.profileKey);
+        }
+        return res;
+      } catch (err) {
+        if (err instanceof DecryptFailure) await this.sendDecryptionErrorReceipt(err);
+        // A duplicate was already delivered and persisted: drop it so the server can delete it.
+        if (errorCode(err) === 'DuplicatedMessage') return null;
+        throw err;
+      }
+    });
+    this.decryptQueue = next.catch(() => null);
+    return next;
+  }
+
+  /** Saves a server-provided identity key before session setup, unless it replaces a key the user verified. */
+  private async acceptBundleIdentity(recipientId: string, identityKey: Uint8Array): Promise<void> {
+    const existing = await this.store.getIdentity(recipientId);
+    if (existing && constantTimeEqual(existing.publicKey, identityKey)) return;
+    if (existing && existing.trustLevel === 'TRUSTED_VERIFIED') {
+      await this.store.setIdentityTrust(recipientId, 'UNTRUSTED');
+      throw new IdentityChangedError(recipientId);
+    }
+    await this.store.saveIdentity(recipientId, identityKey, { uuid: recipientId });
+  }
+
+  /** Fetches PreKey bundles for `selector` (`*` or one device ID) and builds sessions; returns the device IDs that now have sessions. */
+  private async fetchAndProcessBundles(recipientId: string, selector: string): Promise<number[]> {
+    const auth = await this.authHeader();
+    const local = await localIdentity(this.store);
+    const res = await this.httpJson('GET', `/v2/keys/${encodeURIComponent(recipientId)}/${selector}`, null, {
+      baseUrl: this.serverUrl,
+      basicAuth: auth,
+      timeout: 15000,
+    });
+    const bundles = parsePreKeyResponse(res);
+    if (bundles.length > 0) await this.acceptBundleIdentity(recipientId, bundles[0].identityKey);
+    const out: number[] = [];
+    for (const b of bundles) {
+      if (recipientId === auth.aci && b.deviceId === auth.deviceId) continue;
+      await processPreKeyBundle(this.store, local, recipientId, b);
+      out.push(b.deviceId);
+    }
+    return out;
+  }
+
+  /** Device IDs to send to: the cached list, else devices we hold sessions with, else everything the server knows (fetching PreKeys). */
+  private async devicesFor(recipientId: string): Promise<number[]> {
+    const auth = await this.authHeader();
+    const notSelf = (d: number) => !(recipientId === auth.aci && d === auth.deviceId);
+    const cached = this.deviceLists.get(recipientId);
+    if (cached && cached.length > 0) return cached.filter(notSelf);
+    const fromSessions = (await this.store.loadSessions(recipientId)).map((s) => s.deviceId).filter(notSelf);
+    if (fromSessions.length > 0) return fromSessions;
+    try {
+      return await this.fetchAndProcessBundles(recipientId, '*');
+    } catch (err: any) {
+      // Our own account has no other devices to sync to
+      if (recipientId === auth.aci && err && err.status === 404) return [];
+      throw err;
+    }
+  }
+
+  private async ensureSession(recipientId: string, deviceId: number): Promise<void> {
+    if (await hasUsableSession(this.store, recipientId, deviceId)) return;
+    await this.fetchAndProcessBundles(recipientId, String(deviceId));
+  }
+
+  /**
+   * Encrypt and deliver a Content to all devices of `recipientId` (an ACI) via `PUT /v1/messages/{recipientId}`, using Sealed Sender when we know the recipient's profile key, and handling 409 (missing/extra devices) and 410 (stale devices) by updating sessions and retrying.
+   */
+  async sendContentToRecipient(recipientId: string, content: Content, timestamp: number, online = false): Promise<void> {
+    if (!isAci(recipientId)) throw new Error('Signal recipients are addressed by ACI; unknown service ID ' + recipientId);
+    const auth = await this.authHeader();
+    const local = await localIdentity(this.store);
+    const plainBytes = padMessagePlaintext(toBinary(ContentSchema, content));
+
+    const peerProfileKey = recipientId !== auth.aci ? this.getPeerProfileKey(recipientId) : undefined;
+    let senderCert: Uint8Array | null = null;
+    let accessKey: string | undefined;
+    if (peerProfileKey) {
+      senderCert = await this.getSenderCertificate();
+      if (senderCert) accessKey = toBase64(libsignal.profileKeyDeriveAccessKey(peerProfileKey));
+    }
+
+    let devices = await this.devicesFor(recipientId);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (devices.length === 0) return;
+      const messages = [];
+      for (const devId of devices) {
+        await this.ensureSession(recipientId, devId);
+        if (senderCert && accessKey) {
+          const sealed = await sealedEncryptForDevice(this.store, local, recipientId, devId, senderCert, plainBytes);
+          messages.push({
+            type: Envelope_Type.UNIDENTIFIED_SENDER,
+            destinationDeviceId: devId,
+            destinationRegistrationId: sealed.registrationId,
+            content: toBase64(sealed.body),
+          });
+        } else {
+          const enc = await encryptForDevice(this.store, local, recipientId, devId, plainBytes);
+          messages.push({
+            type: enc.envelopeType,
+            destinationDeviceId: devId,
+            destinationRegistrationId: enc.registrationId,
+            content: toBase64(enc.body),
+          });
+        }
+      }
+
+      try {
+        await this.httpJson(
+          'PUT',
+          `/v1/messages/${encodeURIComponent(recipientId)}`,
+          { messages, timestamp, online, urgent: !online },
+          accessKey
+            ? { baseUrl: this.serverUrl, noAuth: true, headers: { 'Unidentified-Access-Key': accessKey }, timeout: 20000 }
+            : { baseUrl: this.serverUrl, basicAuth: auth, timeout: 20000 }
+        );
+        this.deviceLists.set(recipientId, devices);
+        return;
+      } catch (err: any) {
+        const status = err && err.status;
+        const body = err && err.body;
+        if (status === 409 && body) {
+          const extra: number[] = Array.isArray(body.extraDevices) ? body.extraDevices : [];
+          const missing: number[] = Array.isArray(body.missingDevices) ? body.missingDevices : [];
+          for (const ex of extra) await deleteSession(this.store, recipientId, ex);
+          devices = devices.filter((d) => !extra.includes(d)).concat(missing.filter((d) => !devices.includes(d)));
+          this.deviceLists.set(recipientId, devices);
+          continue;
+        }
+        if (status === 410 && body) {
+          const stale: number[] = Array.isArray(body.staleDevices) ? body.staleDevices : [];
+          for (const st of stale) await deleteSession(this.store, recipientId, st);
+          continue;
+        }
+        if (status === 401 && accessKey) {
+          // Wrong or outdated profile key: retry identified
+          accessKey = undefined;
+          senderCert = null;
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * Send a group Content to every member as individual Sealed Sender (or identified) 1:1 messages. Signal's multi-recipient sender-key endpoint needs group send endorsements we don't hold, and a raw SenderKeyMessage via /v1/messages is not a valid envelope, so groups use pairwise fanout. Errors for single members are collected; the call fails only if no member received it.
+   */
+  async sendGroupContent(recipients: string[], content: Content, timestamp: number, online = false): Promise<void> {
+    const auth = await this.authHeader();
+    const targets = recipients.filter((p) => p && p !== auth.aci && isAci(p));
+    let lastError: unknown = null;
+    let delivered = 0;
+    for (const peer of targets) {
+      try {
+        await this.sendContentToRecipient(peer, content, timestamp, online);
+        delivered++;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    if (targets.length > 0 && delivered === 0 && lastError) throw lastError;
+  }
+
+  /**
+   * Send a SyncMessage to our own primary/linked devices so sent messages and read state stay in sync.
+   */
+  async sendSyncMessage(syncContent: Content, timestamp = Date.now()): Promise<void> {
+    const auth = await this.authHeader();
+    try {
+      await this.sendContentToRecipient(auth.aci, syncContent, timestamp);
+    } catch {
+      // Best-effort sync to sibling linked devices
+    }
+  }
+
+  /**
+   * Request Contacts, Blocked, Configuration, and Keys (account entropy pool / master key) sync from the primary device.
+   */
+  async requestInitialSync(): Promise<void> {
+    const types = [
+      SyncMessage_Request_Type.CONTACTS,
+      SyncMessage_Request_Type.BLOCKED,
+      SyncMessage_Request_Type.CONFIGURATION,
+      SyncMessage_Request_Type.KEYS,
+    ];
+    for (const type of types) {
+      await this.sendSyncMessage(
+        create(ContentSchema, { content: { case: 'syncMessage', value: { content: { case: 'request', value: { type } } } } })
+      );
+    }
+  }
+
+  /**
+   * Download and decrypt an attachment from the Signal CDN named by its pointer, stripping Signal's size padding.
+   */
+  async downloadAttachment(descriptorIdOrPointer: string | AttachmentPointer): Promise<{ bytes: Uint8Array; contentType: string }> {
+    let desc: AttachmentDescriptor | null;
+    if (typeof descriptorIdOrPointer === 'string') {
+      desc = decodeAttachmentDescriptor(descriptorIdOrPointer);
+    } else {
+      const p = descriptorIdOrPointer;
+      desc = {
+        cdnKey: attachmentCdnKey(p),
+        cdnNumber: p.cdnNumber || 0,
+        key: p.key,
+        digest: p.digest.length ? p.digest : undefined,
+        contentType: p.contentType || 'application/octet-stream',
+        fileName: p.fileName,
+        size: p.size,
+      };
+    }
+    if (!desc || !desc.cdnKey) throw new Error('Invalid attachment descriptor');
+    if (desc.key.length !== 64) throw new Error('Attachment pointer missing key');
+    const cdnBase = SIGNAL_CDNS[desc.cdnNumber];
+    if (!cdnBase) throw new Error('Unknown attachment CDN ' + desc.cdnNumber);
+
+    const encryptedBytes = await this.httpBinary('GET', `${cdnBase}/attachments/${encodeURIComponent(desc.cdnKey)}`, null, {}, 60000);
+    const decrypted = await decryptAttachment(encryptedBytes, desc.key, desc.digest);
+    const bytes = desc.size > 0 && desc.size <= decrypted.length ? decrypted.subarray(0, desc.size) : decrypted;
+    return { bytes, contentType: desc.contentType };
+  }
+
+  /**
+   * Encrypt and upload an attachment like Signal-Desktop: pad, encrypt, fetch a `GET /v4/attachments/form/upload` form, then upload with TUS (CDN 3) or a resumable PUT (CDN 2).
+   */
+  async uploadAttachment(plaintext: Uint8Array, contentType: string, fileName: string): Promise<AttachmentPointer> {
+    const auth = await this.authHeader();
+    const encrypted = await encryptAttachment(plaintext);
+    const size = encrypted.ciphertext.length;
+
+    const form = await this.httpJson('GET', `/v4/attachments/form/upload?uploadLength=${size}`, null, {
+      baseUrl: this.serverUrl,
+      basicAuth: auth,
+      timeout: 15000,
+    });
+    if (!form || typeof form.key !== 'string' || typeof form.signedUploadLocation !== 'string' || typeof form.cdn !== 'number') {
+      throw new Error('Signal server returned an invalid attachment upload form');
+    }
+    const formHeaders: Record<string, string> = {};
+    if (form.headers && typeof form.headers === 'object') {
+      for (const k of Object.keys(form.headers)) {
+        if (typeof form.headers[k] === 'string') formHeaders[k] = form.headers[k];
+      }
+    }
+
+    if (form.cdn === 3) {
+      await this.httpBinary(
+        'POST',
+        form.signedUploadLocation,
+        encrypted.ciphertext,
+        {
+          ...formHeaders,
+          'Tus-Resumable': '1.0.0',
+          'Upload-Length': String(size),
+          'Upload-Metadata': 'filename ' + toBase64(new TextEncoder().encode(form.key)),
+          'Content-Type': 'application/offset+octet-stream',
+        },
+        120000
+      );
+    } else {
+      if (!this.httpRaw) throw new Error('CDN ' + form.cdn + ' uploads need a raw HTTP transport');
+      const start = await this.httpRaw('POST', form.signedUploadLocation, null, formHeaders, 30000);
+      if (!start.location) throw new Error('Attachment upload form returned no upload location');
+      await this.httpBinary('PUT', start.location, encrypted.ciphertext, { 'Content-Range': `bytes 0-*/${size}` }, 120000);
+    }
+
+    return create(AttachmentPointerSchema, {
+      attachmentIdentifier: { case: 'cdnKey', value: form.key },
+      cdnNumber: form.cdn,
+      contentType,
+      key: encrypted.key,
+      size: plaintext.length,
+      digest: encrypted.digest,
+      fileName,
+      uploadTimestamp: BigInt(Date.now()),
+    });
+  }
+
+  /**
+   * Compute safety numbers for all known remote ACI identities, matching `App.api.identities()` shape.
+   */
+  async listIdentitiesWithSafetyNumbers(): Promise<
+    Array<{
+      uuid?: string;
+      number?: string;
+      safety_number: string;
+      scannable_safety_number: string;
+      trust_level: TrustLevel;
+      added_timestamp: number;
+    }>
+  > {
+    const acc = await this.store.getAccount();
+    if (!acc) return [];
+    const all = await this.store.getAllIdentities();
+    const out = [];
+    for (const id of all) {
+      const aci = id.uuid || id.address;
+      if (aci === acc.aci || !isAci(aci)) continue;
+      const sn = safetyNumber(acc.aci, acc.aciIdentityKeyPair.pubKey, aci, id.publicKey);
+      out.push({
+        uuid: aci,
+        number: id.number,
+        safety_number: sn.safetyNumber,
+        scannable_safety_number: toBase64(sn.scannable),
+        trust_level: id.trustLevel,
+        added_timestamp: id.addedTimestamp,
+      });
+    }
+    return out;
+  }
+}

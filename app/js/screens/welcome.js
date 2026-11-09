@@ -1,9 +1,7 @@
 (function () {
   'use strict';
 
-  /* Welcome / setup help for Signal4KaiOS v2.0.0: explains that the app runs Signal encryption
-     directly on the phone (no computer, gateway, or server needed) and walks the user into
-     linking with their Signal account via QR code. */
+  /* Welcome / setup help: explains that Signal encryption runs on the phone and walks the user into linking with their Signal account via QR code. */
 
   var GUIDE_URL = 'https://github.com/ambercaravalho/signal4kaios/blob/main/docs/setup.md';
 
@@ -12,7 +10,7 @@
       title: 'Welcome',
       lines: [
         'Signal4KaiOS v2.0.0 is a standalone Signal client for KaiOS 3.0, 3.1, and 4.0.',
-        'All Signal encryption and decryption run directly on this phone. No computer, Docker server, or gateway is required.'
+        'All Signal encryption and decryption run directly on this phone, using Signal\'s official libsignal. Nothing else to set up.'
       ]
     },
     {
@@ -100,7 +98,7 @@
 
       function finish() {
         if (opts.firstRun) {
-          App.router.push(App.screens.serversettings.create({ firstRun: true }));
+          App.router.push(App.screens.link.create({ firstRun: true }));
         } else {
           App.router.pop();
         }

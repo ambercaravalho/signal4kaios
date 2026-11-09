@@ -1,4 +1,4 @@
-# Packaged app output (produced by app/scripts/package.sh)
+# Packaged app output (produced by scripts/package.sh)
 dist/
 app/vendor/signal-engine.bundle.js
 app/vendor/libsignal_wasm_bg.wasm
@@ -13,10 +13,4 @@ native/libsignal-wasm/pkg/
 # Build/test artifacts
 node_modules/
 dist-test/
-data/
 *.log
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local

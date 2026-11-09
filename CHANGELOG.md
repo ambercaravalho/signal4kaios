@@ -20,6 +20,7 @@ Signal4KaiOS is now a standalone on-device Signal client for KaiOS 3.0, 3.1, and
 - KaiOS 4.0 needs a one-time rooted step to allow WebAssembly; see [Setup](docs/setup.md#kaios-40-enable-webassembly).
 - Bundles libsignal (AGPL-3.0-only); see `NOTICE`.
 - Removed `gateway/`, `docker/`, and `app/manifest.webapp`.
+- Reorganized the repository: the engine lives in `engine/` (`protocol/`, `net/`, `services/`), tests in `test/`, build and install scripts in `scripts/`, and the app's modules in `app/js/core/`, `data/`, and `ui/`. The unused `push` permission is gone from the manifest.
 
 ## v1.1.3
 

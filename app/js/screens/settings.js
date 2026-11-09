@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* Main settings menu. The gateway connection fields live in their own screen (App.screens.serversettings); everything here is a menu action, a boolean toggle (checkbox), or a value selector. */
+  /* Main settings menu. Linking lives in its own screen (App.screens.link); everything here is a menu action, a boolean toggle (checkbox), or a value selector. */
 
   App.screens.settings = {
     create: function () {
@@ -118,7 +118,7 @@
         var items = accounts.map(function (a) {
           return {
             label: a.number + (a.number === active ? ' (current)' : ''),
-            hint: a.serverUrl,
+            hint: a.deviceId ? 'Device ' + a.deviceId : '',
             onSelect: function () {
               if (a.number === active) return;
               App.config.switchAccount(a.number);
@@ -130,7 +130,7 @@
           label: 'Add account',
           hint: 'Set up another number',
           onSelect: function () {
-            App.router.push(App.screens.serversettings.create({ addAccount: true }));
+            App.router.push(App.screens.link.create({ addAccount: true }));
             return 'keep';
           }
         });
@@ -140,8 +140,7 @@
       function onAction(id) {
         switch (id) {
           case 'Linked account':
-          case 'Server & connection':
-            return App.router.push(App.screens.serversettings.create());
+            return App.router.push(App.screens.link.create());
           case 'Theme':
             return chooseTheme();
           case 'Blocked':

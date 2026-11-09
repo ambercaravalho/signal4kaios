@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* Group info & management. Reads members/description/admins/permissions from GET /v1/groups/{number}/{groupid} and offers rename, description, disappearing-message timer, member & admin management, permissions, group-link control, block and leave. create(conv) */
+  /* Group info & management. Reads members/description/admins/permissions from App.api.groupDetail (Groups V2 state synced on-device) and offers rename, description, disappearing-message timer, member & admin management, permissions, group-link control, block and leave. create(conv) */
 
   function permLabel(perms, key) {
     var v = perms && perms[key];
@@ -43,11 +43,13 @@
         App.router.push(App.screens.chat.create(c.id));
       }
 
-      /* Whether the current account is an admin of this group. Admin ids may be E.164 numbers or UUIDs depending on the signal-cli version, so check our number and (if we know it) our own UUID. Admin-only actions are hidden when this is false since the server would reject them. */
+      /* Whether the current account is an admin of this group. Admin ids may be E.164 numbers or ACIs depending on where the group record came from, so check our number and (if we know it) our own ACI. Admin-only actions are hidden when this is false since the server would reject them. */
       function amIAdmin() {
         var admins = (detail && detail.admins) || [];
         var me = App.config.number();
         if (admins.indexOf(me) >= 0) return true;
+        var aci = App.config.aci();
+        if (aci && admins.indexOf(aci) >= 0) return true;
         var selfC = App.store.contactByKey(me);
         if (selfC && selfC.uuid && admins.indexOf(selfC.uuid) >= 0) return true;
         return false;
