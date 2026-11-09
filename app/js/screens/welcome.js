@@ -10,7 +10,8 @@
       title: 'Welcome',
       lines: [
         'Signal4KaiOS v2.0.0 is a standalone Signal client for KaiOS 3.0, 3.1, and 4.0.',
-        'All Signal encryption and decryption run directly on this phone, using Signal\'s official libsignal. Nothing else to set up.'
+        'All Signal encryption and decryption run directly on this phone, using Signal\'s official libsignal. Nothing else to set up.',
+        'It\'s still a work in progress: calls, stories, and some other Signal features aren\'t supported yet. The user guide lists what\'s missing.'
       ]
     },
     {

@@ -106,6 +106,8 @@ Archive, mute, and pinned chats sync with your other devices through Signal's en
 
 ## Known limitations
 
+signal4kaios doesn't yet support every Signal feature. Calls, stories, link previews, polls, and more are tracked on the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap). These features work only partly:
+
 | Action | What happens now |
 | --- | --- |
 | Starting a chat by phone number | Works for numbers in your synced contacts and for Signal usernames. Other numbers aren't looked up in Signal's directory, because the phone can't run Signal's contact discovery yet ([details](development.md#phone-number-lookup-cdsi-spike-findings)). |

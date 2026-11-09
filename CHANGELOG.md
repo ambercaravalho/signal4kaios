@@ -4,35 +4,33 @@ Each `## v<version>` section becomes the notes of that GitHub Release; the relea
 
 ## v2.0.0
 
-Signal4KaiOS is now a standalone on-device Signal client for KaiOS 3.0, 3.1, and 4.0. The self-hosted Docker backend (`signal-cli-rest-api` and the gateway) and KaiOS 2.5 support have been removed; all Signal encryption and decryption now happen directly on the phone.
+signal4kaios is rebuilt as a standalone Signal app. It links to your account as a linked device, like Signal Desktop, and does all encryption on the phone with Signal's official [libsignal](https://github.com/signalapp/libsignal). You no longer need a computer, a server, Docker, or signal-cli.
 
-### On-device Signal protocol
+> [!IMPORTANT]
+> This is the first release of the rebuilt app and it's still a work in progress. Calls, stories, link previews, polls, and looking up phone numbers that aren't in your contacts aren't supported yet. The [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) lists every missing feature.
 
-- Link your phone directly to your Signal account by scanning a QR code shown on the KaiOS screen from Signal on your main phone (**Settings → Linked devices → Link a new device**). No computer, server, or Docker container is required.
-- Full on-device Signal Protocol engine built on Signal's official [libsignal](https://github.com/signalapp/libsignal) v0.106.2 compiled to WebAssembly, with message formats generated from Signal-Desktop's `.proto` files and interop tests against `@signalapp/libsignal-client`: PQXDH (Kyber-1024 post-quantum PreKeys), Double Ratchet sessions, inbound and outbound Sealed Sender (`SenderCertificate` + `Unidentified-Access-Key`), `DecryptionErrorMessage` retry receipts, Group Sender Keys, 60-digit Safety Number computation and QR verification, and AES-256-CBC + HMAC-SHA256 attachment encryption against Signal's CDN.
-- Signal Storage Service (`StorageManifest`, `ContactRecord`, `GroupV2Record`, `AccountRecord`) and full `SyncMessage` support (`Verified`, `Blocked`, `Configuration`, `FetchLatest`), plus Groups V2 `MasterKey` derivation, encrypted Profile / Avatar hydration, Signal username lookup, incoming call missed-call notices, Stickers, View-Once media, and group `@mention` insertion.
-- Direct WebSocket connection to Signal's servers (`chat.signal.org`): messages sent while your phone is offline are held by Signal's servers and decrypted when you reconnect, with closed-app background wake probes in `sw.js`.
-- Contacts and groups sync directly from your primary Signal device over Storage Service and encrypted sync blobs.
+### Before you upgrade
 
-### Edits reach Signal and your other devices
+- **KaiOS 3.0, 3.1, or 4.0 is required.** KaiOS 2.5 is no longer supported.
+- **Link the phone again.** The self-hosted gateway is gone, so after installing, scan the app's QR code from Signal on your main phone (**Settings → Linked devices → Link a new device**). You can then shut down your old gateway and remove its device from **Linked devices**.
+- **KaiOS 4.0 blocks WebAssembly by default.** Do the one-time [rooted WebAssembly step](https://github.com/ambercaravalho/signal4kaios/blob/main/docs/setup.md#kaios-40-enable-webassembly) before the first launch.
 
-- Renaming a contact saves a Signal nickname through Storage Service, so it shows on all your devices.
-- Block and unblock people from **Contact info**, and unblock people and groups from **Settings → Privacy → Blocked**. Blocking syncs to your other devices, and messages, typing indicators, and receipts from blocked people and groups are dropped.
-- Group edits are real Groups V2 changes, signed by Signal's server and announced to the group: rename, description, disappearing timer, add members (invited when they can't be added directly), remove members, cancel invites, make or remove admins, permissions, and the group link (on, off, approval required, or reset). **Leave group** and **Block and leave** leave on Signal's side.
-- Group info shows invited people and only offers the edits the group's permissions allow you.
-- Disappearing-message timers set in 1:1 chats are sent to the other person.
-- **Pin message** works in 1:1 chats as well as groups, is sent to everyone in the chat, and pins and unpins from others now show up.
-- **Edit profile → Username** registers a real Signal username, **My QR code** shows its `signal.me` link, and **Delete username** releases it. Errors such as a taken or too-short username are explained.
-- Archive, mute, and pinned chats sync with your other devices through Storage Service, with Signal's limit of 4 pinned chats.
-- Looking up phone numbers outside your synced contacts (Signal's contact discovery) is still unavailable; [Development](docs/development.md#phone-number-lookup-cdsi-spike-findings) explains why.
+### What you can do
 
-### Platform changes
+- **Chat**: 1:1 and group chats with reactions, replies, edits, delete for everyone, text formatting, read receipts, typing indicators, disappearing messages, and pinned messages.
+- **Share media**: photos, video, voice notes, and files. Stickers and view-once media you receive display too.
+- **Manage groups**: rename, description, timer, add and remove members, invites, admins, permissions, group links, leave, and block and leave. Changes reach everyone in the group.
+- **Manage contacts and your account**: rename contacts, block and unblock people and groups, edit your profile name and about, and set a Signal username with a QR code to share.
+- **Stay in sync**: contacts, groups, nicknames, blocking, archived, muted, and pinned chats, and your username sync with your other Signal devices. Chats you read elsewhere are marked read here.
+- **Stay secure**: post-quantum encryption, sealed sender, and safety number verification by digits or QR code.
+- **Get notified**: messages raise notifications in the background, and a periodic check shows **New Signal message** while the app is closed.
+- **Use several accounts** on one phone.
 
-- Targets **KaiOS 3.0, 3.1, and 4.0** (Gecko 84 and Gecko 123). **KaiOS 2.5 support is dropped.**
-- KaiOS 4.0 needs a one-time rooted step to allow WebAssembly; see [Setup](docs/setup.md#kaios-40-enable-webassembly).
-- Bundles libsignal (AGPL-3.0-only); see `NOTICE`.
-- Removed `gateway/`, `docker/`, and `app/manifest.webapp`.
-- Reorganized the repository: the engine lives in `engine/` (`protocol/`, `net/`, `services/`), tests in `test/`, build and install scripts in `scripts/`, and the app's modules in `app/js/core/`, `data/`, and `ui/`. The unused `push` permission is gone from the manifest.
+See the [user guide](https://github.com/ambercaravalho/signal4kaios/blob/main/docs/user-guide.md) for the keypad reference and every feature.
+
+### License
+
+The app bundles libsignal, which is AGPL-3.0-only. The app's own code stays GPL-3.0; see [NOTICE](https://github.com/ambercaravalho/signal4kaios/blob/main/NOTICE).
 
 ## v1.1.3
 

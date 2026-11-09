@@ -6,6 +6,9 @@
 
 signal4kaios is a standalone [Signal](https://signal.org) client for **KaiOS 3.0, 3.1, and 4.0** feature phones. It links to your Signal account as a [linked device](https://support.signal.org/hc/en-us/articles/360007320551), like Signal Desktop, and runs all encryption on the phone with Signal's official [libsignal](https://github.com/signalapp/libsignal) compiled to WebAssembly. Everything is driven by the D-pad and number keys.
 
+> [!NOTE]
+> signal4kaios is a work in progress. Everyday messaging, groups, and sync work, but calls, stories, link previews, polls, and some other Signal features don't yet. The [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) tracks everything that's missing.
+
 ## Screenshots
 
 img1
@@ -35,7 +38,7 @@ img3
 | **Groups** | Rename, description, timer, members, admins, invites, permissions, group links, leave, and block, as real Groups V2 changes |
 | **Organization** | Multiple accounts, archived, muted, and pinned chats, pinned messages, a Signal username with its QR code, and local search |
 
-Looking up phone numbers outside your synced contacts isn't supported yet; see [Known limitations](docs/user-guide.md#known-limitations).
+For what isn't supported yet, see [Known limitations](docs/user-guide.md#known-limitations) and the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap).
 
 ## Documentation
 
@@ -46,6 +49,7 @@ Looking up phone numbers outside your synced contacts isn't supported yet; see [
 | [Architecture](docs/architecture.md) | How the app, the engine, and libsignal fit together |
 | [Development](docs/development.md) | Building, testing, bumping pins, and releasing |
 | [Changelog](CHANGELOG.md) | Release notes |
+| [Roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) | Signal features that aren't supported yet, by area |
 
 ## License
 
