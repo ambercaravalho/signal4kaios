@@ -1,5 +1,6 @@
 /* Turns the JSON frames the engine produces from decrypted envelopes into typed events for the store. Frames are untrusted: unknown or malformed shapes are logged and dropped, never thrown. */
 
+import type { GroupUpdateKind } from '../../engine/services/group-updates';
 import { dbg } from './log';
 import type { StyleRange } from './styled';
 import type { Attachment, ContactCard, LinkPreview, Notice, NoticeKind, Poll, Quote } from './types';
@@ -42,7 +43,7 @@ export type StoreEvent =
   | { type: 'reaction'; convId: string; reactor: string; emoji: string; remove: boolean; targetAuthor: string; targetTimestamp: number }
   | { type: 'remoteDelete'; convId: string; author: string; targetTimestamp: number }
   | { type: 'pin' | 'unpin'; convId: string; targetAuthor: string; targetTimestamp: number }
-  | { type: 'timer'; convId: string; seconds: number }
+  | { type: 'timer'; convId: string; seconds: number; author: string; timestamp: number }
   | { type: 'typing'; convId: string; author: string; started: boolean }
   | { type: 'receipt'; peer: string; kind: 'read' | 'delivery' | 'other'; timestamps: number[] }
   | { type: 'readSync'; entries: SyncRef[] }
@@ -242,7 +243,7 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
     return [{ type: 'pollEnd', convId, author, targetTimestamp: num(dm.pollTerminate.targetSentTimestamp), timestamp: num(dm.timestamp) || num(env.timestamp) }];
   }
 
-  if (dm.expirationTimerUpdate) return [{ type: 'timer', convId, seconds: num(dm.expiresInSeconds) }];
+  if (dm.expirationTimerUpdate) return [{ type: 'timer', convId, seconds: num(dm.expiresInSeconds), author, timestamp: num(dm.timestamp) || num(env.timestamp) }];
   if (dm.groupCallUpdate) return noticeEvent(env, { kind: 'groupCall', timestamp: num(dm.timestamp) || num(env.timestamp) }, conv, author);
 
   const attachments: any[] = Array.isArray(dm.attachments) ? dm.attachments : [];
@@ -387,7 +388,57 @@ function deleteSyncEvent(d: any): StoreEvent | null {
   return messages.length || chats.length ? { type: 'deleteSync', messages, chats } : null;
 }
 
+const GROUP_UPDATE_KINDS: GroupUpdateKind[] = [
+  'title',
+  'description',
+  'timer',
+  'permAddMembers',
+  'permEditGroup',
+  'permSend',
+  'link',
+  'linkReset',
+  'memberAdded',
+  'joinedViaLink',
+  'inviteAccepted',
+  'requestApproved',
+  'memberRemoved',
+  'left',
+  'adminAdded',
+  'adminRemoved',
+  'invited',
+  'inviteRemoved',
+  'inviteDeclined',
+  'requested',
+  'requestDenied',
+];
+const GROUP_VALUES = ['only-admins', 'every-member', 'disabled', 'enabled', 'enabled-with-approval'];
+const MAX_GROUP_UPDATES = 50;
+
+/** Lines for what changed in a group, made by the engine from two group states. Each gets its own millisecond so their IDs stay distinct. */
+function groupUpdateEvents(gu: any): StoreEvent[] {
+  const groupId = str(gu && gu.groupId);
+  const changes: any[] = Array.isArray(gu && gu.changes) ? gu.changes.slice(0, MAX_GROUP_UPDATES) : [];
+  if (!groupId) return [];
+  const author = str(gu.author);
+  const ts = num(gu.timestamp) || Date.now();
+  const out: StoreEvent[] = [];
+  for (const c of changes) {
+    const change = str(c && c.change) as GroupUpdateKind;
+    if (GROUP_UPDATE_KINDS.indexOf(change) < 0) continue;
+    const notice: Notice = { kind: 'groupUpdate', change };
+    if (str(c.target)) notice.target = str(c.target);
+    if (str(c.text)) notice.text = str(c.text).slice(0, 300);
+    if (typeof c.seconds === 'number' && c.seconds >= 0) notice.seconds = c.seconds;
+    if (GROUP_VALUES.indexOf(str(c.value)) >= 0) notice.value = str(c.value);
+    if (GROUP_VALUES.indexOf(str(c.from)) >= 0) notice.from = str(c.from);
+    if (typeof c.count === 'number' && c.count > 0) notice.count = Math.min(c.count, 1000);
+    out.push({ type: 'notice', convId: 'g:' + groupId, groupInternalId: groupId, author, timestamp: ts + out.length, notice });
+  }
+  return out;
+}
+
 function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEvent[] {
+  if (env.groupUpdate) return groupUpdateEvents(env.groupUpdate);
   if (env.notice) return noticeEvent(env, env.notice, { convId: peerKey(env), groupInternalId: null }, peerKey(env) || '');
   if (env.dataMessage) return dataMessageEvents(env, env.dataMessage, true, nameOf);
   if (env.editMessage) return editEvent(env, env.editMessage, peerKey(env) || '', nameOf);

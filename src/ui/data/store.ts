@@ -4,6 +4,7 @@ import type { ChatStateEntry, PinnedChat } from '../../engine/host';
 import { groupDetail, signal, syncedContacts, syncedGroups, type SyncedContact } from './api';
 import { config } from './config';
 import { db, type ExpiredRef } from './db';
+import { groupUpdateText, timerText, type LineNames } from './group-lines';
 import { dbg } from './log';
 import { fmt, plural, S } from '../strings';
 import { parseFrame, type ChatRef, type MessageEvent, type NoticeEvent, type StoreEvent, type SyncRef } from './normalize';
@@ -184,8 +185,17 @@ export function noticeText(notice: Notice, author: string): string {
       return author && !isSelfKey(author) ? fmt(S.startedGroupCall, { name: displayName(author) }) : S.groupCall;
     case 'pollEnded':
       return isSelfKey(author) || author === config.aci() ? fmt(S.youEndedPoll, { question: notice.text || '' }) : fmt(S.endedPoll, { name: displayName(author), question: notice.text || '' });
+    case 'timer':
+      return timerText(notice.seconds || 0, author, lineNames);
+    case 'groupUpdate':
+      return groupUpdateText(notice, author, lineNames);
   }
 }
+
+const lineNames: LineNames = {
+  name: (key) => displayName(key),
+  isMe: (key) => isSelfKey(key) || (!!config.aci() && key === config.aci()),
+};
 
 function messageText(rec: Message): string {
   return rec.notice ? noticeText(rec.notice, rec.author) : previewOf(rec);
@@ -269,7 +279,7 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
 
 /** Missed calls count as unread and notify, as in Signal; other notices only show in the chat. */
 function applyNotice(ev: NoticeEvent, silent: boolean): void {
-  if (ev.notice.kind === 'safetyNumber' && !convs[ev.convId]) return;
+  if ((ev.notice.kind === 'safetyNumber' || ev.notice.kind === 'groupUpdate') && !convs[ev.convId]) return;
   const conv = ensureConv({ convId: ev.convId, groupInternalId: ev.groupInternalId, incoming: true, authorName: '' });
   const rec: Message = {
     id: msgId(ev.convId, ev.timestamp, ev.author),
@@ -511,6 +521,7 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
       conv.expireTimer = ev.seconds;
       persistConv(conv);
       emit('conversations');
+      if (conv.type === 'direct') timerLine(conv, ev.author, ev.seconds, ev.timestamp);
       return;
     }
   }
@@ -1270,9 +1281,16 @@ export function setConvPinned(convId: string, val: boolean): boolean {
 export function setConvExpire(convId: string, secs: number): void {
   const conv = convs[convId];
   if (!conv) return;
+  const changed = (conv.expireTimer || 0) !== (secs || 0);
   conv.expireTimer = secs || 0;
   persistConv(conv);
   emit('conversations');
+  if (changed && conv.type === 'direct') timerLine(conv, self(), secs || 0, Date.now());
+}
+
+/** A 1:1 chat's timer line; a group's comes with its other changes. */
+function timerLine(conv: Conversation, author: string, seconds: number, timestamp: number): void {
+  applyNotice({ type: 'notice', convId: conv.id, groupInternalId: null, author, timestamp, notice: { kind: 'timer', seconds } }, true);
 }
 
 export function setConversationName(convId: string, name: string): void {

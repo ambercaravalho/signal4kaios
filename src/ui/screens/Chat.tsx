@@ -335,6 +335,8 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
 function noticeIcon(n: Notice): string {
   if (n.kind === 'safetyNumber') return 'verified';
   if (n.kind === 'pollEnded') return 'poll';
+  if (n.kind === 'timer' || (n.kind === 'groupUpdate' && n.change === 'timer')) return 'timer';
+  if (n.kind === 'groupUpdate') return 'group';
   return 'phone';
 }
 

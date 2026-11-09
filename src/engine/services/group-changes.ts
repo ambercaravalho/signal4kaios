@@ -248,6 +248,16 @@ export function removeMembersActions(snap: GroupSnapshot, ids: string[]): GroupA
   return { deleteMembers, deleteMembersPendingProfileKey, deleteMembersPendingAdminApproval };
 }
 
+/** Approves join requests, as Signal-Desktop's buildPromotePendingAdminApprovalMemberChange: they join as regular members. */
+export function approveRequestsActions(snap: GroupSnapshot, ids: string[]): GroupActionsInit | null {
+  const promoteMembersPendingAdminApproval: Array<{ userId: Uint8Array; role: Member_Role }> = [];
+  for (const id of ids) {
+    const userId = snap.requesting.get(id);
+    if (userId) promoteMembersPendingAdminApproval.push({ userId, role: Member_Role.DEFAULT });
+  }
+  return promoteMembersPendingAdminApproval.length ? { promoteMembersPendingAdminApproval } : null;
+}
+
 export function roleActions(snap: GroupSnapshot, ids: string[], admin: boolean): GroupActionsInit | null {
   const modifyMemberRoles: RoleInit[] = [];
   for (const id of ids) {

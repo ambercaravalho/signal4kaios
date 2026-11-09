@@ -5,7 +5,7 @@ import { config } from './config';
 import { db } from './db';
 import { http } from './http';
 import { dbg } from './log';
-import { applyChatState, refreshDirectory } from './store';
+import { applyChatState, ingestRaw, refreshDirectory } from './store';
 
 export function installEngineHost(): void {
   setEngineHost({
@@ -20,5 +20,6 @@ export function installEngineHost(): void {
     dbg: (msg) => dbg(msg),
     directoryChanged: () => refreshDirectory(),
     applyChatState,
+    ingest: (frame) => ingestRaw(frame),
   });
 }

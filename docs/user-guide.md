@@ -62,7 +62,7 @@ OK on a message opens its options. The first one is what the message is most lik
 - **Drafts**: text left in the message box stays with the chat until you send or clear it.
 - **Mentions**: in a group, **Mention** picks a member and sends a Signal mention.
 - **Emoji**: **Insert emoji** opens the picker; its **Options** has **Category** and **Skin tone**, which picks one of six tones for emoji that have them, reactions included.
-- **Notices**: missed calls, a changed safety number, and group calls show as a line in the chat. OK on one offers **Delete for me**, and on a safety number line **View safety number**.
+- **Notices**: missed calls, a changed safety number, group calls, disappearing message timer changes, and group changes (name, description, members, admins, invites, join requests, group link, and permissions) show as a line in the chat, for example **Dave added you**; when Signal doesn't say who made a group change, the line just says what changed. OK on one offers **Delete for me**, and on a safety number line **View safety number**.
 - **Groups where only admins can send** show **Only admins can send messages** in place of the message box.
 
 - **Text formatting**: type `**bold**`, `*italic*`, `~strikethrough~`, `` `monospace` ``, or `||spoiler||`. Spoilers stay hidden until you focus the message. Prefix a marker with `\` to type it literally. Turn this off in **Settings → Chats**.
@@ -102,7 +102,7 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 - **For everyone**: **Media** is the first row; see [Media](#media).
 - **For a person**: Nickname (saved as a Signal nickname on all your devices), Disappearing messages, Mute, View safety number, and Block or Unblock.
 - **For a group**: the description, **Members**, and, as the group's permissions allow, the group name, description, and disappearing messages. Admins also get **Permissions** (who can add members, edit group info, and send messages) and **Group link** (off, on, or on with admin approval; show its QR code or reset it). **Block and leave group** and **Leave group** are at the bottom.
-- **Members**: OK on a member to message them or view their safety number; admins can make or remove admins, remove members, and cancel invites. The right softkey adds people from your contacts, or by username if you have none. People Signal can't add directly are invited.
+- **Members**: OK on a member to message them or view their safety number; admins can make or remove admins, remove members, and cancel invites. Admins also see **Requests to join** at the top when people asked to join through the group link; OK on one to **Approve** or **Deny** it. The right softkey adds people from your contacts, or by username if you have none. People Signal can't add directly are invited.
 - **Safety number**: compare the 60 digits with the other phone, **Show code** for them to scan, or **Scan code** to scan theirs. OK marks the contact as verified or clears it. [About safety numbers](https://support.signal.org/hc/en-us/articles/360007060632).
 
 ## Settings

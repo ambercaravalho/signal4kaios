@@ -25,6 +25,7 @@ import { buildGroupContextV2, deriveGroupV2Keys, fetchGroupState, GroupLinkMode,
 import {
   addMembersActions,
   applyGroupChange,
+  approveRequestsActions,
   descriptionActions,
   GroupActionsInit,
   GroupSnapshot,
@@ -53,6 +54,7 @@ import { IndexedDbSignalStore, TrustLevel } from './protocol/store';
 import { POLL_QUESTION_MAX_SEND, validPoll } from './services/polls';
 import { mutateStorage, pullFromStorageService, StorageMutation, StorageWriteQueue } from './services/storage-service';
 import { AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema, ContactRecord_NameSchema } from './gen/SignalStorage_pb';
+import { diffGroupState, groupChangeAuthor, isDecodedGroup } from './services/group-updates';
 import { reportSpam as reportSpamMessages } from './services/report-spam';
 import { deleteUsername as deleteAccountUsername, setUsername as setAccountUsername, usernameLinkUrl } from './services/usernames';
 import { SignalClient } from './net/client';
@@ -383,7 +385,15 @@ async function recordPeerProfileKey(senderUuid: string, senderE164: string | und
   if (changed) await host().db.kvSet('syncedContacts', list);
 }
 
-async function mergeGroupState(state: GroupV2Metadata): Promise<void> {
+/** Who made the change that brought a group to `revision`, and when it arrived. */
+interface GroupChangeHint {
+  author: string;
+  revision: number;
+  timestamp: number;
+}
+
+/** Save a group's new state, and tell the app what changed since the state we had; the change is attributed only when it's the very next revision. */
+async function mergeGroupState(state: GroupV2Metadata, hint?: GroupChangeHint): Promise<void> {
   const list: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
   const idx = list.findIndex((g) => g.internal_id === state.internal_id);
   const prev = idx >= 0 ? list[idx] : {};
@@ -392,11 +402,15 @@ async function mergeGroupState(state: GroupV2Metadata): Promise<void> {
   else list.push(merged);
   await host().db.kvSet('syncedGroups', list);
   host().directoryChanged().catch(() => {});
+  if (!isDecodedGroup(prev) || state.revision <= (prev.revision || 0)) return;
+  const author = hint && hint.revision === state.revision && (prev.revision || 0) + 1 === state.revision ? hint.author : '';
+  const changes = diffGroupState(prev, state, author, host().config.aci() || '');
+  if (changes.length) host().ingest({ envelope: { groupUpdate: { groupId: state.internal_id, author, timestamp: (hint && hint.timestamp) || Date.now(), changes } } });
 }
 
 /** Fetch a group's current title, members, and settings from the storage server and merge them into `syncedGroups`. */
-async function refreshGroup(masterKey: Uint8Array): Promise<void> {
-  await mergeGroupState(await fetchGroupState(store, httpJson, httpBinary, masterKey, serverUrl()));
+async function refreshGroup(masterKey: Uint8Array, hint?: GroupChangeHint): Promise<void> {
+  await mergeGroupState(await fetchGroupState(store, httpJson, httpBinary, masterKey, serverUrl()), hint);
 }
 
 async function groupMasterKey(groupSendId: string): Promise<Uint8Array> {
@@ -413,9 +427,9 @@ async function changeGroup(groupSendId: string, build: (snap: GroupSnapshot) => 
   const masterKey = await groupMasterKey(groupSendId);
   const res = await applyGroupChange({ store, httpJson, httpBinary, serverUrl: serverUrl() }, masterKey, build);
   if (!res) return null;
-  await mergeGroupState(res.state);
   const acc = await store.getAccount();
   const ts = Date.now();
+  await mergeGroupState(res.state, { author: acc ? acc.aci : '', revision: res.revision, timestamp: ts });
   const dm: DataMessageInit = {
     timestamp: BigInt(ts),
     profileKey: acc ? acc.profileKey : undefined,
@@ -427,7 +441,7 @@ async function changeGroup(groupSendId: string, build: (snap: GroupSnapshot) => 
 }
 
 /** Record a group seen in an incoming message; fetch its state when it is new or its revision moved on. */
-async function noteIncomingGroup(masterKey: Uint8Array, revision: number, sender: string, expireTimer: number): Promise<void> {
+async function noteIncomingGroup(masterKey: Uint8Array, revision: number, sender: string, expireTimer: number, groupChange: Uint8Array, timestamp: number): Promise<void> {
   const keys = deriveGroupV2Keys(masterKey);
   const list: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
   const existing = list.find((g) => g.internal_id === keys.internalId);
@@ -447,7 +461,9 @@ async function noteIncomingGroup(masterKey: Uint8Array, revision: number, sender
     await host().db.kvSet('syncedGroups', list);
   }
   if (stale) {
-    refreshGroup(masterKey).catch((e: any) => host().dbg('group refresh failed: ' + (e && e.message)));
+    const author = groupChangeAuthor(keys, groupChange, revision);
+    const hint = author && author === sender ? { author, revision, timestamp } : undefined;
+    refreshGroup(masterKey, hint).catch((e: any) => host().dbg('group refresh failed: ' + (e && e.message)));
   }
 }
 
@@ -764,7 +780,7 @@ export const signalBridge = {
       const dm = c.value;
       if (dm.profileKey.length === 32) recordPeerProfileKey(sender, res.envelope.sourceE164, dm.profileKey).catch(() => {});
       if (dm.groupV2 && dm.groupV2.masterKey.length === 32) {
-        noteIncomingGroup(dm.groupV2.masterKey, dm.groupV2.revision, sender, dm.expireTimer).catch(() => {});
+        noteIncomingGroup(dm.groupV2.masterKey, dm.groupV2.revision, sender, dm.expireTimer, dm.groupV2.groupChange, res.envelope.timestamp).catch(() => {});
       } else if (dm.expireTimerVersion && isAci(sender)) {
         updateSyncedContact({ aci: sender, e164: res.envelope.sourceE164 || '' }, (ct) => {
           if (dm.expireTimerVersion >= (ct.expireTimerVersion || 0)) {
@@ -780,7 +796,13 @@ export const signalBridge = {
       client.sendContentToRecipient(sender, busy, Date.now(), true).catch(() => {});
     }
 
-    if (c.case === 'syncMessage') handleIncomingSyncMessage(res.envelope, res.content).catch(() => {});
+    if (c.case === 'syncMessage') {
+      const sent = c.value.content.case === 'sent' ? c.value.content.value.message : undefined;
+      if (sent && sent.groupV2 && sent.groupV2.masterKey.length === 32) {
+        noteIncomingGroup(sent.groupV2.masterKey, sent.groupV2.revision, sender, sent.expireTimer, sent.groupV2.groupChange, res.envelope.timestamp).catch(() => {});
+      }
+      handleIncomingSyncMessage(res.envelope, res.content).catch(() => {});
+    }
     return res.normalizedFrame;
   },
 
@@ -1239,6 +1261,11 @@ export const signalBridge = {
   async removeGroupMembers(groupSendId: string, ids: string[]): Promise<GroupV2Metadata | null> {
     const resolved = await Promise.all(ids.map(async (id) => (await resolveAci(id)) || id));
     return changeGroup(groupSendId, (snap) => removeMembersActions(snap, resolved));
+  },
+
+  /** Let people who asked to join through the group link in; deny a request with `removeGroupMembers`. */
+  async approveGroupRequests(groupSendId: string, ids: string[]): Promise<GroupV2Metadata | null> {
+    return changeGroup(groupSendId, (snap) => approveRequestsActions(snap, ids));
   },
 
   async setGroupAdmins(groupSendId: string, ids: string[], admin: boolean): Promise<GroupV2Metadata | null> {

@@ -69,6 +69,8 @@ export interface EngineHost {
   directoryChanged(): Promise<unknown>;
   /** Archive, mute, and pinned-chat state pulled from Storage Service. `pinned` is null when the account record didn't change. */
   applyChatState(states: ChatStateEntry[], pinned: PinnedChat[] | null): void;
+  /** A frame the engine made itself (group update lines), handled like a decrypted one. */
+  ingest(frame: { envelope: unknown }): void;
 }
 
 let current: EngineHost | null = null;

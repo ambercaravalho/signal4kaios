@@ -449,6 +449,64 @@ describe('store', () => {
     assert.equal(store.noticeText(line.notice!, line.author), 'Dave ended the poll “Lunch?”');
   });
 
+  it('shows group changes and timer changes as lines that don’t count as unread', async () => {
+    const ts = Date.now() + 5000;
+    const before = store.conversation('g:R1JQ')!.unread;
+    store.ingestRaw({
+      envelope: {
+        groupUpdate: {
+          groupId: 'R1JQ',
+          author: 'aci-dave',
+          timestamp: ts,
+          changes: [
+            { change: 'title', text: 'Team 2' },
+            { change: 'memberAdded', target: 'aci-me' },
+            { change: 'adminAdded', target: 'aci-admin' },
+            { change: 'invited', count: 3 },
+            { change: 'link', value: 'enabled-with-approval', from: 'enabled' },
+            { change: 'bogus' },
+          ],
+        },
+      },
+    });
+    store.ingestRaw({ envelope: { groupUpdate: { groupId: 'R1JQ', author: '', timestamp: ts + 10, changes: [{ change: 'timer', seconds: 3600 }, { change: 'requested', target: 'aci-dave' }] } } });
+    await settle();
+    const lines: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const m = (await db.getMessage('g:R1JQ|' + (ts + i) + '|aci-dave'))!;
+      lines.push(store.noticeText(m.notice!, m.author));
+    }
+    for (let i = 0; i < 2; i++) {
+      const m = (await db.getMessage('g:R1JQ|' + (ts + 10 + i) + '|'))!;
+      lines.push(store.noticeText(m.notice!, m.author));
+    }
+    assert.deepEqual(lines, [
+      'Dave changed the group name to “Team 2”',
+      'Dave added you',
+      'Dave made aci-admin an admin',
+      'Dave invited 3 people to the group',
+      'Dave turned on admin approval for the group link',
+      'The disappearing message time was set to 1 hour',
+      'Dave asked to join via the group link',
+    ]);
+    assert.equal(store.conversation('g:R1JQ')!.unread, before);
+    assert.equal(store.conversation('g:R1JQ')!.lastPreview, 'Dave asked to join via the group link');
+    assert.equal(await db.getMessage('g:R1JQ|' + (ts + 5) + '|aci-dave'), undefined);
+
+    store.ingestRaw(incoming(ts + 20, '', { expirationTimerUpdate: true, expiresInSeconds: 604800 }));
+    await settle();
+    const timer = (await db.getMessage(ALICE + '|' + (ts + 20) + '|' + ALICE))!;
+    assert.equal(store.noticeText(timer.notice!, timer.author), 'Alice set the disappearing message time to 1 week');
+    assert.equal(store.conversation(ALICE)!.expireTimer, 604800);
+    const t0 = Date.now();
+    store.setConvExpire(ALICE, 0);
+    store.setConvExpire(ALICE, 0);
+    await settle();
+    const page = await db.getMessagesPage(ALICE, Number.MAX_SAFE_INTEGER, 50);
+    const mine = page.filter((m) => m.notice && m.notice.kind === 'timer' && m.author !== ALICE && m.timestamp >= t0);
+    assert.deepEqual(mine.map((m) => store.noticeText(m.notice!, m.author)), ['You turned off disappearing messages']);
+  });
+
   it('holds a stranger’s chat as a message request, without read receipts, until it is accepted', async () => {
     const ERIN = '+15550006';
     const receipts: any[] = [];

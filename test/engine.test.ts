@@ -18,10 +18,12 @@ import {
   GroupResponseSchema,
   GroupSchema,
   Member_Role,
+  MemberPendingAdminApprovalSchema,
 } from '../src/engine/gen/Groups_pb';
 import {
   addMembersActions,
   applyGroupChange,
+  approveRequestsActions,
   inviteLinkActions,
   leaveActions,
   permissionActions,
@@ -59,6 +61,7 @@ import { deleteUsername, setUsername, usernameCandidates, usernameLinkUrl } from
 import { loadWasmForTests } from './support';
 import { contentToNormalizedFrame, decodeAttachmentDescriptor, parseContactsSyncBlob } from '../src/engine/net/receive';
 import { reportSpam } from '../src/engine/services/report-spam';
+import { diffGroupState, groupChangeAuthor, isDecodedGroup } from '../src/engine/services/group-updates';
 
 const ALICE = '11111111-1111-4111-8111-111111111111';
 const BOB = '22222222-2222-4222-8222-222222222222';
@@ -553,6 +556,84 @@ describe('Groups V2 changes (PATCH /v2/groups/)', () => {
     const inv = fromBinary(GroupInviteLinkSchema, fromBase64(decoded.invite_link.split('#')[1]));
     assert.equal(inv.contents.case, 'contentsV1');
     assert.deepEqual(inv.contents.value!.groupMasterKey, srv.masterKey);
+  });
+
+  it('approves join requests like Signal-Desktop and denies them by deleting the request', () => {
+    const srv = serveGroup();
+    const requested = libsignal.groupEncryptServiceId(srv.keys.secretParams, DAVE);
+    srv.group.membersPendingAdminApproval = [create(MemberPendingAdminApprovalSchema, { userId: requested })];
+    assert.deepEqual(decodeGroupState(srv.keys, srv.group).requesting, [DAVE]);
+    const snap = snapshotGroup(srv.keys, srv.group, ALICE);
+    assert.deepEqual(approveRequestsActions(snap, [DAVE, BOB]), { promoteMembersPendingAdminApproval: [{ userId: requested, role: Member_Role.DEFAULT }] });
+    assert.equal(approveRequestsActions(snap, [BOB]), null);
+    assert.deepEqual(removeMembersActions(snap, [DAVE])!.deleteMembersPendingAdminApproval, [{ deletedUserId: requested }]);
+  });
+
+  it('reads who made a signed group change only for the revision it claims', () => {
+    const srv = serveGroup();
+    const actions = toBinary(GroupChange_ActionsSchema, create(GroupChange_ActionsSchema, { sourceUserId: libsignal.groupEncryptServiceId(srv.keys.secretParams, BOB), version: 5 }));
+    const signed = toBinary(GroupChangeSchema, create(GroupChangeSchema, { actions, serverSignature: randomBytes(64) }));
+    assert.equal(groupChangeAuthor(srv.keys, signed, 5), BOB);
+    assert.equal(groupChangeAuthor(srv.keys, signed, 6), '');
+    assert.equal(groupChangeAuthor(srv.keys, new Uint8Array(0), 5), '');
+    assert.equal(groupChangeAuthor(srv.keys, new Uint8Array([1, 2, 3]), 5), '');
+  });
+});
+
+describe('Group update lines', () => {
+  const base = {
+    id: 'group.X',
+    internal_id: 'X',
+    masterKey: '',
+    revision: 4,
+    name: 'Before',
+    description: '',
+    members: [ALICE, BOB],
+    admins: [ALICE],
+    pending: [CAROL],
+    requesting: [DAVE],
+    expireTimer: 0,
+    blocked: false,
+    permissions: { add_members: 'every-member' as const, edit_group: 'only-admins' as const, send_messages: 'every-member' as const },
+    link_mode: 'enabled-with-approval' as const,
+    invite_link: 'https://signal.group/#a',
+  };
+
+  it('describes each change, crediting the author only when it is known', () => {
+    const next = {
+      ...base,
+      revision: 5,
+      name: 'After',
+      expireTimer: 86400,
+      members: [ALICE, BOB, DAVE, ERIN],
+      admins: [ALICE, BOB],
+      pending: [],
+      requesting: [],
+      permissions: { ...base.permissions, send_messages: 'only-admins' as const },
+      invite_link: 'https://signal.group/#b',
+    };
+    assert.deepEqual(diffGroupState(base, next, ALICE, ALICE), [
+      { change: 'title', text: 'After' },
+      { change: 'timer', seconds: 86400 },
+      { change: 'permSend', value: 'only-admins' },
+      { change: 'linkReset' },
+      { change: 'requestApproved', target: DAVE },
+      { change: 'memberAdded', target: ERIN },
+      { change: 'adminAdded', target: BOB },
+      { change: 'inviteRemoved', count: 1 },
+    ]);
+    const left = diffGroupState(base, { ...base, revision: 5, members: [ALICE], pending: [], requesting: [] }, CAROL, ALICE);
+    assert.deepEqual(left, [{ change: 'memberRemoved', target: BOB }, { change: 'inviteDeclined', target: CAROL }, { change: 'requestDenied', target: DAVE }]);
+    assert.deepEqual(diffGroupState(base, { ...base, revision: 5, members: [ALICE] }, BOB, ALICE), [{ change: 'left', target: BOB }]);
+    assert.deepEqual(diffGroupState(base, { ...base, revision: 5, members: [ALICE, BOB, ERIN] }, ERIN, ALICE), [{ change: 'joinedViaLink', target: ERIN }]);
+    assert.deepEqual(diffGroupState(base, { ...base, revision: 5, pending: [CAROL, ALICE, ERIN] }, '', ALICE), [
+      { change: 'invited', target: ALICE, count: 1 },
+      { change: 'invited', count: 1 },
+    ]);
+    assert.deepEqual(diffGroupState(base, { ...base, revision: 5, link_mode: 'disabled', invite_link: '' }, '', ALICE), [{ change: 'link', value: 'disabled', from: 'enabled-with-approval' }]);
+    assert.deepEqual(diffGroupState(base, { ...base, revision: 5 }, ALICE, ALICE), []);
+    assert.equal(isDecodedGroup({ id: 'group.X', name: 'Group', members: [BOB], admins: [] }), false);
+    assert.equal(isDecodedGroup(base), true);
   });
 });
 
