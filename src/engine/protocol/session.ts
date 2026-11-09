@@ -11,6 +11,11 @@ import {
   verifySignature,
 } from '../crypto/curve';
 import {
+  kyberDecapsulate,
+  kyberEncapsulate,
+  verifyKyberPreKeySignature,
+} from '../crypto/kem';
+import {
   aesCbcDecrypt,
   aesCbcEncrypt,
   hkdfSha256,
@@ -35,6 +40,7 @@ const MAX_RECEIVING_CHAINS = 5;
 const MAX_SKIPPED_MESSAGE_KEYS = 2000;
 
 const WHISPER_TEXT_INFO = 'WhisperText';
+const WHISPER_TEXT_PQ_INFO = 'WhisperText_X25519_SHA-256_CRYSTALS-KYBER-1024';
 const WHISPER_RATCHET_INFO = 'WhisperRatchet';
 const WHISPER_MESSAGE_KEYS_INFO = 'WhisperMessageKeys';
 
@@ -49,6 +55,9 @@ export interface RemotePreKeyBundle {
   signedPreKeyId: number;
   signedPreKeyPublic: Uint8Array;
   signedPreKeySignature: Uint8Array;
+  kyberPreKeyId?: number;
+  kyberPreKeyPublic?: Uint8Array;
+  kyberPreKeySignature?: Uint8Array;
   identityKey: Uint8Array;
 }
 
@@ -139,7 +148,7 @@ export async function initSessionFromPreKeyBundle(
   const ourBaseKey = generateKeyPair();
   const ourSendingRatchetKey = generateKeyPair();
 
-  // X3DH master secret = 0xFF*32 || DH(IKa, SPKb) || DH(EKa, IKb) || DH(EKa, SPKb) [|| DH(EKa, OPKb)]
+  // X3DH / PQXDH master secret = 0xFF*32 || DH(IKa, SPKb) || DH(EKa, IKb) || DH(EKa, SPKb) [|| DH(EKa, OPKb)] [|| KEM_SS]
   const discontinuity = new Uint8Array(32).fill(0xff);
   const dh1 = calculateAgreement(remoteSignedPreKey, ourIdentity.privKey);
   const dh2 = calculateAgreement(remoteIdentity, ourBaseKey.privKey);
@@ -151,7 +160,32 @@ export async function initSessionFromPreKeyBundle(
     parts.push(calculateAgreement(remoteOneTimePreKey, ourBaseKey.privKey));
   }
 
-  const masterKey = hkdfSha256(concatBytes(...parts), WHISPER_TEXT_INFO, 64);
+  let kyberPreKeyId: number | undefined;
+  let kyberCiphertext: Uint8Array | undefined;
+  let hkdfInfo = WHISPER_TEXT_INFO;
+
+  if (
+    bundle.kyberPreKeyPublic &&
+    bundle.kyberPreKeySignature &&
+    bundle.kyberPreKeyId !== undefined
+  ) {
+    if (
+      !verifyKyberPreKeySignature(
+        remoteIdentity,
+        bundle.kyberPreKeyPublic,
+        bundle.kyberPreKeySignature
+      )
+    ) {
+      throw new Error('Invalid signature on remote KyberPreKey');
+    }
+    const kem = kyberEncapsulate(bundle.kyberPreKeyPublic);
+    parts.push(kem.sharedSecret);
+    kyberPreKeyId = bundle.kyberPreKeyId;
+    kyberCiphertext = kem.ciphertext;
+    hkdfInfo = WHISPER_TEXT_PQ_INFO;
+  }
+
+  const masterKey = hkdfSha256(concatBytes(...parts), hkdfInfo, 64);
   const initialRootKey = masterKey.slice(0, 32);
   const initialRecvChainKey = masterKey.slice(32, 64);
 
@@ -163,7 +197,7 @@ export async function initSessionFromPreKeyBundle(
   );
 
   const session: RatchetSessionState = {
-    sessionVersion: 3,
+    sessionVersion: kyberPreKeyId !== undefined ? 4 : 3,
     localIdentityPublic: prependVersionByte(ourIdentity.pubKey),
     remoteIdentityPublic: remoteIdentity,
     rootKey: sendingRatchet.rootKey,
@@ -184,6 +218,8 @@ export async function initSessionFromPreKeyBundle(
     pendingPreKey: {
       preKeyId: bundle.preKeyId,
       signedPreKeyId: bundle.signedPreKeyId,
+      kyberPreKeyId,
+      kyberCiphertext,
       baseKey: ourBaseKey.pubKey,
     },
   };
@@ -193,13 +229,17 @@ export async function initSessionFromPreKeyBundle(
 }
 
 /**
- * Initialize an inbound X3DH session when receiving a PreKeySignalMessage.
+ * Initialize an inbound X3DH / PQXDH session when receiving a PreKeySignalMessage.
  */
 async function initSessionFromPreKeyWhisperMessage(
   store: SignalProtocolStore,
   senderAddress: string,
   preKeyMsg: ReturnType<typeof decodePreKeySignalMessageProto>
-): Promise<{ session: RatchetSessionState; consumedPreKeyId?: number }> {
+): Promise<{
+  session: RatchetSessionState;
+  consumedPreKeyId?: number;
+  consumedKyberPreKeyId?: number;
+}> {
   if (
     !preKeyMsg.identityKey ||
     !preKeyMsg.baseKey ||
@@ -229,7 +269,7 @@ async function initSessionFromPreKeyWhisperMessage(
     }
   }
 
-  // Responder X3DH: DH(SPKb, IKa) || DH(IKb, EKa) || DH(SPKb, EKa) [|| DH(OPKb, EKa)]
+  // Responder X3DH / PQXDH: DH(SPKb, IKa) || DH(IKb, EKa) || DH(SPKb, EKa) [|| DH(OPKb, EKa)] [|| KEM_SS]
   const discontinuity = new Uint8Array(32).fill(0xff);
   const dh1 = calculateAgreement(remoteIdentity, ourSignedPreKey.keyPair.privKey);
   const dh2 = calculateAgreement(remoteBaseKey, ourIdentity.privKey);
@@ -240,12 +280,28 @@ async function initSessionFromPreKeyWhisperMessage(
     parts.push(calculateAgreement(remoteBaseKey, ourOneTimePreKey.privKey));
   }
 
-  const masterKey = hkdfSha256(concatBytes(...parts), WHISPER_TEXT_INFO, 64);
+  let consumedKyberPreKeyId: number | undefined;
+  let hkdfInfo = WHISPER_TEXT_INFO;
+  if (preKeyMsg.kyberPreKeyId !== undefined && preKeyMsg.kyberCiphertext) {
+    const ourKyberPreKey = await store.loadKyberPreKey(preKeyMsg.kyberPreKeyId);
+    if (!ourKyberPreKey) {
+      throw new Error(`Missing local KyberPreKey id=${preKeyMsg.kyberPreKeyId}`);
+    }
+    const kemSecret = kyberDecapsulate(
+      preKeyMsg.kyberCiphertext,
+      ourKyberPreKey.keyPair.privKey
+    );
+    parts.push(kemSecret);
+    consumedKyberPreKeyId = preKeyMsg.kyberPreKeyId;
+    hkdfInfo = WHISPER_TEXT_PQ_INFO;
+  }
+
+  const masterKey = hkdfSha256(concatBytes(...parts), hkdfInfo, 64);
   const initialRootKey = masterKey.slice(0, 32);
   const initialSendChainKey = masterKey.slice(32, 64);
 
   const session: RatchetSessionState = {
-    sessionVersion: 3,
+    sessionVersion: consumedKyberPreKeyId !== undefined ? 4 : 3,
     localIdentityPublic: prependVersionByte(ourIdentity.pubKey),
     remoteIdentityPublic: remoteIdentity,
     rootKey: initialRootKey,
@@ -262,6 +318,7 @@ async function initSessionFromPreKeyWhisperMessage(
   return {
     session,
     consumedPreKeyId: ourOneTimePreKey ? preKeyMsg.preKeyId : undefined,
+    consumedKyberPreKeyId,
   };
 }
 
@@ -408,6 +465,8 @@ export async function encryptWhisperMessage(
       registrationId: session.localRegistrationId,
       preKeyId: session.pendingPreKey.preKeyId,
       signedPreKeyId: session.pendingPreKey.signedPreKeyId,
+      kyberPreKeyId: session.pendingPreKey.kyberPreKeyId,
+      kyberCiphertext: session.pendingPreKey.kyberCiphertext,
       baseKey: prependVersionByte(session.pendingPreKey.baseKey),
       identityKey: prependVersionByte(session.localIdentityPublic),
       message: whisperBytes,
@@ -492,16 +551,16 @@ export async function decryptPreKeyWhisperMessage(
     throw new Error('PreKeySignalMessage missing inner SignalMessage');
   }
 
-  const { session, consumedPreKeyId } = await initSessionFromPreKeyWhisperMessage(
-    store,
-    senderAddress,
-    preKeyMsg
-  );
+  const { session, consumedPreKeyId, consumedKyberPreKeyId } =
+    await initSessionFromPreKeyWhisperMessage(store, senderAddress, preKeyMsg);
 
   const plaintext = await decryptSignalMessageWithSession(session, preKeyMsg.message);
   await store.storeSession(senderAddress, session);
   if (consumedPreKeyId !== undefined) {
     await store.removePreKey(consumedPreKeyId);
+  }
+  if (consumedKyberPreKeyId !== undefined) {
+    await store.removeKyberPreKey(consumedKyberPreKeyId);
   }
   return plaintext;
 }

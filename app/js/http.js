@@ -21,7 +21,7 @@
     return 'Basic ' + btoa(username + ':' + password);
   }
 
-  /* opts: { timeout, binary, baseUrl, noAuth, basicAuth: { username, password } } */
+  /* opts: { timeout, binary, baseUrl, noAuth, basicAuth: { username, password }, headers: { ... } } */
   function request(method, path, body, opts) {
     opts = opts || {};
     return new Promise(function (resolve, reject) {
@@ -46,6 +46,11 @@
       xhr.timeout = opts.timeout || 15000;
       if (opts.binary) xhr.responseType = 'blob';
       if (authHeader) xhr.setRequestHeader('Authorization', authHeader);
+      if (opts.headers) {
+        Object.keys(opts.headers).forEach(function (k) {
+          xhr.setRequestHeader(k, opts.headers[k]);
+        });
+      }
       xhr.setRequestHeader('X-Signal-Agent', 'OWD');
 
       xhr.onload = function () {

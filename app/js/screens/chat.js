@@ -102,6 +102,13 @@
           hint: 'Insert an emoji',
           onSelect: function () { setTimeout(openEmoji, 0); }
         });
+        if (conv && conv.type === 'group') {
+          items.push({
+            label: 'Mention (@)',
+            hint: 'Insert a group member mention',
+            onSelect: function () { setTimeout(openMentionPicker, 0); }
+          });
+        }
         if (conv) {
           items.push({
             label: conv.type === 'group' ? 'Group info' : 'Contact info',
@@ -610,6 +617,31 @@
           nav.selectLast();
           insertAtCursor(emoji);
         }));
+      }
+
+      function openMentionPicker() {
+        if (!conv || !conv.sendId) return;
+        App.api.groupDetail(conv.sendId).then(function (detail) {
+          var members = (detail && detail.members) || [];
+          if (!members.length) {
+            App.toast('No group members synced yet');
+            return;
+          }
+          var items = members.map(function (id) {
+            var name = App.store.displayName(id);
+            return {
+              label: '@' + name,
+              hint: id !== name ? id : '',
+              onSelect: function () {
+                nav.selectLast();
+                insertAtCursor('@' + name + ' ');
+              }
+            };
+          });
+          App.router.push(App.screens.menu.create({ title: 'Mention member', items: items }));
+        })['catch'](function () {
+          App.toast('Could not load group members');
+        });
       }
 
       function openOptions(rec) {

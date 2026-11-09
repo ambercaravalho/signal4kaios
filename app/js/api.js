@@ -49,10 +49,7 @@
     },
 
     contactAvatar: function (uuid) {
-      return App.db.getAttachment('avatar:' + uuid).then(function (row) {
-        if (row && row.blob) return row.blob;
-        throw new Error('No cached avatar');
-      });
+      return App.signal.fetchContactAvatarBlob(uuid);
     },
 
     groupAvatar: function (groupId) {
@@ -109,12 +106,12 @@
       return App.signal.trustIdentity(target, opts || { trust_all_known_keys: true });
     },
 
-    /* Update this account's profile metadata. */
+    /* Update this account's profile metadata and upload encrypted profile to Signal server. */
     updateProfile: function (body) {
       body = body || {};
       if (body.name != null) App.config.set({ profileName: body.name });
       if (body.about != null) App.config.set({ profileAbout: body.about });
-      return Promise.resolve();
+      return App.signal.updateOwnProfile(body);
     },
 
     /* Rename a saved contact and/or set its disappearing-message timer locally. */

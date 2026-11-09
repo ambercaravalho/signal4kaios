@@ -9,9 +9,10 @@ Signal4KaiOS is now a standalone on-device Signal client for KaiOS 3.0, 3.1, and
 ### On-device Signal protocol
 
 - Link your phone directly to your Signal account by scanning a QR code shown on the KaiOS screen from Signal on your main phone (**Settings → Linked devices → Link a new device**). No computer, server, or Docker container is required.
-- Full on-device Signal Protocol engine: Curve25519 / XEdDSA, X3DH key agreement, Double Ratchet sessions, Sealed Sender (Unidentified Delivery), Group Sender Keys, 60-digit Safety Number computation and QR verification, and AES-256-CBC + HMAC-SHA256 attachment encryption against Signal's CDN.
-- Direct WebSocket connection to Signal's servers (`chat.signal.org`): messages sent while your phone is offline are held by Signal's servers and decrypted when you reconnect.
-- Contacts and groups sync directly from your primary Signal device over encrypted sync blobs.
+- Full on-device Signal Protocol engine: Curve25519 / XEdDSA, PQXDH (Kyber-1024 / ML-KEM-1024 post-quantum PreKeys), X3DH, Double Ratchet sessions, inbound and outbound Sealed Sender (`SenderCertificate` + `Unidentified-Access-Key`), `DecryptionErrorMessage` retry receipts, Group Sender Keys, 60-digit Safety Number computation and QR verification, and AES-256-CBC + HMAC-SHA256 attachment encryption against Signal's CDN.
+- Signal Storage Service (`StorageManifest`, `ContactRecord`, `GroupV2Record`, `AccountRecord`) and full `SyncMessage` support (`Verified`, `Blocked`, `Configuration`, `FetchLatest`), plus Groups V2 `MasterKey` derivation, encrypted Profile / Avatar hydration, Signal username lookup, incoming call missed-call notices, Stickers, View-Once media, and group `@mention` insertion.
+- Direct WebSocket connection to Signal's servers (`chat.signal.org`): messages sent while your phone is offline are held by Signal's servers and decrypted when you reconnect, with closed-app background wake probes in `sw.js`.
+- Contacts and groups sync directly from your primary Signal device over Storage Service and encrypted sync blobs.
 
 ### Platform changes
 

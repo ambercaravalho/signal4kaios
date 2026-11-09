@@ -185,7 +185,9 @@
           id: a.id || '',
           contentType: a.contentType || '',
           filename: a.filename || '',
-          size: a.size || 0
+          size: a.size || 0,
+          voiceNote: !!a.voiceNote,
+          viewOnce: !!(a.viewOnce || dm.viewOnce)
         };
       }),
       expiresInSeconds: dm.expiresInSeconds || 0

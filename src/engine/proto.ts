@@ -439,6 +439,8 @@ export interface PreKeySignalMessageProto {
   registrationId?: number;
   preKeyId?: number;
   signedPreKeyId?: number;
+  kyberPreKeyId?: number;
+  kyberCiphertext?: Uint8Array;
   baseKey?: Uint8Array;
   identityKey?: Uint8Array;
   message?: Uint8Array; // serialized SignalMessage with version/MAC
@@ -452,6 +454,8 @@ export function encodePreKeySignalMessageProto(msg: PreKeySignalMessageProto): U
   w.writeBytes(4, msg.message);
   w.writeUint32(5, msg.registrationId);
   w.writeUint32(6, msg.signedPreKeyId);
+  if (msg.kyberPreKeyId !== undefined) w.writeUint32(7, msg.kyberPreKeyId);
+  if (msg.kyberCiphertext) w.writeBytes(8, msg.kyberCiphertext);
   return w.finish();
 }
 
@@ -467,7 +471,61 @@ export function decodePreKeySignalMessageProto(buf: Uint8Array): PreKeySignalMes
       case 4: out.message = r.readBytes(); break;
       case 5: out.registrationId = r.readUint32(); break;
       case 6: out.signedPreKeyId = r.readUint32(); break;
+      case 7: out.kyberPreKeyId = r.readUint32(); break;
+      case 8: out.kyberCiphertext = r.readBytes(); break;
       default: r.skipField(wireType);
+    }
+  }
+  return out;
+}
+
+export interface DecryptionErrorMessageProto {
+  ratchetKey?: Uint8Array;
+  timestamp?: number;
+  deviceId?: number;
+}
+
+export interface PlaintextContentProto {
+  decryptionErrorMessage?: DecryptionErrorMessageProto;
+}
+
+export function encodePlaintextContentProto(msg: PlaintextContentProto): Uint8Array {
+  const body = new ProtoWriter();
+  if (msg.decryptionErrorMessage) {
+    body.writeMessage(1, msg.decryptionErrorMessage, (dem, dw) => {
+      dw.writeBytes(1, dem.ratchetKey);
+      dw.writeUint64(2, dem.timestamp);
+      dw.writeUint32(3, dem.deviceId);
+    });
+  }
+  const protoBytes = body.finish();
+  const out = new Uint8Array(1 + protoBytes.length);
+  out[0] = 0x00; // PlaintextContent version byte
+  out.set(protoBytes, 1);
+  return out;
+}
+
+export function decodePlaintextContentProto(buf: Uint8Array): PlaintextContentProto {
+  const offset = buf.length > 0 && buf[0] === 0x00 ? 1 : 0;
+  const r = new ProtoReader(buf, offset);
+  const out: PlaintextContentProto = {};
+  while (!r.eof()) {
+    const { fieldNumber, wireType } = r.readTag();
+    if (fieldNumber === 1) {
+      const dr = new ProtoReader(r.readBytes());
+      const dem: DecryptionErrorMessageProto = {};
+      while (!dr.eof()) {
+        const dt = dr.readTag();
+        switch (dt.fieldNumber) {
+          case 1: dem.ratchetKey = dr.readBytes(); break;
+          case 2: dem.timestamp = dr.readVarintNumber(); break;
+          case 3: dem.deviceId = dr.readUint32(); break;
+          default: dr.skipField(dt.wireType);
+        }
+      }
+      out.decryptionErrorMessage = dem;
+    } else {
+      r.skipField(wireType);
     }
   }
   return out;
@@ -852,6 +910,14 @@ export interface BodyRangeProto {
   style?: BodyRangeStyle;
 }
 
+export interface StickerProto {
+  packId?: Uint8Array;
+  packKey?: Uint8Array;
+  stickerId?: number;
+  data?: AttachmentPointer;
+  emoji?: string;
+}
+
 export interface DataMessage {
   body?: string;
   attachments?: AttachmentPointer[];
@@ -862,9 +928,11 @@ export interface DataMessage {
   profileKey?: Uint8Array;
   timestamp?: number;
   quote?: QuoteProto;
+  sticker?: StickerProto;
   reaction?: ReactionProto;
   delete?: DeleteProto;
   bodyRanges?: BodyRangeProto[];
+  isViewOnce?: boolean;
 }
 
 export function encodeDataMessage(dm: DataMessage, w = new ProtoWriter()): Uint8Array {
@@ -891,6 +959,15 @@ export function encodeDataMessage(dm: DataMessage, w = new ProtoWriter()): Uint8
       qw.writeString(2, q.authorE164);
       qw.writeString(3, q.text);
       qw.writeString(5, q.authorUuid);
+    });
+  }
+  if (dm.sticker) {
+    w.writeMessage(10, dm.sticker, (st, sw) => {
+      sw.writeBytes(1, st.packId);
+      sw.writeBytes(2, st.packKey);
+      sw.writeUint32(3, st.stickerId);
+      if (st.data) sw.writeMessage(4, st.data, encodeAttachmentPointer);
+      sw.writeString(5, st.emoji);
     });
   }
   if (dm.reaction) {
@@ -922,6 +999,7 @@ export function encodeDataMessage(dm: DataMessage, w = new ProtoWriter()): Uint8
       gw.writeBytes(3, g2.groupChange);
     });
   }
+  w.writeBool(16, dm.isViewOnce);
   return w.finish();
 }
 
@@ -968,6 +1046,23 @@ export function decodeDataMessage(buf: Uint8Array): DataMessage {
           }
         }
         out.quote = q;
+        break;
+      }
+      case 10: {
+        const str = new ProtoReader(r.readBytes());
+        const st: StickerProto = {};
+        while (!str.eof()) {
+          const stt = str.readTag();
+          switch (stt.fieldNumber) {
+            case 1: st.packId = str.readBytes(); break;
+            case 2: st.packKey = str.readBytes(); break;
+            case 3: st.stickerId = str.readUint32(); break;
+            case 4: st.data = decodeAttachmentPointer(str.readBytes()); break;
+            case 5: st.emoji = str.readString(); break;
+            default: str.skipField(stt.wireType);
+          }
+        }
+        out.sticker = st;
         break;
       }
       case 11: {
@@ -1029,6 +1124,7 @@ export function decodeDataMessage(buf: Uint8Array): DataMessage {
         out.groupV2 = g2;
         break;
       }
+      case 16: out.isViewOnce = r.readBool(); break;
       default: r.skipField(wireType);
     }
   }
@@ -1140,6 +1236,39 @@ export enum SyncRequestType {
   KEYS = 5,
 }
 
+export enum VerifiedStateProto {
+  DEFAULT = 0,
+  VERIFIED = 1,
+  UNVERIFIED = 2,
+}
+
+export interface VerifiedProto {
+  destinationE164?: string;
+  destinationUuid?: string;
+  identityKey?: Uint8Array;
+  state?: VerifiedStateProto;
+}
+
+export interface SyncBlockedProto {
+  numbers: string[];
+  uuids: string[];
+  groupIds: Uint8Array[];
+}
+
+export interface SyncConfigurationProto {
+  readReceipts?: boolean;
+  unidentifiedDeliveryIndicators?: boolean;
+  typingIndicators?: boolean;
+  provisioningVersion?: number;
+}
+
+export enum FetchLatestType {
+  UNKNOWN = 0,
+  LOCAL_PROFILE = 1,
+  STORAGE_MANIFEST = 2,
+  SUBSCRIPTION_STATUS = 3,
+}
+
 export interface SyncSentProto {
   destinationE164?: string;
   destinationUuid?: string;
@@ -1170,6 +1299,10 @@ export interface SyncMessageProto {
   groups?: SyncGroupsProto;
   request?: { type?: SyncRequestType };
   read?: SyncReadProto[];
+  blocked?: SyncBlockedProto;
+  verified?: VerifiedProto;
+  configuration?: SyncConfigurationProto;
+  fetchLatest?: { type?: FetchLatestType };
 }
 
 export function encodeSyncMessage(sm: SyncMessageProto, w = new ProtoWriter()): Uint8Array {
@@ -1204,6 +1337,34 @@ export function encodeSyncMessage(sm: SyncMessageProto, w = new ProtoWriter()): 
       rw.writeString(1, r.senderE164);
       rw.writeUint64(2, r.timestamp);
       rw.writeString(3, r.senderUuid);
+    });
+  }
+  if (sm.blocked) {
+    w.writeMessage(6, sm.blocked, (b, bw) => {
+      for (const n of b.numbers || []) bw.writeString(1, n);
+      for (const g of b.groupIds || []) bw.writeBytes(2, g);
+      for (const u of b.uuids || []) bw.writeString(3, u);
+    });
+  }
+  if (sm.verified) {
+    w.writeMessage(7, sm.verified, (v, vw) => {
+      vw.writeString(1, v.destinationE164);
+      vw.writeBytes(2, v.identityKey);
+      vw.writeUint32(3, v.state);
+      vw.writeString(5, v.destinationUuid);
+    });
+  }
+  if (sm.configuration) {
+    w.writeMessage(8, sm.configuration, (cfg, cw) => {
+      cw.writeBool(1, cfg.readReceipts);
+      cw.writeBool(2, cfg.unidentifiedDeliveryIndicators);
+      cw.writeBool(3, cfg.typingIndicators);
+      cw.writeUint32(5, cfg.provisioningVersion);
+    });
+  }
+  if (sm.fetchLatest) {
+    w.writeMessage(11, sm.fetchLatest, (fl, fw) => {
+      fw.writeUint32(1, fl.type);
     });
   }
   return w.finish();
@@ -1284,6 +1445,147 @@ export function decodeSyncMessage(buf: Uint8Array): SyncMessageProto {
         out.read!.push(rd);
         break;
       }
+      case 6: {
+        const br = new ProtoReader(r.readBytes());
+        const blocked: SyncBlockedProto = { numbers: [], uuids: [], groupIds: [] };
+        while (!br.eof()) {
+          const bt = br.readTag();
+          if (bt.fieldNumber === 1) blocked.numbers.push(br.readString());
+          else if (bt.fieldNumber === 2) blocked.groupIds.push(br.readBytes());
+          else if (bt.fieldNumber === 3) blocked.uuids.push(br.readString());
+          else br.skipField(bt.wireType);
+        }
+        out.blocked = blocked;
+        break;
+      }
+      case 7: {
+        const vr = new ProtoReader(r.readBytes());
+        const verified: VerifiedProto = {};
+        while (!vr.eof()) {
+          const vt = vr.readTag();
+          switch (vt.fieldNumber) {
+            case 1: verified.destinationE164 = vr.readString(); break;
+            case 2: verified.identityKey = vr.readBytes(); break;
+            case 3: verified.state = vr.readUint32() as VerifiedStateProto; break;
+            case 5: verified.destinationUuid = vr.readString(); break;
+            default: vr.skipField(vt.wireType);
+          }
+        }
+        out.verified = verified;
+        break;
+      }
+      case 8: {
+        const cfgr = new ProtoReader(r.readBytes());
+        const cfg: SyncConfigurationProto = {};
+        while (!cfgr.eof()) {
+          const ct = cfgr.readTag();
+          switch (ct.fieldNumber) {
+            case 1: cfg.readReceipts = cfgr.readBool(); break;
+            case 2: cfg.unidentifiedDeliveryIndicators = cfgr.readBool(); break;
+            case 3: cfg.typingIndicators = cfgr.readBool(); break;
+            case 5: cfg.provisioningVersion = cfgr.readUint32(); break;
+            default: cfgr.skipField(ct.wireType);
+          }
+        }
+        out.configuration = cfg;
+        break;
+      }
+      case 11: {
+        const flr = new ProtoReader(r.readBytes());
+        let type = FetchLatestType.UNKNOWN;
+        while (!flr.eof()) {
+          const ft = flr.readTag();
+          if (ft.fieldNumber === 1) type = flr.readUint32() as FetchLatestType;
+          else flr.skipField(ft.wireType);
+        }
+        out.fetchLatest = { type };
+        break;
+      }
+      default: r.skipField(wireType);
+    }
+  }
+  return out;
+}
+
+export enum CallOfferType {
+  OFFER_AUDIO_CALL = 0,
+  OFFER_VIDEO_CALL = 1,
+}
+
+export interface CallMessageProto {
+  offer?: {
+    id?: bigint;
+    type?: CallOfferType;
+  };
+  hangup?: {
+    id?: bigint;
+  };
+  busy?: {
+    id?: bigint;
+  };
+}
+
+export function encodeCallMessage(cm: CallMessageProto, w = new ProtoWriter()): Uint8Array {
+  if (cm.offer) {
+    w.writeMessage(1, cm.offer, (of, ow) => {
+      ow.writeUint64(1, of.id);
+      ow.writeUint32(3, of.type);
+    });
+  }
+  if (cm.hangup) {
+    w.writeMessage(3, cm.hangup, (hu, hw) => {
+      hw.writeUint64(1, hu.id);
+    });
+  }
+  if (cm.busy) {
+    w.writeMessage(4, cm.busy, (bs, bw) => {
+      bw.writeUint64(1, bs.id);
+    });
+  }
+  return w.finish();
+}
+
+export function decodeCallMessage(buf: Uint8Array): CallMessageProto {
+  const r = new ProtoReader(buf);
+  const out: CallMessageProto = {};
+  while (!r.eof()) {
+    const { fieldNumber, wireType } = r.readTag();
+    switch (fieldNumber) {
+      case 1: {
+        const or = new ProtoReader(r.readBytes());
+        let id: bigint | undefined;
+        let type = CallOfferType.OFFER_AUDIO_CALL;
+        while (!or.eof()) {
+          const ot = or.readTag();
+          if (ot.fieldNumber === 1) id = or.readVarintBig();
+          else if (ot.fieldNumber === 3) type = or.readUint32() as CallOfferType;
+          else or.skipField(ot.wireType);
+        }
+        out.offer = { id, type };
+        break;
+      }
+      case 3: {
+        const hr = new ProtoReader(r.readBytes());
+        let id: bigint | undefined;
+        while (!hr.eof()) {
+          const ht = hr.readTag();
+          if (ht.fieldNumber === 1) id = hr.readVarintBig();
+          else hr.skipField(ht.wireType);
+        }
+        out.hangup = { id };
+        break;
+      }
+      case 4: {
+        const br = new ProtoReader(r.readBytes());
+        let id: bigint | undefined;
+        while (!br.eof()) {
+          const bt = br.readTag();
+          if (bt.fieldNumber === 1) id = br.readVarintBig();
+          else br.skipField(bt.wireType);
+        }
+        out.busy = { id };
+        break;
+      }
       default: r.skipField(wireType);
     }
   }
@@ -1293,6 +1595,7 @@ export function decodeSyncMessage(buf: Uint8Array): SyncMessageProto {
 export interface ContentProto {
   dataMessage?: DataMessage;
   syncMessage?: SyncMessageProto;
+  callMessage?: CallMessageProto;
   receiptMessage?: ReceiptMessageProto;
   typingMessage?: TypingMessageProto;
   senderKeyDistributionMessage?: Uint8Array;
@@ -1303,6 +1606,7 @@ export function encodeContent(c: ContentProto): Uint8Array {
   const w = new ProtoWriter();
   if (c.dataMessage) w.writeBytes(1, encodeDataMessage(c.dataMessage));
   if (c.syncMessage) w.writeBytes(2, encodeSyncMessage(c.syncMessage));
+  if (c.callMessage) w.writeBytes(3, encodeCallMessage(c.callMessage));
   if (c.receiptMessage) w.writeBytes(5, encodeReceiptMessage(c.receiptMessage));
   if (c.typingMessage) w.writeBytes(6, encodeTypingMessage(c.typingMessage));
   if (c.senderKeyDistributionMessage) w.writeBytes(7, c.senderKeyDistributionMessage);
@@ -1318,6 +1622,7 @@ export function decodeContent(buf: Uint8Array): ContentProto {
     switch (fieldNumber) {
       case 1: out.dataMessage = decodeDataMessage(r.readBytes()); break;
       case 2: out.syncMessage = decodeSyncMessage(r.readBytes()); break;
+      case 3: out.callMessage = decodeCallMessage(r.readBytes()); break;
       case 5: out.receiptMessage = decodeReceiptMessage(r.readBytes()); break;
       case 6: out.typingMessage = decodeTypingMessage(r.readBytes()); break;
       case 7: out.senderKeyDistributionMessage = r.readBytes(); break;

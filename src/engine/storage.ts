@@ -4,6 +4,7 @@
  */
 
 import { fromBase64, toBase64, constantTimeEqual } from './bytes';
+import type { KyberPreKeyRecord } from './crypto/kem';
 
 export interface KeyPair {
   pubKey: Uint8Array;  // 33-byte (0x05 + 32-byte X25519 public key)
@@ -53,11 +54,13 @@ export interface RatchetSessionState {
     messageKeys: Record<number, Uint8Array>; // counter -> 80-byte derived message keys
   }>;
   previousCounter: number;
-   remoteRegistrationId: number;
+  remoteRegistrationId: number;
   localRegistrationId: number;
   pendingPreKey?: {
     preKeyId?: number;
     signedPreKeyId: number;
+    kyberPreKeyId?: number;
+    kyberCiphertext?: Uint8Array;
     baseKey: Uint8Array;
   };
 }
@@ -82,6 +85,7 @@ export interface AccountCredentials {
   aciIdentityKeyPair: KeyPair;
   pniIdentityKeyPair?: KeyPair;
   profileKey?: Uint8Array;
+  masterKey?: Uint8Array;
   userAgent?: string;
 }
 
@@ -103,6 +107,10 @@ export interface SignalProtocolStore {
 
   loadSignedPreKey(keyId: number): Promise<SignedPreKeyRecord | null>;
   storeSignedPreKey(record: SignedPreKeyRecord): Promise<void>;
+
+  loadKyberPreKey(keyId: number): Promise<KyberPreKeyRecord | null>;
+  storeKyberPreKey(record: KyberPreKeyRecord): Promise<void>;
+  removeKyberPreKey(keyId: number): Promise<void>;
 
   loadSession(address: string): Promise<RatchetSessionState | null>;
   storeSession(address: string, session: RatchetSessionState): Promise<void>;
@@ -154,6 +162,10 @@ export function serializeSession(s: RatchetSessionState): Record<string, unknown
       ? {
           preKeyId: s.pendingPreKey.preKeyId,
           signedPreKeyId: s.pendingPreKey.signedPreKeyId,
+          kyberPreKeyId: s.pendingPreKey.kyberPreKeyId,
+          kyberCiphertext: s.pendingPreKey.kyberCiphertext
+            ? toBase64(s.pendingPreKey.kyberCiphertext)
+            : undefined,
           baseKey: toBase64(s.pendingPreKey.baseKey),
         }
       : undefined,
@@ -193,6 +205,10 @@ export function deserializeSession(raw: any): RatchetSessionState {
       ? {
           preKeyId: raw.pendingPreKey.preKeyId,
           signedPreKeyId: raw.pendingPreKey.signedPreKeyId,
+          kyberPreKeyId: raw.pendingPreKey.kyberPreKeyId,
+          kyberCiphertext: raw.pendingPreKey.kyberCiphertext
+            ? fromBase64(raw.pendingPreKey.kyberCiphertext)
+            : undefined,
           baseKey: fromBase64(raw.pendingPreKey.baseKey),
         }
       : undefined,
@@ -205,6 +221,7 @@ export class MemorySignalStore implements SignalProtocolStore {
   private identities = new Map<string, IdentityRecord>();
   private preKeys = new Map<number, KeyPair>();
   private signedPreKeys = new Map<number, SignedPreKeyRecord>();
+  private kyberPreKeys = new Map<number, KyberPreKeyRecord>();
   private sessions = new Map<string, RatchetSessionState>();
   private senderKeys = new Map<string, SenderKeyState>();
 
@@ -289,6 +306,21 @@ export class MemorySignalStore implements SignalProtocolStore {
     this.signedPreKeys.set(record.keyId, record);
   }
 
+  async loadKyberPreKey(keyId: number): Promise<KyberPreKeyRecord | null> {
+    return this.kyberPreKeys.get(keyId) || null;
+  }
+
+  async storeKyberPreKey(record: KyberPreKeyRecord): Promise<void> {
+    this.kyberPreKeys.set(record.keyId, record);
+  }
+
+  async removeKyberPreKey(keyId: number): Promise<void> {
+    const existing = this.kyberPreKeys.get(keyId);
+    if (existing && !existing.isLastResort) {
+      this.kyberPreKeys.delete(keyId);
+    }
+  }
+
   async loadSession(address: string): Promise<RatchetSessionState | null> {
     const raw = this.sessions.get(address);
     return raw ? deserializeSession(serializeSession(raw)) : null;
@@ -336,6 +368,7 @@ export class IndexedDbSignalStore implements SignalProtocolStore {
       aciIdentityKeyPair: deserKeyPair(raw.aciIdentityKeyPair),
       pniIdentityKeyPair: raw.pniIdentityKeyPair ? deserKeyPair(raw.pniIdentityKeyPair) : undefined,
       profileKey: raw.profileKey ? fromBase64(raw.profileKey) : undefined,
+      masterKey: raw.masterKey ? fromBase64(raw.masterKey) : undefined,
       userAgent: raw.userAgent,
     };
     return this.cachedAccount;
@@ -354,6 +387,7 @@ export class IndexedDbSignalStore implements SignalProtocolStore {
       aciIdentityKeyPair: serKeyPair(creds.aciIdentityKeyPair),
       pniIdentityKeyPair: creds.pniIdentityKeyPair ? serKeyPair(creds.pniIdentityKeyPair) : undefined,
       profileKey: creds.profileKey ? toBase64(creds.profileKey) : undefined,
+      masterKey: creds.masterKey ? toBase64(creds.masterKey) : undefined,
       userAgent: creds.userAgent,
     });
   }
@@ -457,6 +491,35 @@ export class IndexedDbSignalStore implements SignalProtocolStore {
       signature: toBase64(record.signature),
       timestamp: record.timestamp,
     });
+  }
+
+  async loadKyberPreKey(keyId: number): Promise<KyberPreKeyRecord | null> {
+    const raw = await this.db().getPreKey('kyber:' + keyId);
+    if (!raw) return null;
+    return {
+      keyId: raw.keyId,
+      keyPair: deserKeyPair(raw.keyPair),
+      signature: fromBase64(raw.signature),
+      timestamp: raw.timestamp,
+      isLastResort: !!raw.isLastResort,
+    };
+  }
+
+  async storeKyberPreKey(record: KyberPreKeyRecord): Promise<void> {
+    await this.db().putPreKey('kyber:' + record.keyId, {
+      keyId: record.keyId,
+      keyPair: serKeyPair(record.keyPair),
+      signature: toBase64(record.signature),
+      timestamp: record.timestamp,
+      isLastResort: !!record.isLastResort,
+    });
+  }
+
+  async removeKyberPreKey(keyId: number): Promise<void> {
+    const rec = await this.loadKyberPreKey(keyId);
+    if (rec && !rec.isLastResort) {
+      await this.db().deletePreKey('kyber:' + keyId);
+    }
   }
 
   async loadSession(address: string): Promise<RatchetSessionState | null> {

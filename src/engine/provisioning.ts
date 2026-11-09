@@ -27,6 +27,9 @@ import {
   prependVersionByte,
 } from './crypto/curve';
 import {
+  generateSignedKyberPreKey,
+} from './crypto/kem';
+import {
   aesCbcDecrypt,
   aesCbcEncrypt,
   hkdfSha256,
@@ -143,18 +146,29 @@ export interface PreKeyUploadBundle {
     keyId: number;
     publicKey: string;
   }>;
+  pqLastResortPreKey?: {
+    keyId: number;
+    publicKey: string;
+    signature: string;
+  };
+  pqPreKeys?: Array<{
+    keyId: number;
+    publicKey: string;
+    signature: string;
+  }>;
 }
 
 /**
- * Generate a fresh SignedPreKey and a batch of OneTimePreKeys, storing them in `store`
- * and returning the JSON payload for `PUT /v2/keys`.
+ * Generate a fresh SignedPreKey, a batch of OneTimePreKeys, a Last-Resort Kyber-1024 PreKey,
+ * and a batch of one-time Kyber-1024 PreKeys, storing them in `store` and returning the JSON payload for `PUT /v2/keys`.
  */
 export async function generateAndStorePreKeyBundle(
   store: SignalProtocolStore,
   identityKeyPair: KeyPair,
   signedKeyId = 1,
   startPreKeyId = 1,
-  count = 50
+  count = 50,
+  kyberCount = 10
 ): Promise<PreKeyUploadBundle> {
   const spkPair = generateKeyPair();
   const spkPub = prependVersionByte(spkPair.pubKey);
@@ -179,6 +193,26 @@ export async function generateAndStorePreKeyBundle(
     });
   }
 
+  // Generate Kyber-1024 Last-Resort PreKey + one-time Kyber PreKeys
+  const lastResortKyber = generateSignedKyberPreKey(
+    identityKeyPair.privKey,
+    signedKeyId,
+    true
+  );
+  await store.storeKyberPreKey(lastResortKyber);
+
+  const pqPreKeys: Array<{ keyId: number; publicKey: string; signature: string }> = [];
+  for (let i = 0; i < kyberCount; i++) {
+    const kId = startPreKeyId + i;
+    const kRec = generateSignedKyberPreKey(identityKeyPair.privKey, kId, false);
+    await store.storeKyberPreKey(kRec);
+    pqPreKeys.push({
+      keyId: kId,
+      publicKey: toBase64(kRec.keyPair.pubKey),
+      signature: toBase64(kRec.signature),
+    });
+  }
+
   return {
     identityKey: toBase64(prependVersionByte(identityKeyPair.pubKey)),
     signedPreKey: {
@@ -187,6 +221,12 @@ export async function generateAndStorePreKeyBundle(
       signature: toBase64(signature),
     },
     preKeys,
+    pqLastResortPreKey: {
+      keyId: lastResortKyber.keyId,
+      publicKey: toBase64(lastResortKyber.keyPair.pubKey),
+      signature: toBase64(lastResortKyber.signature),
+    },
+    pqPreKeys,
   };
 }
 
@@ -207,7 +247,9 @@ export type SignalHttpJsonFn = (
   body: unknown,
   opts?: {
     baseUrl?: string;
+    noAuth?: boolean;
     basicAuth?: { username: string; password: string };
+    headers?: Record<string, string>;
     timeout?: number;
   }
 ) => Promise<any>;
@@ -330,14 +372,31 @@ export function startDeviceProvisioning(
       aciIdentityKeyPair,
       1,
       1,
-      50
+      50,
+      10
     );
 
-    await httpRequest('PUT', '/v2/keys', keyBundle, {
+    await httpRequest('PUT', '/v2/keys?identity=aci', keyBundle, {
       baseUrl: httpBase,
       basicAuth: { username: authUser, password },
       timeout: 25000,
     });
+
+    if (pniIdentityKeyPair) {
+      const pniBundle = await generateAndStorePreKeyBundle(
+        store,
+        pniIdentityKeyPair,
+        1000,
+        1000,
+        25,
+        5
+      );
+      await httpRequest('PUT', '/v2/keys?identity=pni', pniBundle, {
+        baseUrl: httpBase,
+        basicAuth: { username: authUser, password },
+        timeout: 25000,
+      }).catch(() => {});
+    }
 
     const creds: AccountCredentials = {
       aci,
@@ -350,6 +409,7 @@ export function startDeviceProvisioning(
       aciIdentityKeyPair,
       pniIdentityKeyPair,
       profileKey: prov.profileKey,
+      masterKey: prov.masterKey,
       userAgent: 'Signal4KaiOS/2.0.0',
     };
 

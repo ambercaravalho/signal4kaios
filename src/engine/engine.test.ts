@@ -50,7 +50,39 @@ import {
   EnvelopeType,
   ProtoWriter,
 } from './proto';
-import { decryptEnvelope } from './transport';
+import {
+  decryptEnvelope,
+} from './transport';
+import {
+  deriveUnidentifiedAccessKey,
+} from './protocol/sealed-sender';
+import {
+  decryptStorageRecord,
+  decodeManifestRecord,
+  decodeStorageRecordWrapper,
+  deriveStorageItemKey,
+  deriveStorageServiceKey,
+  encodeManifestRecord,
+  encodeStorageContactRecord,
+  encodeStorageGroupV2Record,
+  encryptStorageRecord,
+  StorageKeyType,
+} from './storage-service';
+import {
+  decryptProfileName,
+  encryptProfileName,
+} from './profiles';
+import {
+  decodeDecryptedGroupProto,
+  deriveGroupV2Keys,
+  encodeDecryptedGroupProto,
+} from './groups-v2';
+import {
+  CallOfferType,
+  decodePlaintextContentProto,
+  encodePlaintextContentProto,
+  VerifiedStateProto,
+} from './proto';
 import { MemorySignalStore } from './storage';
 import { fromBase64, randomBytes } from './bytes';
 
@@ -343,5 +375,236 @@ describe('Provisioning Cipher & Attachment Crypto & Safety Numbers', () => {
     assert.equal(aliceView.safetyNumber.length, 60);
     assert.equal(aliceView.safetyNumber, bobView.safetyNumber);
     assert.equal(verifyScannedSafetyNumber(bobView.scannableQrBytes, aliceView), true);
+  });
+});
+
+describe('Phases 1-6: PQXDH Kyber-1024, Storage Service, Profiles, Groups V2 & Call/Sticker Envelopes', () => {
+  it('establishes a PQXDH (X25519 + Kyber-1024) hybrid session and exchanges messages', async () => {
+    const aliceIdentity = generateKeyPair();
+    const bobIdentity = generateKeyPair();
+
+    const aliceStore = new MemorySignalStore({
+      aci: '11111111-1111-1111-1111-111111111111',
+      number: '+15550001111',
+      deviceId: 2,
+      password: 'pw',
+      registrationId: 1001,
+      pniRegistrationId: 1002,
+      aciIdentityKeyPair: aliceIdentity,
+    });
+
+    const bobStore = new MemorySignalStore({
+      aci: '22222222-2222-2222-2222-222222222222',
+      number: '+15550002222',
+      deviceId: 1,
+      password: 'pw',
+      registrationId: 2001,
+      pniRegistrationId: 2002,
+      aciIdentityKeyPair: bobIdentity,
+    });
+
+    const bobBundle = await generateAndStorePreKeyBundle(bobStore, bobIdentity, 10, 200, 2, 2);
+    assert.ok(bobBundle.pqPreKeys && bobBundle.pqPreKeys.length === 2);
+
+    const pqKey = bobBundle.pqPreKeys![0];
+    const session = await initSessionFromPreKeyBundle(
+      aliceStore,
+      '22222222-2222-2222-2222-222222222222.1',
+      {
+        registrationId: 2001,
+        deviceId: 1,
+        preKeyId: 200,
+        preKeyPublic: fromBase64(bobBundle.preKeys[0].publicKey),
+        signedPreKeyId: 10,
+        signedPreKeyPublic: fromBase64(bobBundle.signedPreKey.publicKey),
+        signedPreKeySignature: fromBase64(bobBundle.signedPreKey.signature),
+        kyberPreKeyId: pqKey.keyId,
+        kyberPreKeyPublic: fromBase64(pqKey.publicKey),
+        kyberPreKeySignature: fromBase64(pqKey.signature),
+        identityKey: fromBase64(bobBundle.identityKey),
+      }
+    );
+    assert.equal(session.sessionVersion, 4);
+
+    const plain = new TextEncoder().encode('Post-quantum PQXDH message!');
+    const enc = await encryptWhisperMessage(
+      aliceStore,
+      '22222222-2222-2222-2222-222222222222.1',
+      plain
+    );
+    assert.equal(enc.type, 3);
+
+    const dec = await decryptPreKeyWhisperMessage(
+      bobStore,
+      '11111111-1111-1111-1111-111111111111.2',
+      enc.body
+    );
+    assert.deepEqual(dec, plain);
+
+    // One-time Kyber PreKey 200 was consumed, while Last-Resort Kyber PreKey 10 remains
+    assert.equal(await bobStore.loadKyberPreKey(200), null);
+    assert.ok(await bobStore.loadKyberPreKey(10));
+  });
+
+  it('derives UnidentifiedAccessKey and encodes/decodes DecryptionErrorMessage', async () => {
+    const profileKey = randomBytes(32);
+    const uak = await deriveUnidentifiedAccessKey(profileKey);
+    assert.equal(uak.length, 16);
+
+    const ptBytes = encodePlaintextContentProto({
+      decryptionErrorMessage: {
+        timestamp: 1700000123456,
+        deviceId: 2,
+      },
+    });
+    const decoded = decodePlaintextContentProto(ptBytes);
+    assert.equal(decoded.decryptionErrorMessage?.timestamp, 1700000123456);
+    assert.equal(decoded.decryptionErrorMessage?.deviceId, 2);
+  });
+
+  it('encrypts and decrypts Signal Storage Service manifests, ContactRecord, and GroupV2Record', async () => {
+    const masterKey = randomBytes(32);
+    const storageKey = deriveStorageServiceKey(masterKey);
+    const contactItemKeyBytes = randomBytes(16);
+    const groupItemKeyBytes = randomBytes(16);
+
+    const manifestBytes = encodeManifestRecord({
+      version: 42,
+      sourceDevice: 1,
+      keys: [
+        { type: StorageKeyType.CONTACT, key: contactItemKeyBytes },
+        { type: StorageKeyType.GROUP_V2, key: groupItemKeyBytes },
+      ],
+    });
+    const encManifest = await encryptStorageRecord(storageKey, manifestBytes);
+    const decManifest = decodeManifestRecord(
+      await decryptStorageRecord(storageKey, encManifest)
+    );
+    assert.equal(decManifest.version, 42);
+    assert.equal(decManifest.keys.length, 2);
+
+    const contactKey = deriveStorageItemKey(storageKey, contactItemKeyBytes);
+    const contactProto = encodeStorageContactRecord({
+      aci: '33333333-3333-4333-8333-333333333333',
+      e164: '+15553334444',
+      givenName: 'Clara',
+      familyName: 'Oswald',
+      profileKey: randomBytes(32),
+      blocked: false,
+    });
+    const encContact = await encryptStorageRecord(contactKey, contactProto);
+    const decContact = decodeStorageRecordWrapper(
+      await decryptStorageRecord(contactKey, encContact)
+    );
+    assert.equal(decContact.contact?.aci, '33333333-3333-4333-8333-333333333333');
+    assert.equal(decContact.contact?.givenName, 'Clara');
+    assert.equal(decContact.contact?.familyName, 'Oswald');
+
+    const groupMasterKey = randomBytes(32);
+    const groupKey = deriveStorageItemKey(storageKey, groupItemKeyBytes);
+    const groupProto = encodeStorageGroupV2Record({
+      masterKey: groupMasterKey,
+      blocked: false,
+      archived: true,
+    });
+    const encGroup = await encryptStorageRecord(groupKey, groupProto);
+    const decGroup = decodeStorageRecordWrapper(
+      await decryptStorageRecord(groupKey, encGroup)
+    );
+    assert.deepEqual(decGroup.groupV2?.masterKey, groupMasterKey);
+    assert.equal(decGroup.groupV2?.archived, true);
+  });
+
+  it('encrypts/decrypts Signal profile names and derives Groups V2 metadata', async () => {
+    const profileKey = randomBytes(32);
+    const encName = await encryptProfileName('Amber', 'Caravalho', profileKey);
+    const decName = await decryptProfileName(encName, profileKey);
+    assert.equal(decName.givenName, 'Amber');
+    assert.equal(decName.familyName, 'Caravalho');
+    assert.equal(decName.fullName, 'Amber Caravalho');
+
+    const gv2MasterKey = randomBytes(32);
+    const keys = deriveGroupV2Keys(gv2MasterKey);
+    assert.equal(keys.groupIdentifier.length, 32);
+
+    const encodedGroup = encodeDecryptedGroupProto({
+      name: 'KaiOS Developers',
+      description: 'Standalone Signal on KaiOS',
+      revision: 5,
+      expireTimer: 3600,
+      members: [
+        { uuid: '11111111-1111-4111-8111-111111111111', isAdmin: true },
+        { uuid: '22222222-2222-4222-8222-222222222222', isAdmin: false },
+      ],
+    });
+    const decodedGroup = decodeDecryptedGroupProto(encodedGroup, gv2MasterKey);
+    assert.equal(decodedGroup.name, 'KaiOS Developers');
+    assert.equal(decodedGroup.description, 'Standalone Signal on KaiOS');
+    assert.equal(decodedGroup.revision, 5);
+    assert.equal(decodedGroup.expireTimer, 3600);
+    assert.equal(decodedGroup.members.length, 2);
+    assert.equal(decodedGroup.admins.length, 1);
+  });
+
+  it('normalizes incoming CallMessage offers, Stickers, View-Once, and SyncMessage.Verified', async () => {
+    const store = new MemorySignalStore({
+      aci: '11111111-1111-4111-8111-111111111111',
+      number: '+15550001111',
+      deviceId: 2,
+      password: 'pw',
+      registrationId: 1001,
+      pniRegistrationId: 1002,
+      aciIdentityKeyPair: generateKeyPair(),
+    });
+
+    const callContent = padMessagePlaintext(
+      encodeContent({
+        callMessage: {
+          offer: { id: 999n, type: CallOfferType.OFFER_AUDIO_CALL },
+        },
+      })
+    );
+    const callEnv = encodeEnvelope({
+      type: EnvelopeType.PLAINTEXT_CONTENT,
+      sourceUuid: '22222222-2222-4222-8222-222222222222',
+      timestamp: 1700000555000,
+      content: callContent,
+    });
+    const decCall = await decryptEnvelope(store, callEnv);
+    assert.ok(decCall);
+    assert.equal(decCall.normalizedFrame.envelope.dataMessage.message, '📞 Missed voice call');
+
+    const stickerContent = padMessagePlaintext(
+      encodeContent({
+        dataMessage: {
+          timestamp: 1700000666000,
+          isViewOnce: true,
+          sticker: {
+            packId: randomBytes(16),
+            packKey: randomBytes(32),
+            stickerId: 1,
+            emoji: '🎉',
+            data: {
+              cdnKey: 'sticker-cdn-key',
+              cdnNumber: 2,
+              contentType: 'image/webp',
+              key: randomBytes(64),
+              size: 1024,
+            },
+          },
+        },
+      })
+    );
+    const stickerEnv = encodeEnvelope({
+      type: EnvelopeType.PLAINTEXT_CONTENT,
+      sourceUuid: '22222222-2222-4222-8222-222222222222',
+      timestamp: 1700000666000,
+      content: stickerContent,
+    });
+    const decSticker = await decryptEnvelope(store, stickerEnv);
+    assert.ok(decSticker);
+    assert.equal(decSticker.normalizedFrame.envelope.dataMessage.message, '🎉');
+    assert.equal(decSticker.normalizedFrame.envelope.dataMessage.viewOnce, true);
+    assert.equal(decSticker.normalizedFrame.envelope.dataMessage.attachments.length, 1);
   });
 });

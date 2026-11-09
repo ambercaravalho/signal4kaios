@@ -101,9 +101,14 @@
           }
           return App.api.attachment(att.id).then(function (blob) {
             show(blob);
+          if (att.viewOnce) {
+            // Auto-purge view-once media from local cache immediately after viewing
+            App.db.putAttachment(att.id, new Blob([]), '');
+          } else {
             App.db.putAttachment(att.id, blob, att.contentType).then(function () {
               return App.db.pruneAttachments(CACHE_KEEP);
             });
+          }
           });
         })['catch'](fail);
       }

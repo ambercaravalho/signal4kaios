@@ -37,15 +37,19 @@ Source files live in [`src/engine/`](../src/engine):
 |---|---|
 | `src/engine/proto.ts` | Zero-`eval` binary protobuf wire reader/writer and codecs for `WebSocketMessage`, `Envelope`, `Content`, `DataMessage`, `SyncMessage`, `ReceiptMessage`, `TypingMessage`, `EditMessage`, `ProvisionEnvelope`, `ProvisionMessage`, `SignalMessage`, `PreKeySignalMessage`, `SenderKeyMessage`, and `UnidentifiedSenderMessage` |
 | `src/engine/crypto/curve.ts` | Curve25519 ECDH key agreement and Signal XEdDSA 64-byte signature calculation/verification (`@noble/curves/ed25519`) |
+| `src/engine/crypto/kem.ts` | Post-Quantum ML-KEM-1024 / Kyber-1024 key generation, signing, encapsulation, and decapsulation (`@noble/post-quantum`) |
 | `src/engine/crypto/primitives.ts` | HKDF-SHA256, HMAC-SHA256, SHA-256/512 (`@noble/hashes`), WebCrypto AES-256-CBC / AES-256-CTR / AES-256-GCM, and Signal ISO/IEC 7816-4 message padding |
 | `src/engine/crypto/attachment.ts` | Signal CDN attachment encryption/decryption (64-byte AES-256-CBC + HMAC-SHA256 + SHA-256 digest) and AES-256-GCM profile field encryption |
-| `src/engine/protocol/session.ts` | Signal v3 X3DH initiator/responder and Double Ratchet session state machine with out-of-order skipped message keys |
-| `src/engine/protocol/sealed-sender.ts` | Unidentified Delivery (Sealed Sender v1/v2) ephemeral+static ECDH + AES-CTR + HMAC-SHA256 |
+| `src/engine/protocol/session.ts` | Signal v3/v4 X3DH + PQXDH initiator/responder and Double Ratchet session state machine with out-of-order skipped message keys |
+| `src/engine/protocol/sealed-sender.ts` | Unidentified Delivery (Sealed Sender v1/v2) ephemeral+static ECDH + AES-CTR + HMAC-SHA256 and `UnidentifiedAccessKey` derivation |
 | `src/engine/protocol/sender-keys.ts` | Group `SenderKeyDistributionMessage` and `SenderKeyMessage` ratchet and XEdDSA authentication |
 | `src/engine/protocol/fingerprint.ts` | 60-digit numeric Safety Number and scannable `CombinedFingerprints` QR protobuf (5200 SHA-512 iterations) |
-| `src/engine/provisioning.ts` | Linked Device QR provisioning over `wss://chat.signal.org/v1/websocket/provisioning/`, `ProvisionEnvelope` decryption, `PUT /v1/devices/{code}`, and `PUT /v2/keys` |
+| `src/engine/provisioning.ts` | Linked Device QR provisioning over `wss://chat.signal.org/v1/websocket/provisioning/`, `ProvisionEnvelope` decryption, `PUT /v1/devices/{code}`, and ACI/PNI `PUT /v2/keys` |
 | `src/engine/storage.ts` | `SignalProtocolStore` interface, `MemorySignalStore` (for tests), and `IndexedDbSignalStore` (backed by `App.db` v3 stores: `signal_keystore`, `signal_identities`, `signal_sessions`, `signal_prekeys`, `signal_sender_keys`) |
-| `src/engine/transport.ts` | `SignalClient` envelope decryption queue, device fanout, 409/410 retry handling, CDN attachment upload/download, and `ContactDetails`/`GroupDetails` sync blob parsing |
+| `src/engine/storage-service.ts` | Signal Encrypted Storage Service (`StorageManifest`, `ContactRecord`, `GroupV2Record`, `AccountRecord`) keyed by `ProvisionMessage.masterKey` |
+| `src/engine/profiles.ts` | Encrypted Signal profile fetch/upload (`GET/PUT /v1/profile`), CDN profile avatar decryption, and username hash lookup |
+| `src/engine/groups-v2.ts` | Groups V2 `MasterKey` key derivation (`groupIdentifier`, `secretKey`, `blobKey`), `GroupContextV2` builder, and `DecryptedGroup` parser |
+| `src/engine/transport.ts` | `SignalClient` envelope decryption queue, `DecryptionErrorMessage` retry receipts, Sealed Sender & Sender Key fanout, 409/410 retry handling, CDN attachment upload/download, and sync blob parsing |
 | `src/engine/index.ts` | Attaches `App.signal` bridge for `app/js/*` |
 
 ## Developing and testing

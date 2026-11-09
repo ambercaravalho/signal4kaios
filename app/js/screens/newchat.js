@@ -128,8 +128,25 @@
             App.toast('Could not verify number');
           });
         } else {
-          // Treat as a Signal username; the server resolves it on send.
-          openDirect(raw);
+          // Resolve a Signal username (@handle.01) to a UUID if possible, falling back to raw identifier.
+          busy = true;
+          App.toast('Looking up…');
+          var lookup = (App.signal && App.signal.lookupUsername)
+            ? App.signal.lookupUsername(raw)
+            : Promise.resolve(null);
+          lookup.then(function (resolved) {
+            busy = false;
+            if (resolved && resolved.uuid) {
+              var contact = { uuid: resolved.uuid, name: '@' + resolved.username };
+              var conv = App.store.openConversationWith(contact);
+              App.router.replace(App.screens.chat.create(conv.id));
+            } else {
+              openDirect(raw);
+            }
+          })['catch'](function () {
+            busy = false;
+            openDirect(raw);
+          });
         }
       }
 

@@ -68,7 +68,10 @@
             label: 'Safety number',
             hint: 'Verify this contact',
             onSelect: function () {
-              App.router.push(App.screens.safety.create({ number: recipient }));
+              App.router.push(App.screens.safety.create({
+                number: contact && contact.number,
+                uuid: (contact && contact.uuid) || conv.id
+              }));
             }
           }
         ]

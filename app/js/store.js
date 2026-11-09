@@ -127,6 +127,8 @@
   function attachmentLabel(attachments) {
     if (!attachments || !attachments.length) return '';
     var a = attachments[0];
+    if (a.viewOnce) return '👁 View-once media';
+    if (a.voiceNote || (a.contentType || '').indexOf('audio/') === 0) return '🎤 Voice message';
     if ((a.contentType || '').indexOf('image/') === 0) return '📷 Photo';
     return '📎 ' + (a.filename || 'File');
   }

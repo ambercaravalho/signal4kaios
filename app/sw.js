@@ -2,13 +2,20 @@
 
 /* ServiceWorker for signal4kaios v2.0.0 (KaiOS 3.0 / 3.1 / 4.0).
    Handles:
-     1. 'systemmessage' (alarm) — relays periodic wake alarms to any open client so `ws.js`
-        reconnects to Signal servers and drains queued messages.
+     1. 'systemmessage' (alarm) —
+        - If a window client is open, relays `{ type: 's4k-wake' }` so `ws.js` reconnects and drains messages.
+        - If the app is completely closed (no window clients), re-schedules the next KaiOS wake alarm,
+          connects briefly to Signal's WebSocket (`wss://chat.signal.org/v1/websocket/`) without ACKing envelopes
+          to check if any `/api/v1/message` frames are waiting in the offline queue, and if so raises a
+          system notification ("New Signal message") so tapping it launches the app and decrypts the queue.
      2. 'notificationclick' — focuses/opens the app on the tapped conversation.
 */
 
+var NOTIF_ICON = '/assets/icons/kaios_112.png';
 var PUSH_CACHE = 's4k-push';
+var WAKE_CFG_KEY = '/__s4k_wake_cfg';
 var PENDING_CONV_KEY = '/__s4k_pending_conv';
+var WAKE_ALARM_MS = 300000; // 5 minutes
 
 self.addEventListener('install', function () {
   self.skipWaiting();
@@ -18,15 +25,109 @@ self.addEventListener('activate', function (event) {
   event.waitUntil(self.clients.claim());
 });
 
-function relay(message) {
-  return self.clients
-    .matchAll({ type: 'window', includeUncontrolled: true })
-    .then(function (clientList) {
+function scheduleNextAlarm() {
+  try {
+    var b2g = self.navigator && self.navigator.b2g;
+    if (b2g && b2g.alarmManager && b2g.alarmManager.add) {
+      return b2g.alarmManager.add({
+        date: new Date(Date.now() + WAKE_ALARM_MS),
+        data: { type: 's4k-wake' },
+        ignoreTimezone: false
+      })['catch'](function () {});
+    }
+  } catch (e) { /* unavailable in worker context */ }
+  return Promise.resolve();
+}
+
+function readWakeCfg() {
+  if (!self.caches) return Promise.resolve(null);
+  return self.caches.open(PUSH_CACHE).then(function (cache) {
+    return cache.match(WAKE_CFG_KEY);
+  }).then(function (res) {
+    return res ? res.json() : null;
+  })['catch'](function () { return null; });
+}
+
+/* Probe Signal's WebSocket while the app is closed to see if any queued `/api/v1/message` envelopes
+   arrive before `/api/v1/queue/empty`. Does NOT send 200 OK ACKs so the envelopes stay safely on the server
+   until the user opens the app (or the page decrypts them). */
+function probeOfflineQueue(cfg) {
+  return new Promise(function (resolve) {
+    if (!cfg || !cfg.wsUrl || !cfg.login || !cfg.password || typeof WebSocket === 'undefined') {
+      resolve(0);
+      return;
+    }
+    var count = 0;
+    var done = false;
+    var sock = null;
+    var timer = setTimeout(function () {
+      finish();
+    }, 6000);
+
+    function finish() {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (sock) {
+        try { sock.close(); } catch (e) {}
+        sock = null;
+      }
+      resolve(count);
+    }
+
+    try {
+      var url = cfg.wsUrl.replace(/\/+$/, '') + '/v1/websocket/?agent=OWD' +
+        '&login=' + encodeURIComponent(cfg.login) +
+        '&password=' + encodeURIComponent(cfg.password);
+      sock = new WebSocket(url);
+      sock.binaryType = 'arraybuffer';
+      sock.onmessage = function (evt) {
+        try {
+          var bytes = new Uint8Array(evt.data);
+          var text = new TextDecoder().decode(bytes);
+          if (text.indexOf('/api/v1/message') >= 0) {
+            count += 1;
+            finish();
+          } else if (text.indexOf('/api/v1/queue/empty') >= 0) {
+            finish();
+          }
+        } catch (e) {
+          finish();
+        }
+      };
+      sock.onerror = finish;
+      sock.onclose = finish;
+    } catch (e) {
+      finish();
+    }
+  });
+}
+
+function handleWakeAlarm() {
+  return scheduleNextAlarm().then(function () {
+    return self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  }).then(function (clientList) {
+    if (clientList && clientList.length > 0) {
       clientList.forEach(function (client) {
-        try { client.postMessage(message); } catch (e) { /* client gone */ }
+        try { client.postMessage({ type: 's4k-wake' }); } catch (e) {}
       });
-      return clientList;
+      return null;
+    }
+    // App is completely closed: check if Signal has queued messages for us
+    return readWakeCfg().then(function (cfg) {
+      return probeOfflineQueue(cfg);
+    }).then(function (pendingCount) {
+      if (pendingCount > 0 && self.registration && self.registration.showNotification) {
+        return self.registration.showNotification('Signal', {
+          body: 'New encrypted message waiting — open Signal to read',
+          tag: 'signal',
+          icon: NOTIF_ICON,
+          data: { convId: null }
+        });
+      }
+      return null;
     });
+  })['catch'](function () {});
 }
 
 self.addEventListener('systemmessage', function (event) {
@@ -35,7 +136,7 @@ self.addEventListener('systemmessage', function (event) {
   var payload = event.data || {};
   var data = payload.data || payload;
   if (data && data.type && data.type !== 's4k-wake') return;
-  event.waitUntil(relay({ type: 's4k-wake' })['catch'](function () {}));
+  event.waitUntil(handleWakeAlarm());
 });
 
 function savePendingConv(convId) {

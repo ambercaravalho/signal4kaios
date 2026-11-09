@@ -24,20 +24,33 @@ import {
   decodeContent,
   decodeEnvelope,
   decodeGroupDetails,
+  decodePlaintextContentProto,
+  decodeSenderCertificate,
   encodeContent,
+  encodePlaintextContentProto,
   Envelope,
   EnvelopeType,
   ProtoReader,
   ReceiptType,
+  SenderCertificate,
   SyncRequestType,
   TypingAction,
 } from './proto';
 import { generateSafetyNumber } from './protocol/fingerprint';
-import { unsealSenderMessage } from './protocol/sealed-sender';
+import {
+  deriveUnidentifiedAccessKey,
+  sealSenderMessage,
+  unsealSenderMessage,
+} from './protocol/sealed-sender';
 import {
   decryptSenderKeyMessage,
+  createSenderKeyDistributionMessage,
+  encryptSenderKeyMessage,
   processSenderKeyDistributionMessage,
 } from './protocol/sender-keys';
+import {
+  deriveGroupV2Keys,
+} from './groups-v2';
 import {
   decryptPreKeyWhisperMessage,
   decryptWhisperMessage,
@@ -66,6 +79,9 @@ function deriveGroupInternalId(groupBytes: Uint8Array): string {
 }
 
 function groupV2IdFromMasterKey(masterKey: Uint8Array): string {
+  if (masterKey.length === 32) {
+    return deriveGroupV2Keys(masterKey).internalId;
+  }
   const derived = hashSha256(masterKey);
   return toBase64(derived);
 }
@@ -143,18 +159,31 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
     groupInfo = { groupId: deriveGroupInternalId(dm.groupV1.id) };
   }
 
+  const rawAttachments = [...(dm.attachments || [])];
+  if (dm.sticker && dm.sticker.data) {
+    const stData = dm.sticker.data;
+    rawAttachments.push({
+      ...stData,
+      contentType: stData.contentType || 'image/webp',
+      fileName: stData.fileName || 'sticker.webp',
+    });
+  }
+
   const out: any = {
     timestamp: dm.timestamp || fallbackTs || Date.now(),
-    message: dm.body ?? null,
+    message: dm.body ?? (dm.sticker && dm.sticker.emoji ? dm.sticker.emoji : null),
     expiresInSeconds: dm.expireTimer || 0,
+    viewOnce: !!dm.isViewOnce,
     mentions,
     textStyles,
     groupInfo,
-    attachments: (dm.attachments || []).map((a) => ({
+    attachments: rawAttachments.map((a) => ({
       id: encodeAttachmentDescriptor(a),
       contentType: a.contentType || 'application/octet-stream',
       filename: a.fileName || '',
       size: a.size || 0,
+      voiceNote: ((a.flags || 0) & 0x01) !== 0,
+      viewOnce: !!dm.isViewOnce,
     })),
   };
 
@@ -207,6 +236,18 @@ export function contentToNormalizedFrame(
       content.dataMessage,
       env.timestamp
     );
+  }
+
+  if (content.callMessage && content.callMessage.offer) {
+    const isVideo = content.callMessage.offer.type === 1;
+    frameEnv.dataMessage = {
+      timestamp: env.timestamp || Date.now(),
+      message: isVideo ? '📹 Missed video call' : '📞 Missed voice call',
+      expiresInSeconds: 0,
+      mentions: [],
+      textStyles: [],
+      attachments: [],
+    };
   }
 
   if (content.editMessage) {
@@ -351,6 +392,14 @@ export async function decryptEnvelope(
   const unpadded = unpadMessagePlaintext(paddedPlaintext);
   const content = decodeContent(unpadded);
 
+  // Handle DataMessage.Flags.END_SESSION (0x01) by resetting the sender's Double Ratchet session
+  if (content.dataMessage && ((content.dataMessage.flags || 0) & 0x01) !== 0) {
+    const senderId = env.sourceUuid || env.sourceE164;
+    if (senderId) {
+      await store.deleteSession(`${senderId}.${env.sourceDevice || 1}`);
+    }
+  }
+
   // If the message includes a SenderKeyDistributionMessage, process it so future group messages decrypt
   if (content.senderKeyDistributionMessage) {
     const senderId = env.sourceUuid || env.sourceE164;
@@ -471,16 +520,22 @@ function parseServerPreKeyResponse(
   const identityKey = fromBase64(json.identityKey);
   return json.devices
     .filter((d: any) => d && d.signedPreKey)
-    .map((d: any) => ({
-      registrationId: d.registrationId || 0,
-      deviceId: d.deviceId || 1,
-      preKeyId: d.preKey ? d.preKey.keyId : undefined,
-      preKeyPublic: d.preKey ? fromBase64(d.preKey.publicKey) : undefined,
-      signedPreKeyId: d.signedPreKey.keyId,
-      signedPreKeyPublic: fromBase64(d.signedPreKey.publicKey),
-      signedPreKeySignature: fromBase64(d.signedPreKey.signature),
-      identityKey,
-    }));
+    .map((d: any) => {
+      const pq = d.pqPreKey || d.kyberPreKey || d.pqLastResortPreKey;
+      return {
+        registrationId: d.registrationId || 0,
+        deviceId: d.deviceId || 1,
+        preKeyId: d.preKey ? d.preKey.keyId : undefined,
+        preKeyPublic: d.preKey ? fromBase64(d.preKey.publicKey) : undefined,
+        signedPreKeyId: d.signedPreKey.keyId,
+        signedPreKeyPublic: fromBase64(d.signedPreKey.publicKey),
+        signedPreKeySignature: fromBase64(d.signedPreKey.signature),
+        kyberPreKeyId: pq ? pq.keyId : undefined,
+        kyberPreKeyPublic: pq ? fromBase64(pq.publicKey) : undefined,
+        kyberPreKeySignature: pq ? fromBase64(pq.signature) : undefined,
+        identityKey,
+      };
+    });
 }
 
 /**
@@ -489,6 +544,9 @@ function parseServerPreKeyResponse(
  */
 export class SignalClient {
   private deviceLists = new Map<string, number[]>();
+  private profileKeys = new Map<string, Uint8Array>();
+  private distributedSenderKeys = new Set<string>();
+  private cachedSenderCert: { cert: SenderCertificate; expiresAt: number } | null = null;
   private decryptQueue: Promise<any> = Promise.resolve();
 
   constructor(
@@ -497,6 +555,88 @@ export class SignalClient {
     private readonly httpBinary: SignalHttpBinaryFn,
     private readonly serverUrl = DEFAULT_SIGNAL_SERVER
   ) {}
+
+  setPeerProfileKey(peerId: string, profileKey: Uint8Array): void {
+    if (profileKey && profileKey.length === 32) {
+      this.profileKeys.set(peerId, profileKey);
+    }
+  }
+
+  getPeerProfileKey(peerId: string): Uint8Array | undefined {
+    return this.profileKeys.get(peerId);
+  }
+
+  private async getSenderCertificate(): Promise<SenderCertificate | null> {
+    if (this.cachedSenderCert && this.cachedSenderCert.expiresAt > Date.now()) {
+      return this.cachedSenderCert.cert;
+    }
+    try {
+      const auth = await this.authHeader();
+      const res = await this.httpJson(
+        'GET',
+        '/v1/certificate/delivery?includeE164=true',
+        null,
+        {
+          baseUrl: this.serverUrl,
+          basicAuth: auth,
+          timeout: 10000,
+        }
+      );
+      if (res && res.certificate) {
+        const cert = decodeSenderCertificate(fromBase64(res.certificate));
+        this.cachedSenderCert = {
+          cert,
+          expiresAt: Date.now() + 12 * 3600 * 1000,
+        };
+        return cert;
+      }
+    } catch {
+      // Fallback to identified delivery if certificate fetch fails
+    }
+    return null;
+  }
+
+  /**
+   * Send a PlaintextContent DecryptionErrorMessage retry receipt to a sender device
+   * whose message failed to decrypt, prompting it to re-initialize the ratchet.
+   */
+  async sendDecryptionErrorReceipt(failedEnv: Envelope): Promise<void> {
+    const senderId = failedEnv.sourceUuid || failedEnv.sourceE164;
+    if (!senderId) return;
+    const senderDevice = failedEnv.sourceDevice || 1;
+    try {
+      const auth = await this.authHeader();
+      await this.store.deleteSession(`${senderId}.${senderDevice}`);
+      const ptBytes = encodePlaintextContentProto({
+        decryptionErrorMessage: {
+          timestamp: failedEnv.timestamp || Date.now(),
+          deviceId: auth.deviceId,
+        },
+      });
+      await this.httpJson(
+        'PUT',
+        `/v1/messages/${encodeURIComponent(senderId)}`,
+        {
+          messages: [
+            {
+              type: EnvelopeType.PLAINTEXT_CONTENT,
+              destinationDeviceId: senderDevice,
+              content: toBase64(ptBytes),
+            },
+          ],
+          timestamp: Date.now(),
+          online: false,
+        },
+        {
+          baseUrl: this.serverUrl,
+          basicAuth: auth,
+          timeout: 10000,
+        }
+      );
+    } catch {
+      // Best-effort retry receipt
+    }
+  }
 
   private async authHeader(): Promise<{ username: string; password: string; aci: string; number: string; deviceId: number }> {
     const acc = await this.store.getAccount();
@@ -512,13 +652,33 @@ export class SignalClient {
 
   /**
    * Enqueue an incoming binary Envelope for strictly serialized session decryption.
+   * Automatically sends a DecryptionErrorMessage retry receipt if a ciphertext envelope fails to decrypt.
    */
   enqueueDecryptEnvelope(envelopeBytes: Uint8Array): Promise<{
     envelope: Envelope;
     content: ContentProto;
     normalizedFrame: { envelope: any };
   } | null> {
-    const next = this.decryptQueue.then(() => decryptEnvelope(this.store, envelopeBytes));
+    const next = this.decryptQueue.then(async () => {
+      try {
+        const res = await decryptEnvelope(this.store, envelopeBytes);
+        if (res && res.content.dataMessage && res.content.dataMessage.profileKey) {
+          const senderId = res.envelope.sourceUuid || res.envelope.sourceE164;
+          if (senderId) {
+            this.setPeerProfileKey(senderId, res.content.dataMessage.profileKey);
+          }
+        }
+        return res;
+      } catch (err) {
+        try {
+          const parsedEnv = decodeEnvelope(envelopeBytes);
+          await this.sendDecryptionErrorReceipt(parsedEnv);
+        } catch {
+          // ignore malformed outer envelope
+        }
+        throw err;
+      }
+    });
     this.decryptQueue = next.catch(() => null);
     return next;
   }
@@ -593,16 +753,45 @@ export class SignalClient {
       const targetDevices = await this.ensureSessionsForRecipient(recipientId, knownDevices);
       if (targetDevices.length === 0) return;
 
+      const peerProfileKey =
+        recipientId !== auth.aci ? this.getPeerProfileKey(recipientId) : undefined;
+      let senderCert: SenderCertificate | null = null;
+      let unidentifiedAccessHeader: string | undefined;
+
+      if (peerProfileKey) {
+        senderCert = await this.getSenderCertificate();
+        if (senderCert) {
+          const uak = await deriveUnidentifiedAccessKey(peerProfileKey);
+          unidentifiedAccessHeader = toBase64(uak);
+        }
+      }
+
       const messages = [];
       for (const devId of targetDevices) {
         const addr = `${recipientId}.${devId}`;
-        const enc = await encryptWhisperMessage(this.store, addr, plainBytes);
-        messages.push({
-          type: enc.type,
-          destinationDeviceId: devId,
-          destinationRegistrationId: enc.registrationId,
-          content: toBase64(enc.body),
-        });
+        if (senderCert && unidentifiedAccessHeader) {
+          const session = await this.store.loadSession(addr);
+          const sealed = await sealSenderMessage(
+            this.store,
+            addr,
+            senderCert,
+            plainBytes
+          );
+          messages.push({
+            type: EnvelopeType.UNIDENTIFIED_SENDER,
+            destinationDeviceId: devId,
+            destinationRegistrationId: session ? session.remoteRegistrationId : 0,
+            content: toBase64(sealed),
+          });
+        } else {
+          const enc = await encryptWhisperMessage(this.store, addr, plainBytes);
+          messages.push({
+            type: enc.type,
+            destinationDeviceId: devId,
+            destinationRegistrationId: enc.registrationId,
+            content: toBase64(enc.body),
+          });
+        }
       }
 
       try {
@@ -614,11 +803,18 @@ export class SignalClient {
             timestamp,
             online,
           },
-          {
-            baseUrl: this.serverUrl,
-            basicAuth: auth,
-            timeout: 20000,
-          }
+          unidentifiedAccessHeader
+            ? {
+                baseUrl: this.serverUrl,
+                noAuth: true,
+                headers: { 'Unidentified-Access-Key': unidentifiedAccessHeader },
+                timeout: 20000,
+              }
+            : {
+                baseUrl: this.serverUrl,
+                basicAuth: auth,
+                timeout: 20000,
+              }
         );
         this.deviceLists.set(recipientId, targetDevices);
         return;
@@ -646,6 +842,79 @@ export class SignalClient {
         }
         throw err;
       }
+    }
+  }
+
+  /**
+   * Send a group ContentProto to `recipients`:
+   * 1. Distributes our `SenderKeyDistributionMessage` via pairwise 1:1 sessions to any member
+   *    who has not yet received our current SenderKey for `groupInternalId`.
+   * 2. Encrypts the group message with our `SenderKey` (`encryptSenderKeyMessage`) and delivers
+   *    to each member, falling back to pairwise encryption if a member requires re-keying.
+   */
+  async sendGroupContentWithSenderKeys(
+    groupInternalId: string,
+    recipients: string[],
+    content: ContentProto,
+    timestamp: number,
+    online = false
+  ): Promise<void> {
+    const auth = await this.authHeader();
+    const senderKeyName = `${groupInternalId}::${auth.aci}.${auth.deviceId}`;
+    const skdmBytes = await createSenderKeyDistributionMessage(
+      this.store,
+      senderKeyName
+    );
+
+    for (const peer of recipients) {
+      if (!peer || peer === auth.aci || peer === auth.number) continue;
+      const distKey = `${groupInternalId}::${peer}`;
+      if (!this.distributedSenderKeys.has(distKey)) {
+        try {
+          await this.sendContentToRecipient(
+            peer,
+            { senderKeyDistributionMessage: skdmBytes },
+            timestamp,
+            online
+          );
+          this.distributedSenderKeys.add(distKey);
+        } catch {
+          // Will fall back to pairwise below
+        }
+      }
+    }
+
+    const plainBytes = padMessagePlaintext(encodeContent(content));
+    const skmBytes = await encryptSenderKeyMessage(
+      this.store,
+      senderKeyName,
+      plainBytes
+    );
+
+    for (const peer of recipients) {
+      if (!peer || peer === auth.aci || peer === auth.number) continue;
+      const distKey = `${groupInternalId}::${peer}`;
+      if (this.distributedSenderKeys.has(distKey)) {
+        try {
+          const devices = this.deviceLists.get(peer) || [1];
+          const messages = devices.map((devId) => ({
+            type: EnvelopeType.SENDERKEY_MESSAGE,
+            destinationDeviceId: devId,
+            content: toBase64(skmBytes),
+          }));
+          await this.httpJson(
+            'PUT',
+            `/v1/messages/${encodeURIComponent(peer)}`,
+            { messages, timestamp, online },
+            { baseUrl: this.serverUrl, basicAuth: auth, timeout: 20000 }
+          );
+          continue;
+        } catch {
+          this.distributedSenderKeys.delete(distKey);
+        }
+      }
+      // Fallback to pairwise Double Ratchet fanout
+      await this.sendContentToRecipient(peer, content, timestamp, online);
     }
   }
 

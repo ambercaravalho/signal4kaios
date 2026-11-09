@@ -11,6 +11,7 @@ import {
 } from '../crypto/curve';
 import {
   aesCtrCrypt,
+  aesGcmEncrypt,
   hkdfSha256,
   hmacSha256,
 } from '../crypto/primitives';
@@ -31,6 +32,22 @@ import {
 } from './session';
 
 const UNIDENTIFIED_VERSION_BYTE = 0x11; // (1 << 4) | 1
+
+/**
+ * Derive the 16-byte UnidentifiedAccessKey from a contact's 32-byte ProfileKey:
+ * AES-256-GCM(key = profileKey, nonce = 0x00^12, plaintext = 0x00^16) -> first 16 bytes (ciphertext).
+ */
+export async function deriveUnidentifiedAccessKey(
+  profileKey32: Uint8Array
+): Promise<Uint8Array> {
+  if (profileKey32.length !== 32) {
+    throw new Error(`Invalid profileKey length: ${profileKey32.length}`);
+  }
+  const zeroNonce = new Uint8Array(12);
+  const zeroPlain = new Uint8Array(16);
+  const cipherAndTag = await aesGcmEncrypt(profileKey32, zeroNonce, zeroPlain);
+  return cipherAndTag.slice(0, 16);
+}
 
 export interface DecryptedSealedSenderResult {
   senderUuid?: string;
