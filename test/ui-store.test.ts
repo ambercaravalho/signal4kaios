@@ -266,6 +266,82 @@ describe('store', () => {
     }
   });
 
+  it('syncs a delete for me and applies one from another device', async () => {
+    const synced: any[] = [];
+    (signal as any).sendDeleteForMe = async (body: any) => {
+      synced.push(body);
+    };
+    store.ingestRaw(incoming(20000, 'one'));
+    store.ingestRaw(incoming(20100, 'two'));
+    await settle();
+    await store.deleteLocal((await db.getMessage(ALICE + '|20000|' + ALICE))!);
+    assert.deepEqual(synced, [{ messages: [{ chat: ALICE, items: [{ author: ALICE, timestamp: 20000 }] }] }]);
+
+    store.ingestRaw({ envelope: { sourceNumber: ME, syncMessage: { deleteForMe: { messages: [{ conversation: { number: ALICE }, messages: [{ author: ALICE, timestamp: 20100 }] }] } } } });
+    await settle();
+    assert.equal(await db.getMessage(ALICE + '|20100|' + ALICE), undefined);
+  });
+
+  it('deletes a chat with its newest messages named, and applies chat deletes up to the newest one listed', async () => {
+    const BOB = '+15550002';
+    const CAROL = '+15550003';
+    const from = (src: string, ts: number, body: string) => ({ envelope: { sourceNumber: src, timestamp: ts, dataMessage: { timestamp: ts, message: body } } });
+    const synced: any[] = [];
+    (signal as any).sendDeleteForMe = async (body: any) => {
+      synced.push(body);
+    };
+    for (let i = 0; i < 7; i++) store.ingestRaw(from(BOB, 30000 + i, 'b' + i));
+    await settle();
+    await store.deleteChat(BOB);
+    assert.equal(store.conversation(BOB), undefined);
+    assert.equal((await db.getMessagesPage(BOB, Number.MAX_SAFE_INTEGER, 10)).length, 0);
+    const chat = synced[0].chats[0];
+    assert.equal(chat.chat, BOB);
+    assert.deepEqual(
+      chat.mostRecent.map((r: any) => r.timestamp),
+      [30006, 30005, 30004, 30003, 30002]
+    );
+
+    store.ingestRaw(from(CAROL, 40000, 'c1'));
+    store.ingestRaw(from(CAROL, 40100, 'c2'));
+    store.ingestRaw(from(CAROL, 40200, 'c3'));
+    await settle();
+    const chatDelete = (ts: number) => ({ envelope: { sourceNumber: ME, syncMessage: { deleteForMe: { conversations: [{ conversation: { number: CAROL }, mostRecent: [{ author: CAROL, timestamp: ts }], isFullDelete: true }] } } } });
+    store.ingestRaw(chatDelete(40100));
+    await settle();
+    assert.deepEqual(
+      (await db.getMessagesPage(CAROL, Number.MAX_SAFE_INTEGER, 10)).map((m) => m.body),
+      ['c3']
+    );
+    assert.equal(store.conversation(CAROL)!.lastPreview, 'c3');
+    store.ingestRaw(chatDelete(40200));
+    await settle();
+    assert.equal(store.conversation(CAROL), undefined);
+  });
+
+  it('applies admin deletes only from people the group lists as admins', async () => {
+    await db.kvSet('syncedContacts', [{ uuid: 'aci-dave', number: '+15550004', name: 'Dave' }]);
+    await db.kvSet('syncedGroups', [{ id: 'group.R1JQ', internal_id: 'R1JQ', masterKey: '', revision: 1, name: 'Team', members: ['aci-admin', 'aci-dave'], admins: ['aci-admin'], pending: [], expireTimer: 0, blocked: false, link_mode: 'disabled', invite_link: '' }]);
+    await store.refreshDirectory();
+    const ts = Date.now();
+    const inGroup = (src: string, uuid: string, at: number, dm: any) => ({ envelope: { sourceNumber: src, sourceUuid: uuid, timestamp: at, dataMessage: { timestamp: at, groupInfo: { groupId: 'R1JQ' }, ...dm } } });
+    store.ingestRaw(inGroup('+15550004', 'aci-dave', ts, { message: 'oops' }));
+    await settle();
+    const id = 'g:R1JQ|' + ts + '|+15550004';
+    const target = { adminDelete: { targetAuthorUuid: 'aci-dave', targetSentTimestamp: ts } };
+    store.ingestRaw(inGroup('+15550004', 'aci-dave', ts + 1, target));
+    await settle();
+    assert.equal((await db.getMessage(id))!.deleted, false);
+
+    store.ingestRaw(inGroup('+15550005', 'aci-admin', ts + 2, target));
+    await settle();
+    const rec = (await db.getMessage(id))!;
+    assert.equal(rec.deleted, true);
+    assert.equal(rec.deletedByAdmin, true);
+    assert.equal(rec.body, '');
+    assert.equal(store.conversation('g:R1JQ')!.lastPreview, 'An admin deleted this message.');
+  });
+
   it('saves the About emoji locally and on Signal', async () => {
     const uploaded: any[] = [];
     (signal as any).updateOwnProfile = async (body: any) => {

@@ -3,7 +3,7 @@ import { router } from '../app/router';
 import { Avatar } from '../components/Avatar';
 import { Icon } from '../components/Icon';
 import { Badge, EmptyState, Spinner } from '../components/List';
-import { DIVIDER, showOptions } from '../components/Overlays';
+import { confirm, DIVIDER, showOptions } from '../components/Overlays';
 import { EmojiText } from '../components/RichText';
 import { ActionRow, Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
@@ -12,6 +12,7 @@ import { toast } from '../components/Toast';
 import { fmtTime } from '../data/format';
 import * as store from '../data/store';
 import type { Conversation } from '../data/types';
+import { friendlyError } from '../errors';
 import { APP_NAME, S } from '../strings';
 import { openChat } from './Chat';
 import { ChatSettingsScreen } from './ChatSettings';
@@ -54,6 +55,16 @@ function readToggle(conv: Conversation) {
     : { label: S.markAsUnread, onSelect: () => store.setMarkedUnread(conv.id, true) };
 }
 
+function deleteChatItem(conv: Conversation) {
+  return {
+    label: S.deleteChat,
+    danger: true,
+    onSelect: async () => {
+      if (await confirm({ title: S.deleteChatTitle, body: S.deleteChatBody, ok: S.delete, danger: true })) store.deleteChat(conv.id).catch((e) => toast(friendlyError(e)));
+    },
+  };
+}
+
 function homeOptions(conv: Conversation | undefined): void {
   showOptions([
     conv && { label: S.chatSettings, onSelect: () => router.push(ChatSettingsScreen, { convId: conv.id }) },
@@ -66,6 +77,8 @@ function homeOptions(conv: Conversation | undefined): void {
     DIVIDER,
     { label: S.search, onSelect: () => router.push(SearchScreen, {}) },
     { label: S.settings, onSelect: () => router.push(SettingsScreen, {}) },
+    conv && DIVIDER,
+    conv && deleteChatItem(conv),
   ]);
 }
 
@@ -115,6 +128,8 @@ export function ArchivedScreen() {
             { label: S.unarchive, onSelect: () => store.setArchived(conv.id, false) },
             { label: conv.muted ? S.unmute : S.muteNotifications, onSelect: () => store.setMuted(conv.id, !conv.muted) },
             readToggle(conv),
+            DIVIDER,
+            deleteChatItem(conv),
           ]);
           return true;
         }}

@@ -40,13 +40,30 @@ export type StoreEvent =
   | { type: 'typing'; convId: string; author: string; started: boolean }
   | { type: 'receipt'; peer: string; kind: 'read' | 'delivery' | 'other'; timestamps: number[] }
   | { type: 'readSync'; entries: SyncRef[] }
-  | { type: 'viewedSync'; entries: SyncRef[]; viewOnce: boolean };
+  | { type: 'viewedSync'; entries: SyncRef[]; viewOnce: boolean }
+  | { type: 'adminDelete'; convId: string; admin: string; targetAuthor: string; targetTimestamp: number; timestamp: number }
+  | { type: 'deleteSync'; messages: Array<{ chat: ChatRef; items: SyncRef[] }>; chats: ChatDelete[] };
 
 /** A message our other device read or opened: who sent it and when. */
 export interface SyncRef {
   sender: string;
   timestamp: number;
 }
+
+/** A chat named by a sync message: `g:` + group ID, or a person's number or ACI. */
+export interface ChatRef {
+  key: string;
+}
+
+/** A chat our other device deleted: everything up to its newest listed message, and the chat itself on a full delete. */
+export interface ChatDelete {
+  chat: ChatRef;
+  mostRecent: SyncRef[];
+  mostRecentNonExpiring: SyncRef[];
+  isFullDelete: boolean;
+}
+
+const MAX_SYNC_DELETES = 500;
 
 type NameOf = (key: string) => string;
 type Conv = { convId: string | null; groupInternalId: string | null };
@@ -179,6 +196,14 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
 
   if (dm.remoteDelete) return [{ type: 'remoteDelete', convId, author, targetTimestamp: num(dm.remoteDelete.timestamp) }];
 
+  if (dm.adminDelete) {
+    const ad = dm.adminDelete;
+    const admin = str(env.sourceUuid);
+    const targetAuthor = str(ad.targetAuthorUuid);
+    if (!conv.groupInternalId || !admin || !targetAuthor) return [];
+    return [{ type: 'adminDelete', convId, admin, targetAuthor, targetTimestamp: num(ad.targetSentTimestamp), timestamp: num(dm.timestamp) || num(env.timestamp) }];
+  }
+
   if (dm.pinMessage || dm.unpinMessage) {
     const pin = dm.pinMessage || dm.unpinMessage;
     return [
@@ -284,6 +309,31 @@ function syncRefs(list: unknown): SyncRef[] {
   return out;
 }
 
+function chatRef(c: any): ChatRef | null {
+  if (!c || typeof c !== 'object') return null;
+  const key = c.groupId ? 'g:' + str(c.groupId) : str(c.number) || str(c.uuid);
+  return key && key !== 'g:' ? { key } : null;
+}
+
+function addressed(list: unknown): SyncRef[] {
+  return syncRefs(Array.isArray(list) ? list.slice(0, MAX_SYNC_DELETES).map((m: any) => m && { sender: m.author, timestamp: m.timestamp }) : []);
+}
+
+function deleteSyncEvent(d: any): StoreEvent | null {
+  const messages: Array<{ chat: ChatRef; items: SyncRef[] }> = [];
+  for (const md of Array.isArray(d.messages) ? d.messages : []) {
+    const chat = md && chatRef(md.conversation);
+    const items = md ? addressed(md.messages) : [];
+    if (chat && items.length) messages.push({ chat, items });
+  }
+  const chats: ChatDelete[] = [];
+  for (const cd of Array.isArray(d.conversations) ? d.conversations : []) {
+    const chat = cd && chatRef(cd.conversation);
+    if (chat) chats.push({ chat, mostRecent: addressed(cd.mostRecent), mostRecentNonExpiring: addressed(cd.mostRecentNonExpiring), isFullDelete: !!cd.isFullDelete });
+  }
+  return messages.length || chats.length ? { type: 'deleteSync', messages, chats } : null;
+}
+
 function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEvent[] {
   if (env.notice) return noticeEvent(env, env.notice, { convId: peerKey(env), groupInternalId: null }, peerKey(env) || '');
   if (env.dataMessage) return dataMessageEvents(env, env.dataMessage, true, nameOf);
@@ -320,6 +370,10 @@ function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEven
     if (viewed.length) out.push({ type: 'viewedSync', entries: viewed, viewOnce: false });
     const opened = syncRefs(sm.viewOnceOpen ? [sm.viewOnceOpen] : undefined);
     if (opened.length) out.push({ type: 'viewedSync', entries: opened, viewOnce: true });
+    if (sm.deleteForMe && typeof sm.deleteForMe === 'object') {
+      const del = deleteSyncEvent(sm.deleteForMe);
+      if (del) out.push(del);
+    }
     if (!out.length) dbg('normalize: unhandled sync message ' + Object.keys(sm).join(','));
     return out;
   }

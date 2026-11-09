@@ -66,6 +66,8 @@ export interface Message {
   reactions: Record<string, string>;
   status: MessageStatus;
   deleted: boolean;
+  /** Deleted for everyone by a group admin rather than its author. */
+  deletedByAdmin?: boolean;
   edited: boolean;
   pinned?: boolean;
   expireSecs?: number;

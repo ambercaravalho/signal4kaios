@@ -703,6 +703,42 @@ describe('Sync and service IDs', () => {
     assert.deepEqual(sync.viewOnceOpen, { sender: ALICE, senderUuid: ALICE, timestamp: 6 });
   });
 
+  it('turns admin deletes and delete-for-me syncs into normalize frames', () => {
+    const env = { sourceUuid: BOB, sourceDevice: 2, timestamp: 1000 } as any;
+    const dm = contentToNormalizedFrame(
+      env,
+      create(ContentSchema, { content: { case: 'dataMessage', value: { timestamp: 1000n, adminDelete: { targetAuthorAciBinary: uuidToBytes(ALICE), targetSentTimestamp: 900n } } } })
+    ).envelope.dataMessage;
+    assert.deepEqual(dm.adminDelete, { targetAuthorUuid: ALICE, targetSentTimestamp: 900 });
+
+    const groupId = new Uint8Array(32).fill(7);
+    const sync = contentToNormalizedFrame(
+      env,
+      create(ContentSchema, {
+        content: {
+          case: 'syncMessage',
+          value: {
+            content: {
+              case: 'deleteForMe',
+              value: {
+                messageDeletes: [{ conversation: { identifier: { case: 'threadServiceId', value: ALICE } }, messages: [{ author: { case: 'authorServiceIdBinary', value: uuidToBytes(ALICE) }, sentTimestamp: 5n }] }],
+                conversationDeletes: [{ conversation: { identifier: { case: 'threadGroupId', value: groupId } }, mostRecentMessages: [{ author: { case: 'authorE164', value: '+15550001' }, sentTimestamp: 6n }], isFullDelete: true }],
+                localOnlyConversationDeletes: [{ conversation: { identifier: { case: 'threadE164', value: '+15550002' } } }],
+              },
+            },
+          },
+        },
+      })
+    ).envelope.syncMessage;
+    assert.deepEqual(sync.deleteForMe, {
+      messages: [{ conversation: { uuid: ALICE }, messages: [{ author: ALICE, timestamp: 5 }] }],
+      conversations: [
+        { conversation: { groupId: toBase64(groupId) }, mostRecent: [{ author: '+15550001', timestamp: 6 }], mostRecentNonExpiring: [], isFullDelete: true },
+        { conversation: { number: '+15550002' }, mostRecent: [], mostRecentNonExpiring: [], isFullDelete: true },
+      ],
+    });
+  });
+
   it('reads service IDs from strings or 16/17-byte binaries', () => {
     const raw = uuidToBytes(ALICE);
     assert.equal(serviceIdFrom(undefined, raw), ALICE);

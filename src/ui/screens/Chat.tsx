@@ -232,7 +232,7 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
   const { m } = props;
   const ref = useFocusScroll<HTMLDivElement>(props.focused);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const text = m.deleted ? S.deletedMessage : m.body;
+  const text = m.deleted ? (m.deletedByAdmin ? S.adminDeleted : S.deletedMessage) : m.body;
   const jumbo = !m.deleted && !m.attachments.length && !m.quote && isJumboEmoji(m.body);
   const clipped = useClipped(bodyRef, text || '');
   useEffect(() => props.onClipped(m.id, clipped), [clipped]);
@@ -693,7 +693,18 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
           if (await confirm({ title: S.deleteForEveryone, body: S.deleteForEveryoneBody, ok: S.delete, danger: true })) store.deleteForEveryone(m).catch((e) => toast(friendlyError(e)));
         },
       },
+      canAdminDelete(m) && {
+        label: S.deleteForEveryone,
+        danger: true,
+        onSelect: async () => {
+          if (await confirm({ title: S.deleteForEveryone, body: S.adminDeleteBody, ok: S.delete, danger: true })) store.adminDelete(m).catch((e) => toast(friendlyError(e)));
+        },
+      },
     ]);
+  }
+
+  function canAdminDelete(m: Message): boolean {
+    return m.incoming && !m.deleted && !m.notice && !!group && (group.admins || []).some(isMe) && Date.now() - m.timestamp < store.ADMIN_DELETE_MAX_AGE;
   }
 
   async function showPinned(): Promise<void> {

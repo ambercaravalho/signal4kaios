@@ -4,12 +4,14 @@ import type { MessageInitShape } from '@bufbuild/protobuf';
 
 import { bytesToUuid, constantTimeEqual, fromBase64, toBase64, uuidToBytes } from './bytes';
 import {
+  AddressableMessageSchema,
   AttachmentPointer,
   AttachmentPointer_Flags,
   BodyRange_Style,
   BodyRangeSchema,
   Content,
   ContentSchema,
+  ConversationIdentifierSchema,
   DataMessage,
   DataMessage_Flags,
   DataMessageSchema,
@@ -59,6 +61,14 @@ import { ChatStateEntry, host } from './host';
 type DataMessageInit = MessageInitShape<typeof DataMessageSchema>;
 type BodyRangeInit = MessageInitShape<typeof BodyRangeSchema>;
 type PinnedConversationInit = MessageInitShape<typeof AccountRecord_PinnedConversationSchema>;
+type AddressableMessageInit = MessageInitShape<typeof AddressableMessageSchema>;
+type ConversationIdentifierInit = MessageInitShape<typeof ConversationIdentifierSchema>;
+
+/** A message as the app names it: its author (number or ACI) and sent time. */
+export interface MessageRef {
+  author: string;
+  timestamp: number;
+}
 
 const MAX_DEVICE_NAME = 64;
 
@@ -307,6 +317,31 @@ async function groupTargets(recipient: string): Promise<{ isGroup: boolean; peer
   const groupV2 = buildGroupContextV2({ masterKey: grp.masterKey, revision: grp.revision });
   if (!groupV2) throw new Error('This group has no Groups V2 master key; legacy groups are not supported');
   return { isGroup: true, peers: grp.members, groupV2, internalId: grp.internalId };
+}
+
+/** A chat as sync messages name it, from its send ID: the group ID, else the person's ACI, else their number. */
+async function conversationIdentifier(sendId: string): Promise<ConversationIdentifierInit | null> {
+  if (sendId.startsWith('group.')) {
+    const id = fromBase64(sendId.replace(/^group\./, ''));
+    return id.length ? { identifier: { case: 'threadGroupId', value: id } } : null;
+  }
+  const ids = await contactIds(sendId);
+  if (ids.aci) return { identifier: { case: 'threadServiceId', value: ids.aci } };
+  if (ids.e164) return { identifier: { case: 'threadE164', value: ids.e164 } };
+  return null;
+}
+
+async function addressableMessages(refs: MessageRef[]): Promise<AddressableMessageInit[]> {
+  const acc = await store.getAccount();
+  const out: AddressableMessageInit[] = [];
+  for (const r of refs) {
+    const mine = !!acc && (r.author === acc.number || r.author === acc.aci);
+    const aci = mine ? acc!.aci : await resolveAci(r.author);
+    const sentTimestamp = BigInt(r.timestamp);
+    if (aci) out.push({ author: { case: 'authorServiceId', value: aci }, sentTimestamp });
+    else if (r.author.startsWith('+')) out.push({ author: { case: 'authorE164', value: r.author }, sentTimestamp });
+  }
+  return out;
 }
 
 async function deliver(target: { isGroup: boolean; peers: string[] }, content: Content, ts: number, online = false): Promise<void> {
@@ -705,7 +740,8 @@ export const signalBridge = {
     const acc = await store.getAccount();
     const fromSelf = !!acc && sender === acc.aci;
 
-    if (!fromSelf && c.case !== 'syncMessage' && (await isFromBlocked(res.envelope, res.content))) return null;
+    if (c.case === 'syncMessage' && !fromSelf) return null;
+    if (!fromSelf && (await isFromBlocked(res.envelope, res.content))) return null;
 
     if (c.case === 'dataMessage') {
       const dm = c.value;
@@ -829,6 +865,47 @@ export const signalBridge = {
     };
     await deliver(target, dataContent(dm), ts);
     await client.sendSyncMessage(syncSent(target.isGroup ? '' : target.peers[0], ts, dm), ts);
+  },
+
+  /** As a group admin, delete someone else's message for everyone (Signal-Desktop's AdminDelete). Members check that we are an admin. */
+  async sendAdminDelete(groupSendId: string, targetAuthor: string, targetTimestamp: number): Promise<void> {
+    const ts = Date.now();
+    const target = await groupTargets(groupSendId);
+    if (!target.isGroup) throw new Error('Admin delete only works in groups');
+    const authorAci = await resolveAci(targetAuthor);
+    if (!authorAci) throw new Error('No Signal account known for ' + targetAuthor);
+    const dm: DataMessageInit = {
+      timestamp: BigInt(ts),
+      groupV2: target.groupV2,
+      adminDelete: { targetAuthorAciBinary: uuidToBytes(authorAci), targetSentTimestamp: BigInt(targetTimestamp) },
+    };
+    await deliver(target, dataContent(dm), ts);
+    await client.sendSyncMessage(syncSent('', ts, dm), ts);
+  },
+
+  /** Tell our other devices we deleted messages or whole chats here (Signal-Desktop's DeleteForMe sync). `chat` is the chat's send ID; a chat with no messages to name goes as a local-only delete. */
+  async sendDeleteForMe(body: { messages?: Array<{ chat: string; items: MessageRef[] }>; chats?: Array<{ chat: string; mostRecent: MessageRef[]; mostRecentNonExpiring: MessageRef[] }> }): Promise<void> {
+    const messageDeletes: Array<{ conversation: ConversationIdentifierInit; messages: AddressableMessageInit[] }> = [];
+    for (const m of body.messages || []) {
+      const conversation = await conversationIdentifier(m.chat);
+      const messages = await addressableMessages(m.items);
+      if (conversation && messages.length) messageDeletes.push({ conversation, messages });
+    }
+    const conversationDeletes: Array<{ conversation: ConversationIdentifierInit; mostRecentMessages: AddressableMessageInit[]; mostRecentNonExpiringMessages: AddressableMessageInit[]; isFullDelete: boolean }> = [];
+    const localOnlyConversationDeletes: Array<{ conversation: ConversationIdentifierInit }> = [];
+    for (const c of body.chats || []) {
+      const conversation = await conversationIdentifier(c.chat);
+      if (!conversation) continue;
+      const mostRecentMessages = await addressableMessages(c.mostRecent);
+      if (!mostRecentMessages.length) localOnlyConversationDeletes.push({ conversation });
+      else conversationDeletes.push({ conversation, mostRecentMessages, mostRecentNonExpiringMessages: await addressableMessages(c.mostRecentNonExpiring), isFullDelete: true });
+    }
+    if (!messageDeletes.length && !conversationDeletes.length && !localOnlyConversationDeletes.length) return;
+    await client.sendSyncMessage(
+      create(ContentSchema, {
+        content: { case: 'syncMessage', value: { content: { case: 'deleteForMe', value: { messageDeletes, conversationDeletes, localOnlyConversationDeletes } } } },
+      })
+    );
   },
 
   /** Pin a message for everyone in the chat (forever), or unpin it, as Signal-Desktop's PinMessage / UnpinMessage data messages. */

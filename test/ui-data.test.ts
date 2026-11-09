@@ -73,6 +73,25 @@ describe('parseFrame', () => {
     ]);
   });
 
+  it('parses admin deletes in groups and delete-for-me syncs', () => {
+    const group = { groupInfo: { groupId: 'R1' } };
+    const [ad] = parseFrame({ envelope: { sourceNumber: '+3', sourceUuid: 'aci-3', timestamp: 9, dataMessage: { ...group, timestamp: 9, adminDelete: { targetAuthorUuid: 'aci-4', targetSentTimestamp: 5 } } } }, '+1', nameOf);
+    assert.deepEqual(ad, { type: 'adminDelete', convId: 'g:R1', admin: 'aci-3', targetAuthor: 'aci-4', targetTimestamp: 5, timestamp: 9 });
+    assert.deepEqual(parseFrame({ envelope: { sourceNumber: '+3', sourceUuid: 'aci-3', dataMessage: { adminDelete: { targetAuthorUuid: 'aci-4', targetSentTimestamp: 5 } } } }, '+1', nameOf), []);
+
+    const deleteForMe = {
+      messages: [{ conversation: { uuid: 'aci-4' }, messages: [{ author: 'aci-4', timestamp: 5 }, { author: '', timestamp: 6 }] }, { conversation: {}, messages: [{ author: 'aci-4', timestamp: 7 }] }],
+      conversations: [{ conversation: { groupId: 'R1' }, mostRecent: [{ author: '+1', timestamp: 8 }], mostRecentNonExpiring: [], isFullDelete: true }],
+    };
+    assert.deepEqual(parseFrame({ envelope: { sourceNumber: '+1', syncMessage: { deleteForMe } } }, '+1', nameOf), [
+      {
+        type: 'deleteSync',
+        messages: [{ chat: { key: 'aci-4' }, items: [{ sender: 'aci-4', timestamp: 5 }] }],
+        chats: [{ chat: { key: 'g:R1' }, mostRecent: [{ sender: '+1', timestamp: 8 }], mostRecentNonExpiring: [], isFullDelete: true }],
+      },
+    ]);
+  });
+
   it('turns notices into notice events and drops unknown kinds', () => {
     const [ev] = parseFrame({ envelope: { sourceNumber: '+3', timestamp: 8, notice: { kind: 'missedCall', video: true, timestamp: 9 } } }, '+1', nameOf);
     assert.deepEqual(ev, { type: 'notice', convId: '+3', groupInternalId: null, author: '+3', timestamp: 9, notice: { kind: 'missedCall', video: true } });

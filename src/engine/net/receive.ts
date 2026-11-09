@@ -6,6 +6,7 @@
 import { fromBase64, toBase64 } from '../bytes';
 import { unpadMessagePlaintext } from '../crypto/primitives';
 import {
+  AddressableMessage,
   AttachmentPointer,
   AttachmentPointer_Flags,
   BodyRange_Style,
@@ -13,6 +14,7 @@ import {
   ContactDetailsSchema,
   Content,
   ContentSchema,
+  ConversationIdentifier,
   DataMessage,
   DataMessage_Flags,
   Envelope_Type,
@@ -205,6 +207,13 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
     out.remoteDelete = { timestamp: num(dm.delete.targetSentTimestamp) };
   }
 
+  if (dm.adminDelete) {
+    out.adminDelete = {
+      targetAuthorUuid: serviceIdFrom(undefined, dm.adminDelete.targetAuthorAciBinary) || undefined,
+      targetSentTimestamp: num(dm.adminDelete.targetSentTimestamp),
+    };
+  }
+
   const pin = dm.pinMessage || dm.unpinMessage;
   if (pin) {
     const target = {
@@ -219,6 +228,30 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
   if (dm.groupCallUpdate) out.groupCallUpdate = true;
 
   return out;
+}
+
+/** A sync message's chat: `{ groupId }` (internal ID, base64) or `{ uuid }` / `{ number }` for a person. */
+function chatRef(c: ConversationIdentifier | undefined): { groupId?: string; uuid?: string; number?: string } {
+  const id = c && c.identifier;
+  if (!id) return {};
+  switch (id.case) {
+    case 'threadGroupId':
+      return id.value.length ? { groupId: toBase64(id.value) } : {};
+    case 'threadServiceId':
+      return { uuid: id.value };
+    case 'threadServiceIdBinary':
+      return { uuid: serviceIdFrom(undefined, id.value) };
+    case 'threadE164':
+      return { number: id.value };
+    default:
+      return {};
+  }
+}
+
+function messageRef(m: AddressableMessage): { author: string; timestamp: number } {
+  const a = m.author;
+  const author = a.case === 'authorServiceId' ? a.value : a.case === 'authorServiceIdBinary' ? serviceIdFrom(undefined, a.value) : a.case === 'authorE164' ? a.value : '';
+  return { author, timestamp: num(m.sentTimestamp) };
 }
 
 /**
@@ -306,6 +339,20 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
       if (sm.read.length > 0) syncOut.readMessages = sm.read.map(ref);
       if (sm.viewed.length > 0) syncOut.viewedMessages = sm.viewed.map(ref);
       if (sm.content.case === 'viewOnceOpen') syncOut.viewOnceOpen = ref(sm.content.value);
+      if (sm.content.case === 'deleteForMe') {
+        const d = sm.content.value;
+        syncOut.deleteForMe = {
+          messages: d.messageDeletes.map((md) => ({ conversation: chatRef(md.conversation), messages: md.messages.map(messageRef) })),
+          conversations: d.conversationDeletes
+            .map((cd) => ({
+              conversation: chatRef(cd.conversation),
+              mostRecent: cd.mostRecentMessages.map(messageRef),
+              mostRecentNonExpiring: cd.mostRecentNonExpiringMessages.map(messageRef),
+              isFullDelete: !!cd.isFullDelete,
+            }))
+            .concat(d.localOnlyConversationDeletes.map((ld) => ({ conversation: chatRef(ld.conversation), mostRecent: [], mostRecentNonExpiring: [], isFullDelete: true }))),
+        };
+      }
       frameEnv.syncMessage = syncOut;
       break;
     }
