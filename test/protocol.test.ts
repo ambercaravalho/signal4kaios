@@ -74,6 +74,28 @@ describe('libsignal sessions (PQXDH + ratchet)', () => {
     await assert.rejects(decryptWhisper(bob.store, bobLocal, ALICE, 2, a.body), (e) => errorCode(e) === 'DuplicatedMessage');
   });
 
+  it('flags the frame when a known contact arrives with a new identity key', async () => {
+    const alice = newAccount(ALICE, 2);
+    const bob = newAccount(BOB, 1);
+    const old = libsignal.keyPairGenerate() as { publicKey: Uint8Array };
+    await bob.store.saveIdentity(ALICE, old.publicKey, { uuid: ALICE });
+    await connect(alice, bob);
+    const msg = await encryptForDevice(
+      alice.store,
+      await localIdentity(alice.store),
+      BOB,
+      1,
+      padMessagePlaintext(contentBytes({ content: { case: 'dataMessage', value: { body: 'new phone', timestamp: 1700000001000n } } }))
+    );
+    const res = await decryptEnvelope(
+      bob.store,
+      envelopeBytes({ type: Envelope_Type.PREKEY_MESSAGE, sourceServiceId: ALICE, sourceDeviceId: 2, clientTimestamp: 1700000001000n, content: msg.body })
+    );
+    assert.ok(res);
+    assert.equal(res.normalizedFrame.envelope.safetyNumberChanged, true);
+    assert.equal(res.normalizedFrame.envelope.dataMessage.message, 'new phone');
+  });
+
   it('decrypts identified envelopes into normalized frames (calls, stickers, view-once)', async () => {
     const alice = newAccount(ALICE, 2);
     const bob = newAccount(BOB, 1);

@@ -125,7 +125,7 @@ export function stylesOf(dm: any, nameOf: NameOf): StyleRange[] {
 
 const NOTICE_KINDS: NoticeKind[] = ['missedCall', 'safetyNumber', 'groupCall'];
 
-function noticeEvent(env: any, n: any, conv: Conv): StoreEvent[] {
+function noticeEvent(env: any, n: any, conv: Conv, author: string): StoreEvent[] {
   const kind = str(n && n.kind) as NoticeKind;
   if (NOTICE_KINDS.indexOf(kind) < 0 || !conv.convId) {
     dbg('normalize: unknown notice');
@@ -133,7 +133,7 @@ function noticeEvent(env: any, n: any, conv: Conv): StoreEvent[] {
   }
   const notice: Notice = { kind };
   if (n.video) notice.video = true;
-  return [{ type: 'notice', convId: conv.convId, groupInternalId: conv.groupInternalId, author: peerKey(env) || '', timestamp: num(n.timestamp) || num(env.timestamp), notice }];
+  return [{ type: 'notice', convId: conv.convId, groupInternalId: conv.groupInternalId, author, timestamp: num(n.timestamp) || num(env.timestamp), notice }];
 }
 
 function quoteOf(dm: any): Quote | null {
@@ -184,6 +184,7 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
   }
 
   if (dm.expirationTimerUpdate) return [{ type: 'timer', convId, seconds: num(dm.expiresInSeconds) }];
+  if (dm.groupCallUpdate) return noticeEvent(env, { kind: 'groupCall', timestamp: num(dm.timestamp) || num(env.timestamp) }, conv, author);
 
   const attachments: any[] = Array.isArray(dm.attachments) ? dm.attachments : [];
   const body = dm.message;
@@ -245,7 +246,15 @@ export function parseFrame(frame: any, selfNumber: string, nameOf: NameOf): Stor
     return [];
   }
 
-  if (env.notice) return noticeEvent(env, env.notice, { convId: peerKey(env), groupInternalId: null });
+  const events = envelopeEvents(env, selfNumber, nameOf);
+  const peer = peerKey(env);
+  // One millisecond early, so it sits before the message it arrived with and can't share that message's ID.
+  if (env.safetyNumberChanged && peer) events.unshift(...noticeEvent(env, { kind: 'safetyNumber', timestamp: (num(env.timestamp) || Date.now()) - 1 }, { convId: peer, groupInternalId: null }, peer));
+  return events;
+}
+
+function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEvent[] {
+  if (env.notice) return noticeEvent(env, env.notice, { convId: peerKey(env), groupInternalId: null }, peerKey(env) || '');
   if (env.dataMessage) return dataMessageEvents(env, env.dataMessage, true, nameOf);
   if (env.editMessage) return editEvent(env, env.editMessage, peerKey(env) || '', nameOf);
 

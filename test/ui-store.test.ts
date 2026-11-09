@@ -137,6 +137,18 @@ describe('store', () => {
     assert.equal(conv.lastPreview, 'Missed voice call');
   });
 
+  it('adds safety number notices only to existing chats, without counting them unread', async () => {
+    const unread = store.conversation(ALICE)!.unread;
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: 5600, safetyNumberChanged: true, receiptMessage: { isDelivery: true, timestamps: [] } } });
+    store.ingestRaw({ envelope: { sourceNumber: '+15550077', timestamp: 5600, safetyNumberChanged: true, receiptMessage: { isDelivery: true, timestamps: [] } } });
+    await settle();
+    const rec = (await db.getMessage(ALICE + '|5599|' + ALICE))!;
+    assert.deepEqual(rec.notice, { kind: 'safetyNumber' });
+    assert.equal(store.conversation(ALICE)!.unread, unread);
+    assert.equal(store.conversation('+15550077'), undefined);
+    assert.equal(store.noticeText({ kind: 'safetyNumber' }, ALICE), 'Your safety number with ' + ALICE + ' has changed');
+  });
+
   it('archives, keeps muted chats archived, and limits pinned chats', async () => {
     (signal as any).syncChatState = async () => {};
     store.setArchived(ALICE, true);

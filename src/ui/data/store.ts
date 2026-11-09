@@ -229,6 +229,7 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
 
 /** Missed calls count as unread and notify, as in Signal; other notices only show in the chat. */
 function applyNotice(ev: NoticeEvent, silent: boolean): void {
+  if (ev.notice.kind === 'safetyNumber' && !convs[ev.convId]) return;
   const conv = ensureConv({ convId: ev.convId, groupInternalId: ev.groupInternalId, incoming: true, authorName: '' });
   const rec: Message = {
     id: msgId(ev.convId, ev.timestamp, ev.author),

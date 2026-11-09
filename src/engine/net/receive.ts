@@ -201,6 +201,7 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
   }
 
   if ((dm.flags & DataMessage_Flags.EXPIRATION_TIMER_UPDATE) !== 0) out.expirationTimerUpdate = true;
+  if (dm.groupCallUpdate) out.groupCallUpdate = true;
 
   return out;
 }
@@ -322,12 +323,12 @@ async function decryptInner(
   deviceId: number,
   body: Uint8Array,
   timestamp: number
-): Promise<Uint8Array> {
+): Promise<{ plaintext: Uint8Array; identityChanged: boolean }> {
   try {
-    if (type === CIPHERTEXT_PREKEY) return (await decryptPreKey(store, local, name, deviceId, body)).plaintext;
-    if (type === CIPHERTEXT_WHISPER) return (await decryptWhisper(store, local, name, deviceId, body)).plaintext;
-    if (type === CIPHERTEXT_SENDERKEY) return await decryptSenderKey(store, local, name, deviceId, body);
-    if (type === CIPHERTEXT_PLAINTEXT) return plaintextContentBody(body);
+    if (type === CIPHERTEXT_PREKEY) return await decryptPreKey(store, local, name, deviceId, body);
+    if (type === CIPHERTEXT_WHISPER) return await decryptWhisper(store, local, name, deviceId, body);
+    if (type === CIPHERTEXT_SENDERKEY) return { plaintext: await decryptSenderKey(store, local, name, deviceId, body), identityChanged: false };
+    if (type === CIPHERTEXT_PLAINTEXT) return { plaintext: plaintextContentBody(body), identityChanged: false };
   } catch (e) {
     // A replayed message is not a session problem; never answer it with a retry receipt.
     if (errorCode(e) === 'DuplicatedMessage') throw e;
@@ -375,14 +376,14 @@ export async function decryptEnvelope(store: SignalProtocolStore, envelopeBytes:
   const toPni = !!acc.pni && env.destinationServiceId.replace(/^PNI:/, '') === acc.pni.replace(/^PNI:/, '');
   const local = await localIdentity(store, toPni && acc.pniIdentityKeyPair ? 'pni' : 'aci');
 
-  let paddedPlaintext: Uint8Array;
+  let decrypted: { plaintext: Uint8Array; identityChanged: boolean };
   if (raw.type === Envelope_Type.UNIDENTIFIED_SENDER) {
     const unsealed = await unseal(store, local, payload);
     if (unsealed.senderUuid === acc.aci && unsealed.senderDeviceId === acc.deviceId) return null;
     env.sourceUuid = unsealed.senderUuid;
     env.sourceE164 = unsealed.senderE164 || undefined;
     env.sourceDevice = unsealed.senderDeviceId;
-    paddedPlaintext = await decryptInner(
+    decrypted = await decryptInner(
       store,
       local,
       unsealed.messageType,
@@ -402,10 +403,10 @@ export async function decryptEnvelope(store: SignalProtocolStore, envelopeBytes:
         ? CIPHERTEXT_PLAINTEXT
         : -1;
     if (type < 0) throw new Error(`Unsupported envelope type ${raw.type}`);
-    paddedPlaintext = await decryptInner(store, local, type, env.sourceUuid, env.sourceDevice, payload, env.timestamp);
+    decrypted = await decryptInner(store, local, type, env.sourceUuid, env.sourceDevice, payload, env.timestamp);
   }
 
-  const content = fromBinary(ContentSchema, unpadMessagePlaintext(paddedPlaintext));
+  const content = fromBinary(ContentSchema, unpadMessagePlaintext(decrypted.plaintext));
   const senderId = env.sourceUuid;
   const senderDevice = env.sourceDevice;
   const c = content.content;
@@ -428,7 +429,9 @@ export async function decryptEnvelope(store: SignalProtocolStore, envelopeBytes:
     await processSenderKeyDistribution(store, local, senderId, senderDevice, content.senderKeyDistributionMessage);
   }
 
-  return { envelope: env, content, normalizedFrame: contentToNormalizedFrame(env, content) };
+  const normalizedFrame = contentToNormalizedFrame(env, content);
+  if (decrypted.identityChanged && senderId !== acc.aci) normalizedFrame.envelope.safetyNumberChanged = true;
+  return { envelope: env, content, normalizedFrame };
 }
 
 export interface SyncedContact {

@@ -60,6 +60,20 @@ describe('parseFrame', () => {
     assert.deepEqual(parseFrame({ envelope: { sourceNumber: '+3', notice: { kind: 'somethingNew' } } }, '+1', nameOf), []);
   });
 
+  it('adds a safety number notice before the message it came with', () => {
+    const evs = parseFrame({ envelope: { sourceNumber: '+3', timestamp: 50, safetyNumberChanged: true, dataMessage: { timestamp: 50, message: 'new phone' } } }, '+1', nameOf);
+    assert.deepEqual(
+      evs.map((e) => e.type),
+      ['notice', 'message']
+    );
+    assert.deepEqual(evs[0], { type: 'notice', convId: '+3', groupInternalId: null, author: '+3', timestamp: 49, notice: { kind: 'safetyNumber' } });
+  });
+
+  it('shows group call updates as a notice in the group', () => {
+    const [ev] = parseFrame({ envelope: { sourceUuid: 'aci-bob', timestamp: 60, dataMessage: { timestamp: 60, groupCallUpdate: true, groupInfo: { groupId: 'GID' } } } }, '+1', nameOf);
+    assert.deepEqual(ev, { type: 'notice', convId: 'g:GID', groupInternalId: 'GID', author: 'aci-bob', timestamp: 60, notice: { kind: 'groupCall' } });
+  });
+
   it('keeps the type of quoted attachments', () => {
     const [ev] = parseFrame({ envelope: { sourceNumber: '+3', dataMessage: { message: 'nice', quote: { id: 4, authorUuid: 'aci-bob', text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }, 'junk'] } } } }, '+1', nameOf);
     assert.equal(ev.type, 'message');
