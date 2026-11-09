@@ -1,6 +1,6 @@
 # Packaged app output (produced by scripts/package.sh)
 dist/
-src/app/vendor/signal-engine.bundle.js
+src/app/build/
 src/app/vendor/libsignal_wasm_bg.wasm
 
 # libsignal wasm wrapper build output (produced by npm run build:wasm)

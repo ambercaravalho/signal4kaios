@@ -1,11 +1,11 @@
 #!/bin/sh
 # Package the app for KaiOS 3.0, 3.1, and 4.0 sideloading / OStore Manual Install.
 #
-# The app targets KaiOS 3.0, 3.1 (Gecko 84), and 4.0 (Gecko 123). Signal Protocol cryptography comes from Signal's official libsignal crates compiled to src/app/vendor/libsignal_wasm_bg.wasm (npm run build:wasm); the TypeScript engine and the wasm-bindgen glue are bundled into src/app/vendor/signal-engine.bundle.js (npm run build).
+# The app targets KaiOS 3.0, 3.1 (Gecko 84), and 4.0 (Gecko 123). Signal Protocol cryptography comes from Signal's official libsignal crates compiled to src/app/vendor/libsignal_wasm_bg.wasm (npm run build:wasm); the Preact UI, the TypeScript engine, and the wasm-bindgen glue are bundled into src/app/build/app.js and app.css (npm run build).
 set -e
 cd "$(dirname "$0")/.."
 
-# --- Build libsignal wasm + on-device Signal engine bundle ----------------
+# --- Build libsignal wasm + app bundle --------------------------------------
 # SKIP_WASM_BUILD=1 reuses an existing src/native/libsignal-wasm/pkg (CI builds it in an earlier step).
 if [ -f package.json ] && command -v npm >/dev/null 2>&1; then
   if [ "${SKIP_WASM_BUILD:-}" != "1" ]; then
@@ -15,7 +15,7 @@ if [ -f package.json ] && command -v npm >/dev/null 2>&1; then
 fi
 
 # --- Manifest / ServiceWorker / Bundle presence ---------------------------
-for required in src/app/manifest.webmanifest src/app/sw.js src/app/vendor/signal-engine.bundle.js src/app/vendor/libsignal_wasm_bg.wasm; do
+for required in src/app/manifest.webmanifest src/app/sw.js src/app/build/app.js src/app/build/app.css src/app/vendor/libsignal_wasm_bg.wasm; do
   if [ ! -f "$required" ]; then
     echo "FAIL: missing $required (needed for KaiOS 3.0/3.1/4.0 install)." >&2
     exit 1

@@ -2,6 +2,32 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.1.0
+
+signal4kaios is now **Beacon**. v2.1.0 is a full redesign: every screen is rebuilt to look and work like a KaiOS 3 and 4 app, in Signal's colors, with wording that makes sense without knowing how Signal works. Your chats, settings, and link carry over; there's nothing to redo.
+
+### New
+
+- **New name and icon.** The app is called Beacon on the phone, with a new launcher icon. It's an unofficial app and says so on the welcome screen. The project, its downloads, and its updates stay at [signal4kaios](https://github.com/ambercaravalho/signal4kaios).
+- **KaiOS-style design.** Lists, softkeys, options menus, and dialogs follow KaiOS's own apps, so every screen works the same way: OK selects, the right softkey opens **Options**, and the left softkey goes back.
+- **Light and dark themes** in Signal's colors, under **Settings → Appearance**.
+- **Chats list** with Chats and Archived tabs, unread counts, pinned and muted chats, and who's typing. **New chat** is on the left softkey.
+- **Inside a chat**: day dividers, a pinned-message bar, photos that load as you scroll to them, spoilers that reveal when you select the message, and a message details screen with the full delivery status.
+- **Plain-language settings** grouped as Linked device, Chats, Privacy, Appearance, and Help, with a short explanation under each option.
+- **Settings → Debug** gathers the technical details in one place: account and device IDs, PreKey counts, the connection, storage use, and the debug log. **Share log** sends a copy with your number and IDs shortened.
+- **Clearer errors.** Problems now say what happened and what to do, such as "Couldn't connect. Check your internet connection.", instead of server codes.
+
+### Changed
+
+- **Read receipts and typing indicators** now work both ways, as in Signal: if you turn yours off, you also stop seeing other people's.
+- **A smaller app.** The screens are one optimized bundle, about half the size of v2.0.1's scripts, and the emoji picker carries only the emoji KaiOS can draw.
+- **Start-up problems** show a **Beacon couldn't start** screen that says what to do, with the technical reason under **Show details**.
+
+### Before you upgrade
+
+- **Install over v2.0.1.** Your account, chats, and settings stay. The entry on your main phone's **Linked devices** list keeps its old name until you link again.
+- **No notifications while Beacon is fully closed**, as in v2.0.1. Keep it open in the background. v2.1.0 also deletes the sign-in copy v2.0.x kept for that check, since it couldn't use it.
+
 ## v2.0.1
 
 v2.0.1 makes the app work on a stock phone. v2.0.0 couldn't link, failing with **Provisioning connection closed (code 1015)**, and it never received messages. Upgrade from v2.0.0 and link the phone again.

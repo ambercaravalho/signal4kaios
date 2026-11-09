@@ -1,0 +1,532 @@
+/* Screen-specific layout: chat, viewer, details, safety number, onboarding. */
+
+.meta-icon {
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-right: 0.3rem;
+  vertical-align: -0.2rem;
+}
+
+.typing {
+  color: var(--accent);
+  font-style: italic;
+}
+
+.li.focused .typing {
+  color: inherit;
+}
+
+.emoji {
+  font-family: 'Noto Color Emoji', var(--font);
+}
+
+/* Message formatting */
+.fmt-b {
+  font-weight: 700;
+}
+
+.fmt-i {
+  font-style: italic;
+}
+
+.fmt-st {
+  text-decoration: line-through;
+}
+
+.fmt-mono {
+  font-family: monospace;
+  font-size: 0.92em;
+}
+
+.fmt-spoiler {
+  background: currentColor;
+  border-radius: 0.3rem;
+}
+
+.fmt-spoiler.revealed {
+  background: rgba(127, 127, 127, 0.25);
+}
+
+.link {
+  text-decoration: underline;
+}
+
+/* Chat */
+.chat-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 0.4rem 0.8rem 0.8rem;
+}
+
+.chat-empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--text-2);
+  font-size: var(--fs-secondary);
+}
+
+.day-sep {
+  margin: 0.8rem 0 0.4rem;
+  text-align: center;
+  font-size: var(--fs-small);
+  color: var(--text-2);
+}
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.4rem;
+}
+
+.msg-in {
+  align-items: flex-start;
+}
+
+.msg-out {
+  align-items: flex-end;
+}
+
+.bubble {
+  max-width: 85%;
+  padding: 0.6rem 1rem;
+  border-radius: 1.6rem;
+  font-size: 1.5rem;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.msg-in .bubble {
+  background: var(--bubble-in);
+  color: var(--bubble-in-text);
+  border-bottom-left-radius: 0.4rem;
+}
+
+.msg-out .bubble {
+  background: var(--bubble-out);
+  color: var(--bubble-out-text);
+  border-bottom-right-radius: 0.4rem;
+}
+
+.msg-in.focused .bubble {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.msg-out.focused .bubble {
+  background: #1851b4;
+}
+
+.bubble-jumbo {
+  background: transparent !important;
+  padding: 0;
+}
+
+.msg-body.jumbo {
+  font-size: 4rem;
+  line-height: 1.15;
+}
+
+.msg.focused .bubble-jumbo {
+  outline: 0.2rem solid var(--accent);
+  border-radius: 0.8rem;
+}
+
+.bubble-deleted .msg-body {
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.bubble-failed {
+  opacity: 0.75;
+}
+
+.msg-author {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+
+.msg-quote {
+  margin: 0.2rem 0 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border-left: 0.3rem solid currentColor;
+  border-radius: 0.4rem;
+  background: rgba(127, 127, 127, 0.18);
+  font-size: var(--fs-small);
+}
+
+.msg-quote-author {
+  font-weight: 700;
+}
+
+.msg-quote-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-media {
+  margin: 0.2rem -0.4rem 0.4rem;
+}
+
+.msg-media img {
+  display: block;
+  max-width: 100%;
+  max-height: 16rem;
+  border-radius: 1rem;
+}
+
+.msg-file {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.2rem 0 0.3rem;
+  font-size: var(--fs-secondary);
+}
+
+.msg-file .icon {
+  width: 2.2rem;
+  height: 2.2rem;
+  flex: none;
+}
+
+.msg-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-file-size {
+  opacity: 0.7;
+  font-size: var(--fs-small);
+}
+
+.msg-body {
+  white-space: pre-wrap;
+}
+
+.msg-meta {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+  font-size: 1.1rem;
+  opacity: 0.75;
+}
+
+.msg-meta .icon {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.msg-status-failed {
+  color: var(--danger);
+}
+
+.msg-reactions {
+  display: flex;
+  gap: 0.2rem;
+  margin-top: -0.3rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 1.2rem;
+  background: var(--bg-raised);
+  border: 0.1rem solid var(--line);
+  font-size: 1.3rem;
+}
+
+.msg-reaction-count {
+  margin-left: 0.2rem;
+  font-size: var(--fs-small);
+  color: var(--text-2);
+}
+
+.msg-failed {
+  font-size: var(--fs-small);
+  color: var(--danger);
+}
+
+.pinned-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem var(--pad);
+  background: var(--bg-raised);
+  border-bottom: 0.1rem solid var(--line);
+  font-size: var(--fs-small);
+}
+
+.pinned-bar .icon {
+  width: 1.4rem;
+  height: 1.4rem;
+  flex: none;
+}
+
+.pinned-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pinned-count {
+  color: var(--text-2);
+}
+
+.composer {
+  flex: none;
+  border-top: 0.1rem solid var(--line);
+  background: var(--bg-raised);
+}
+
+.composer .tf {
+  margin: 0.4rem 0.6rem;
+}
+
+.composer-typing {
+  padding: 0.2rem var(--pad) 0;
+  font-size: var(--fs-small);
+  color: var(--accent);
+  font-style: italic;
+}
+
+.composer-ctx {
+  margin: 0.4rem 0.6rem 0;
+  padding: 0.3rem 0.6rem;
+  border-left: 0.3rem solid var(--accent);
+  background: var(--bg-sunken);
+  font-size: var(--fs-small);
+}
+
+.composer-ctx-title {
+  font-weight: 700;
+}
+
+.composer-ctx-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+
+.composer-blocked {
+  padding: 1rem var(--pad);
+  font-size: var(--fs-secondary);
+  color: var(--text-2);
+  text-align: center;
+}
+
+.composer.focused .composer-blocked {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Viewer */
+.viewer {
+  height: 100%;
+  overflow: auto;
+  scrollbar-width: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.viewer-img,
+.viewer-video {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.viewer-note {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-2);
+  font-size: var(--fs-secondary);
+}
+
+.viewer-file {
+  text-align: center;
+  padding: 2rem;
+}
+
+.viewer-file .icon {
+  width: 4.8rem;
+  height: 4.8rem;
+  color: var(--accent);
+}
+
+.viewer-file-name {
+  margin-top: 1rem;
+  overflow-wrap: break-word;
+}
+
+.viewer-file-size {
+  color: var(--text-2);
+  font-size: var(--fs-secondary);
+}
+
+/* Message details and the debug log */
+.details,
+.debug-log,
+.safety {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: var(--pad);
+}
+
+.details-text {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  padding-bottom: 1rem;
+  margin-bottom: 0.6rem;
+  border-bottom: 0.1rem solid var(--line);
+}
+
+.details-row {
+  margin-bottom: 0.8rem;
+}
+
+.details-label {
+  font-size: var(--fs-small);
+  color: var(--text-2);
+}
+
+.details-value {
+  font-size: var(--fs-secondary);
+}
+
+.debug-log {
+  font-family: monospace;
+  font-size: 1.1rem;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  word-break: break-all;
+}
+
+/* Chat settings */
+.profile-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.2rem var(--pad) 0.8rem;
+  text-align: center;
+}
+
+.profile-name {
+  margin-top: 0.6rem;
+  font-size: 1.8rem;
+  font-weight: 600;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+.profile-sub {
+  font-size: var(--fs-secondary);
+  color: var(--text-2);
+}
+
+/* QR and safety number */
+.qr-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--pad);
+}
+
+.qr-caption {
+  margin-top: 0.8rem;
+  text-align: center;
+  font-size: var(--fs-secondary);
+  color: var(--text-2);
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+.safety-verified {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  color: var(--success);
+  font-weight: 600;
+  margin-bottom: 0.8rem;
+}
+
+.safety-verified .icon {
+  width: 1.8rem;
+  height: 1.8rem;
+}
+
+.safety-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem 0;
+  text-align: center;
+  font-family: monospace;
+  font-size: 1.7rem;
+  letter-spacing: 0.1rem;
+}
+
+.safety-hint {
+  margin-top: 1.2rem;
+  font-size: var(--fs-secondary);
+  color: var(--text-2);
+}
+
+/* Onboarding, linking, startup error */
+.welcome,
+.link-screen {
+  padding: 1.2rem var(--pad);
+  text-align: center;
+  font-size: var(--fs-secondary);
+  line-height: 1.45;
+}
+
+.welcome-logo {
+  width: 7.2rem;
+  height: 7.2rem;
+  margin: 0.4rem auto 0.8rem;
+  display: block;
+}
+
+.welcome-title {
+  font-size: 2rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.welcome-note,
+.link-steps {
+  color: var(--text-2);
+}
+
+.link-screen .qr {
+  margin: 0 auto;
+}
+
+.link-note {
+  margin-bottom: 0.8rem;
+  color: var(--danger);
+}
+
+.link-status {
+  padding: 2rem 0;
+}
+
+.link-failed {
+  color: var(--danger);
+}

@@ -1,6 +1,6 @@
 # Development
 
-Building, testing, and releasing signal4kaios. How the pieces fit is in [Architecture](architecture.md); agent and editor rules live in [`.cursor/rules/`](../.cursor/rules).
+Building, testing, and releasing Beacon (this repository, signal4kaios). How the pieces fit is in [Architecture](architecture.md); agent and editor rules live in [`.cursor/rules/`](../.cursor/rules).
 
 - [Prerequisites](#prerequisites)
 - [Build and test](#build-and-test)
@@ -32,16 +32,17 @@ Building, testing, and releasing signal4kaios. How the pieces fit is in [Archite
 npm install
 npm run build:wasm   # src/native/libsignal-wasm -> src/app/vendor/libsignal_wasm_bg.wasm (+ glue in src/native/libsignal-wasm/pkg)
 npm run typecheck
-npm test             # unit, interop, and known-answer tests
+npm test             # unit, interop, known-answer, and UI tests
 npm run package      # bundle + checks -> dist/signal4kaios.zip and dist/signal4kaios-<version>.zip
 ```
 
 | Script | Does |
 | --- | --- |
 | `build:wasm` | `cargo build` → `wasm-bindgen --target web` → optional `wasm-opt` → copy to `src/app/vendor/` |
-| `build` | esbuild bundles [`src/engine/index.ts`](../src/engine/index.ts) and the wasm-bindgen glue into `src/app/vendor/signal-engine.bundle.js` (IIFE, ES2020) |
-| `typecheck` | `tsc --noEmit` over `src/engine/` and `test/` |
-| `test` | Bundles `test/*.test.ts` and runs them with `node --test` |
+| `build` | [`scripts/build.mjs`](../scripts/build.mjs): esbuild bundles [`src/ui/main.tsx`](../src/ui/main.tsx) with the engine, the wasm-bindgen glue, and the CSS into `src/app/build/app.js` and `app.css` (IIFE, `firefox84`). It keeps only the emoji KaiOS 3.x can draw |
+| `icons` | [`scripts/icons.mjs`](../scripts/icons.mjs): renders [`beacon.svg`](../src/app/assets/icons/beacon.svg) to the 56 and 112 px launcher PNGs. Run it after editing the SVG and commit the PNGs |
+| `typecheck` | `tsc --noEmit` over `src/engine/`, `src/ui/`, and `test/` |
+| `test` | Bundles `test/*.test.ts` and `test/*.test.tsx` and runs them with `node --test`. The UI tests render screens with `preact-render-to-string` over `fake-indexeddb`, and check that everyday wording stays free of technical terms |
 | `gen:protos` | Regenerates `src/engine/gen/` from `src/protos/` |
 | `test:live` | Runs [`test/live/`](../test/live) against Signal's real servers over the pinned TLS client: the provisioning socket, unauthenticated chat and storage requests, and a pin failure against a non-Signal host. Needs network access, so CI doesn't run it |
 | `package` | [`scripts/package.sh`](../scripts/package.sh): builds, fails on `eval(`/`new Function(` in shipped scripts, checks required files, adds `LICENSE` and `NOTICE`, and zips `src/app/`. `SKIP_WASM_BUILD=1` reuses an earlier `build:wasm` |
@@ -55,7 +56,7 @@ The interop tests ([`test/interop.test.ts`](../test/interop.test.ts)) run our wa
 
 ## Running on a phone
 
-Install with [`scripts/install.sh`](../scripts/install.sh) (needs [adb](https://developer.android.com/tools/adb) and [`appscmd`](https://github.com/kaiostech/appscmd)) or OStore's Manual Install, and debug with Firefox at `about:debugging`. On the phone, **Settings → Debug log** is the main diagnostic. Test on a phone that doesn't trust Signal's root certificate, since that's what users have: connections to Signal then work only through the app's pinned TLS client, and a regression shows up as close code 1015. See the [KaiOS developer docs](https://developer.kaiostech.com) for the platform itself.
+Install with [`scripts/install.sh`](../scripts/install.sh) (needs [adb](https://developer.android.com/tools/adb) and [`appscmd`](https://github.com/kaiostech/appscmd)) or OStore's Manual Install, and debug with Firefox at `about:debugging`. On the phone, **Settings → Debug** is the main diagnostic: it shows the account and device IDs, PreKey counts, and connection state, and can share a log with the phone number and IDs redacted. Test on a phone that doesn't trust Signal's root certificate, since that's what users have: connections to Signal then work only through the app's pinned TLS client, and a regression shows up as close code 1015. See the [KaiOS developer docs](https://developer.kaiostech.com) for the platform itself.
 
 ## Bumping the libsignal pin
 
@@ -92,11 +93,11 @@ Definition of done, also run by [CI](../.github/workflows/ci.yml):
 - [ ] `npm test`
 - [ ] `npm run package`
 
-The coding rules (app module shape, engine invariants, CSP, logging, docs style) are in [`.cursor/rules/`](../.cursor/rules).
+The coding rules (app conventions, engine invariants, CSP, logging, docs style) are in [`.cursor/rules/`](../.cursor/rules).
 
 ## Phone-number lookup (CDSI): spike findings
 
-Looking up a phone number that isn't in your synced contacts needs Signal's contact discovery service (CDSI), an SGX enclave reached over `wss://cdsi.signal.org/v1/<mrenclave>/discovery`. A time-boxed spike against libsignal v0.106.2 ended in **no-go for now**, so `App.api.searchNumbers` still doesn't query Signal and a chat can only start with numbers from the synced contacts.
+Looking up a phone number that isn't in your synced contacts needs Signal's contact discovery service (CDSI), an SGX enclave reached over `wss://cdsi.signal.org/v1/<mrenclave>/discovery`. A time-boxed spike against libsignal v0.106.2 ended in **no-go for now**, so **New chat** still doesn't query Signal and a chat can only start with numbers from the synced contacts.
 
 | Question | Finding |
 | --- | --- |

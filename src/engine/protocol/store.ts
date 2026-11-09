@@ -1,8 +1,9 @@
 /* Signal Protocol state storage: account credentials plus opaque, serialized libsignal records (sessions, PreKeys, sender keys) and remote identity keys with trust levels.
- * Records are produced and consumed only by libsignal (protocol/protocol.ts); this layer never parses them. IndexedDbSignalStore persists to App.db (IndexedDB v4) on KaiOS, MemorySignalStore backs the unit tests.
+ * Records are produced and consumed only by libsignal (protocol/protocol.ts); this layer never parses them. IndexedDbSignalStore persists to the app's IndexedDB (v4) on KaiOS, MemorySignalStore backs the unit tests.
  */
 
 import { constantTimeEqual, fromBase64, toBase64 } from '../bytes';
+import { host } from '../host';
 
 export interface KeyPair {
   pubKey: Uint8Array; // 33-byte serialized public key (0x05 || X25519)
@@ -242,14 +243,12 @@ function toRecord(raw: unknown): Uint8Array | null {
   return null;
 }
 
-/* IndexedDB-backed store delegating to App.db on KaiOS. Records are stored as Uint8Array values (structured clone), not JSON. */
+/* IndexedDB-backed store delegating to the app's database (the engine host's `db`) on KaiOS. Records are stored as Uint8Array values (structured clone), not JSON. */
 export class IndexedDbSignalStore implements SignalProtocolStore {
   private cachedAccount: AccountCredentials | null = null;
 
   private db(): any {
-    const g = globalThis as any;
-    if (!g.App || !g.App.db) throw new Error('App.db is not initialized');
-    return g.App.db;
+    return host().db;
   }
 
   async getAccount(): Promise<AccountCredentials | null> {

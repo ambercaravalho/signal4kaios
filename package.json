@@ -1,14 +1,15 @@
 {
   "name": "signal4kaios",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
-  "description": "Standalone on-device Signal client for KaiOS 3.0, 3.1, and 4.0",
+  "description": "Beacon: an unofficial, standalone Signal client for KaiOS 3.0, 3.1, and 4.0",
   "scripts": {
     "build:wasm": "sh src/native/libsignal-wasm/build.sh",
     "gen:protos": "PATH=\"$PWD/node_modules/.bin:$PATH\" buf generate",
-    "build": "esbuild src/engine/index.ts --bundle --format=iife --target=es2020 --log-override:empty-import-meta=silent --outfile=src/app/vendor/signal-engine.bundle.js",
+    "build": "node scripts/build.mjs",
+    "icons": "node scripts/icons.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "esbuild test/*.test.ts --bundle --platform=node --format=cjs --target=node22 --log-override:empty-import-meta=silent --external:@signalapp/libsignal-client --external:'@signalapp/libsignal-client/*' --outdir=dist-test && node --test 'dist-test/*.test.js'",
+    "test": "esbuild test/*.test.ts test/*.test.tsx --bundle --platform=node --format=cjs --target=node22 --jsx=automatic --jsx-import-source=preact --loader:.css=empty --log-override:empty-import-meta=silent --external:@signalapp/libsignal-client --external:'@signalapp/libsignal-client/*' --outdir=dist-test && node --test 'dist-test/*.test.js'",
     "test:live": "esbuild test/live/*.live.ts --bundle --platform=node --format=cjs --target=node22 --log-override:empty-import-meta=silent --outdir=dist-test/live && node --test 'dist-test/live/*.live.js'",
     "package": "sh scripts/package.sh"
   },
@@ -23,14 +24,20 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.17.0",
-    "@noble/hashes": "^2.4.0"
+    "@noble/hashes": "^2.4.0",
+    "preact": "^11.2.0",
+    "qr": "^0.7.2",
+    "unicode-emoji-json": "^0.9.0"
   },
   "devDependencies": {
     "@bufbuild/buf": "1.75.0",
     "@bufbuild/protoc-gen-es": "2.17.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@signalapp/libsignal-client": "0.106.2",
     "@types/node": "^24.19.2",
     "esbuild": "^0.28.2",
+    "fake-indexeddb": "^6.2.8",
+    "preact-render-to-string": "^6.8.2",
     "typescript": "^7.0.2"
   }
 }

@@ -1,6 +1,6 @@
 # Setup
 
-Install signal4kaios on a KaiOS 3.0, 3.1, or 4.0 phone and link it to your Signal account. The phone does all Signal encryption itself; nothing else needs to run.
+Install Beacon on a KaiOS 3.0, 3.1, or 4.0 phone and link it to your Signal account. The phone does all Signal encryption itself; nothing else needs to run.
 
 - [Requirements](#requirements)
 - [1. Install the app](#1-install-the-app)
@@ -37,21 +37,21 @@ APPSCMD=/path/to/appscmd sh scripts/install.sh
 
 ## 2. Link your Signal account
 
-1. Open **Signal4KaiOS** and step through the welcome pages to **Link with Signal**. The phone shows a QR code.
+1. Open **Beacon** and press **Start** on the welcome screen. The phone shows a QR code.
 2. On your main phone, open Signal → **Settings → Linked devices → Link a new device** ([Signal's guide](https://support.signal.org/hc/en-us/articles/360007320551)).
 3. Scan the QR code on the KaiOS screen.
 
-The KaiOS phone then registers itself as a linked device, uploads its encryption keys, and opens the conversation list.
+The KaiOS phone then finishes linking and opens your chats.
 
 ## 3. Contacts and groups sync
 
 Right after linking, the app asks your main phone for contacts, the blocked list, settings, and account keys, then reads contacts and groups from Signal's encrypted Storage Service. Keep Signal open on the main phone for a moment. Group names and members come from Signal's group server, so a group can show as "Group" for a few seconds the first time.
 
-To sync again later, use **Settings → Linked account → Sync contacts & groups**.
+To sync again later, use **Settings → Linked device → Sync with your phone**.
 
 ## KaiOS 4.0: enable WebAssembly
 
-KaiOS 4.0 serves apps through [`api-daemon`](https://github.com/kaiostech/api-daemon), whose content security policy has no `'wasm-unsafe-eval'`, so the app shows a **Cannot start** screen until you allow WebAssembly. KaiOS 3.0 and 3.1 need nothing.
+KaiOS 4.0 serves apps through [`api-daemon`](https://github.com/kaiostech/api-daemon), whose content security policy has no `'wasm-unsafe-eval'`, so the app shows a **Beacon couldn't start** screen until you allow WebAssembly. KaiOS 3.0 and 3.1 need nothing.
 
 > [!WARNING]
 > This edits a system file on a rooted phone. Keep a copy of the original, and expect a system update to undo it.
@@ -74,40 +74,40 @@ KaiOS 4.0 serves apps through [`api-daemon`](https://github.com/kaiostech/api-da
    adb shell mount -o remount,ro /system
    ```
 
-6. Reboot and open Signal4KaiOS.
+6. Reboot and open Beacon.
 
 > [!NOTE]
 > `'wasm-unsafe-eval'` only allows compiling WebAssembly. It does not allow JavaScript `eval`, and the app's own CSP still forbids inline scripts.
 
 ## Troubleshooting
 
-Start with **Settings → Debug log**: it records the connection state, PreKey status, and decryption errors (never keys or passwords).
+Start with **Settings → Debug**: it shows the connection state, PreKey status, and the debug log, which records decryption errors but never keys or passwords. **Share log** sends a copy with your number and account IDs shortened.
 
 <details>
 <summary><strong>No QR code on the Link screen</strong></summary>
 
-Check that the phone is online, then press **SoftRight (Refresh QR)** or select **Generate QR code**.
+Check that the phone is online, then press **Retry**, or open **Options → Get a new code**.
 
 </details>
 
 <details>
 <summary><strong>The app went back to the Link screen</strong></summary>
 
-The phone was removed under **Linked devices** on your main phone, or you upgraded from an early v2.0.0 build whose encryption state isn't compatible with libsignal. Scan the QR code to link again.
+The phone was removed under **Linked devices** on your main phone, or you upgraded from an early v2.0.0 build whose encryption state isn't compatible with libsignal. The Link screen says so; scan the QR code to link again.
 
 </details>
 
 <details>
-<summary><strong>"Cannot start" screen</strong></summary>
+<summary><strong>"Beacon couldn't start" screen</strong></summary>
 
-On KaiOS 4.0, WebAssembly is blocked; follow [KaiOS 4.0: enable WebAssembly](#kaios-40-enable-webassembly). On other versions, the screen says whether the module is missing (reinstall the ZIP) or the browser engine is too old.
+On KaiOS 4.0, WebAssembly is blocked; follow [KaiOS 4.0: enable WebAssembly](#kaios-40-enable-webassembly). On other versions, the screen says whether part of the app is missing (reinstall the ZIP) or the phone's software is too old. **Show details** has the technical reason.
 
 </details>
 
 <details>
 <summary><strong>Contacts or groups show as numbers or IDs</strong></summary>
 
-Run **Settings → Linked account → Sync contacts & groups** while your main phone is online.
+Run **Settings → Linked device → Sync with your phone** while your main phone is online.
 
 </details>
 

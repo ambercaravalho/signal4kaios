@@ -1,6 +1,4 @@
-/* Entry point for the bundled on-device Signal engine (`window.App.signal`).
- * Bundled by esbuild into `app/vendor/signal-engine.bundle.js` (IIFE, ES2020).
- */
+/* The on-device Signal engine's public surface (`signalBridge`), imported by the app in `src/ui/`. The app installs an `EngineHost` (`./host`) before calling it. */
 
 import type { MessageInitShape } from '@bufbuild/protobuf';
 
@@ -55,25 +53,12 @@ import { SignalClient } from './net/client';
 import { DEFAULT_SIGNAL_SERVER } from './net/http';
 import { net } from './net/transport';
 import { IncomingEnvelope, parseContactsSyncBlob } from './net/receive';
+import { ChatStateEntry, host } from './host';
 
 type DataMessageInit = MessageInitShape<typeof DataMessageSchema>;
 type BodyRangeInit = MessageInitShape<typeof BodyRangeSchema>;
 type PinnedConversationInit = MessageInitShape<typeof AccountRecord_PinnedConversationSchema>;
 
-/** Chat-list state for one chat, keyed the way `App.store` finds conversations (a contact's ACI or number, or a group's internal ID). `muted` is left out where Signal has no mute state (Note to Self). */
-interface ChatStateEntry {
-  uuid?: string;
-  number?: string;
-  groupInternalId?: string;
-  archived: boolean;
-  muted?: boolean;
-}
-
-function getApp(): any {
-  const g = globalThis as any;
-  g.App = g.App || { screens: {} };
-  return g.App;
-}
 
 function parseDataUri(dataUri: string): { contentType: string; filename?: string; bytes: Uint8Array } {
   const comma = dataUri.indexOf(',');
@@ -130,9 +115,8 @@ function httpJson(
     timeout?: number;
   }
 ): Promise<any> {
-  const App = getApp();
-  return App.http.request(method, path, body, {
-    baseUrl: opts?.baseUrl || App.config.serverUrl() || DEFAULT_SIGNAL_SERVER,
+  return host().http.request(method, path, body, {
+    baseUrl: opts?.baseUrl || host().config.serverUrl() || DEFAULT_SIGNAL_SERVER,
     noAuth: opts?.noAuth,
     basicAuth: opts?.basicAuth,
     headers: opts?.headers,
@@ -141,17 +125,17 @@ function httpJson(
 }
 
 function httpBinary(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<Uint8Array> {
-  return getApp().http.rawBinary(method, url, body, headers, timeout);
+  return host().http.rawBinary(method, url, body, headers, timeout);
 }
 
 function httpRaw(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number) {
-  return getApp().http.rawRequest(method, url, body, headers, timeout);
+  return host().http.rawRequest(method, url, body, headers, timeout);
 }
 
 const client = new SignalClient(store, httpJson, httpBinary, httpRaw);
 
 function serverUrl(): string {
-  return getApp().config.serverUrl() || DEFAULT_SIGNAL_SERVER;
+  return host().config.serverUrl() || DEFAULT_SIGNAL_SERVER;
 }
 
 function fetchLatestSync(type: SyncMessage_FetchLatest_Type): Content {
@@ -170,9 +154,8 @@ let blockedCache: Promise<BlockedSets> | null = null;
 function blockedSets(): Promise<BlockedSets> {
   if (!blockedCache) {
     blockedCache = (async () => {
-      const App = getApp();
-      const contacts: Array<any> = (await App.db.kvGet('syncedContacts')) || [];
-      const groups: Array<any> = (await App.db.kvGet('syncedGroups')) || [];
+      const contacts: Array<any> = (await host().db.kvGet('syncedContacts')) || [];
+      const groups: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
       const out: BlockedSets = { acis: new Set(), numbers: new Set(), groups: new Set() };
       for (const c of contacts) {
         if (!c.blocked) continue;
@@ -246,7 +229,7 @@ async function sendBlockedSync(): Promise<void> {
 
 /** A contact's ACI and phone number from either one, via `syncedContacts`. */
 async function contactIds(id: string): Promise<{ aci: string; e164: string }> {
-  const contacts: Array<any> = (await getApp().db.kvGet('syncedContacts')) || [];
+  const contacts: Array<any> = (await host().db.kvGet('syncedContacts')) || [];
   const hit = contacts.find((c) => (id && c.uuid === id) || (id && c.number === id));
   const aci = isAci(id) ? id : hit && isAci(hit.uuid) ? hit.uuid : '';
   const e164 = id.startsWith('+') ? id : (hit && hit.number) || '';
@@ -255,25 +238,23 @@ async function contactIds(id: string): Promise<{ aci: string; e164: string }> {
 
 /** Read-modify-write one `syncedContacts` entry (created when missing). */
 async function updateSyncedContact(ids: { aci: string; e164: string }, update: (c: any) => void): Promise<void> {
-  const App = getApp();
-  const list: Array<any> = (await App.db.kvGet('syncedContacts')) || [];
+  const list: Array<any> = (await host().db.kvGet('syncedContacts')) || [];
   let entry = list.find((c) => (ids.aci && c.uuid === ids.aci) || (ids.e164 && c.number === ids.e164));
   if (!entry) {
     entry = { uuid: ids.aci, number: ids.e164, name: ids.e164 || ids.aci, blocked: false, expireTimer: 0 };
     list.push(entry);
   }
   update(entry);
-  await App.db.kvSet('syncedContacts', list);
+  await host().db.kvSet('syncedContacts', list);
 }
 
 /** Read-modify-write one `syncedGroups` entry. */
 async function updateSyncedGroup(internalId: string, update: (g: any) => void): Promise<void> {
-  const App = getApp();
-  const list: Array<any> = (await App.db.kvGet('syncedGroups')) || [];
+  const list: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
   const entry = list.find((g) => g.internal_id === internalId);
   if (!entry) return;
   update(entry);
-  await App.db.kvSet('syncedGroups', list);
+  await host().db.kvSet('syncedGroups', list);
 }
 
 /** Storage Service writes, batched; other devices are told to re-read the manifest after each one. */
@@ -287,7 +268,7 @@ const storageQueue = new StorageWriteQueue(
 /** Signal addresses users by ACI; map a phone number to its ACI through the synced contact list. */
 async function resolveAci(id: string): Promise<string> {
   if (isAci(id)) return id;
-  const contacts: Array<any> = (await getApp().db.kvGet('syncedContacts')) || [];
+  const contacts: Array<any> = (await host().db.kvGet('syncedContacts')) || [];
   const hit = contacts.find((c) => c.number === id && isAci(c.uuid));
   return hit ? hit.uuid : '';
 }
@@ -303,11 +284,10 @@ async function resolveRecipients(ids: string[]): Promise<string[]> {
 }
 
 async function resolveGroupRecipients(groupSendId: string): Promise<{ internalId: string; members: string[]; masterKey?: string; revision?: number }> {
-  const App = getApp();
   const internalId = groupSendId.replace(/^group\./, '');
-  const syncedGroups: Array<any> = (await App.db.kvGet('syncedGroups')) || [];
+  const syncedGroups: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
   const found = syncedGroups.find((g) => g.id === groupSendId || g.internal_id === internalId);
-  const selfAci = App.config.aci ? App.config.aci() : '';
+  const selfAci = host().config.aci();
   const members = ((found && found.members) || []).filter((m: string) => isAci(m) && m !== selfAci);
   return {
     internalId,
@@ -341,10 +321,8 @@ async function deliver(target: { isGroup: boolean; peers: string[] }, content: C
 async function recordPeerProfileKey(senderUuid: string, senderE164: string | undefined, profileKeyBytes: Uint8Array): Promise<void> {
   if (profileKeyBytes.length !== 32 || !isAci(senderUuid)) return;
   client.setPeerProfileKey(senderUuid, profileKeyBytes);
-
-  const App = getApp();
   const b64 = toBase64(profileKeyBytes);
-  const list: Array<any> = (await App.db.kvGet('syncedContacts')) || [];
+  const list: Array<any> = (await host().db.kvGet('syncedContacts')) || [];
   let found = false;
   let changed = false;
   for (const c of list) {
@@ -360,19 +338,18 @@ async function recordPeerProfileKey(senderUuid: string, senderE164: string | und
     list.push({ uuid: senderUuid, number: senderE164 || '', name: senderE164 || senderUuid, blocked: false, expireTimer: 0, profileKey: b64 });
     changed = true;
   }
-  if (changed) await App.db.kvSet('syncedContacts', list);
+  if (changed) await host().db.kvSet('syncedContacts', list);
 }
 
 async function mergeGroupState(state: GroupV2Metadata): Promise<void> {
-  const App = getApp();
-  const list: Array<any> = (await App.db.kvGet('syncedGroups')) || [];
+  const list: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
   const idx = list.findIndex((g) => g.internal_id === state.internal_id);
   const prev = idx >= 0 ? list[idx] : {};
   const merged = { ...prev, ...state, blocked: prev.blocked ?? false, archived: prev.archived };
   if (idx >= 0) list[idx] = merged;
   else list.push(merged);
-  await App.db.kvSet('syncedGroups', list);
-  if (App.store && App.store.refreshDirectory) App.store.refreshDirectory().catch(() => {});
+  await host().db.kvSet('syncedGroups', list);
+  host().directoryChanged().catch(() => {});
 }
 
 /** Fetch a group's current title, members, and settings from the storage server and merge them into `syncedGroups`. */
@@ -391,7 +368,6 @@ async function groupMasterKey(groupSendId: string): Promise<Uint8Array> {
  * Apply a Groups V2 change on the storage server, then send the signed change to everyone affected (GroupContextV2 with `groupChange`, as Signal-Desktop's sendGroupUpdate does) and to our other devices. Resolves to the new group state, or null when nothing changed.
  */
 async function changeGroup(groupSendId: string, build: (snap: GroupSnapshot) => GroupActionsInit | null | Promise<GroupActionsInit | null>): Promise<GroupV2Metadata | null> {
-  const App = getApp();
   const masterKey = await groupMasterKey(groupSendId);
   const res = await applyGroupChange({ store, httpJson, httpBinary, serverUrl: serverUrl() }, masterKey, build);
   if (!res) return null;
@@ -403,16 +379,15 @@ async function changeGroup(groupSendId: string, build: (snap: GroupSnapshot) => 
     profileKey: acc ? acc.profileKey : undefined,
     groupV2: { masterKey, revision: res.revision, groupChange: res.groupChange },
   };
-  await client.sendGroupContent(res.notify, dataContent(dm), ts).catch((e: any) => App.util.dbg('group update send failed: ' + (e && e.message)));
+  await client.sendGroupContent(res.notify, dataContent(dm), ts).catch((e: any) => host().dbg('group update send failed: ' + (e && e.message)));
   await client.sendSyncMessage(syncSent('', ts, dm), ts);
   return res.state;
 }
 
 /** Record a group seen in an incoming message; fetch its state when it is new or its revision moved on. */
 async function noteIncomingGroup(masterKey: Uint8Array, revision: number, sender: string, expireTimer: number): Promise<void> {
-  const App = getApp();
   const keys = deriveGroupV2Keys(masterKey);
-  const list: Array<any> = (await App.db.kvGet('syncedGroups')) || [];
+  const list: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
   const existing = list.find((g) => g.internal_id === keys.internalId);
   const stale = !existing || (revision || 0) > (existing.revision || 0) || !(existing.members && existing.members.length);
   if (!existing) {
@@ -427,10 +402,10 @@ async function noteIncomingGroup(masterKey: Uint8Array, revision: number, sender
       blocked: false,
       expireTimer,
     });
-    await App.db.kvSet('syncedGroups', list);
+    await host().db.kvSet('syncedGroups', list);
   }
   if (stale) {
-    refreshGroup(masterKey).catch((e: any) => App.util.dbg('group refresh failed: ' + (e && e.message)));
+    refreshGroup(masterKey).catch((e: any) => host().dbg('group refresh failed: ' + (e && e.message)));
   }
 }
 
@@ -438,13 +413,12 @@ async function noteIncomingGroup(masterKey: Uint8Array, revision: number, sender
  * Pull contacts, Groups V2 master keys, and account settings from Signal's Storage Service.
  */
 async function syncFromStorageService(): Promise<boolean> {
-  const App = getApp();
   const res = await pullFromStorageService(store, httpJson, httpBinary, serverUrl());
   if (!res) return false;
   const chatState: ChatStateEntry[] = [];
 
   if (res.contacts.length > 0) {
-    const existing: Array<any> = (await App.db.kvGet('syncedContacts')) || [];
+    const existing: Array<any> = (await host().db.kvGet('syncedContacts')) || [];
     const byId = new Map<string, any>();
     for (const c of existing) byId.set(c.uuid || c.number, c);
 
@@ -478,11 +452,11 @@ async function syncFromStorageService(): Promise<boolean> {
 
       if (sc.changed) chatState.push({ uuid: sc.aci || '', number: sc.e164 || '', archived: !!sc.archived, muted: (sc.mutedUntilTimestamp || 0) > Date.now() });
     }
-    await App.db.kvSet('syncedContacts', Array.from(byId.values()));
+    await host().db.kvSet('syncedContacts', Array.from(byId.values()));
   }
 
   if (res.groupsV2.length > 0) {
-    const existingGroups: Array<any> = (await App.db.kvGet('syncedGroups')) || [];
+    const existingGroups: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
     const byGrpId = new Map<string, any>();
     for (const g of existingGroups) byGrpId.set(g.internal_id, g);
 
@@ -501,9 +475,9 @@ async function syncFromStorageService(): Promise<boolean> {
       });
       if (gv2.changed) chatState.push({ groupInternalId: keys.internalId, archived: !!gv2.archived, muted: (gv2.mutedUntilTimestamp || 0) > Date.now() });
     }
-    await App.db.kvSet('syncedGroups', Array.from(byGrpId.values()));
+    await host().db.kvSet('syncedGroups', Array.from(byGrpId.values()));
     for (const gv2 of res.groupsV2) {
-      await refreshGroup(gv2.masterKey).catch((e: any) => App.util.dbg('group refresh failed: ' + (e && e.message)));
+      await refreshGroup(gv2.masterKey).catch((e: any) => host().dbg('group refresh failed: ' + (e && e.message)));
     }
   }
 
@@ -521,26 +495,23 @@ async function syncFromStorageService(): Promise<boolean> {
     }
     if (res.account.readReceipts !== undefined) patch.sendReadReceipts = res.account.readReceipts;
     if (res.account.typingIndicators !== undefined) patch.typingIndicators = res.account.typingIndicators;
-    if (Object.keys(patch).length > 0) App.config.set(patch);
+    if (Object.keys(patch).length > 0) host().config.set(patch);
     const acc = await store.getAccount();
     if (acc && res.account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!res.account.noteToSelfArchived });
   }
 
   invalidateBlocked();
-  if (App.store && App.store.refreshDirectory) await App.store.refreshDirectory().catch(() => {});
-  if (App.store && App.store.applyChatState) {
-    const pinned = res.account && res.account.changed
-      ? res.account.pinnedConversations.map((p) =>
-          p.groupMasterKey ? { groupInternalId: deriveGroupV2Keys(p.groupMasterKey).internalId } : { uuid: p.aci || '', number: p.e164 || '' }
-        )
-      : null;
-    App.store.applyChatState(chatState, pinned);
-  }
+  await host().directoryChanged().catch(() => {});
+  const pinned = res.account && res.account.changed
+    ? res.account.pinnedConversations.map((p) =>
+        p.groupMasterKey ? { groupInternalId: deriveGroupV2Keys(p.groupMasterKey).internalId } : { uuid: p.aci || '', number: p.e164 || '' }
+      )
+    : null;
+  host().applyChatState(chatState, pinned);
   return true;
 }
 
 async function handleIncomingSyncMessage(env: IncomingEnvelope, content: Content): Promise<void> {
-  const App = getApp();
   if (content.content.case !== 'syncMessage') return;
   const acc = await store.getAccount();
   // Sync messages are only meaningful from our own devices
@@ -554,7 +525,7 @@ async function handleIncomingSyncMessage(env: IncomingEnvelope, content: Content
       try {
         const { bytes } = await client.downloadAttachment(c.value.blob);
         const parsed = parseContactsSyncBlob(bytes);
-        const existing: Array<any> = (await App.db.kvGet('syncedContacts')) || [];
+        const existing: Array<any> = (await host().db.kvGet('syncedContacts')) || [];
         const byId = new Map<string, any>();
         for (const e of existing) byId.set(e.uuid || e.number, e);
         for (const sc of parsed) {
@@ -562,10 +533,10 @@ async function handleIncomingSyncMessage(env: IncomingEnvelope, content: Content
           const prev = byId.get(id) || {};
           byId.set(id, { ...prev, uuid: sc.uuid || prev.uuid || '', number: sc.number || prev.number || '', name: sc.name || prev.name, expireTimer: sc.expireTimer, blocked: prev.blocked ?? false });
         }
-        await App.db.kvSet('syncedContacts', Array.from(byId.values()));
-        if (App.store && App.store.refreshDirectory) App.store.refreshDirectory().catch(() => {});
+        await host().db.kvSet('syncedContacts', Array.from(byId.values()));
+        host().directoryChanged().catch(() => {});
       } catch (e: any) {
-        App.util.dbg('sync contacts blob failed: ' + (e && e.message));
+        host().dbg('sync contacts blob failed: ' + (e && e.message));
       }
       break;
     }
@@ -584,18 +555,18 @@ async function handleIncomingSyncMessage(env: IncomingEnvelope, content: Content
       const blockedNums = new Set(b.numbers);
       const blockedAcis = new Set(b.acis);
       const blockedGrpIds = new Set(b.groupIds.map((g) => toBase64(g)));
-      const contacts: Array<any> = (await App.db.kvGet('syncedContacts')) || [];
+      const contacts: Array<any> = (await host().db.kvGet('syncedContacts')) || [];
       for (const ct of contacts) ct.blocked = (ct.number && blockedNums.has(ct.number)) || (ct.uuid && blockedAcis.has(ct.uuid));
-      await App.db.kvSet('syncedContacts', contacts);
-      const groups: Array<any> = (await App.db.kvGet('syncedGroups')) || [];
+      await host().db.kvSet('syncedContacts', contacts);
+      const groups: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
       for (const g of groups) g.blocked = blockedGrpIds.has(g.internal_id);
-      await App.db.kvSet('syncedGroups', groups);
+      await host().db.kvSet('syncedGroups', groups);
       invalidateBlocked();
       break;
     }
     case 'configuration': {
       const cfg = c.value;
-      App.config.set({ sendReadReceipts: cfg.readReceipts, typingIndicators: cfg.typingIndicators });
+      host().config.set({ sendReadReceipts: cfg.readReceipts, typingIndicators: cfg.typingIndicators });
       break;
     }
     case 'keys': {
@@ -696,7 +667,7 @@ export const signalBridge = {
   },
 
   /**
-   * Decrypt a binary Signal `Envelope` from a WebSocket `/api/v1/message` request and return the JSON frame ready for `App.store.ingestRaw`.
+   * Decrypt a binary Signal `Envelope` from a WebSocket `/api/v1/message` request and return the JSON frame for the app's store.
    */
   async processIncomingEnvelope(envelopeBytes: Uint8Array): Promise<{ envelope: any } | null> {
     const res = await client.enqueueDecryptEnvelope(envelopeBytes);
@@ -733,12 +704,13 @@ export const signalBridge = {
   },
 
   /**
-   * Send an outgoing message, edit, or attachment (`App.api.send` equivalent).
+   * Send an outgoing message, edit, or attachment. `message` is the plain body; `styles` are its formatting ranges.
    */
   async send(payload: {
     recipients: string[];
     message?: string;
-    text_mode?: string;
+    styles?: Array<{ start: number; length: number; style: string }>;
+    expire_timer?: number;
     quote_timestamp?: number;
     quote_author?: string;
     quote_message?: string;
@@ -746,17 +718,9 @@ export const signalBridge = {
     edit_timestamp?: number;
     mentions?: Array<{ start: number; length: number; uuid: string }>;
   }): Promise<{ timestamp: number }> {
-    const App = getApp();
     const ts = Date.now();
-    const rawText = payload.message || '';
-    let bodyText = rawText;
-    let styles: Array<{ start: number; length: number; style: string }> = [];
-
-    if (payload.text_mode === 'styled' && rawText && App.util && App.util.parseStyledMarkdown) {
-      const parsed = App.util.parseStyledMarkdown(rawText);
-      bodyText = parsed.body;
-      styles = parsed.styles;
-    }
+    const bodyText = payload.message || '';
+    const styles = payload.styles || [];
 
     const firstTarget = (payload.recipients && payload.recipients[0]) || '';
     const target = await groupTargets(firstTarget);
@@ -770,8 +734,7 @@ export const signalBridge = {
       uploadedAttachments.push(ptr);
     }
 
-    const convId = target.isGroup ? 'g:' + target.internalId : firstTarget;
-    const expireTimer = App.store && App.store.convExpire ? App.store.convExpire(convId) : 0;
+    const expireTimer = payload.expire_timer || 0;
 
     const acc = await store.getAccount();
     const dm: DataMessageInit = {
@@ -883,11 +846,10 @@ export const signalBridge = {
   },
 
   async fetchContactAvatarBlob(uuidOrNumber: string): Promise<Blob> {
-    const App = getApp();
-    const cached = await App.db.getAttachment('avatar:' + uuidOrNumber);
+    const cached = await host().db.getAttachment('avatar:' + uuidOrNumber);
     if (cached && cached.blob) return cached.blob;
 
-    const contacts: Array<any> = (await App.db.kvGet('syncedContacts')) || [];
+    const contacts: Array<any> = (await host().db.kvGet('syncedContacts')) || [];
     const entry = contacts.find((c) => c.uuid === uuidOrNumber || c.number === uuidOrNumber);
     const uuid = (entry && entry.uuid) || uuidOrNumber;
     if (!isAci(uuid)) throw new Error('No profile avatar available');
@@ -896,20 +858,19 @@ export const signalBridge = {
     const prof = await fetchAndDecryptProfile(store, httpJson, uuid, pkBytes, serverUrl());
     if (prof && prof.fullName && entry && (!entry.name || entry.name === uuid)) {
       entry.name = prof.fullName;
-      await App.db.kvSet('syncedContacts', contacts);
+      await host().db.kvSet('syncedContacts', contacts);
     }
     if (!prof || !prof.avatarUrlPath || !pkBytes) throw new Error('No profile avatar available');
 
     const avatarBytes = await downloadAndDecryptProfileAvatar(httpBinary, prof.avatarUrlPath, pkBytes);
     const ab = avatarBytes.buffer.slice(avatarBytes.byteOffset, avatarBytes.byteOffset + avatarBytes.byteLength) as ArrayBuffer;
     const blob = new Blob([ab], { type: 'image/jpeg' });
-    await App.db.putAttachment('avatar:' + uuidOrNumber, blob, 'image/jpeg');
+    await host().db.putAttachment('avatar:' + uuidOrNumber, blob, 'image/jpeg');
     return blob;
   },
 
   async updateOwnProfile(body: { name?: string; about?: string }): Promise<void> {
-    const App = getApp();
-    await uploadOwnProfile(store, httpJson, { name: body.name || App.config.profileName() || 'Signal User', about: body.about }, serverUrl()).catch(() => {});
+    await uploadOwnProfile(store, httpJson, { name: body.name || host().config.profileName() || 'Signal User', about: body.about }, serverUrl()).catch(() => {});
   },
 
   /** Set or clear a contact's nickname (Storage Service `ContactRecord.nickname`, shown on all your devices). */
@@ -933,14 +894,13 @@ export const signalBridge = {
 
   /** Block or unblock a person like Signal-Desktop: Blocked sync to our devices, then `ContactRecord.blocked` (and profile sharing off while blocked) in Storage Service. */
   async setContactBlocked(id: string, blocked: boolean): Promise<void> {
-    const App = getApp();
     const ids = await contactIds(id);
     if (!ids.aci && !ids.e164) throw new Error('No Signal account known for ' + id);
     await updateSyncedContact(ids, (c) => {
       c.blocked = blocked;
     });
     invalidateBlocked();
-    if (App.store && App.store.refreshDirectory) App.store.refreshDirectory().catch(() => {});
+    host().directoryChanged().catch(() => {});
     await sendBlockedSync();
     await storageQueue.enqueue([
       {
@@ -1006,7 +966,6 @@ export const signalBridge = {
 
   /** Add people (numbers, usernames, or ACIs) to a group. Anyone whose profile key credential we can get joins directly; everyone else is invited. */
   async addGroupMembers(groupSendId: string, ids: string[]): Promise<GroupV2Metadata | null> {
-    const App = getApp();
     const acis: string[] = [];
     for (const raw of ids) {
       const id = String(raw || '').trim();
@@ -1019,7 +978,7 @@ export const signalBridge = {
       acis.push(aci);
     }
     const credentials = new Map<string, Uint8Array>();
-    const contacts: Array<any> = (await App.db.kvGet('syncedContacts')) || [];
+    const contacts: Array<any> = (await host().db.kvGet('syncedContacts')) || [];
     for (const aci of acis) {
       const entry = contacts.find((c) => c.uuid === aci);
       const pk = client.getPeerProfileKey(aci) || (entry && entry.profileKey ? fromBase64(entry.profileKey) : undefined);
@@ -1027,7 +986,7 @@ export const signalBridge = {
       try {
         credentials.set(aci, await fetchExpiringProfileKeyCredential(store, httpJson, SERVER_PUBLIC_PARAMS, aci, pk, serverUrl()));
       } catch (e: any) {
-        App.util.dbg('profile key credential failed; inviting instead: ' + (e && e.message));
+        host().dbg('profile key credential failed; inviting instead: ' + (e && e.message));
       }
     }
     return changeGroup(groupSendId, (snap) =>
@@ -1106,7 +1065,6 @@ export const signalBridge = {
   },
 
   async setGroupBlocked(groupSendId: string, blocked: boolean): Promise<void> {
-    const App = getApp();
     const masterKey = await groupMasterKey(groupSendId);
     if (blocked) {
       try {
@@ -1119,7 +1077,7 @@ export const signalBridge = {
       g.blocked = blocked;
     });
     invalidateBlocked();
-    if (App.store && App.store.refreshDirectory) App.store.refreshDirectory().catch(() => {});
+    host().directoryChanged().catch(() => {});
     await sendBlockedSync();
     await storageQueue.enqueue([
       {
@@ -1136,13 +1094,12 @@ export const signalBridge = {
 
   /** Reserve and confirm a Signal username (`nickname` gets a random number, `nickname.42` is taken as typed), then publish it and its link to Storage Service. */
   async setUsername(input: string): Promise<{ username: string; username_link: string }> {
-    const App = getApp();
     const previous = (await store.loadValue('usernameLink')) as { entropy: string; serverId: string } | undefined;
     const res = await setAccountUsername(store, httpJson, input, serverUrl(), previous ? fromBase64(previous.entropy) : undefined);
     const serverId = uuidToBytes(res.serverId);
     const link = usernameLinkUrl(res.entropy, serverId);
     await store.storeValue('usernameLink', { entropy: toBase64(res.entropy), serverId: res.serverId });
-    App.config.set({ username: res.username, usernameLink: link });
+    host().config.set({ username: res.username, usernameLink: link });
     await storageQueue.enqueue([
       {
         type: 'account',
@@ -1160,10 +1117,9 @@ export const signalBridge = {
   },
 
   async deleteUsername(): Promise<void> {
-    const App = getApp();
     await deleteAccountUsername(store, httpJson, serverUrl());
     await store.storeValue('usernameLink', undefined);
-    App.config.set({ username: '', usernameLink: '' });
+    host().config.set({ username: '', usernameLink: '' });
     await storageQueue.enqueue([
       {
         type: 'account',
@@ -1227,9 +1183,37 @@ export const signalBridge = {
       return false;
     }
   },
+
+  /** Account facts and the server's count of unused one-time PreKeys, for Settings > Debug. Never includes keys or passwords. */
+  async diagnostics(): Promise<{
+    aci: string;
+    pni: string;
+    number: string;
+    deviceId: number;
+    registrationId: number;
+    pniRegistrationId: number;
+    preKeys: { ec: number; kyber: number } | null;
+  }> {
+    const acc = await store.getAccount();
+    let preKeys: { ec: number; kyber: number } | null = null;
+    if (acc) {
+      try {
+        const res = await httpJson('GET', '/v2/keys?identity=aci', null, { basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password } });
+        preKeys = { ec: Number(res && res.count) || 0, kyber: Number(res && res.pqCount) || 0 };
+      } catch (e: any) {
+        host().dbg('PreKey count failed: ' + (e && e.message));
+      }
+    }
+    return {
+      aci: acc ? acc.aci : '',
+      pni: (acc && acc.pni) || '',
+      number: (acc && acc.number) || '',
+      deviceId: acc ? acc.deviceId : 0,
+      registrationId: acc ? acc.registrationId : 0,
+      pniRegistrationId: acc ? acc.pniRegistrationId : 0,
+      preKeys,
+    };
+  },
 };
 
-if (typeof window !== 'undefined') {
-  const App = getApp();
-  App.signal = signalBridge;
-}
+export type SignalBridge = typeof signalBridge;
