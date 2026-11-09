@@ -3,6 +3,7 @@
 How signal4kaios turns a KaiOS phone into a Signal linked device. For building and testing, see [Development](development.md).
 
 - [Overview](#overview)
+- [Network](#network)
 - [Repository layout](#repository-layout)
 - [Receiving](#receiving)
 - [Sending](#sending)
@@ -33,10 +34,10 @@ flowchart LR
   chat["chat.signal.org"]
   storage["storage.signal.org"]
   cdn["cdn*.signal.org"]
-  ui <-->|WebSocket| chat
-  engine -->|"mozSystem XHR"| chat
-  engine -->|"mozSystem XHR"| storage
-  engine -->|"mozSystem XHR"| cdn
+  ui <-->|"WebSocket over pinned TLS"| chat
+  engine -->|"HTTPS over pinned TLS"| chat
+  engine -->|"HTTPS over pinned TLS"| storage
+  engine -->|"HTTPS over pinned TLS"| cdn
 ```
 
 | Layer | Where | Role |
@@ -46,6 +47,33 @@ flowchart LR
 | **libsignal** | [`native/libsignal-wasm/`](../native/libsignal-wasm) | A wasm-bindgen wrapper over Signal's official [libsignal](https://github.com/signalapp/libsignal) crates, shipped as `app/vendor/libsignal_wasm_bg.wasm` |
 
 Wire formats come from Signal-Desktop's and libsignal's own `.proto` files in [`protos/`](../protos), compiled to TypeScript with [protobuf-es](https://github.com/bufbuild/protobuf-es).
+
+## Network
+
+Every Signal service (`chat`, `storage`, `cdn`, `cdn2`, `cdn3`) presents a certificate from Signal's own root, `CN=Signal Messenger`, which no browser trusts. Gecko's `WebSocket` and XHR therefore fail on a stock phone with close code 1015. The app does TLS itself instead, the way Signal's own apps do:
+
+```mermaid
+flowchart LR
+  callers["http.js, ws.js, provisioning.ts"] --> net["App.signal.net (engine/net/transport)"]
+  net --> h1["http1.ts / websocket.ts"]
+  h1 --> tls["tls-stream.ts"]
+  tls --> conn["TlsConn in wasm (rustls, pinned roots)"]
+  tls --> tcp["tcp.ts: KaiOS TCPSocket"]
+```
+
+| Piece | Role |
+| --- | --- |
+| [`native/libsignal-wasm/src/tls.rs`](../native/libsignal-wasm/src/tls.rs) | A sans-I/O [rustls](https://github.com/rustls/rustls) client that trusts only libsignal's pinned roots (`signal.cer`, `signal-ed25519.cer` in `res/`) and refuses any host outside `signal.org` |
+| [`transport/tcp.ts`](../engine/net/transport/tcp.ts) | The raw socket, from the `tcp-socket` manifest permission (`TCPSocket`, or `navigator.mozTCPSocket` on older builds) |
+| [`transport/tls-stream.ts`](../engine/net/transport/tls-stream.ts) | Pumps bytes between the socket and `TlsConn`, and resolves once the handshake is done |
+| [`transport/http1.ts`](../engine/net/transport/http1.ts) | HTTP/1.1 with keep-alive, at most 6 requests per host at once, capped response sizes, and timeouts |
+| [`transport/websocket.ts`](../engine/net/transport/websocket.ts) | An RFC 6455 client shaped like the browser `WebSocket`, so callers use either one |
+
+Only `*.signal.org` goes through this path. Other hosts, and environments without `TCPSocket` (desktop browsers, the tests' fallbacks), use mozSystem XHR and the platform `WebSocket`. A redirect off Signal's hosts drops the `Authorization` header and continues over XHR.
+
+The chat WebSocket authenticates with an `Authorization: Basic` header on the upgrade request. Signal's server treats query-string credentials as an anonymous socket that never receives messages, which is why only the pinned client can carry the main connection.
+
+The ServiceWorker's closed-app check can't use any of this, because workers have no `TCPSocket`, and the browser `WebSocket` can't set the header. It stays as a best-effort probe; see [the user guide](user-guide.md#known-limitations).
 
 ## Repository layout
 
@@ -59,6 +87,7 @@ app/                    the packaged KaiOS app (zipped as-is)
 engine/                 on-device Signal engine (App.signal)
   protocol/             libsignal loader, protocol operations, PreKeys, protocol store
   net/                  HTTP shapes, protobuf helpers, provisioning, receive, send client
+  net/transport/        pinned TLS over TCPSocket: HTTP/1.1 and WebSocket clients
   services/             Storage Service, profiles, Groups V2
   crypto/               attachment and profile cipher primitives
   gen/                  generated protobuf codecs (never hand-edited)
@@ -182,6 +211,7 @@ Every libsignal call that touches protocol state goes through [`engine/protocol/
 | `account.rs` | Account Entropy Pool to master key, and username hashes |
 | `username.rs` | Username candidates, zero-knowledge proofs, and encrypted username links |
 | `zk.rs` | Profile key version, commitment, and access key; Groups V2 params, blob and member decryption, profile key encryption, auth and expiring profile key credential presentations |
+| `tls.rs` | TLS client for Signal's hosts with libsignal's pinned roots (see [Network](#network)) |
 
 ## Engine modules
 
@@ -197,6 +227,7 @@ Every libsignal call that touches protocol state goes through [`engine/protocol/
 | [`net/provisioning.ts`](../engine/net/provisioning.ts) | Linking, device name cipher, and the initial PreKey upload |
 | [`net/receive.ts`](../engine/net/receive.ts) | Envelope decryption and `Content` → JSON frames; contact sync blobs |
 | [`net/client.ts`](../engine/net/client.ts) | `SignalClient`: device fanout, Sealed Sender, retry receipts, attachment upload and download |
+| [`net/transport/`](../engine/net/transport) | `App.signal.net`: pinned TLS, HTTP/1.1, and WebSocket for Signal's hosts |
 | [`services/storage-service.ts`](../engine/services/storage-service.ts) | Storage Service pull and writes (`mutateStorage`, `StorageWriteQueue`), with Signal-Desktop's key derivation |
 | [`services/profiles.ts`](../engine/services/profiles.ts) | Versioned profile fetch and decrypt, profile upload, avatars, username lookup, expiring profile key credentials |
 | [`services/groups-v2.ts`](../engine/services/groups-v2.ts) | zkgroup group IDs, `GroupContextV2`, group state fetch and decode, invite links |
@@ -215,7 +246,7 @@ Each account has its own IndexedDB database (`App.db`, schema version 4):
 | `attachments` | Cached decrypted media (LRU) |
 | `signal_keystore`, `signal_identities`, `signal_sessions`, `signal_prekeys`, `signal_sender_keys` | Serialized libsignal records and remote identity keys |
 
-Upgrading from a database older than version 4 discards the protocol state and asks you to link again.
+Upgrading from a database older than version 4 discards the protocol state and asks you to link again. The database is named after the account's number, which isn't known until the `ProvisionMessage` arrives, so linking switches to the new account's database (`App.db.useAccount`) before it saves any keys.
 
 ## Security model
 
@@ -224,5 +255,6 @@ Upgrading from a database older than version 4 discards the protocol state and a
 - **Sync messages** are accepted only from our own ACI. Recipients must be ACIs.
 - **Identity changes.** A contact's first identity key is trusted on first use. If it later changes, the contact drops to untrusted, and if you had verified them, sending stops until you review the new safety number.
 - **Sealed Sender** certificates are checked against Signal's production trust roots.
+- **TLS.** Connections to Signal's hosts trust only the two roots libsignal pins, not the phone's certificate store, so a CA added to the phone can't intercept them.
 - **CSP.** The privileged-app CSP forbids `eval`, `new Function`, and inline scripts, and `scripts/package.sh` fails the build if any shipped script contains them.
 - **Logs.** The debug log never records keys, passwords, or provisioning codes.

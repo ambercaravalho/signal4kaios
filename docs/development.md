@@ -19,6 +19,7 @@ Building, testing, and releasing signal4kaios. How the pieces fit is in [Archite
 | [Node.js](https://nodejs.org) | 20+ | |
 | [rustup](https://rustup.rs) | any | Installs the toolchain and `wasm32-unknown-unknown` target from [`rust-toolchain.toml`](../native/libsignal-wasm/rust-toolchain.toml) automatically |
 | [`protoc`](https://protobuf.dev/installation/) | any recent | libsignal's build scripts need it: `brew install protobuf` or `apt install protobuf-compiler` |
+| LLVM `clang` and `llvm-ar` with the wasm32 target | any recent | `ring` (rustls's crypto) compiles C for wasm32. Apple's clang lacks the target, so on macOS run `brew install llvm`; on Linux `apt install clang llvm`. [`build.sh`](../native/libsignal-wasm/build.sh) finds them and fails with this hint if they're missing |
 | [wasm-bindgen CLI](https://github.com/rustwasm/wasm-bindgen) | exactly the `wasm-bindgen` version in [`Cargo.toml`](../native/libsignal-wasm/Cargo.toml) | `cargo install wasm-bindgen-cli --version 0.2.126 --locked` |
 | [Binaryen](https://github.com/WebAssembly/binaryen) `wasm-opt` | optional | Shrinks the module when present |
 
@@ -42,6 +43,7 @@ npm run package      # bundle + checks -> dist/signal4kaios.zip and dist/signal4
 | `typecheck` | `tsc --noEmit` over `engine/` and `test/` |
 | `test` | Bundles `test/*.test.ts` and runs them with `node --test` |
 | `gen:protos` | Regenerates `engine/gen/` from `protos/` |
+| `test:live` | Runs [`test/live/`](../test/live) against Signal's real servers over the pinned TLS client: the provisioning socket, unauthenticated chat and storage requests, and a pin failure against a non-Signal host. Needs network access, so CI doesn't run it |
 | `package` | [`scripts/package.sh`](../scripts/package.sh): builds, fails on `eval(`/`new Function(` in shipped scripts, checks required files, adds `LICENSE` and `NOTICE`, and zips `app/`. `SKIP_WASM_BUILD=1` reuses an earlier `build:wasm` |
 
 `build:wasm` must run before `typecheck` and `test`: TypeScript imports the generated glue from `native/libsignal-wasm/pkg/`, and the tests load the compiled module.
@@ -53,7 +55,7 @@ The interop tests ([`test/interop.test.ts`](../test/interop.test.ts)) run our wa
 
 ## Running on a phone
 
-Install with [`scripts/install.sh`](../scripts/install.sh) (needs [adb](https://developer.android.com/tools/adb) and [`appscmd`](https://github.com/kaiostech/appscmd)) or OStore's Manual Install, and debug with Firefox at `about:debugging`. On the phone, **Settings → Debug log** is the main diagnostic. See the [KaiOS developer docs](https://developer.kaiostech.com) for the platform itself.
+Install with [`scripts/install.sh`](../scripts/install.sh) (needs [adb](https://developer.android.com/tools/adb) and [`appscmd`](https://github.com/kaiostech/appscmd)) or OStore's Manual Install, and debug with Firefox at `about:debugging`. On the phone, **Settings → Debug log** is the main diagnostic. Test on a phone that doesn't trust Signal's root certificate, since that's what users have: connections to Signal then work only through the app's pinned TLS client, and a regression shows up as close code 1015. See the [KaiOS developer docs](https://developer.kaiostech.com) for the platform itself.
 
 ## Bumping the libsignal pin
 
@@ -101,9 +103,9 @@ Looking up a phone number that isn't in your synced contacts needs Signal's cont
 | Does libsignal's `attest` crate build for `wasm32-unknown-unknown`? | Not as-is. `attest` uses BoringSSL (`boring-signal`) throughout DCAP attestation (X.509 chain and CRL checks, P-256 ECDSA over the SGX quote), so it can't be gated off without reimplementing enclave verification, which the project rules forbid. A direct build fails because `wasm32-unknown-unknown` has no C library. |
 | Does BoringSSL itself build for WebAssembly? | `libcrypto` does, with [wasi-sdk](https://github.com/WebAssembly/wasi-sdk) 25, `OPENSSL_NO_ASM`, `OPENSSL_NO_SOCK`, `OPENSSL_NO_THREADS_CORRUPT_MEMORY_AND_LEAK_SECRETS_IF_THREADED`, and a one-line CMake patch so WASI skips `find_package(Threads)`. The archive is 14 MB before LTO and imports only ordinary libc (stdio, malloc, `getentropy`, `time`), which would need a WASI shim in the wasm-bindgen glue. |
 | Does `boring-sys` link that build into our wasm module? | Not yet. With `BORING_BSSL_PATH` pointing at the WASI build, bindgen generates the BoringSSL types for `wasm32-unknown-unknown` but no function declarations, so `boring-sys` fails to compile. Fixing it means patching Signal's `boring` fork and carrying that patch across libsignal bumps. |
-| Can KaiOS open the CDSI WebSocket with the right auth? | Not with the `WebSocket` API. libsignal sends the `GET /v2/directory/auth` credentials as an HTTP `Authorization` header on the upgrade request (`rust/net/src/connect_state.rs`), and browser WebSockets can't set headers. The only route would be a privileged `TCPSocket` with TLS plus a hand-written WebSocket upgrade, which is untested on KaiOS 3 and 4. |
+| Can KaiOS open the CDSI WebSocket with the right auth? | Not with the `WebSocket` API. libsignal sends the `GET /v2/directory/auth` credentials as an HTTP `Authorization` header on the upgrade request (`rust/net/src/connect_state.rs`), and browser WebSockets can't set headers. Since v2.0.1 this is solved: the pinned TLS client in [`engine/net/transport/`](../engine/net/transport) runs a hand-written upgrade over `TCPSocket` with an `Authorization` header, and the chat socket already uses it on KaiOS 4. Attestation remains the blocker. |
 
-Revisit when any of these change: libsignal moves attestation off BoringSSL, `boring` gains a wasm32 target, or CDSI accepts credentials without a header. A follow-up would also need the `cds2` Noise handshake from `attest`, the CDSI request and token protos from `rust/net`, and a size check on the larger wasm module.
+Revisit when libsignal moves attestation off BoringSSL or `boring` gains a wasm32 target. A follow-up would also need the `cds2` Noise handshake from `attest`, the CDSI request and token protos from `rust/net`, and a size check on the larger wasm module.
 
 ## Licensing
 

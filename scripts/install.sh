@@ -31,9 +31,14 @@ if ! command -v "$APPSCMD" >/dev/null 2>&1 && [ ! -x "$APPSCMD" ]; then
   exit 1
 fi
 
-echo "adb root + forward tcp:$PORT -> debugger-socket"
 adb root
-adb forward "tcp:$PORT" localfilesystem:/data/local/debugger-socket
+# KaiOS 4.0 names the devtools socket firefox-debugger-socket; older builds use debugger-socket.
+SOCKET=/data/local/firefox-debugger-socket
+if ! adb shell "test -S $SOCKET" 2>/dev/null; then
+  SOCKET=/data/local/debugger-socket
+fi
+echo "adb forward tcp:$PORT -> $SOCKET"
+adb forward "tcp:$PORT" "localfilesystem:$SOCKET"
 
 # appscmd talks to the device over adb on its own; just point it at the app folder. (Older docs used a --host flag, but appscmd 0.3.x doesn't accept it.)
 echo "Installing app/ via appscmd"

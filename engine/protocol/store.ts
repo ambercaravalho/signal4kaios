@@ -49,6 +49,8 @@ export interface AccountCredentials {
 export interface SignalProtocolStore {
   getAccount(): Promise<AccountCredentials | null>;
   saveAccount(creds: AccountCredentials): Promise<void>;
+  /** Drop any in-memory copy of the account so the next read comes from the backing database. */
+  forgetCachedAccount(): void;
 
   /** Small JSON-safe engine bookkeeping values (PreKey ID counters and similar), never key material. */
   loadValue<T>(key: string): Promise<T | undefined>;
@@ -133,6 +135,8 @@ export class MemorySignalStore implements SignalProtocolStore {
   async saveAccount(creds: AccountCredentials): Promise<void> {
     this.account = creds;
   }
+
+  forgetCachedAccount(): void {}
 
   async loadValue<T>(key: string): Promise<T | undefined> {
     return this.values.get(key) as T | undefined;
@@ -268,6 +272,10 @@ export class IndexedDbSignalStore implements SignalProtocolStore {
       userAgent: raw.userAgent,
     };
     return this.cachedAccount;
+  }
+
+  forgetCachedAccount(): void {
+    this.cachedAccount = null;
   }
 
   async saveAccount(creds: AccountCredentials): Promise<void> {

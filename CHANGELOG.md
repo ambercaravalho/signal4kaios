@@ -2,6 +2,24 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.0.1
+
+v2.0.1 makes the app work on a stock phone. v2.0.0 couldn't link, failing with **Provisioning connection closed (code 1015)**, and it never received messages. Upgrade from v2.0.0 and link the phone again.
+
+### Fixed
+
+- **Connecting to Signal.** Signal's servers use a certificate from Signal's own authority, which KaiOS doesn't trust, so every connection failed. The app now makes its own secure connection to Signal's servers and trusts only Signal's certificates, the same ones Signal's official apps pin. It needs a new permission, **Connect securely to Signal servers**, which KaiOS grants when you install.
+- **Receiving messages.** Messages now arrive while the app is open. v2.0.0's connection never signed in to Signal, so it could send but not receive.
+- **Linking.** A new link now keeps its encryption keys after the app restarts. Adding a second account no longer overwrites the first account's keys.
+- **Battery.** v2.0.0 doubled its background wake-up alarms every 5 minutes. The app now keeps a single alarm and clears the extra ones on first launch.
+- **Speed.** A send no longer waits behind a burst of profile and avatar downloads.
+
+### Before you upgrade
+
+- **Link again if you linked v2.0.0.** On your main phone, remove the old **Signal4KaiOS** entry from **Linked devices**. Then scan the QR code in the app.
+- **Keep the app open in the background for notifications.** The new-message check that runs while the app is fully closed can't reach Signal, so it doesn't notify you. Signal still holds your messages until you open the app. See [Known limitations](https://github.com/ambercaravalho/signal4kaios/blob/main/docs/user-guide.md#known-limitations).
+- **Tested on KaiOS 4.0.** KaiOS 3.0 and 3.1 should work the same way but haven't been tested on a phone yet. If linking fails there, please [open an issue](https://github.com/ambercaravalho/signal4kaios/issues) with the debug log.
+
 ## v2.0.0
 
 signal4kaios is rebuilt as a standalone Signal app. It links to your account as a linked device, like Signal Desktop, and does all encryption on the phone with Signal's official [libsignal](https://github.com/signalapp/libsignal). You no longer need a computer, a server, Docker, or signal-cli.

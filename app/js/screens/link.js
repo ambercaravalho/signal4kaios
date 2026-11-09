@@ -125,6 +125,7 @@
         setStatus('Connecting to Signal provisioning service\u2026');
 
         var devName = (nameInput.value || '').trim() || DEFAULT_DEVICE_NAME;
+        var switchedDb = false;
         provSession = App.signal.startProvisioning(devName, {
           onStatus: function (msg) {
             setStatus(msg);
@@ -132,6 +133,11 @@
           onQrUrl: function (sgnlUri) {
             renderQrImage(sgnlUri);
             setStatus('Scan this QR code from Signal \u2192 Linked devices.');
+          },
+          beforeLinking: function (account) {
+            App.ws.stop();
+            switchedDb = true;
+            return App.db.useAccount(account.number || account.aci);
           },
           onLinked: function (creds) {
             provSession = null;
@@ -151,6 +157,12 @@
           onError: function (err) {
             provSession = null;
             setStatus((err && err.message) || 'Linking failed. Press Generate QR code to retry.', 'bad');
+            if (switchedDb) {
+              switchedDb = false;
+              App.db.useAccount(null).then(function () {
+                if (App.config.isConfigured()) App.ws.connect();
+              });
+            }
           }
         });
       }

@@ -26,6 +26,11 @@ uuid = "1.5"
 wasm-bindgen = "=0.2.126"
 js-sys = "=0.3.103"
 
+# Pinned TLS to Signal's servers (src/tls.rs). ring compiles C, so the build needs a wasm-capable clang; see build.sh.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pki-types = { version = "1", features = ["web"] }
+ring = { version = "0.17", features = ["wasm32_unknown_unknown_js"] }
+
 # Route OS randomness to crypto.getRandomValues on wasm32-unknown-unknown.
 getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
 getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }

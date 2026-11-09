@@ -21,7 +21,7 @@
 
   App.api = {
     about: function () {
-      return Promise.resolve({ version: '2.0.0', mode: 'on-device' });
+      return Promise.resolve({ version: '2.0.1', mode: 'on-device' });
     },
 
     /* Unlink this phone: wipes its local Signal state. */

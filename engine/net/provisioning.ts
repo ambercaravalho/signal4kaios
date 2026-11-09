@@ -16,9 +16,8 @@ import { libsignal } from '../protocol/libsignal';
 import { generateKyberPreKeys, generateOneTimePreKeys, generateSignedPreKey, ONE_TIME_PRE_KEY_COUNT } from '../protocol/prekeys';
 import { create, decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, fromBinary, serviceIdFrom, toBinary } from './proto';
 import type { AccountCredentials, KeyPair, SignalProtocolStore } from '../protocol/store';
-import { DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SignalHttpJsonFn } from './http';
-
-const USER_AGENT = 'Signal4KaiOS/2.0.0';
+import { DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SIGNAL_USER_AGENT, SignalHttpJsonFn } from './http';
+import { net, SOCKET_OPEN, SocketLike } from './transport';
 
 /** Signal-Desktop `getCapabilities` for a linked device without a PIN. */
 export function linkedDeviceCapabilities(hasE164: boolean): Record<string, boolean> {
@@ -81,6 +80,8 @@ export function provisionedMasterKey(prov: ProvisionMessage): Uint8Array | undef
 export interface ProvisioningCallbacks {
   onQrUrl: (sgnlUri: string) => void;
   onStatus?: (statusText: string) => void;
+  /** Runs after the ProvisionMessage is decrypted and before anything is written to the store, so the app can point the store at the linked account's database. */
+  beforeLinking?: (account: { aci: string; number: string }) => Promise<void> | void;
   onLinked: (account: AccountCredentials) => void;
   onError: (err: Error) => void;
 }
@@ -128,7 +129,7 @@ export async function finishLinking(
     profileKey: prov.profileKey.length === 32 ? prov.profileKey : undefined,
     masterKey: provisionedMasterKey(prov),
     accountEntropyPool: prov.accountEntropyPool || undefined,
-    userAgent: USER_AGENT,
+    userAgent: SIGNAL_USER_AGENT,
   };
 
   const aciSignedPreKey = await generateSignedPreKey(store, 'aci', aciIdentity);
@@ -212,7 +213,7 @@ export function startDeviceProvisioning(
   const httpBase = (serverOptions?.httpUrl || DEFAULT_SIGNAL_SERVER).replace(/\/+$/, '');
   const receiver = new libsignal.ProvisioningReceiver();
   let closed = false;
-  let sock: WebSocket | null = null;
+  let sock: SocketLike | null = null;
   let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 
   function cleanup() {
@@ -246,24 +247,23 @@ export function startDeviceProvisioning(
   }
 
   function sendWsAck(id?: bigint) {
-    if (!sock || sock.readyState !== WebSocket.OPEN || id === undefined) return;
+    if (!sock || sock.readyState !== SOCKET_OPEN || id === undefined) return;
     sock.send(encodeWebSocketResponse(id, 200, 'OK'));
   }
 
   try {
-    sock = new WebSocket(`${wsBase}/v1/websocket/provisioning/?agent=OWD`);
-    sock.binaryType = 'arraybuffer';
+    sock = net.openWebSocket(`${wsBase}/v1/websocket/provisioning/?agent=OWD`);
 
     sock.onopen = () => {
       if (callbacks.onStatus) callbacks.onStatus('Waiting for provisioning QR code\u2026');
       keepaliveTimer = setInterval(() => {
-        if (sock && sock.readyState === WebSocket.OPEN) {
+        if (sock && sock.readyState === SOCKET_OPEN) {
           sock.send(encodeWebSocketRequest('GET', '/v1/keepalive', BigInt(Date.now())));
         }
       }, 25000);
     };
 
-    sock.onmessage = (evt: MessageEvent) => {
+    sock.onmessage = (evt: { data: any }) => {
       if (closed) return;
       try {
         const wsMsg = decodeWebSocketMessage(new Uint8Array(evt.data as ArrayBuffer));
@@ -280,10 +280,20 @@ export function startDeviceProvisioning(
           const prov = fromBinary(ProvisionMessageSchema, receiver.decryptEnvelope(req.body));
           // The provisioning socket is no longer needed once the ProvisionMessage arrived.
           finish();
-          finishLinking(store, httpRequest, prov, deviceName, httpBase, callbacks.onStatus).then(
-            (creds) => callbacks.onLinked(creds),
-            (err) => callbacks.onError(err instanceof Error ? err : new Error(String(err)))
-          );
+          const account = { aci: serviceIdFrom(prov.aci, prov.aciBinary), number: prov.number || '' };
+          Promise.resolve()
+            .then(() => callbacks.beforeLinking && callbacks.beforeLinking(account))
+            .then(() => {
+              store.forgetCachedAccount();
+              return finishLinking(store, httpRequest, prov, deviceName, httpBase, callbacks.onStatus);
+            })
+            .then(
+              (creds) => callbacks.onLinked(creds),
+              (err) => {
+                store.forgetCachedAccount();
+                callbacks.onError(err instanceof Error ? err : new Error(String(err)));
+              }
+            );
         }
       } catch (e) {
         fail(e);
@@ -294,8 +304,9 @@ export function startDeviceProvisioning(
       // Handled in onclose
     };
 
-    sock.onclose = (evt: CloseEvent) => {
-      fail(new Error(`Provisioning connection closed (code ${evt.code || 1006}). Check network and try again.`));
+    sock.onclose = (evt) => {
+      const detail = evt.code === 1015 && evt.reason ? `: ${evt.reason}` : '';
+      fail(new Error(`Provisioning connection closed (code ${evt.code || 1006}${detail}). Check network and try again.`));
     };
   } catch (err) {
     fail(err);

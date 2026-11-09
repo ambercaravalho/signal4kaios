@@ -25,14 +25,23 @@ self.addEventListener('activate', function (event) {
   event.waitUntil(self.clients.claim());
 });
 
+/* Replaces any pending wake alarm, like App.platform.scheduleAlarm in the page. */
 function scheduleNextAlarm() {
   try {
     var b2g = self.navigator && self.navigator.b2g;
-    if (b2g && b2g.alarmManager && b2g.alarmManager.add) {
-      return b2g.alarmManager.add({
-        date: new Date(Date.now() + WAKE_ALARM_MS),
-        data: { type: 's4k-wake' },
-        ignoreTimezone: false
+    var am = b2g && b2g.alarmManager;
+    if (am && am.add) {
+      var cleared = (am.getAll && am.remove) ? Promise.resolve(am.getAll()).then(function (list) {
+        (list || []).forEach(function (a) {
+          if (a && a.data && a.data.type === 's4k-wake') am.remove(a.id);
+        });
+      })['catch'](function () {}) : Promise.resolve();
+      return cleared.then(function () {
+        return am.add({
+          date: new Date(Date.now() + WAKE_ALARM_MS),
+          data: { type: 's4k-wake' },
+          ignoreTimezone: false
+        });
       })['catch'](function () {});
     }
   } catch (e) { /* unavailable in worker context */ }
@@ -50,7 +59,8 @@ function readWakeCfg() {
 
 /* Probe Signal's WebSocket while the app is closed to see if any queued `/api/v1/message` envelopes
    arrive before `/api/v1/queue/empty`. Does NOT send 200 OK ACKs so the envelopes stay safely on the server
-   until the user opens the app (or the page decrypts them). */
+   until the user opens the app (or the page decrypts them).
+   Workers have no TCPSocket, so this can't use the app's pinned TLS client: it only connects on phones whose certificate store already trusts Signal's root, and otherwise fails quietly. Even then the browser WebSocket can't send the Authorization header Signal's chat server authenticates by, so the server treats the probe as anonymous and it finds nothing. */
 function probeOfflineQueue(cfg) {
   return new Promise(function (resolve) {
     if (!cfg || !cfg.wsUrl || !cfg.login || !cfg.password || typeof WebSocket === 'undefined') {
