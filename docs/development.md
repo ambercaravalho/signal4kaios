@@ -9,6 +9,7 @@ Building, testing, and releasing signal4kaios. How the pieces fit is in [Archite
 - [Regenerating protobuf codecs](#regenerating-protobuf-codecs)
 - [Releasing](#releasing)
 - [Conventions](#conventions)
+- [Phone-number lookup (CDSI): spike findings](#phone-number-lookup-cdsi-spike-findings)
 - [Licensing](#licensing)
 
 ## Prerequisites
@@ -90,6 +91,19 @@ Definition of done, also run by [CI](../.github/workflows/ci.yml):
 - [ ] `npm run package`
 
 The coding rules (app module shape, engine invariants, CSP, logging, docs style) are in [`.cursor/rules/`](../.cursor/rules).
+
+## Phone-number lookup (CDSI): spike findings
+
+Looking up a phone number that isn't in your synced contacts needs Signal's contact discovery service (CDSI), an SGX enclave reached over `wss://cdsi.signal.org/v1/<mrenclave>/discovery`. A time-boxed spike against libsignal v0.106.2 ended in **no-go for now**, so `App.api.searchNumbers` still doesn't query Signal and a chat can only start with numbers from the synced contacts.
+
+| Question | Finding |
+| --- | --- |
+| Does libsignal's `attest` crate build for `wasm32-unknown-unknown`? | Not as-is. `attest` uses BoringSSL (`boring-signal`) throughout DCAP attestation (X.509 chain and CRL checks, P-256 ECDSA over the SGX quote), so it can't be gated off without reimplementing enclave verification, which the project rules forbid. A direct build fails because `wasm32-unknown-unknown` has no C library. |
+| Does BoringSSL itself build for WebAssembly? | `libcrypto` does, with [wasi-sdk](https://github.com/WebAssembly/wasi-sdk) 25, `OPENSSL_NO_ASM`, `OPENSSL_NO_SOCK`, `OPENSSL_NO_THREADS_CORRUPT_MEMORY_AND_LEAK_SECRETS_IF_THREADED`, and a one-line CMake patch so WASI skips `find_package(Threads)`. The archive is 14 MB before LTO and imports only ordinary libc (stdio, malloc, `getentropy`, `time`), which would need a WASI shim in the wasm-bindgen glue. |
+| Does `boring-sys` link that build into our wasm module? | Not yet. With `BORING_BSSL_PATH` pointing at the WASI build, bindgen generates the BoringSSL types for `wasm32-unknown-unknown` but no function declarations, so `boring-sys` fails to compile. Fixing it means patching Signal's `boring` fork and carrying that patch across libsignal bumps. |
+| Can KaiOS open the CDSI WebSocket with the right auth? | Not with the `WebSocket` API. libsignal sends the `GET /v2/directory/auth` credentials as an HTTP `Authorization` header on the upgrade request (`rust/net/src/connect_state.rs`), and browser WebSockets can't set headers. The only route would be a privileged `TCPSocket` with TLS plus a hand-written WebSocket upgrade, which is untested on KaiOS 3 and 4. |
+
+Revisit when any of these change: libsignal moves attestation off BoringSSL, `boring` gains a wasm32 target, or CDSI accepts credentials without a header. A follow-up would also need the `cds2` Noise handshake from `attest`, the CDSI request and token protos from `rust/net`, and a size check on the larger wasm module.
 
 ## Licensing
 

@@ -161,6 +161,11 @@
       return events;
     }
 
+    if (dm.expirationTimerUpdate) {
+      events.push({ type: 'timer', convId: conv.convId, seconds: dm.expiresInSeconds || 0 });
+      return events;
+    }
+
     var attachments = dm.attachments || [];
     var body = dm.message;
     if (body == null && attachments.length === 0 && !dm.sticker) {

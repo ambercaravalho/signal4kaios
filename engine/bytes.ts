@@ -11,6 +11,11 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** Unpadded base64url, as Signal uses in URLs and username endpoints. `fromBase64` reads it back. */
+export function toWebSafeBase64(bytes: Uint8Array): string {
+  return toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 export function fromBase64(b64: string): Uint8Array {
   const clean = b64.replace(/[\r\n\s]/g, '').replace(/-/g, '+').replace(/_/g, '/');
   const padded = clean + '='.repeat((4 - (clean.length % 4)) % 4);

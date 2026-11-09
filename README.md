@@ -31,10 +31,11 @@ img3
 | **Messaging** | 1:1 and group chats, reactions, replies, edits, delete for everyone, read receipts, typing indicators, and text formatting |
 | **Disappearing messages** | Per-chat timer, a live countdown on each message, and automatic deletion |
 | **Media** | Encrypted photos, video, voice notes, and files via Signal's CDNs |
-| **Sync** | Contacts, groups, blocked list, and profiles from Signal's Storage Service and your primary device |
-| **Organization** | Multiple accounts, archived, muted, and pinned chats, and local search |
+| **Sync** | Contacts, groups, blocked list, and profiles from Signal's Storage Service and your primary device; nicknames, blocking, archive, mute, pinned chats, and your username sync back |
+| **Groups** | Rename, description, timer, members, admins, invites, permissions, group links, leave, and block, as real Groups V2 changes |
+| **Organization** | Multiple accounts, archived, muted, and pinned chats, pinned messages, a Signal username with its QR code, and local search |
 
-Some actions still only change local state on the phone; see [Known limitations](docs/user-guide.md#known-limitations).
+Looking up phone numbers outside your synced contacts isn't supported yet; see [Known limitations](docs/user-guide.md#known-limitations).
 
 ## Documentation
 

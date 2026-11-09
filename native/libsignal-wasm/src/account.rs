@@ -5,7 +5,7 @@ use std::str::FromStr;
 use libsignal_account_keys::AccountEntropyPool;
 use wasm_bindgen::prelude::*;
 
-use crate::{invalid, js_error};
+use crate::invalid;
 
 /// Derives the 32-byte master key (SVR key) from the Account Entropy Pool string sent in `ProvisionMessage`. Storage
 /// Service keys are derived from this value.
@@ -19,6 +19,6 @@ pub fn account_entropy_pool_derive_master_key(account_entropy_pool: &str) -> Res
 /// `UsernameError` for usernames that do not parse as `nickname.discriminator`.
 #[wasm_bindgen(js_name = usernameHash)]
 pub fn username_hash(username: &str) -> Result<Vec<u8>, JsValue> {
-    let parsed = usernames::Username::new(username).map_err(|e| js_error("UsernameError", e))?;
+    let parsed = usernames::Username::new(username).map_err(crate::username::username_error)?;
     Ok(parsed.hash().to_vec())
 }

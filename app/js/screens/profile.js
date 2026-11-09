@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* Edit this account's Signal profile via App.api.updateProfile (encrypted and uploaded on-device).
+  /* Edit this account's Signal profile via App.api.updateProfile (encrypted and uploaded on-device) and its username via App.api.setUsername / deleteUsername.
 
      The editors pre-fill from what was last set on this device (cached in config) and, for the name, fall back to this account's own entry in the synced contacts. A Signal profile always carries a name, so `name` is sent with every update. */
 
@@ -68,40 +68,54 @@
     }));
   }
 
-  /* Show the QR code for this account's Signal username link. If none is cached we prompt for one and cache the link App.api.setUsername returns. Username reservation is not implemented on-device yet, so that link is only built locally. */
-  function showQr() {
-    var link = App.config.usernameLink();
-    if (link) {
-      App.router.push(App.screens.qrcode.create(link));
-      return;
-    }
+  /* Reserve a Signal username. A bare nickname gets a random number (`name.42`); typing the number picks it. App.api.setUsername also saves the username and its link to config. `then(res)` runs after the editor closes. */
+  function editUsername(then) {
     App.router.push(App.screens.textinput.create({
       title: 'Signal username',
       label: 'Username',
-      placeholder: 'yourname',
+      placeholder: 'yourname or yourname.42',
       value: App.config.username(),
       submitLabel: 'Save',
       onSubmit: function (value, done) {
-        var v = value.replace(/^\s+|\s+$/g, '');
+        var v = value.replace(/^\s+|\s+$/g, '').replace(/^@/, '');
         if (!v) { done('Enter a username'); return 'async'; }
         App.api.setUsername(v).then(function (res) {
-          var newLink = res && res.username_link;
-          App.config.set({
-            username: (res && res.username) || v,
-            usernameLink: newLink || ''
-          });
           done();
-          if (newLink) {
-            App.router.push(App.screens.qrcode.create(newLink));
-          } else {
-            App.toast('Username set, but no link was returned');
-          }
+          App.toast('Username set to @' + res.username);
+          if (then) then(res);
         })['catch'](function (err) {
           done(err.message || 'Could not set username');
         });
         return 'async';
       }
     }));
+  }
+
+  function deleteUsername() {
+    App.dialog.confirm({
+      title: 'Delete username?',
+      message: 'Your username and QR code link stop working. Anyone can claim the username afterwards.',
+      confirmLabel: 'Delete',
+      onConfirm: function () {
+        App.api.deleteUsername().then(function () {
+          App.toast('Username deleted');
+        })['catch'](function (err) {
+          App.toast('Delete failed: ' + err.message);
+        });
+      }
+    });
+  }
+
+  /* Show the QR code for this account's Signal username link, asking for a username first if there is none. */
+  function showQr() {
+    var link = App.config.usernameLink();
+    if (link) {
+      App.router.push(App.screens.qrcode.create(link));
+      return;
+    }
+    editUsername(function (res) {
+      App.router.push(App.screens.qrcode.create(res.username_link));
+    });
   }
 
   App.screens.profile = {
@@ -112,26 +126,35 @@
       var name = currentName();
       var about = currentAbout();
       var uname = App.config.username();
-      return App.screens.menu.create({
-        title: 'Edit profile',
-        items: [
-          {
-            label: 'Name',
-            hint: name || 'Set your display name',
-            onSelect: function () { editName(); }
-          },
-          {
-            label: 'About',
-            hint: about || 'Set a short status',
-            onSelect: function () { editAbout(); }
-          },
-          {
-            label: 'My QR code',
-            hint: uname ? '@' + uname : 'Share your Signal link',
-            onSelect: function () { showQr(); return 'keep'; }
-          }
-        ]
-      });
+      var items = [
+        {
+          label: 'Name',
+          hint: name || 'Set your display name',
+          onSelect: function () { editName(); }
+        },
+        {
+          label: 'About',
+          hint: about || 'Set a short status',
+          onSelect: function () { editAbout(); }
+        },
+        {
+          label: 'Username',
+          hint: uname ? '@' + uname : 'Set a username',
+          onSelect: function () { editUsername(); }
+        },
+        {
+          label: 'My QR code',
+          hint: 'Share your username link',
+          onSelect: function () { showQr(); return 'keep'; }
+        }
+      ];
+      if (uname) {
+        items.push({
+          label: 'Delete username',
+          onSelect: function () { deleteUsername(); return 'keep'; }
+        });
+      }
+      return App.screens.menu.create({ title: 'Edit profile', items: items });
     }
   };
 })();

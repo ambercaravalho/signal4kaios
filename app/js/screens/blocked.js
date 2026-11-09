@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* Read-only list of everything currently blocked. The list comes from the primary device's blocked sync and Storage Service; blocking and unblocking people isn't implemented here, so it must be done from the Signal app. This screen just surfaces who is blocked. */
+  /* Everything currently blocked, from the primary device's blocked sync and Storage Service. Enter unblocks the selected person or group on all your devices; block people from their contact info and groups from Group info. */
 
   function nameOf(c) {
     var key = c.number || c.uuid;
@@ -20,11 +20,13 @@
       el.appendChild(list);
 
       var nav = new App.Nav(el, { scrollEl: list });
+      var entries = [];
 
-      function infoRow(name, hint) {
+      function infoRow(name, hint, entry) {
         var row = App.util.el('div', 'conv-row');
         row.setAttribute('nav-selectable', 'true');
-        row.setAttribute('data-id', 'x');
+        row.setAttribute('data-id', String(entries.length));
+        entries.push(entry);
         var avatarEl = App.util.el('div',
           'avatar ' + App.util.colorClass(name), App.util.initials(name));
         row.appendChild(avatarEl);
@@ -41,8 +43,13 @@
         list.appendChild(row);
       }
 
+      function softkeys() {
+        App.softkeys.set('Back', entries.length ? 'Unblock' : '', '');
+      }
+
       function render(contacts, groups) {
         list.textContent = '';
+        entries = [];
         var people = (contacts || []).filter(function (c) { return c.blocked; });
         var blockedGroups = (groups || []).filter(function (g) { return g.blocked; });
 
@@ -53,23 +60,21 @@
           if (people.length) {
             list.appendChild(App.util.sectionHeader('People'));
             people.forEach(function (c) {
-              infoRow(nameOf(c), c.number || c.uuid || '');
+              var name = nameOf(c);
+              infoRow(name, c.number || c.uuid || '', { kind: 'contact', id: c.uuid || c.number, name: name });
             });
           }
           if (blockedGroups.length) {
             list.appendChild(App.util.sectionHeader('Groups'));
             blockedGroups.forEach(function (g) {
-              infoRow(g.name || 'Group', 'Group');
+              infoRow(g.name || 'Group', 'Group', { kind: 'group', id: g.id, name: g.name || 'Group' });
             });
           }
         }
 
-        list.appendChild(App.util.el('div', 'field-note',
-          'Blocking a person, and unblocking anyone, is done in the Signal app; ' +
-          'this list is read-only. You can block a group from its Group info.'));
         nav.refresh();
         nav.select(0);
-        App.softkeys.set('Back', '', '');
+        softkeys();
       }
 
       function load() {
@@ -87,17 +92,42 @@
         });
       }
 
+      function unblock(entry) {
+        App.dialog.confirm({
+          title: 'Unblock ' + entry.name + '?',
+          message: entry.kind === 'group'
+            ? 'Group members will be able to add you to this group again.'
+            : 'They will be able to message and call you again.',
+          confirmLabel: 'Unblock',
+          onConfirm: function () {
+            var call = entry.kind === 'group' ? App.api.unblockGroup(entry.id) : App.api.unblockContact(entry.id);
+            call.then(function () {
+              App.toast('Unblocked');
+              load();
+            })['catch'](function (err) {
+              App.toast('Unblock failed: ' + err.message);
+            });
+          }
+        });
+      }
+
       return {
         el: el,
         enter: function () {
-          App.softkeys.set('Back', '', '');
+          softkeys();
           load();
         },
         resume: function () {
-          App.softkeys.set('Back', '', '');
+          softkeys();
         },
         onKey: function (evt) {
           if (nav.handleKey(evt)) return true;
+          if (evt.key === 'Enter') {
+            var sel = nav.selected();
+            var entry = sel && entries[parseInt(sel.getAttribute('data-id'), 10)];
+            if (entry) unblock(entry);
+            return true;
+          }
           return false;
         }
       };

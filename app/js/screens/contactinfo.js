@@ -1,12 +1,31 @@
 (function () {
   'use strict';
 
-  /* Actions for a direct conversation: rename the contact on this phone (App.api.updateContact, local only) and view its safety number. create(conv) */
+  /* Actions for a direct conversation: set the contact's nickname, change the disappearing-message timer, block or unblock, and view the safety number. create(conv) */
 
   App.screens.contactinfo = {
     create: function (conv) {
       var contact = App.store.contactByKey(conv.id);
       var recipient = (contact && contact.number) || conv.id;
+
+      function setBlocked(blocked) {
+        var call = blocked ? App.api.blockContact(recipient) : App.api.unblockContact(recipient);
+        call.then(function () {
+          App.toast(blocked ? 'Blocked' : 'Unblocked');
+          if (blocked) App.store.setArchived(conv.id, true);
+        })['catch'](function (err) {
+          App.toast((blocked ? 'Block' : 'Unblock') + ' failed: ' + err.message);
+        });
+      }
+
+      function block() {
+        App.dialog.confirm({
+          title: 'Block ' + (conv.name || recipient) + '?',
+          message: 'Blocked people can\u2019t call or message you. This applies to all your devices.',
+          confirmLabel: 'Block',
+          onConfirm: function () { setBlocked(true); }
+        });
+      }
 
       function rename() {
         App.router.push(App.screens.textinput.create({
@@ -18,8 +37,6 @@
           onSubmit: function (value, done) {
             if (!value) { done('Name cannot be empty'); return 'async'; }
             App.api.updateContact(recipient, value).then(function () {
-              return App.api.syncContacts()['catch'](function () { /* best effort */ });
-            }).then(function () {
               App.store.setConversationName(conv.id, value);
               return App.store.refreshDirectory()['catch'](function () { /* offline ok */ });
             }).then(function () {
@@ -73,7 +90,10 @@
                 uuid: (contact && contact.uuid) || conv.id
               }));
             }
-          }
+          },
+          contact && contact.blocked
+            ? { label: 'Unblock', hint: 'Allow messages and calls', onSelect: function () { setBlocked(false); } }
+            : { label: 'Block', hint: 'Stop messages and calls', onSelect: block }
         ]
       });
     }

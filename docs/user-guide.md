@@ -72,10 +72,12 @@ Camera support varies by device: the app uses the live camera when it can and fa
 
 ## Contacts, groups, and your profile
 
-- **Contact info**: rename the contact on this phone, set disappearing messages, and verify the [safety number](https://support.signal.org/hc/en-us/articles/360007060632) (60 digits or QR code).
-- **Group info**: members (admins are badged), description, disappearing messages, permissions, group link, and **Leave** or **Block**.
+- **Contact info**: rename the contact (saved as a Signal nickname on all your devices), set disappearing messages, **Block** or **Unblock**, and verify the [safety number](https://support.signal.org/hc/en-us/articles/360007060632) (60 digits or QR code).
+- **Group info**: members (admins are badged, invited people are marked), description, disappearing messages, and **Leave** or **Block and leave**. What you can change follows the group's permissions: rename, description, and timer; add members by number or username (people Signal can't add directly are invited); and, as an admin, remove members, cancel invites, make or remove admins, change permissions, and turn the group link on, off, or require approval, or reset it.
+- **Pinned messages**: **Pin message** in a message's options pins it for everyone in the chat, in 1:1 chats and groups.
 - **Your profile**: **Settings → Edit profile** sets your name and "about". Signal requires a name, so set it before or together with "about".
-- **Blocked**: **Settings → Privacy → Blocked** lists the people and groups blocked on your account.
+- **Username**: **Edit profile → Username** registers a Signal username. Type a nickname to get a random number (`name.42`), or type the number you want. **My QR code** shows your username link, and **Delete username** releases it.
+- **Blocked**: **Settings → Privacy → Blocked** lists the people and groups blocked on your account; select one to unblock it. Blocking syncs to your other devices, and messages from blocked people and groups are dropped.
 
 ## Settings
 
@@ -100,19 +102,10 @@ When the app is closed, a KaiOS wake alarm checks Signal's server every few minu
 
 Message history exists only on the phone, in IndexedDB, starting from when you linked. It is pruned to about **500 messages per conversation**, and viewed media is kept in a small cache. **Settings → Clear local data** wipes it.
 
-Archive, mute, and chat pins are local to this phone and don't sync to your other devices. **Settings → Debug log** records connection events and any message the app couldn't read.
+Archive, mute, and pinned chats sync with your other devices through Signal's encrypted Storage Service; Signal allows 4 pinned chats. **Settings → Debug log** records connection events and any message the app couldn't read.
 
 ## Known limitations
 
-> [!NOTE]
-> These actions only change local state on this phone today. Use the Signal app on your main phone for anything that must reach other people or devices.
-
 | Action | What happens now |
 | --- | --- |
-| Renaming a contact | Saved on this phone only |
-| Group rename, description, members, admins, permissions, and group link | Shown from the group's Signal state, but edits are saved on this phone only |
-| Leave group, block group | Marks the group left or blocked on this phone; Signal isn't told |
-| Blocking or unblocking people | Not available; the blocked list is read-only |
-| Pinning messages | Not sent |
-| Setting a username, and the username QR code | Not registered with Signal; looking up other people's usernames works |
-| Starting a chat by phone number | Works for numbers in your synced contacts; other numbers aren't looked up in Signal's directory |
+| Starting a chat by phone number | Works for numbers in your synced contacts and for Signal usernames. Other numbers aren't looked up in Signal's directory, because the phone can't run Signal's contact discovery yet ([details](development.md#phone-number-lookup-cdsi-spike-findings)). |

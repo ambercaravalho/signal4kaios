@@ -177,7 +177,9 @@
             label: conv.pinned ? 'Unpin chat' : 'Pin chat',
             hint: conv.pinned ? 'Remove from top' : 'Keep at the top',
             onSelect: function () {
-              App.store.setConvPinned(conv.id, !conv.pinned);
+              if (!App.store.setConvPinned(conv.id, !conv.pinned)) {
+                App.toast('You can pin up to 4 chats');
+              }
             }
           });
           items.push({

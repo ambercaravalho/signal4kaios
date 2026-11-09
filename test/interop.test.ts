@@ -297,6 +297,74 @@ describe('Interop: zkgroup', () => {
     assert.deepEqual(libsignal.profileKeyGetCommitment(pk, ALICE), u8(theirs.getCommitment(aci).serialize()));
     assert.deepEqual(libsignal.profileKeyDeriveAccessKey(pk), u8(theirs.deriveAccessKey()));
   });
+
+  it('expiring profile key credentials issued by the official server operations present to a group', () => {
+    const serverSecret = zk.ServerSecretParams.generate();
+    const serverPublic = u8(serverSecret.getPublicParams().serialize());
+    const pk = randomBytes(32);
+    const aci = official.Aci.fromUuid(ALICE);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const expiration = Math.floor(nowSeconds / 86400) * 86400 + 3 * 86400;
+
+    const req = libsignal.profileKeyCredentialRequest(serverPublic, ALICE, pk) as { context: Uint8Array; request: Uint8Array };
+    const response = new zk.ServerZkProfileOperations(serverSecret).issueExpiringProfileKeyCredential(
+      new zk.ProfileKeyCredentialRequest(u8(req.request)),
+      aci,
+      new zk.ProfileKey(u8(pk)).getCommitment(aci),
+      expiration
+    );
+    const received = libsignal.receiveExpiringProfileKeyCredential(serverPublic, req.context, u8(response.serialize()), nowSeconds) as {
+      credential: Uint8Array;
+      expiresAtSeconds: number;
+    };
+    assert.equal(received.expiresAtSeconds, expiration);
+    assert.throws(
+      () => libsignal.receiveExpiringProfileKeyCredential(serverPublic, req.context, u8(response.serialize()), expiration + 1),
+      (e: any) => e.name === 'ZkGroupVerificationFailure'
+    );
+
+    const mk = randomBytes(32);
+    const ours = deriveGroupV2Keys(mk);
+    const groupParams = zk.GroupSecretParams.deriveFromMasterKey(new zk.GroupMasterKey(u8(mk)));
+    const presentation = libsignal.groupProfileKeyCredentialPresentation(serverPublic, ours.secretParams, received.credential);
+    const parsed = new zk.ProfileKeyCredentialPresentation(u8(presentation));
+    new zk.ServerZkProfileOperations(serverSecret).verifyProfileKeyCredentialPresentation(groupParams.getPublicParams(), parsed);
+    const cipher = new zk.ClientZkGroupCipher(groupParams);
+    assert.equal(cipher.decryptServiceId(parsed.getUuidCiphertext()).getServiceIdString(), ALICE);
+    assert.deepEqual(u8(cipher.decryptProfileKey(parsed.getProfileKeyCiphertext(), aci).serialize()), u8(pk));
+
+    const pkCipher = libsignal.groupEncryptProfileKey(ours.secretParams, pk, ALICE);
+    assert.deepEqual(u8(cipher.decryptProfileKey(new zk.ProfileKeyCiphertext(u8(pkCipher)), aci).serialize()), u8(pk));
+    const theirCipher = cipher.encryptProfileKey(new zk.ProfileKey(u8(pk)), aci);
+    assert.deepEqual(libsignal.groupDecryptProfileKey(ours.secretParams, u8(theirCipher.serialize()), ALICE), u8(pk));
+  });
+});
+
+describe('Interop: usernames', () => {
+  it('candidates hash and prove like the official library', () => {
+    const candidates = libsignal.usernameCandidates('kaios') as string[];
+    assert.ok(candidates.length > 0);
+    for (const c of candidates.slice(0, 3)) {
+      assert.match(c, /^kaios\.\d{2,}$/);
+      official.usernames.verifyProof(u8(libsignal.usernameProof(c)), official.usernames.hash(c));
+    }
+    official.usernames.verifyProof(u8(libsignal.usernameProof('He110.01')), u8(libsignal.usernameHash('He110.01')));
+    assert.throws(() => libsignal.usernameCandidates('ab'), (e: any) => e.name === 'UsernameError' && e.message === 'NicknameTooShort');
+    assert.throws(() => libsignal.usernameCandidates('1abc'), (e: any) => e.name === 'UsernameError');
+  });
+
+  it('username links open across implementations in both directions', () => {
+    const ours = libsignal.usernameLinkCreate('kaios.42') as { entropy: Uint8Array; encryptedUsername: Uint8Array };
+    assert.equal(ours.entropy.length, 32);
+    assert.equal(official.usernames.decryptUsernameLink({ entropy: u8(ours.entropy), encryptedUsername: u8(ours.encryptedUsername) }), 'kaios.42');
+
+    const theirs = official.usernames.createUsernameLink('signal.07');
+    assert.equal(libsignal.usernameLinkDecrypt(u8(theirs.entropy), u8(theirs.encryptedUsername)), 'signal.07');
+
+    const kept = libsignal.usernameLinkCreate('kaios.43', ours.entropy) as { entropy: Uint8Array; encryptedUsername: Uint8Array };
+    assert.deepEqual(kept.entropy, ours.entropy);
+    assert.throws(() => libsignal.usernameLinkDecrypt(randomBytes(32), kept.encryptedUsername), (e: any) => e.name === 'UsernameLinkError');
+  });
 });
 
 describe('Known answers: Storage Service and profile cipher (Signal-Desktop formulas)', () => {

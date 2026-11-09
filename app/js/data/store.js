@@ -211,8 +211,7 @@
 
     conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
     conv.lastPreview = previewOf(ev);
-    // New activity brings a chat out of the archive. By default (matching Signal) muted archived chats stay archived; when the user turns that option off, muted chats unarchive like any other.
-    if (!App.config.keepMutedArchived() || !conv.muted) conv.archived = false;
+    unarchiveOnActivity(conv);
     if (ev.incoming && openConvId !== conv.id) conv.unread = (conv.unread || 0) + 1;
     if (typingMap[conv.id]) {
       delete typingMap[conv.id];
@@ -399,6 +398,14 @@
     if (changed) emit('conversations');
   }
 
+  function applyTimer(ev) {
+    var conv = convs[ev.convId];
+    if (!conv || (conv.expireTimer || 0) === ev.seconds) return;
+    conv.expireTimer = ev.seconds;
+    persistConv(conv);
+    emit('conversations');
+  }
+
   function applyEvent(ev, silent) {
     switch (ev.type) {
       case 'message': return applyMessage(ev, silent);
@@ -410,6 +417,7 @@
       case 'typing': return applyTyping(ev);
       case 'receipt': return applyReceipt(ev);
       case 'readSync': return applyReadSync(ev);
+      case 'timer': return applyTimer(ev);
       default:
         App.util.dbg('unknown event type ' + ev.type);
     }
@@ -450,6 +458,7 @@
           number: c.number || '',
           uuid: c.uuid || '',
           name: contactName(c),
+          blocked: !!c.blocked,
           hasAvatar: c.profile ? !!c.profile.has_avatar : undefined
         };
         if (!rec.id) return;
@@ -499,8 +508,7 @@
     App.db.putMessage(rec);
     conv.lastTs = rec.timestamp;
     conv.lastPreview = preview;
-    // Sending also unarchives — unless muted and "keep muted archived" is on.
-    if (!App.config.keepMutedArchived() || !conv.muted) conv.archived = false;
+    unarchiveOnActivity(conv);
     persistConv(conv);
     emit('message', rec);
     emit('conversations');
@@ -707,13 +715,63 @@
     });
   }
 
-  /* Pin/unpin a group message. Optimistically flip the flag, then call the group pin-message endpoint; revert on failure. Signal only supports pinned messages in groups. */
+  var MAX_PINNED_CHATS = 4;
+
+  function pinnedCount() {
+    return Object.keys(convs).filter(function (k) { return convs[k].pinned; }).length;
+  }
+
+  /* Publish a local archive/mute/pin change to Storage Service. Changes that came from Storage go through applyChatState instead, so they never echo back. */
+  function syncChatState(conv, fields) {
+    if (!conv.sendId || !App.signal || !App.signal.syncChatState) return;
+    var chat = { type: conv.type === 'group' ? 'group' : 'direct', sendId: conv.sendId };
+    Object.keys(fields).forEach(function (k) { chat[k] = fields[k]; });
+    App.signal.syncChatState(chat)['catch'](function (err) {
+      App.util.dbg('chat state sync failed: ' + (err && err.message));
+    });
+  }
+
+  function convForState(s) {
+    if (s.groupInternalId) return convs['g:' + s.groupInternalId];
+    return (s.uuid && convs[s.uuid]) || (s.number && convs[s.number]) || null;
+  }
+
+  /* Apply archive/mute state and the pinned-chat list pulled from Storage Service. `pinned` is null when the account record didn't change. */
+  function applyChatState(states, pinned) {
+    var changed = {};
+    (states || []).forEach(function (s) {
+      var conv = convForState(s);
+      if (!conv) return;
+      if (!!conv.archived !== s.archived) { conv.archived = s.archived; changed[conv.id] = conv; }
+      if (s.muted !== undefined && !!conv.muted !== s.muted) { conv.muted = s.muted; changed[conv.id] = conv; }
+    });
+    if (pinned) {
+      var want = {};
+      pinned.forEach(function (p) {
+        var conv = convForState(p);
+        if (conv) want[conv.id] = true;
+      });
+      Object.keys(convs).forEach(function (k) {
+        var conv = convs[k];
+        if (!!conv.pinned !== !!want[k]) { conv.pinned = !!want[k]; changed[k] = conv; }
+      });
+    }
+    var ids = Object.keys(changed);
+    ids.forEach(function (k) { persistConv(changed[k]); });
+    if (ids.length) emit('conversations');
+  }
+
+  /* New activity brings a chat out of the archive. By default (matching Signal) muted archived chats stay archived; when the user turns that option off, muted chats unarchive like any other. */
+  function unarchiveOnActivity(conv) {
+    if (!conv.archived || (App.config.keepMutedArchived() && conv.muted)) return;
+    conv.archived = false;
+    syncChatState(conv, { archived: false });
+  }
+
+  /* Pin/unpin a message for everyone in the chat. Optimistically flip the flag, then send the pin message; revert on failure. */
   function setPinned(rec, pinned) {
     var conv = convs[rec.convId];
     if (!conv || !conv.sendId) return Promise.reject(new Error('Cannot pin here'));
-    if (conv.type !== 'group') {
-      return Promise.reject(new Error('Pinning works in groups only'));
-    }
     var target = rec.incoming ? rec.author : self();
     rec.pinned = pinned;
     App.db.putMessage(rec);
@@ -873,19 +931,23 @@
 
     setArchived: function (convId, val) {
       var conv = convs[convId];
-      if (!conv) return;
+      if (!conv || !!conv.archived === !!val) return;
       conv.archived = !!val;
       persistConv(conv);
       emit('conversations');
+      syncChatState(conv, { archived: conv.archived });
     },
 
     setMuted: function (convId, val) {
       var conv = convs[convId];
-      if (!conv) return;
+      if (!conv || !!conv.muted === !!val) return;
       conv.muted = !!val;
       persistConv(conv);
       emit('conversations');
+      syncChatState(conv, { muted: conv.muted });
     },
+
+    applyChatState: applyChatState,
 
     /* Record the conversation's disappearing-message interval (seconds) so new outgoing messages inherit it. The server-side change is done by the caller via updateContact / updateGroup. */
     setConvExpire: function (convId, secs) {
@@ -900,13 +962,16 @@
       return (conv && conv.expireTimer) || 0;
     },
 
-    /* Pin/unpin a conversation to the top of the list. Local only; this does not sync to your other devices. */
+    /* Pin/unpin a conversation to the top of the list. Returns false when Signal's pinned-chat limit is already reached. */
     setConvPinned: function (convId, val) {
       var conv = convs[convId];
-      if (!conv) return;
+      if (!conv || !!conv.pinned === !!val) return true;
+      if (val && pinnedCount() >= MAX_PINNED_CHATS) return false;
       conv.pinned = !!val;
       persistConv(conv);
       emit('conversations');
+      syncChatState(conv, { pinned: conv.pinned });
+      return true;
     },
 
     setPinned: setPinned,

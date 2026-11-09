@@ -189,6 +189,18 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
     out.remoteDelete = { timestamp: num(dm.delete.targetSentTimestamp) };
   }
 
+  const pin = dm.pinMessage || dm.unpinMessage;
+  if (pin) {
+    const target = {
+      targetAuthorUuid: serviceIdFrom(undefined, pin.targetAuthorAciBinary) || undefined,
+      targetSentTimestamp: num(pin.targetSentTimestamp),
+    };
+    if (dm.pinMessage) out.pinMessage = target;
+    else out.unpinMessage = target;
+  }
+
+  if ((dm.flags & DataMessage_Flags.EXPIRATION_TIMER_UPDATE) !== 0) out.expirationTimerUpdate = true;
+
   return out;
 }
 

@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* Group info & management. Reads members/description/admins/permissions from App.api.groupDetail (Groups V2 state synced on-device) and offers rename, description, disappearing-message timer, member & admin management, permissions, group-link control, block and leave. create(conv) */
+  /* Group info & management. Reads members/description/admins/permissions from App.api.groupDetail (Groups V2 state synced on-device) and offers rename, description, disappearing-message timer, member & admin management, permissions, group-link control, block and leave. Changes go to Signal's servers, which reject anything the group's permissions don't allow, so those actions are hidden. create(conv) */
 
   function permLabel(perms, key) {
     var v = perms && perms[key];
@@ -55,17 +55,35 @@
         return false;
       }
 
+      function allowed(key) {
+        if (!detail) return false;
+        var perms = detail.permissions || {};
+        return amIAdmin() || perms[key] !== 'only-admins';
+      }
+
+      function isSelf(id) {
+        return id === App.config.number() || (!!App.config.aci() && id === App.config.aci());
+      }
+
       function memberEntries() {
-        var me = App.config.number();
         var admins = (detail && detail.admins) || [];
-        return ((detail && detail.members) || []).map(function (id) {
-          return {
-            id: id,
-            name: App.store.displayName(id),
-            self: id === me,
-            admin: admins.indexOf(id) >= 0
+        var entry = function (pending) {
+          return function (id) {
+            return {
+              id: id,
+              name: App.store.displayName(id),
+              self: isSelf(id),
+              admin: admins.indexOf(id) >= 0,
+              pending: pending
+            };
           };
-        }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+        };
+        var byName = function (a, b) { return a.name.localeCompare(b.name); };
+        var members = ((detail && detail.members) || []).map(entry(false)).sort(byName);
+        var invited = ((detail && detail.pending) || []).filter(function (id) {
+          return id.indexOf('PNI:') !== 0;
+        }).map(entry(true)).sort(byName);
+        return members.concat(invited);
       }
 
       /* Members can number in the hundreds, so they get their own scrollable screen. Enter opens per-member actions; SoftLeft adds a member. */
@@ -82,7 +100,7 @@
 
         function build() {
           entries = memberEntries();
-          mtitle.textContent = 'Members (' + entries.length + ')';
+          mtitle.textContent = 'Members (' + ((detail && detail.members) || []).length + ')';
           mlist.textContent = '';
           if (!entries.length) {
             mlist.appendChild(App.util.el('div', 'empty', 'No members.'));
@@ -100,7 +118,8 @@
               var top = App.util.el('div', 'conv-top');
               top.appendChild(App.util.el('span', 'conv-name',
                 entry.name + (entry.self ? ' (You)' : '') +
-                (entry.admin ? ' · admin' : '')));
+                (entry.admin ? ' · admin' : '') +
+                (entry.pending ? ' · invited' : '')));
               main.appendChild(top);
               row.appendChild(main);
               mlist.appendChild(row);
@@ -135,7 +154,14 @@
             });
           }
           // Admin promotion/demotion and removal are admin-only in Signal, so only offer them when we're actually an admin.
-          if (canManage) {
+          if (canManage && entry.pending) {
+            items.push({
+              label: 'Cancel invite',
+              onSelect: function () {
+                act(App.api.removeGroupMembers(groupId, [entry.id]), 'Invite cancelled');
+              }
+            });
+          } else if (canManage) {
             if (entry.admin) {
               items.push({
                 label: 'Remove admin',
@@ -174,8 +200,9 @@
             onSubmit: function (value, done) {
               var v = value.replace(/^\s+|\s+$/g, '');
               if (!v) { done('Enter a number or username'); return 'async'; }
-              App.api.addGroupMembers(groupId, [v]).then(function () {
-                App.toast('Member added');
+              App.api.addGroupMembers(groupId, [v]).then(function (state) {
+                var invited = state && (state.pending || []).length > ((detail && detail.pending) || []).length;
+                App.toast(invited ? 'Invited to the group' : 'Member added');
                 done();
                 return reload();
               })['catch'](function (err) {
@@ -190,7 +217,7 @@
           var sel = mnav.selected();
           var entry = sel && entries[parseInt(sel.getAttribute('data-id'), 10)];
           var hasOpts = entry && (!entry.self || amIAdmin());
-          App.softkeys.set('Back', hasOpts ? 'Options' : '', 'Add');
+          App.softkeys.set('Back', hasOpts ? 'Options' : '', allowed('add_members') ? 'Add' : '');
         }
 
         return {
@@ -199,7 +226,10 @@
           resume: function () { softkeys(); },
           onKey: function (evt) {
             if (mnav.handleKey(evt)) { softkeys(); return true; }
-            if (evt.key === 'SoftRight') { addMember(); return true; }
+            if (evt.key === 'SoftRight') {
+              if (allowed('add_members')) addMember();
+              return true;
+            }
             if (evt.key === 'Enter') {
               var sel = mnav.selected();
               if (!sel) return true;
@@ -242,13 +272,15 @@
             '__members');
         }
 
-        list.appendChild(App.util.sectionHeader('Manage'));
-        action('Rename group', detail ? (detail.name || conv.name) : '', '__rename');
-        action('Edit description', '', '__desc');
-        action('Disappearing messages',
-          App.util.expireLabel(App.store.convExpire(conv.id)), '__expire');
+        if (allowed('edit_group')) {
+          list.appendChild(App.util.sectionHeader('Manage'));
+          action('Rename group', detail.name || conv.name, '__rename');
+          action('Edit description', '', '__desc');
+          action('Disappearing messages',
+            App.util.expireLabel(App.store.convExpire(conv.id)), '__expire');
+        }
 
-        if (detail) {
+        if (detail && amIAdmin()) {
           list.appendChild(App.util.sectionHeader('Permissions'));
           action('Who can add members',
             permLabel(detail.permissions, 'add_members'), '__perm_add');
@@ -256,15 +288,21 @@
             permLabel(detail.permissions, 'edit_group'), '__perm_edit');
           action('Who can send messages',
             permLabel(detail.permissions, 'send_messages'), '__perm_send');
-          action('Group link', detail.invite_link ? 'On' : 'Off', '__link');
-
-          list.appendChild(App.util.sectionHeader('Danger zone'));
-          action('Block group', 'Stop receiving messages', '__block');
+          action('Group link', linkLabel(detail.link_mode), '__link');
         }
+
+        list.appendChild(App.util.sectionHeader('Danger zone'));
+        if (detail) action('Block group', 'Block and leave', '__block');
         action('Leave group', 'Quit this group', '__leave');
 
         nav.refresh();
-        nav.selectById('__rename');
+        nav.select(0);
+      }
+
+      function linkLabel(mode) {
+        if (mode === 'enabled') return 'On';
+        if (mode === 'enabled-with-approval') return 'On, admin approval';
+        return 'Off';
       }
 
       function load() {
@@ -375,11 +413,24 @@
 
       function groupLinkMenu() {
         var items = [];
+        var mode = (detail && detail.link_mode) || 'disabled';
         if (detail && detail.invite_link) {
           items.push({
             label: 'Open invite link',
             hint: 'Share this group',
             onSelect: function () { App.util.openUrl(detail.invite_link); }
+          });
+          items.push({
+            label: 'Reset link',
+            hint: 'The old link stops working',
+            onSelect: function () {
+              App.api.updateGroup(groupId, { group_link: mode, reset_link: true }).then(function () {
+                App.toast('Group link reset');
+                return reloadDetail();
+              })['catch'](function (err) {
+                App.toast('Update failed: ' + err.message);
+              });
+            }
           });
         }
         [
@@ -389,6 +440,7 @@
         ].forEach(function (o) {
           items.push({
             label: o.label,
+            hint: o.v === mode ? 'Current' : '',
             onSelect: function () {
               App.api.updateGroup(groupId, { group_link: o.v }).then(function () {
                 App.toast('Group link: ' + o.label);
@@ -404,8 +456,8 @@
 
       function blockGroup() {
         App.dialog.confirm({
-          title: 'Block group?',
-          message: 'You will stop receiving messages from this group.',
+          title: 'Block and leave?',
+          message: 'You will leave this group and stop receiving its messages, on all your devices.',
           confirmLabel: 'Block',
           onConfirm: function () {
             App.api.blockGroup(groupId).then(function () {

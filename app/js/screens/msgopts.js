@@ -81,8 +81,7 @@
             onSelect: function () { callbacks.copy(rec); }
           });
         }
-        // Pinned messages are a group-only Signal feature; they sync to the whole group via the pin-message endpoint.
-        if (conv && conv.type === 'group') {
+        if (conv && conv.sendId) {
           if (rec.pinned) {
             actionGrp.push({
               label: 'Unpin message',

@@ -20,6 +20,7 @@ mod provisioning;
 mod sealed;
 mod session;
 mod store;
+mod username;
 mod zk;
 
 pub const LIBSIGNAL_VERSION: &str = "0.106.2";

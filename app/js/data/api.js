@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* App-facing Signal API (`App.api`): sends, profile, attachments, and directory reads go through `App.signal` (on-device libsignal) and IndexedDB (`App.db`). Some group, contact, pin, and username edits are still local-only stubs; see docs/user-guide.md "Known limitations". */
+  /* App-facing Signal API (`App.api`): sends, profile, attachments, and directory reads go through `App.signal` (on-device libsignal) and IndexedDB (`App.db`). Contact, group, pin, and username edits reach the Signal servers and the account's other devices. */
 
   function loadSyncedContacts() {
     return App.db.kvGet('syncedContacts').then(function (list) {
@@ -17,10 +17,6 @@
     return App.db.kvGet('syncedGroups').then(function (list) {
       return list || [];
     })['catch'](function () { return []; });
-  }
-
-  function saveSyncedGroups(list) {
-    return App.db.kvSet('syncedGroups', list || []);
   }
 
   App.api = {
@@ -112,28 +108,49 @@
       return App.signal.updateOwnProfile(body);
     },
 
-    /* Rename a saved contact and/or set its disappearing-message timer locally. */
+    /* Rename a contact (a Signal nickname, synced to your devices through Storage Service) and/or change the chat's disappearing-message timer (sent to the contact). */
     updateContact: function (recipient, name, expirationInSeconds) {
-      return loadSyncedContacts().then(function (list) {
-        var found = false;
-        list.forEach(function (c) {
-          if (c.number === recipient || c.uuid === recipient) {
-            if (name != null) c.name = name;
-            if (expirationInSeconds != null) c.expireTimer = expirationInSeconds;
-            found = true;
-          }
-        });
-        if (!found) {
-          list.push({
-            uuid: recipient.indexOf('+') === 0 ? '' : recipient,
-            number: recipient.indexOf('+') === 0 ? recipient : '',
-            name: name || recipient,
-            blocked: false,
-            expireTimer: expirationInSeconds || 0
+      var work = Promise.resolve();
+      if (name != null) {
+        work = work.then(function () {
+          return loadSyncedContacts();
+        }).then(function (list) {
+          var found = false;
+          list.forEach(function (c) {
+            if (c.number === recipient || c.uuid === recipient) {
+              c.name = name;
+              found = true;
+            }
           });
-        }
-        return saveSyncedContacts(list);
-      });
+          if (!found) {
+            list.push({
+              uuid: recipient.indexOf('+') === 0 ? '' : recipient,
+              number: recipient.indexOf('+') === 0 ? recipient : '',
+              name: name || recipient,
+              blocked: false,
+              expireTimer: 0
+            });
+          }
+          return saveSyncedContacts(list);
+        }).then(function () {
+          return App.signal.setContactNickname(recipient, name);
+        });
+      }
+      if (expirationInSeconds != null) {
+        work = work.then(function () {
+          return App.signal.setDirectExpireTimer(recipient, expirationInSeconds);
+        });
+      }
+      return work;
+    },
+
+    /* Block or unblock a person on all your devices. */
+    blockContact: function (recipient) {
+      return App.signal.setContactBlocked(recipient, true);
+    },
+
+    unblockContact: function (recipient) {
+      return App.signal.setContactBlocked(recipient, false);
     },
 
     /* Request contact & group sync from the primary device. */
@@ -157,104 +174,63 @@
           internal_id: internalId,
           name: 'Group',
           members: [],
-          admins: []
+          admins: [],
+          pending: []
         };
       });
     },
 
-    /* Update group metadata locally. */
+    /* Change group name, description, timer (expiration_time), permissions, or group link (group_link: disabled | enabled | enabled-with-approval, reset_link: true for a new link) on Signal's servers; members get the update. */
     updateGroup: function (groupId, body) {
-      body = body || {};
-      var internalId = String(groupId || '').replace(/^group\./, '');
-      return loadSyncedGroups().then(function (list) {
-        list.forEach(function (g) {
-          if (g.id === groupId || g.internal_id === internalId) {
-            if (body.name != null) g.name = body.name;
-            if (body.description != null) g.description = body.description;
-            if (body.expiration_time != null) g.expireTimer = body.expiration_time;
-            if (body.permissions) g.permissions = body.permissions;
-            if (body.group_link) g.invite_link = body.group_link;
-          }
-        });
-        return saveSyncedGroups(list);
-      });
+      return App.signal.updateGroup(groupId, body || {});
     },
 
     quitGroup: function (groupId) {
-      var internalId = String(groupId || '').replace(/^group\./, '');
-      return loadSyncedGroups().then(function (list) {
-        var filtered = list.filter(function (g) {
-          return g.id !== groupId && g.internal_id !== internalId;
-        });
-        return saveSyncedGroups(filtered);
-      });
+      return App.signal.leaveGroup(groupId);
     },
 
     removeGroupMembers: function (groupId, members) {
-      var removeSet = [].concat(members);
-      return App.api.groupDetail(groupId).then(function (g) {
-        g.members = (g.members || []).filter(function (m) {
-          return removeSet.indexOf(m) < 0;
-        });
-        return App.api.updateGroup(groupId, g);
-      });
+      return App.signal.removeGroupMembers(groupId, [].concat(members));
     },
 
+    /* Members are numbers, usernames, or ACIs; anyone who can't be added directly is invited. */
     addGroupMembers: function (groupId, members) {
-      var addList = [].concat(members);
-      return App.api.groupDetail(groupId).then(function (g) {
-        var cur = g.members || [];
-        addList.forEach(function (m) {
-          if (cur.indexOf(m) < 0) cur.push(m);
-        });
-        g.members = cur;
-        return App.api.updateGroup(groupId, g);
-      });
+      return App.signal.addGroupMembers(groupId, [].concat(members));
     },
 
     addGroupAdmins: function (groupId, admins) {
-      var addList = [].concat(admins);
-      return App.api.groupDetail(groupId).then(function (g) {
-        var cur = g.admins || [];
-        addList.forEach(function (a) {
-          if (cur.indexOf(a) < 0) cur.push(a);
-        });
-        g.admins = cur;
-        return App.api.updateGroup(groupId, g);
-      });
+      return App.signal.setGroupAdmins(groupId, [].concat(admins), true);
     },
 
     removeGroupAdmins: function (groupId, admins) {
-      var rem = [].concat(admins);
-      return App.api.groupDetail(groupId).then(function (g) {
-        g.admins = (g.admins || []).filter(function (a) {
-          return rem.indexOf(a) < 0;
-        });
-        return App.api.updateGroup(groupId, g);
-      });
+      return App.signal.setGroupAdmins(groupId, [].concat(admins), false);
     },
 
+    /* Block and leave, on all your devices. */
     blockGroup: function (groupId) {
-      var internalId = String(groupId || '').replace(/^group\./, '');
-      return loadSyncedGroups().then(function (list) {
-        list.forEach(function (g) {
-          if (g.id === groupId || g.internal_id === internalId) g.blocked = true;
-        });
-        return saveSyncedGroups(list);
-      });
+      return App.signal.setGroupBlocked(groupId, true);
     },
 
-    pinMessage: function () {
-      return Promise.resolve();
+    unblockGroup: function (groupId) {
+      return App.signal.setGroupBlocked(groupId, false);
     },
 
-    unpinMessage: function () {
-      return Promise.resolve();
+    /* Pin or unpin a message for everyone in a 1:1 or group chat. */
+    pinMessage: function (recipient, targetAuthor, targetTimestamp) {
+      return App.signal.sendPin(recipient, targetAuthor, targetTimestamp, true);
     },
 
+    unpinMessage: function (recipient, targetAuthor, targetTimestamp) {
+      return App.signal.sendPin(recipient, targetAuthor, targetTimestamp, false);
+    },
+
+    /* Reserve and confirm a username; resolves to { username, username_link }. */
     setUsername: function (username) {
-      var link = 'https://signal.me/#eu/' + encodeURIComponent(username);
-      return Promise.resolve({ username: username, username_link: link });
+      return App.signal.setUsername(username);
+    },
+
+    deleteUsername: function () {
+      return App.signal.deleteUsername();
     }
   };
 })();

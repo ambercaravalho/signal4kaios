@@ -6,6 +6,8 @@ How signal4kaios turns a KaiOS phone into a Signal linked device. For building a
 - [Repository layout](#repository-layout)
 - [Receiving](#receiving)
 - [Sending](#sending)
+- [Storage Service writes](#storage-service-writes)
+- [Group changes](#group-changes)
 - [Linking](#linking)
 - [The libsignal wrapper](#the-libsignal-wrapper)
 - [Engine modules](#engine-modules)
@@ -99,6 +101,38 @@ A frame is acknowledged only after it has been decrypted and stored, so a crash 
 
 Group messages go to each member individually.
 
+Pins (`DataMessage.pinMessage` / `unpinMessage`), disappearing-timer updates in 1:1 chats, and the full blocked list (`SyncMessage.Blocked`) use the same send path. Typing indicators and read receipts are not sent to blocked people, and content from blocked people and groups is dropped on receipt but still acknowledged.
+
+## Storage Service writes
+
+Contact nicknames, blocking, archive, mute, pinned chats, and the username are account state that Signal keeps in the encrypted [Storage Service](https://github.com/signalapp/Signal-Desktop/blob/main/protos/SignalStorage.proto). Edits go through `mutateStorage` in [`services/storage-service.ts`](../engine/services/storage-service.ts), following Signal-Desktop's `storage.ts`:
+
+```mermaid
+sequenceDiagram
+  participant B as App.signal
+  participant Q as StorageWriteQueue
+  participant SS as storage.signal.org
+  participant D as Your other devices
+  B->>Q: enqueue(mutations)
+  Note over Q: waits 1.5 s and batches
+  Q->>SS: GET /v1/storage/manifest
+  Q->>SS: PUT /v1/storage/read (only keys not cached)
+  Q->>Q: apply mutations, re-encrypt changed records under new random keys
+  Q->>SS: PUT /v1/storage (WriteOperation, manifest version + 1)
+  SS-->>Q: 409 if another device wrote first: re-read and retry (3 attempts)
+  Q->>D: SyncMessage.FetchLatest(STORAGE_MANIFEST)
+```
+
+The new manifest keeps every identifier it doesn't touch, including record types this app doesn't read, and unknown protobuf fields survive the re-encode. Each pull marks the records another device wrote since the previous pull as `changed`. Archive, mute, and pinned-chat state is applied only from those records, and `App.store.applyChatState` applies it without writing it back, so local and remote changes don't overwrite each other in a loop.
+
+The username itself is claimed on the chat server first: [`services/usernames.ts`](../engine/services/usernames.ts) reserves one of libsignal's candidates (`PUT /v1/accounts/username_hash/reserve`) and confirms it with a zero-knowledge proof and an encrypted username link (`PUT /v1/accounts/username_hash/confirm`). Only then are the username and link written to the account record. The QR code is `https://signal.me/#eu/` followed by the link's entropy and server ID.
+
+## Group changes
+
+Group edits are Groups V2 changes, built and signed as in Signal-Desktop's `groups.ts`. [`services/group-changes.ts`](../engine/services/group-changes.ts) fetches the group, builds `GroupChange.Actions` from a snapshot of the decrypted state (title, description, timer, access control, invite link, members, roles, invites, leave), and sends `PATCH /v2/groups/` at revision + 1 with a zkgroup auth credential presentation. A `409` rebuilds the change once against the new state; a `403` becomes "you don't have permission".
+
+The server returns the signed `GroupChange`, which the bridge sends as `DataMessage.groupV2 { masterKey, revision, groupChange }` to everyone in the group before and after the change, plus a sync copy to your other devices. Adding someone joins them directly when their profile key credential can be fetched (`GET /v1/profile/{aci}/{version}/{request}?credentialType=expiringProfileKey`), and invites them otherwise.
+
 ## Linking
 
 ```mermaid
@@ -146,13 +180,14 @@ Every libsignal call that touches protocol state goes through [`engine/protocol/
 | `fingerprint.rs` | Safety numbers and scannable fingerprints |
 | `provisioning.rs` | The linking cipher |
 | `account.rs` | Account Entropy Pool to master key, and username hashes |
-| `zk.rs` | Profile key version, commitment, and access key; Groups V2 params, blob and member decryption, and auth credential presentations |
+| `username.rs` | Username candidates, zero-knowledge proofs, and encrypted username links |
+| `zk.rs` | Profile key version, commitment, and access key; Groups V2 params, blob and member decryption, profile key encryption, auth and expiring profile key credential presentations |
 
 ## Engine modules
 
 | File | Responsibility |
 | --- | --- |
-| [`index.ts`](../engine/index.ts) | The `App.signal` bridge: recipients, sync messages, sends, groups, Storage Service refresh |
+| [`index.ts`](../engine/index.ts) | The `App.signal` bridge: recipients, sync messages, sends, blocking, group changes, pins, usernames, chat-list state, Storage Service refresh |
 | [`protocol/libsignal.ts`](../engine/protocol/libsignal.ts) | Loads the wasm module (`ready()`) |
 | [`protocol/protocol.ts`](../engine/protocol/protocol.ts) | Hydrate, call, and flush around each libsignal operation; trust policy; Sealed Sender trust roots |
 | [`protocol/prekeys.ts`](../engine/protocol/prekeys.ts) | Signed, last-resort Kyber, and one-time PreKeys |
@@ -162,9 +197,11 @@ Every libsignal call that touches protocol state goes through [`engine/protocol/
 | [`net/provisioning.ts`](../engine/net/provisioning.ts) | Linking, device name cipher, and the initial PreKey upload |
 | [`net/receive.ts`](../engine/net/receive.ts) | Envelope decryption and `Content` → JSON frames; contact sync blobs |
 | [`net/client.ts`](../engine/net/client.ts) | `SignalClient`: device fanout, Sealed Sender, retry receipts, attachment upload and download |
-| [`services/storage-service.ts`](../engine/services/storage-service.ts) | Read-only Storage Service sync, with Signal-Desktop's key derivation |
-| [`services/profiles.ts`](../engine/services/profiles.ts) | Versioned profile fetch and decrypt, profile upload, avatars, username lookup |
-| [`services/groups-v2.ts`](../engine/services/groups-v2.ts) | zkgroup group IDs, `GroupContextV2`, and group state fetch |
+| [`services/storage-service.ts`](../engine/services/storage-service.ts) | Storage Service pull and writes (`mutateStorage`, `StorageWriteQueue`), with Signal-Desktop's key derivation |
+| [`services/profiles.ts`](../engine/services/profiles.ts) | Versioned profile fetch and decrypt, profile upload, avatars, username lookup, expiring profile key credentials |
+| [`services/groups-v2.ts`](../engine/services/groups-v2.ts) | zkgroup group IDs, `GroupContextV2`, group state fetch and decode, invite links |
+| [`services/group-changes.ts`](../engine/services/group-changes.ts) | Groups V2 change builders and `applyGroupChange` |
+| [`services/usernames.ts`](../engine/services/usernames.ts) | Username reserve, confirm, delete, and link URLs |
 | [`crypto/`](../engine/crypto) | WebCrypto AES and [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) HMAC/HKDF for attachments, profiles, and storage |
 
 ## Storage

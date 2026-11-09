@@ -1,12 +1,14 @@
-//! zkgroup: profile keys and Groups V2 (group secret params, blob and member decryption, auth credential
-//! presentations for `storage.signal.org`).
+//! zkgroup: profile keys, expiring profile key credentials, and Groups V2 (group secret params, blob, member, and
+//! profile key encryption, auth and profile key credential presentations for `storage.signal.org`).
 
 use libsignal_protocol::{Aci, Pni, ServiceId};
 use uuid::Uuid;
 use wasm_bindgen::prelude::*;
 use zkgroup::auth::AuthCredentialWithPniResponse;
 use zkgroup::groups::{GroupMasterKey, GroupSecretParams, ProfileKeyCiphertext, UuidCiphertext};
-use zkgroup::profiles::ProfileKey;
+use zkgroup::profiles::{
+    ExpiringProfileKeyCredential, ExpiringProfileKeyCredentialResponse, ProfileKey, ProfileKeyCredentialRequestContext,
+};
 use zkgroup::{ServerPublicParams, Timestamp};
 
 use crate::{Obj, invalid, js_error, random_32};
@@ -112,6 +114,75 @@ pub fn group_decrypt_profile_key(
         .decrypt_profile_key(ciphertext, aci(aci_uuid)?)
         .map_err(|_| verification_failed())?;
     Ok(key.get_bytes().to_vec())
+}
+
+/// Encrypts a member's 32-byte profile key for a group (`Member.profileKey`).
+#[wasm_bindgen(js_name = groupEncryptProfileKey)]
+pub fn group_encrypt_profile_key(
+    secret_params_bytes: &[u8],
+    profile_key_bytes: &[u8],
+    aci_uuid: &str,
+) -> Result<Vec<u8>, JsValue> {
+    let ciphertext = secret_params(secret_params_bytes)?.encrypt_profile_key(profile_key(profile_key_bytes)?, aci(aci_uuid)?);
+    Ok(zkgroup::serialize(&ciphertext))
+}
+
+fn server_params(serialized: &[u8]) -> Result<ServerPublicParams, JsValue> {
+    zkgroup::deserialize(serialized).map_err(|e| invalid(e))
+}
+
+/// `{ context, request }` for one user's expiring profile key credential. `request` goes to
+/// `GET /v1/profile/{aci}/{version}/{hex(request)}?credentialType=expiringProfileKey`; keep `context` to receive the response.
+#[wasm_bindgen(js_name = profileKeyCredentialRequest)]
+pub fn profile_key_credential_request(
+    server_public_params: &[u8],
+    aci_uuid: &str,
+    profile_key_bytes: &[u8],
+) -> Result<JsValue, JsValue> {
+    let context = server_params(server_public_params)?.create_profile_key_credential_request_context(
+        random_32(),
+        aci(aci_uuid)?,
+        profile_key(profile_key_bytes)?,
+    );
+    Ok(Obj::new()
+        .bytes("context", &zkgroup::serialize(&context))
+        .bytes("request", &zkgroup::serialize(&context.get_request()))
+        .build())
+}
+
+/// Verifies the server's `ExpiringProfileKeyCredentialResponse` and returns `{ credential, expiresAtSeconds }`.
+#[wasm_bindgen(js_name = receiveExpiringProfileKeyCredential)]
+pub fn receive_expiring_profile_key_credential(
+    server_public_params: &[u8],
+    context: &[u8],
+    response: &[u8],
+    now_seconds: f64,
+) -> Result<JsValue, JsValue> {
+    let context: ProfileKeyCredentialRequestContext = zkgroup::deserialize(context).map_err(|e| invalid(e))?;
+    let response: ExpiringProfileKeyCredentialResponse = zkgroup::deserialize(response).map_err(|e| invalid(e))?;
+    let credential = server_params(server_public_params)?
+        .receive_expiring_profile_key_credential(&context, &response, Timestamp::from_epoch_seconds(now_seconds.max(0.0) as u64))
+        .map_err(|_| verification_failed())?;
+    Ok(Obj::new()
+        .bytes("credential", &zkgroup::serialize(&credential))
+        .set("expiresAtSeconds", credential.get_expiration_time().epoch_seconds() as f64)
+        .build())
+}
+
+/// Presents an expiring profile key credential to one group (`Member.presentation` when adding a member).
+#[wasm_bindgen(js_name = groupProfileKeyCredentialPresentation)]
+pub fn group_profile_key_credential_presentation(
+    server_public_params: &[u8],
+    secret_params_bytes: &[u8],
+    credential: &[u8],
+) -> Result<Vec<u8>, JsValue> {
+    let credential: ExpiringProfileKeyCredential = zkgroup::deserialize(credential).map_err(|e| invalid(e))?;
+    let presentation = server_params(server_public_params)?.create_expiring_profile_key_credential_presentation(
+        random_32(),
+        secret_params(secret_params_bytes)?,
+        credential,
+    );
+    Ok(zkgroup::serialize(&presentation))
 }
 
 /// Receives an `AuthCredentialWithPniResponse` from `GET /v1/certificate/auth/group` and presents it for one group.

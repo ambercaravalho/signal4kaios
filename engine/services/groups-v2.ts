@@ -1,16 +1,18 @@
-/* Signal Groups V2 via zkgroup (libsignal wasm): group identifiers, encrypted group state from the storage server, and GroupContextV2 for outgoing messages. Follows Signal-Desktop's groups.preload.ts and WebAPI getGroup/getGroupCredentials. */
+/* Signal Groups V2 via zkgroup (libsignal wasm): group identifiers, encrypted group state from the storage server, invite links, and GroupContextV2 for outgoing messages. Follows Signal-Desktop's groups.preload.ts and WebAPI getGroup/getGroupCredentials. Changes live in group-changes.ts. */
 
-import { fromBase64, toBase64, toHex } from '../bytes';
+import { fromBase64, toBase64, toHex, toWebSafeBase64 } from '../bytes';
 import {
   AccessControl_AccessRequired,
+  Group,
   GroupAttributeBlobSchema,
+  GroupInviteLinkSchema,
   GroupResponseSchema,
   Member_Role,
 } from '../gen/Groups_pb';
 import type { GroupContextV2 } from '../gen/SignalService_pb';
 import { GroupContextV2Schema } from '../gen/SignalService_pb';
 import { libsignal } from '../protocol/libsignal';
-import { create, fromBinary } from '../net/proto';
+import { create, fromBinary, toBinary } from '../net/proto';
 import { DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
 import type { SignalProtocolStore } from '../protocol/store';
 
@@ -38,6 +40,8 @@ export interface GroupV2Metadata {
   description?: string;
   members: string[];
   admins: string[];
+  /** Invited users who haven't accepted yet (service IDs). */
+  pending: string[];
   expireTimer: number;
   blocked: boolean;
   archived?: boolean;
@@ -46,7 +50,11 @@ export interface GroupV2Metadata {
     edit_group: 'every-member' | 'only-admins';
     send_messages: 'every-member' | 'only-admins';
   };
+  link_mode: GroupLinkMode;
+  invite_link: string;
 }
+
+export type GroupLinkMode = 'disabled' | 'enabled' | 'enabled-with-approval';
 
 const derivedCache = new Map<string, DerivedGroupV2Keys>();
 
@@ -137,7 +145,121 @@ async function groupCredentialForToday(store: SignalProtocolStore, httpJson: Sig
 }
 
 /**
- * Fetch and decrypt the current state of a group from `GET /v2/groups` on the storage server, authorized with a zkgroup AuthCredentialWithPni presentation.
+ * Storage server headers for one group: Basic `hex(publicParams):hex(presentation)` with a zkgroup AuthCredentialWithPni presentation.
+ */
+export async function groupAuthHeaders(
+  store: SignalProtocolStore,
+  httpJson: SignalHttpJsonFn,
+  keys: DerivedGroupV2Keys,
+  serverUrl: string,
+  serverPublicParams = SERVER_PUBLIC_PARAMS
+): Promise<Record<string, string>> {
+  const acc = await store.getAccount();
+  if (!acc || !acc.pni) throw new Error('Groups need a linked account with a PNI');
+  const cred = await groupCredentialForToday(store, httpJson, serverUrl);
+  const presentation = libsignal.groupAuthCredentialPresentation(
+    serverPublicParams,
+    acc.aci,
+    acc.pni.replace(/^PNI:/, ''),
+    cred.redemptionTime,
+    fromBase64(cred.credential),
+    keys.secretParams
+  );
+  const basic = btoa(`${toHex(keys.publicParams)}:${toHex(presentation)}`);
+  return { Authorization: 'Basic ' + basic, 'Content-Type': 'application/x-protobuf' };
+}
+
+/** The current encrypted group from `GET /v2/groups/` on the storage server. */
+export async function fetchGroup(
+  store: SignalProtocolStore,
+  httpJson: SignalHttpJsonFn,
+  httpBinary: SignalHttpBinaryFn,
+  masterKey: Uint8Array,
+  serverUrl: string,
+  storageUrl = DEFAULT_STORAGE_SERVER,
+  serverPublicParams = SERVER_PUBLIC_PARAMS
+): Promise<{ keys: DerivedGroupV2Keys; group: Group; headers: Record<string, string> }> {
+  const keys = deriveGroupV2Keys(masterKey);
+  const headers = await groupAuthHeaders(store, httpJson, keys, serverUrl, serverPublicParams);
+  const bytes = await httpBinary('GET', `${storageUrl}/v2/groups/`, null, headers, 20000);
+  const group = fromBinary(GroupResponseSchema, bytes).group;
+  if (!group) throw new Error('Storage server returned no group');
+  return { keys, group, headers };
+}
+
+/** `https://signal.group/#…` invite link, built like Signal-Desktop's buildGroupLink. */
+export function groupInviteLink(masterKey: Uint8Array, inviteLinkPassword: Uint8Array): string {
+  const bytes = toBinary(
+    GroupInviteLinkSchema,
+    create(GroupInviteLinkSchema, { contents: { case: 'contentsV1', value: { groupMasterKey: masterKey, inviteLinkPassword } } })
+  );
+  return 'https://signal.group/#' + toWebSafeBase64(bytes);
+}
+
+/** Decrypted service IDs of a member list; entries that fail to decrypt are skipped. */
+export function decryptMemberIds(keys: DerivedGroupV2Keys, userIds: Uint8Array[]): string[] {
+  const out: string[] = [];
+  for (const u of userIds) {
+    try {
+      out.push(libsignal.groupDecryptServiceId(keys.secretParams, u));
+    } catch {
+      // not decryptable with this group's keys
+    }
+  }
+  return out;
+}
+
+/** Decrypt a group into the record shape the app keeps in `syncedGroups`. */
+export function decodeGroupState(keys: DerivedGroupV2Keys, group: Group): GroupV2Metadata {
+  const title = decryptAttribute(keys.secretParams, group.title);
+  const description = decryptAttribute(keys.secretParams, group.description);
+  const timer = decryptAttribute(keys.secretParams, group.disappearingMessagesTimer);
+
+  const members: string[] = [];
+  const admins: string[] = [];
+  for (const m of group.members) {
+    const [id] = decryptMemberIds(keys, [m.userId]);
+    if (!id) continue;
+    members.push(id);
+    if (m.role === Member_Role.ADMINISTRATOR) admins.push(id);
+  }
+  const pending = decryptMemberIds(
+    keys,
+    group.membersPendingProfileKey.map((p) => (p.member ? p.member.userId : new Uint8Array(0)))
+  );
+
+  const access = group.accessControl;
+  const adminOnly = (v: AccessControl_AccessRequired | undefined) =>
+    v === AccessControl_AccessRequired.ADMINISTRATOR ? 'only-admins' : 'every-member';
+  const linkAccess = access ? access.addFromInviteLink : AccessControl_AccessRequired.UNSATISFIABLE;
+  const linkOn =
+    group.inviteLinkPassword.length > 0 &&
+    (linkAccess === AccessControl_AccessRequired.ANY || linkAccess === AccessControl_AccessRequired.ADMINISTRATOR);
+
+  return {
+    id: keys.sendId,
+    internal_id: keys.internalId,
+    masterKey: toBase64(keys.masterKey),
+    revision: group.version,
+    name: title && title.case === 'title' ? title.value : 'Group',
+    description: description && description.case === 'descriptionText' ? description.value : '',
+    members,
+    admins,
+    pending,
+    expireTimer: timer && timer.case === 'disappearingMessagesDuration' ? timer.value : 0,
+    blocked: false,
+    permissions: {
+      add_members: adminOnly(access && access.members),
+      edit_group: adminOnly(access && access.attributes),
+      send_messages: group.announcementsOnly ? 'only-admins' : 'every-member',
+    },
+    link_mode: !linkOn ? 'disabled' : linkAccess === AccessControl_AccessRequired.ADMINISTRATOR ? 'enabled-with-approval' : 'enabled',
+    invite_link: linkOn ? groupInviteLink(keys.masterKey, group.inviteLinkPassword) : '',
+  };
+}
+
+/**
+ * Fetch and decrypt the current state of a group from `GET /v2/groups` on the storage server.
  */
 export async function fetchGroupState(
   store: SignalProtocolStore,
@@ -147,64 +269,6 @@ export async function fetchGroupState(
   serverUrl: string,
   storageUrl = DEFAULT_STORAGE_SERVER
 ): Promise<GroupV2Metadata> {
-  const acc = await store.getAccount();
-  if (!acc || !acc.pni) throw new Error('Groups need a linked account with a PNI');
-  const keys = deriveGroupV2Keys(masterKey);
-  const cred = await groupCredentialForToday(store, httpJson, serverUrl);
-  const presentation = libsignal.groupAuthCredentialPresentation(
-    SERVER_PUBLIC_PARAMS,
-    acc.aci,
-    acc.pni.replace(/^PNI:/, ''),
-    cred.redemptionTime,
-    fromBase64(cred.credential),
-    keys.secretParams
-  );
-  const basic = btoa(`${toHex(keys.publicParams)}:${toHex(presentation)}`);
-  const bytes = await httpBinary(
-    'GET',
-    `${storageUrl}/v2/groups/`,
-    null,
-    { Authorization: 'Basic ' + basic, 'Content-Type': 'application/x-protobuf' },
-    20000
-  );
-  const group = fromBinary(GroupResponseSchema, bytes).group;
-  if (!group) throw new Error('Storage server returned no group');
-
-  const title = decryptAttribute(keys.secretParams, group.title);
-  const description = decryptAttribute(keys.secretParams, group.description);
-  const timer = decryptAttribute(keys.secretParams, group.disappearingMessagesTimer);
-
-  const members: string[] = [];
-  const admins: string[] = [];
-  for (const m of group.members) {
-    let id: string;
-    try {
-      id = libsignal.groupDecryptServiceId(keys.secretParams, m.userId);
-    } catch {
-      continue;
-    }
-    members.push(id);
-    if (m.role === Member_Role.ADMINISTRATOR) admins.push(id);
-  }
-
-  const adminOnly = (v: AccessControl_AccessRequired | undefined) =>
-    v === AccessControl_AccessRequired.ADMINISTRATOR ? 'only-admins' : 'every-member';
-
-  return {
-    id: keys.sendId,
-    internal_id: keys.internalId,
-    masterKey: toBase64(masterKey),
-    revision: group.version,
-    name: title && title.case === 'title' ? title.value : 'Group',
-    description: description && description.case === 'descriptionText' ? description.value : '',
-    members,
-    admins,
-    expireTimer: timer && timer.case === 'disappearingMessagesDuration' ? timer.value : 0,
-    blocked: false,
-    permissions: {
-      add_members: adminOnly(group.accessControl && group.accessControl.members),
-      edit_group: adminOnly(group.accessControl && group.accessControl.attributes),
-      send_messages: group.announcementsOnly ? 'only-admins' : 'every-member',
-    },
-  };
+  const { keys, group } = await fetchGroup(store, httpJson, httpBinary, masterKey, serverUrl, storageUrl);
+  return decodeGroupState(keys, group);
 }

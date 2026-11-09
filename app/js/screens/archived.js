@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* Archived conversations. Archive/mute are local to this device; they are not synced with Signal's chat-list state. A chat leaves this list when unarchived here or when any new message arrives in it. */
+  /* Archived conversations. Archive and mute sync with the account's other devices through App.store. A chat leaves this list when unarchived here or on another device, or when a new message arrives in it. */
 
   App.screens.archived = {
     create: function () {

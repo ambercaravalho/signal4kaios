@@ -1,6 +1,6 @@
 /* Signal profiles, profile avatars, and username lookup. The profile cipher, padding, and request bodies follow Signal-Desktop (Crypto.node.ts, encryptProfileData.preload.ts, WebAPI getProfile/putProfile); profile key versions, commitments, access keys, and username hashes come from libsignal (zkgroup, usernames). */
 
-import { fromBase64, randomBytes, toBase64 } from '../bytes';
+import { fromBase64, randomBytes, toBase64, toHex, toWebSafeBase64 } from '../bytes';
 import { aesGcmDecrypt, aesGcmEncrypt } from '../crypto/primitives';
 import { libsignal } from '../protocol/libsignal';
 import type { SignalProtocolStore } from '../protocol/store';
@@ -143,6 +143,50 @@ export async function fetchAndDecryptProfile(
   return out;
 }
 
+interface StoredProfileKeyCredential {
+  profileKey: string;
+  credential: string;
+  expiresAtSeconds: number;
+}
+
+/**
+ * A member's expiring profile key credential, needed to add them to a group: `GET /v1/profile/{aci}/{version}/{hex(request)}?credentialType=expiringProfileKey` like Signal-Desktop's getProfile with a credential request, verified and received by zkgroup, and cached until a day before it expires.
+ */
+export async function fetchExpiringProfileKeyCredential(
+  store: SignalProtocolStore,
+  httpJson: SignalHttpJsonFn,
+  serverPublicParams: Uint8Array,
+  aci: string,
+  profileKey: Uint8Array,
+  serverUrl = DEFAULT_SIGNAL_SERVER
+): Promise<Uint8Array> {
+  if (profileKey.length !== 32) throw new Error('Got invalid length profile key');
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const cache = ((await store.loadValue('profileKeyCredentials')) as Record<string, StoredProfileKeyCredential> | undefined) || {};
+  const hit = cache[aci];
+  if (hit && hit.profileKey === toBase64(profileKey) && hit.expiresAtSeconds - 86400 > nowSeconds) return fromBase64(hit.credential);
+
+  const acc = await store.getAccount();
+  if (!acc) throw new Error('This phone is not linked to a Signal account');
+  const req = libsignal.profileKeyCredentialRequest(serverPublicParams, aci, profileKey) as { context: Uint8Array; request: Uint8Array };
+  const version = libsignal.profileKeyGetVersion(profileKey, aci);
+  // SECURITY-REVIEW: device password is sent only as Basic auth to the Signal chat server.
+  const res = await httpJson('GET', `/v1/profile/${encodeURIComponent(aci)}/${version}/${toHex(req.request)}?credentialType=expiringProfileKey`, null, {
+    baseUrl: serverUrl,
+    basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
+    timeout: 15000,
+  });
+  if (!res || typeof res.credential !== 'string') throw new Error('Signal server returned no profile key credential');
+  const received = libsignal.receiveExpiringProfileKeyCredential(serverPublicParams, req.context, fromBase64(res.credential), nowSeconds) as {
+    credential: Uint8Array;
+    expiresAtSeconds: number;
+  };
+  for (const k of Object.keys(cache)) if (cache[k].expiresAtSeconds <= nowSeconds) delete cache[k];
+  cache[aci] = { profileKey: toBase64(profileKey), credential: toBase64(received.credential), expiresAtSeconds: received.expiresAtSeconds };
+  await store.storeValue('profileKeyCredentials', cache);
+  return received.credential;
+}
+
 /** Download a profile avatar from CDN 0 and decrypt it with the owner's profile key. */
 export async function downloadAndDecryptProfileAvatar(
   httpBinary: SignalHttpBinaryFn,
@@ -199,10 +243,6 @@ export async function uploadOwnProfile(
     basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
     timeout: 15000,
   });
-}
-
-function toWebSafeBase64(bytes: Uint8Array): string {
-  return toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /**

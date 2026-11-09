@@ -14,6 +14,18 @@ Signal4KaiOS is now a standalone on-device Signal client for KaiOS 3.0, 3.1, and
 - Direct WebSocket connection to Signal's servers (`chat.signal.org`): messages sent while your phone is offline are held by Signal's servers and decrypted when you reconnect, with closed-app background wake probes in `sw.js`.
 - Contacts and groups sync directly from your primary Signal device over Storage Service and encrypted sync blobs.
 
+### Edits reach Signal and your other devices
+
+- Renaming a contact saves a Signal nickname through Storage Service, so it shows on all your devices.
+- Block and unblock people from **Contact info**, and unblock people and groups from **Settings → Privacy → Blocked**. Blocking syncs to your other devices, and messages, typing indicators, and receipts from blocked people and groups are dropped.
+- Group edits are real Groups V2 changes, signed by Signal's server and announced to the group: rename, description, disappearing timer, add members (invited when they can't be added directly), remove members, cancel invites, make or remove admins, permissions, and the group link (on, off, approval required, or reset). **Leave group** and **Block and leave** leave on Signal's side.
+- Group info shows invited people and only offers the edits the group's permissions allow you.
+- Disappearing-message timers set in 1:1 chats are sent to the other person.
+- **Pin message** works in 1:1 chats as well as groups, is sent to everyone in the chat, and pins and unpins from others now show up.
+- **Edit profile → Username** registers a real Signal username, **My QR code** shows its `signal.me` link, and **Delete username** releases it. Errors such as a taken or too-short username are explained.
+- Archive, mute, and pinned chats sync with your other devices through Storage Service, with Signal's limit of 4 pinned chats.
+- Looking up phone numbers outside your synced contacts (Signal's contact discovery) is still unavailable; [Development](docs/development.md#phone-number-lookup-cdsi-spike-findings) explains why.
+
 ### Platform changes
 
 - Targets **KaiOS 3.0, 3.1, and 4.0** (Gecko 84 and Gecko 123). **KaiOS 2.5 support is dropped.**
