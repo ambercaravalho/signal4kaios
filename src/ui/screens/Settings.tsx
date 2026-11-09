@@ -4,7 +4,8 @@ import { router } from '../app/router';
 import { setTheme } from '../app/theme';
 import { Avatar } from '../components/Avatar';
 import { Spinner } from '../components/List';
-import { confirm, pick, prompt } from '../components/Overlays';
+import { pickEmoji } from '../components/Emoji';
+import { confirm, pick, prompt, showOptions } from '../components/Overlays';
 import { Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
 import { toast } from '../components/Toast';
@@ -63,15 +64,16 @@ export function SettingsScreen() {
 }
 
 /** Save the profile, always with a name: Signal rejects a profile without one. */
-async function saveProfile(patch: { name?: string; about?: string }): Promise<void> {
+async function saveProfile(patch: { name?: string; about?: string; emoji?: string }): Promise<void> {
   const name = (patch.name != null ? patch.name : selfName()).trim();
   if (!name) {
     toast(S.nameRequired);
     return;
   }
-  const body: { name: string; about?: string } = { name };
+  const body: { name: string; about?: string; emoji?: string } = { name };
   if (patch.about != null) body.about = patch.about;
   else if (config.profileAbout()) body.about = config.profileAbout();
+  if (patch.emoji != null) body.emoji = patch.emoji;
   try {
     await updateProfile(body);
     toast(S.saved);
@@ -84,7 +86,24 @@ export function ProfileScreen() {
   const refresh = useRefresh();
   const name = selfName();
   const about = config.profileAbout();
+  const emoji = config.profileAboutEmoji();
   const uname = config.username();
+
+  async function chooseEmoji(): Promise<void> {
+    const e = await pickEmoji(S.aboutEmoji);
+    if (e) saveProfile({ emoji: e }).then(refresh);
+  }
+
+  function editEmoji(): void {
+    if (!emoji) {
+      chooseEmoji();
+      return;
+    }
+    showOptions([
+      { label: S.chooseEmoji, onSelect: chooseEmoji },
+      { label: S.remove, danger: true, onSelect: () => saveProfile({ emoji: '' }).then(refresh) },
+    ]);
+  }
 
   async function editName(): Promise<void> {
     const v = await prompt({ title: S.yourName, value: name, maxLength: 26 });
@@ -130,6 +149,7 @@ export function ProfileScreen() {
   const rows: Row[] = [
     { key: 'name', label: S.yourName, sub: name || S.usernameNone, onSelect: editName },
     { key: 'about', label: S.about, sub: about || S.usernameNone, onSelect: editAbout },
+    { key: 'emoji', label: S.aboutEmoji, sub: emoji || S.usernameNone, onSelect: editEmoji },
     { key: 'user', label: S.username, sub: uname ? '@' + uname : S.usernameNone, onSelect: editUsername },
     { key: 'qr', label: S.usernameLink, onSelect: showQr },
     !!uname && { key: 'del', label: S.deleteUsername, danger: true, onSelect: deleteUsername },

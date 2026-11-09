@@ -2,7 +2,7 @@
 
 import { dbg } from './log';
 import type { StyleRange } from './styled';
-import type { Attachment, Quote } from './types';
+import type { Attachment, Notice, NoticeKind, Quote } from './types';
 
 export interface MessageEvent {
   type: 'message';
@@ -19,8 +19,18 @@ export interface MessageEvent {
   expiresInSeconds: number;
 }
 
+export interface NoticeEvent {
+  type: 'notice';
+  convId: string;
+  groupInternalId: string | null;
+  author: string;
+  timestamp: number;
+  notice: Notice;
+}
+
 export type StoreEvent =
   | MessageEvent
+  | NoticeEvent
   | { type: 'edit'; convId: string; author: string; targetTimestamp: number; newBody: string; newStyles: StyleRange[]; timestamp: number }
   | { type: 'reaction'; convId: string; reactor: string; emoji: string; remove: boolean; targetAuthor: string; targetTimestamp: number }
   | { type: 'remoteDelete'; convId: string; author: string; targetTimestamp: number }
@@ -28,7 +38,14 @@ export type StoreEvent =
   | { type: 'timer'; convId: string; seconds: number }
   | { type: 'typing'; convId: string; author: string; started: boolean }
   | { type: 'receipt'; peer: string; kind: 'read' | 'delivery' | 'other'; timestamps: number[] }
-  | { type: 'readSync'; entries: Array<{ sender: string; timestamp: number }> };
+  | { type: 'readSync'; entries: SyncRef[] }
+  | { type: 'viewedSync'; entries: SyncRef[]; viewOnce: boolean };
+
+/** A message our other device read or opened: who sent it and when. */
+export interface SyncRef {
+  sender: string;
+  timestamp: number;
+}
 
 type NameOf = (key: string) => string;
 type Conv = { convId: string | null; groupInternalId: string | null };
@@ -113,10 +130,26 @@ export function stylesOf(dm: any, nameOf: NameOf): StyleRange[] {
   return out;
 }
 
+const NOTICE_KINDS: NoticeKind[] = ['missedCall', 'safetyNumber', 'groupCall'];
+
+function noticeEvent(env: any, n: any, conv: Conv, author: string): StoreEvent[] {
+  const kind = str(n && n.kind) as NoticeKind;
+  if (NOTICE_KINDS.indexOf(kind) < 0 || !conv.convId) {
+    dbg('normalize: unknown notice');
+    return [];
+  }
+  const notice: Notice = { kind };
+  if (n.video) notice.video = true;
+  return [{ type: 'notice', convId: conv.convId, groupInternalId: conv.groupInternalId, author, timestamp: num(n.timestamp) || num(env.timestamp), notice }];
+}
+
 function quoteOf(dm: any): Quote | null {
   const q = dm.quote;
   if (!q || typeof q !== 'object') return null;
-  return { author: str(q.authorNumber) || str(q.authorUuid) || str(q.author), timestamp: num(q.id) || num(q.timestamp), text: str(q.text) };
+  const out: Quote = { author: str(q.authorNumber) || str(q.authorUuid) || str(q.author), timestamp: num(q.id) || num(q.timestamp), text: str(q.text) };
+  const atts = Array.isArray(q.attachments) ? q.attachments.filter((a: any) => a && typeof a === 'object').slice(0, 10) : [];
+  if (atts.length) out.attachments = atts.map((a: any) => ({ contentType: str(a.contentType), filename: str(a.filename) }));
+  return out;
 }
 
 function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf, authorOverride?: string, convOverride?: Conv): StoreEvent[] {
@@ -158,6 +191,7 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
   }
 
   if (dm.expirationTimerUpdate) return [{ type: 'timer', convId, seconds: num(dm.expiresInSeconds) }];
+  if (dm.groupCallUpdate) return noticeEvent(env, { kind: 'groupCall', timestamp: num(dm.timestamp) || num(env.timestamp) }, conv, author);
 
   const attachments: any[] = Array.isArray(dm.attachments) ? dm.attachments : [];
   const body = dm.message;
@@ -219,6 +253,26 @@ export function parseFrame(frame: any, selfNumber: string, nameOf: NameOf): Stor
     return [];
   }
 
+  const events = envelopeEvents(env, selfNumber, nameOf);
+  const peer = peerKey(env);
+  // One millisecond early, so it sits before the message it arrived with and can't share that message's ID.
+  if (env.safetyNumberChanged && peer) events.unshift(...noticeEvent(env, { kind: 'safetyNumber', timestamp: (num(env.timestamp) || Date.now()) - 1 }, { convId: peer, groupInternalId: null }, peer));
+  return events;
+}
+
+function syncRefs(list: unknown): SyncRef[] {
+  if (!Array.isArray(list)) return [];
+  const out: SyncRef[] = [];
+  for (const r of list) {
+    if (!r) continue;
+    const sender = str(r.senderNumber) || str(r.senderUuid) || str(r.sender);
+    if (sender && r.timestamp) out.push({ sender, timestamp: num(r.timestamp) });
+  }
+  return out;
+}
+
+function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEvent[] {
+  if (env.notice) return noticeEvent(env, env.notice, { convId: peerKey(env), groupInternalId: null }, peerKey(env) || '');
   if (env.dataMessage) return dataMessageEvents(env, env.dataMessage, true, nameOf);
   if (env.editMessage) return editEvent(env, env.editMessage, peerKey(env) || '', nameOf);
 
@@ -234,7 +288,7 @@ export function parseFrame(frame: any, selfNumber: string, nameOf: NameOf): Stor
     const peer = peerKey(env);
     if (!peer) return [];
     const timestamps: number[] = Array.isArray(rm.timestamps) ? rm.timestamps.map(num) : rm.when ? [num(rm.when)] : [];
-    return [{ type: 'receipt', peer, kind: rm.isRead ? 'read' : rm.isDelivery ? 'delivery' : 'other', timestamps }];
+    return [{ type: 'receipt', peer, kind: rm.isRead || rm.isViewed ? 'read' : rm.isDelivery ? 'delivery' : 'other', timestamps }];
   }
 
   if (env.syncMessage) {
@@ -246,16 +300,15 @@ export function parseFrame(frame: any, selfNumber: string, nameOf: NameOf): Stor
       if (sent.editMessage) return editEvent(env, sent.editMessage, selfNumber, nameOf, conv);
       return dataMessageEvents(env, sent, false, nameOf, selfNumber, conv);
     }
-    if (Array.isArray(sm.readMessages)) {
-      const entries: Array<{ sender: string; timestamp: number }> = [];
-      for (const r of sm.readMessages) {
-        const sender = str(r.senderNumber) || str(r.senderUuid) || str(r.sender);
-        if (sender && r.timestamp) entries.push({ sender, timestamp: num(r.timestamp) });
-      }
-      return entries.length ? [{ type: 'readSync', entries }] : [];
-    }
-    dbg('normalize: unhandled sync message ' + Object.keys(sm).join(','));
-    return [];
+    const out: StoreEvent[] = [];
+    const read = syncRefs(sm.readMessages);
+    if (read.length) out.push({ type: 'readSync', entries: read });
+    const viewed = syncRefs(sm.viewedMessages);
+    if (viewed.length) out.push({ type: 'viewedSync', entries: viewed, viewOnce: false });
+    const opened = syncRefs(sm.viewOnceOpen ? [sm.viewOnceOpen] : undefined);
+    if (opened.length) out.push({ type: 'viewedSync', entries: opened, viewOnce: true });
+    if (!out.length) dbg('normalize: unhandled sync message ' + Object.keys(sm).join(','));
+    return out;
   }
 
   dbg('normalize: unhandled envelope ' + Object.keys(env).join(','));

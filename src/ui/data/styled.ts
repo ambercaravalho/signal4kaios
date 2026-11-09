@@ -70,6 +70,61 @@ export function parseStyledMarkdown(text: string): { body: string; styles: Style
   return { body: out, styles };
 }
 
+/** Someone picked with Mention; `name` is what was inserted after the "@". */
+export interface PickedMention {
+  name: string;
+  uuid: string;
+}
+
+export interface MentionRange {
+  start: number;
+  length: number;
+  uuid: string;
+}
+
+/** Find each picked "@name" still in the body and replace it with the U+FFFC placeholder Signal sends, moving style ranges to match. A mention edited away is simply not found. */
+export function encodeMentions(body: string, styles: StyleRange[], picked: PickedMention[]): { body: string; styles: StyleRange[]; mentions: MentionRange[] } {
+  const hits: Array<{ start: number; end: number; uuid: string }> = [];
+  const byLength = picked.filter((p) => p.name && p.uuid).sort((a, b) => b.name.length - a.name.length);
+  for (const p of byLength) {
+    const token = '@' + p.name;
+    for (let i = body.indexOf(token); i >= 0; i = body.indexOf(token, i + token.length)) {
+      const end = i + token.length;
+      if (!hits.some((h) => i < h.end && end > h.start)) hits.push({ start: i, end, uuid: p.uuid });
+    }
+  }
+  if (!hits.length) return { body, styles, mentions: [] };
+  hits.sort((a, b) => a.start - b.start);
+
+  const move = (pos: number, isEnd: boolean): number => {
+    let shift = 0;
+    for (const h of hits) {
+      if (pos >= h.end) shift += h.end - h.start - 1;
+      else if (pos > h.start) return h.start - shift + (isEnd ? 1 : 0);
+      else break;
+    }
+    return pos - shift;
+  };
+
+  let out = '';
+  let last = 0;
+  const mentions: MentionRange[] = [];
+  for (const h of hits) {
+    out += body.slice(last, h.start);
+    mentions.push({ start: out.length, length: 1, uuid: h.uuid });
+    out += '\uFFFC';
+    last = h.end;
+  }
+  out += body.slice(last);
+  const moved: StyleRange[] = [];
+  for (const s of styles) {
+    const start = move(s.start, false);
+    const end = move(s.start + s.length, true);
+    if (end > start) moved.push({ start, length: end - start, style: s.style });
+  }
+  return { body: out, styles: moved, mentions };
+}
+
 export interface Segment {
   text: string;
   styles: string[];

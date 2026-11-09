@@ -13,8 +13,8 @@ import type { Attachment } from '../data/types';
 import { friendlyError } from '../errors';
 import { S } from '../strings';
 
-/** A photo, video, voice message, or file from a message. OK plays and pauses; the right softkey saves it to the phone. */
-export function ViewerScreen(props: { att: Attachment; title: string }) {
+/** A photo, video, voice message, or file from a message. OK plays and pauses; the right softkey saves it to the phone. `onOpened` runs once the content is on screen. */
+export function ViewerScreen(props: { att: Attachment; title: string; onOpened?: () => void }) {
   const { att } = props;
   const [blob, setBlob] = useState<Blob | null>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -32,6 +32,7 @@ export function ViewerScreen(props: { att: Attachment; title: string }) {
         obj = URL.createObjectURL(b);
         setBlob(b);
         setUrl(obj);
+        if (props.onOpened) props.onOpened();
       },
       (e) => {
         if (!live) return;

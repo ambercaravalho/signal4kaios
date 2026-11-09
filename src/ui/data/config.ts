@@ -24,10 +24,15 @@ interface ConfigData {
   usernameLink?: string;
   profileName?: string;
   profileAbout?: string;
+  profileAboutEmoji?: string;
   theme?: ThemeName;
   sendReadReceipts?: boolean;
   styledText?: boolean;
   typingIndicators?: boolean;
+  /** Synced from the phone; Beacon doesn't make link previews yet. */
+  linkPreviews?: boolean;
+  /** Synced from the phone; Beacon doesn't show sealed sender indicators yet. */
+  sealedSenderIndicators?: boolean;
   keepMutedArchived?: boolean;
   accounts?: SavedAccount[];
   [k: string]: unknown;
@@ -95,6 +100,10 @@ export const config = {
     return read().profileAbout || '';
   },
 
+  profileAboutEmoji(): string {
+    return read().profileAboutEmoji || '';
+  },
+
   theme(): ThemeName {
     return read().theme === 'dark' ? 'dark' : 'light';
   },
@@ -109,6 +118,14 @@ export const config = {
 
   typingIndicators(): boolean {
     return read().typingIndicators !== false;
+  },
+
+  linkPreviews(): boolean {
+    return read().linkPreviews !== false;
+  },
+
+  sealedSenderIndicators(): boolean {
+    return read().sealedSenderIndicators === true;
   },
 
   /** Muted chats stay archived when new messages arrive, as in Signal. */

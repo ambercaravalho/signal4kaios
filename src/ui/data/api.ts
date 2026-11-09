@@ -69,9 +69,10 @@ export async function renameContact(recipient: string, name: string): Promise<vo
   await signal.setContactNickname(recipient, name);
 }
 
-export function updateProfile(body: { name?: string; about?: string }): Promise<void> {
+export function updateProfile(body: { name?: string; about?: string; emoji?: string }): Promise<void> {
   if (body.name != null) config.set({ profileName: body.name });
   if (body.about != null) config.set({ profileAbout: body.about });
+  if (body.emoji != null) config.set({ profileAboutEmoji: body.emoji });
   return signal.updateOwnProfile(body);
 }
 

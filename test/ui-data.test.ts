@@ -5,7 +5,7 @@ import { expireLabel, fmtDuration, formatSafetyNumber, initials } from '../src/u
 import { dbg, redactedLog } from '../src/ui/data/log';
 import { applyMentions, parseFrame } from '../src/ui/data/normalize';
 import { attachmentLabel, contactName } from '../src/ui/data/store';
-import { emojiRuns, isJumboEmoji, linkRuns, parseStyledMarkdown, styleSegments } from '../src/ui/data/styled';
+import { emojiRuns, encodeMentions, isJumboEmoji, linkRuns, parseStyledMarkdown, styleSegments } from '../src/ui/data/styled';
 
 const nameOf = (k: string) => (k === 'aci-bob' ? 'Bob' : k);
 
@@ -54,6 +54,43 @@ describe('parseFrame', () => {
     assert.deepEqual(rs, { type: 'readSync', entries: [{ sender: '+4', timestamp: 3 }] });
   });
 
+  it('counts viewed receipts as read and parses viewed and view-once syncs', () => {
+    const env = { sourceNumber: '+3' };
+    const [rc] = parseFrame({ envelope: { ...env, receiptMessage: { isViewed: true, timestamps: [7] } } }, '+1', nameOf);
+    assert.deepEqual(rc, { type: 'receipt', peer: '+3', kind: 'read', timestamps: [7] });
+    const evs = parseFrame({ envelope: { ...env, syncMessage: { viewedMessages: [{ senderUuid: 'aci-4', timestamp: 5 }], viewOnceOpen: { sender: 'aci-5', timestamp: 6 } } } }, '+1', nameOf);
+    assert.deepEqual(evs, [
+      { type: 'viewedSync', entries: [{ sender: 'aci-4', timestamp: 5 }], viewOnce: false },
+      { type: 'viewedSync', entries: [{ sender: 'aci-5', timestamp: 6 }], viewOnce: true },
+    ]);
+  });
+
+  it('turns notices into notice events and drops unknown kinds', () => {
+    const [ev] = parseFrame({ envelope: { sourceNumber: '+3', timestamp: 8, notice: { kind: 'missedCall', video: true, timestamp: 9 } } }, '+1', nameOf);
+    assert.deepEqual(ev, { type: 'notice', convId: '+3', groupInternalId: null, author: '+3', timestamp: 9, notice: { kind: 'missedCall', video: true } });
+    assert.deepEqual(parseFrame({ envelope: { sourceNumber: '+3', notice: { kind: 'somethingNew' } } }, '+1', nameOf), []);
+  });
+
+  it('adds a safety number notice before the message it came with', () => {
+    const evs = parseFrame({ envelope: { sourceNumber: '+3', timestamp: 50, safetyNumberChanged: true, dataMessage: { timestamp: 50, message: 'new phone' } } }, '+1', nameOf);
+    assert.deepEqual(
+      evs.map((e) => e.type),
+      ['notice', 'message']
+    );
+    assert.deepEqual(evs[0], { type: 'notice', convId: '+3', groupInternalId: null, author: '+3', timestamp: 49, notice: { kind: 'safetyNumber' } });
+  });
+
+  it('shows group call updates as a notice in the group', () => {
+    const [ev] = parseFrame({ envelope: { sourceUuid: 'aci-bob', timestamp: 60, dataMessage: { timestamp: 60, groupCallUpdate: true, groupInfo: { groupId: 'GID' } } } }, '+1', nameOf);
+    assert.deepEqual(ev, { type: 'notice', convId: 'g:GID', groupInternalId: 'GID', author: 'aci-bob', timestamp: 60, notice: { kind: 'groupCall' } });
+  });
+
+  it('keeps the type of quoted attachments', () => {
+    const [ev] = parseFrame({ envelope: { sourceNumber: '+3', dataMessage: { message: 'nice', quote: { id: 4, authorUuid: 'aci-bob', text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }, 'junk'] } } } }, '+1', nameOf);
+    assert.equal(ev.type, 'message');
+    if (ev.type === 'message') assert.deepEqual(ev.quote, { author: 'aci-bob', timestamp: 4, text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }] });
+  });
+
   it('drops malformed frames without throwing', () => {
     assert.deepEqual(parseFrame(null, '+1', nameOf), []);
     assert.deepEqual(parseFrame({ envelope: 'nope' }, '+1', nameOf), []);
@@ -91,6 +128,22 @@ describe('styled text', () => {
   it('leaves unmatched and escaped markers as text', () => {
     assert.deepEqual(parseStyledMarkdown('2 * 3'), { body: '2 * 3', styles: [] });
     assert.deepEqual(parseStyledMarkdown('\\*not\\*'), { body: '*not*', styles: [] });
+  });
+
+  it('encodes picked mentions as placeholders and moves styles to match', () => {
+    const picked = [
+      { name: 'Ann', uuid: 'aci-ann' },
+      { name: 'Ann Lee', uuid: 'aci-lee' },
+      { name: 'Gone', uuid: 'aci-gone' },
+    ];
+    const res = encodeMentions('hi @Ann Lee and @Ann ok', [{ start: 16, length: 7, style: 'BOLD' }], picked);
+    assert.equal(res.body, 'hi \uFFFC and \uFFFC ok');
+    assert.deepEqual(res.mentions, [
+      { start: 3, length: 1, uuid: 'aci-lee' },
+      { start: 9, length: 1, uuid: 'aci-ann' },
+    ]);
+    assert.deepEqual(res.styles, [{ start: 9, length: 4, style: 'BOLD' }]);
+    assert.deepEqual(encodeMentions('no one here', [], picked), { body: 'no one here', styles: [], mentions: [] });
   });
 
   it('splits overlapping ranges into segments', () => {

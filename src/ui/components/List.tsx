@@ -59,8 +59,9 @@ export function Separator(props: { label: string }) {
   return <div class={props.label ? 'sep' : 'sep sep-gap'}>{props.label}</div>;
 }
 
-export function Badge(props: { count: number }) {
-  if (!props.count) return null;
+/** An unread count, or with `dot` and no count, a plain dot for a chat marked as unread. */
+export function Badge(props: { count: number; dot?: boolean }) {
+  if (!props.count) return props.dot ? <span class="badge badge-dot" /> : null;
   return <span class="badge">{props.count > 99 ? '99+' : props.count}</span>;
 }
 

@@ -2,7 +2,7 @@ import './ui-env';
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { signal } from '../src/ui/data/api';
+import { signal, updateProfile } from '../src/ui/data/api';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
@@ -87,6 +87,30 @@ describe('store', () => {
     assert.equal((await db.getMessage(ALICE + '|5000|' + ME))!.status, 'read');
   });
 
+  it('sends picked mentions and quoted attachment types, and keeps them for a retry', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 5100 };
+    };
+    const quote = { author: ALICE, timestamp: 1000, text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }] };
+    const rec = await store.sendText(ALICE, 'hey @Bob', quote, [{ name: 'Bob', uuid: 'aci-bob' }]);
+    assert.equal(sent[0].message, 'hey \uFFFC');
+    assert.deepEqual(sent[0].mentions, [{ start: 4, length: 1, uuid: 'aci-bob' }]);
+    assert.deepEqual(sent[0].quote_attachments, [{ contentType: 'image/jpeg', filename: 'a.jpg' }]);
+    assert.equal(rec.body, 'hey @Bob');
+    assert.deepEqual(rec.mentions, [{ name: 'Bob', uuid: 'aci-bob' }]);
+  });
+
+  it('keeps a chat draft until it is cleared', () => {
+    store.setDraft(ALICE, 'half a thought', [{ name: 'Bob', uuid: 'aci-bob' }]);
+    assert.equal(store.conversation(ALICE)!.draft, 'half a thought');
+    assert.deepEqual(store.conversation(ALICE)!.draftMentions, [{ name: 'Bob', uuid: 'aci-bob' }]);
+    store.setDraft(ALICE, '   ', []);
+    assert.equal(store.conversation(ALICE)!.draft, undefined);
+    assert.equal(store.conversation(ALICE)!.draftMentions, undefined);
+  });
+
   it('marks a failed send and clears unread from another device', async () => {
     (signal as any).send = async () => {
       throw new Error('offline');
@@ -98,6 +122,31 @@ describe('store', () => {
 
     store.ingestRaw({ envelope: { sourceNumber: ME, syncMessage: { readMessages: [{ senderNumber: ALICE, timestamp: 1000 }] } } });
     assert.equal(store.conversation(ALICE)!.unread, 0);
+  });
+
+  it('stores a missed call as an unread notice line', async () => {
+    const before = store.conversation(ALICE)!.unread;
+    const ts = Date.now() + 60000;
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: ts, notice: { kind: 'missedCall', timestamp: ts } } });
+    await settle();
+    const rec = (await db.getMessage(ALICE + '|' + ts + '|' + ALICE))!;
+    assert.deepEqual(rec.notice, { kind: 'missedCall' });
+    assert.equal(rec.body, '');
+    const conv = store.conversation(ALICE)!;
+    assert.equal(conv.unread, before + 1);
+    assert.equal(conv.lastPreview, 'Missed voice call');
+  });
+
+  it('adds safety number notices only to existing chats, without counting them unread', async () => {
+    const unread = store.conversation(ALICE)!.unread;
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: 5600, safetyNumberChanged: true, receiptMessage: { isDelivery: true, timestamps: [] } } });
+    store.ingestRaw({ envelope: { sourceNumber: '+15550077', timestamp: 5600, safetyNumberChanged: true, receiptMessage: { isDelivery: true, timestamps: [] } } });
+    await settle();
+    const rec = (await db.getMessage(ALICE + '|5599|' + ALICE))!;
+    assert.deepEqual(rec.notice, { kind: 'safetyNumber' });
+    assert.equal(store.conversation(ALICE)!.unread, unread);
+    assert.equal(store.conversation('+15550077'), undefined);
+    assert.equal(store.noticeText({ kind: 'safetyNumber' }, ALICE), 'Your safety number with ' + ALICE + ' has changed');
   });
 
   it('archives, keeps muted chats archived, and limits pinned chats', async () => {
@@ -119,5 +168,79 @@ describe('store', () => {
       assert.equal(store.setConvPinned(c.id, true), true);
     }
     assert.equal(store.setConvPinned(ALICE, true), false);
+  });
+
+  it('marks a chat unread, syncs it, and clears it when the chat is read', () => {
+    const synced: any[] = [];
+    (signal as any).syncChatState = async (s: any) => {
+      synced.push(s);
+    };
+    (signal as any).sendReadReceipt = async () => {};
+    store.markRead(ALICE);
+    synced.length = 0;
+    store.setMarkedUnread(ALICE, true);
+    assert.equal(store.conversation(ALICE)!.markedUnread, true);
+    assert.deepEqual(synced, [{ type: 'direct', sendId: ALICE, markedUnread: true }]);
+    store.markRead(ALICE);
+    assert.equal(store.conversation(ALICE)!.markedUnread, false);
+    assert.deepEqual(synced[1], { type: 'direct', sendId: ALICE, markedUnread: false });
+    store.applyChatState([{ number: ALICE, archived: false, markedUnread: true }], null);
+    assert.equal(store.conversation(ALICE)!.markedUnread, true);
+    assert.equal(synced.length, 2);
+  });
+
+  it('sends view-once media without a caption', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 8000 };
+    };
+    const rec = await store.sendAttachment(ALICE, 'data:image/jpeg;base64,AAAA', 'a caption', { contentType: 'image/jpeg', viewOnce: true });
+    assert.equal(sent[0].view_once, true);
+    assert.equal(sent[0].message, '');
+    assert.equal(rec.body, '');
+    assert.equal(rec.attachments[0].viewOnce, true);
+  });
+
+  it('reports opened media once and drops view-once copies opened on another device', async () => {
+    const viewed: any[] = [];
+    (signal as any).sendViewed = async (to: string, ts: number, opts: any) => {
+      viewed.push([to, ts, opts]);
+    };
+    const cleared: Array<[string, number]> = [];
+    const putAttachment = db.putAttachment;
+    (db as any).putAttachment = async (id: string, blob: Blob) => {
+      cleared.push([id, blob.size]);
+    };
+    try {
+      store.ingestRaw(incoming(9000, '', { attachments: [{ id: 'att-voice', contentType: 'audio/aac', voiceNote: true }] }));
+      store.ingestRaw(incoming(9100, '', { attachments: [{ id: 'att-once', contentType: 'image/jpeg' }], viewOnce: true }));
+      store.ingestRaw(incoming(9200, '', { attachments: [{ id: 'att-photo', contentType: 'image/jpeg' }] }));
+      await settle();
+      const voice = (await db.getMessage(ALICE + '|9000|' + ALICE))!;
+      store.markViewed(voice);
+      store.markViewed(voice);
+      store.markViewed((await db.getMessage(ALICE + '|9200|' + ALICE))!);
+      await settle();
+      assert.deepEqual(viewed, [[ALICE, 9000, { receipt: true, viewOnce: false }]]);
+      assert.equal((await db.getMessage(ALICE + '|9000|' + ALICE))!.viewed, true);
+
+      store.ingestRaw({ envelope: { sourceNumber: ME, syncMessage: { viewOnceOpen: { senderNumber: ALICE, timestamp: 9100 } } } });
+      await settle();
+      assert.equal((await db.getMessage(ALICE + '|9100|' + ALICE))!.viewed, true);
+      assert.deepEqual(cleared, [['att-once', 0]]);
+    } finally {
+      (db as any).putAttachment = putAttachment;
+    }
+  });
+
+  it('saves the About emoji locally and on Signal', async () => {
+    const uploaded: any[] = [];
+    (signal as any).updateOwnProfile = async (body: any) => {
+      uploaded.push(body);
+    };
+    await updateProfile({ name: 'Me', emoji: '🌻' });
+    assert.equal(config.profileAboutEmoji(), '🌻');
+    assert.deepEqual(uploaded, [{ name: 'Me', emoji: '🌻' }]);
   });
 });

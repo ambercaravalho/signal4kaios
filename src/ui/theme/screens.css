@@ -16,6 +16,15 @@
   color: inherit;
 }
 
+.draft-label {
+  color: var(--danger);
+  font-style: italic;
+}
+
+.li.focused .draft-label {
+  color: inherit;
+}
+
 .emoji {
   font-family: 'Noto Color Emoji', var(--font);
 }
@@ -78,6 +87,35 @@
   text-align: center;
   font-size: var(--fs-small);
   color: var(--text-2);
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.2rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 1.2rem;
+  font-size: var(--fs-small);
+  color: var(--text-2);
+  text-align: center;
+}
+
+.notice .icon {
+  width: 1.4rem;
+  height: 1.4rem;
+  flex: none;
+}
+
+.notice-time {
+  opacity: 0.8;
+}
+
+.notice.focused {
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .msg {
@@ -172,6 +210,13 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.msg-quote-text .icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  margin-right: 0.3rem;
+  vertical-align: -0.2rem;
 }
 
 .msg-media {

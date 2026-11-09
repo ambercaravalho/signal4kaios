@@ -75,10 +75,13 @@ export interface StorageAccountRecord {
   avatarUrlPath?: string;
   readReceipts?: boolean;
   typingIndicators?: boolean;
+  linkPreviews?: boolean;
+  sealedSenderIndicators?: boolean;
   username?: string;
   usernameLink?: { entropy: Uint8Array; serverId: Uint8Array };
   pinnedConversations: StoragePinnedConversation[];
   noteToSelfArchived?: boolean;
+  noteToSelfMarkedUnread?: boolean;
 }
 
 export interface StorageSyncResult {
@@ -293,10 +296,13 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
         avatarUrlPath: opt(a.avatarUrlPath, ''),
         readReceipts: a.readReceipts,
         typingIndicators: a.typingIndicators,
+        linkPreviews: a.linkPreviews,
+        sealedSenderIndicators: a.sealedSenderIndicators,
         username: opt(a.username, ''),
         usernameLink: link && link.entropy.length === 32 && link.serverId.length === 16 ? { entropy: link.entropy, serverId: link.serverId } : undefined,
         pinnedConversations: pinned,
         noteToSelfArchived: a.noteToSelfArchived,
+        noteToSelfMarkedUnread: a.noteToSelfMarkedUnread,
       };
     }
   }

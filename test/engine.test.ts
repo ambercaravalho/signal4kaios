@@ -183,8 +183,8 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       create(ContactRecordSchema, { aci: ALICE, e164: '+15553334444', givenName: 'Clara', familyName: 'Oswald', profileKey, blocked: true })
     );
     await putRaw(contactKey, rawContactRecord(concatBytes(contactBytes, UNKNOWN_FIELD)));
-    await put(groupKey, { case: 'groupV2', value: { masterKey: groupMasterKey, archived: true } });
-    await put(accountKey, { case: 'account', value: { givenName: 'Me', readReceipts: true } });
+    await put(groupKey, { case: 'groupV2', value: { masterKey: groupMasterKey, archived: true, markedUnread: true } });
+    await put(accountKey, { case: 'account', value: { givenName: 'Me', readReceipts: true, linkPreviews: true, sealedSenderIndicators: true, noteToSelfMarkedUnread: true } });
     records.set(toBase64(stickerKey), randomBytes(40));
 
     const urls: string[] = [];
@@ -268,8 +268,12 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.deepEqual(res.contacts[0].profileKey, srv.profileKey);
       assert.deepEqual(res.groupsV2[0].masterKey, srv.groupMasterKey);
       assert.equal(res.groupsV2[0].archived, true);
+      assert.equal(res.groupsV2[0].markedUnread, true);
       assert.equal(res.account?.givenName, 'Me');
       assert.equal(res.account?.readReceipts, true);
+      assert.equal(res.account?.linkPreviews, true);
+      assert.equal(res.account?.sealedSenderIndicators, true);
+      assert.equal(res.account?.noteToSelfMarkedUnread, true);
 
       srv.urls.length = 0;
       await pullFromStorageService(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org');
@@ -657,6 +661,23 @@ describe('Sync and service IDs', () => {
     const timer = frame({ timestamp: 1000n, flags: DataMessage_Flags.EXPIRATION_TIMER_UPDATE, expireTimer: 3600, expireTimerVersion: 3 });
     assert.equal(timer.expirationTimerUpdate, true);
     assert.equal(timer.expiresInSeconds, 3600);
+    const quoted = frame({ timestamp: 1000n, body: 'nice', quote: { id: 7n, authorAci: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', fileName: 'a.jpg' }] } });
+    assert.deepEqual(quoted.quote, { id: 7, authorUuid: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }] });
+  });
+
+  it('turns viewed and view-once-open syncs into normalize frames', () => {
+    const env = { sourceUuid: BOB, sourceDevice: 2, timestamp: 1000 } as any;
+    const sync = contentToNormalizedFrame(
+      env,
+      create(ContentSchema, {
+        content: {
+          case: 'syncMessage',
+          value: { viewed: [{ senderAciBinary: uuidToBytes(ALICE), timestamp: 5n }], content: { case: 'viewOnceOpen', value: { senderAci: ALICE, timestamp: 6n } } },
+        },
+      })
+    ).envelope.syncMessage;
+    assert.deepEqual(sync.viewedMessages, [{ sender: ALICE, senderUuid: ALICE, timestamp: 5 }]);
+    assert.deepEqual(sync.viewOnceOpen, { sender: ALICE, senderUuid: ALICE, timestamp: 6 });
   });
 
   it('reads service IDs from strings or 16/17-byte binaries', () => {
