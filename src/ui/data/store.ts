@@ -5,7 +5,7 @@ import { groupDetail, signal, syncedContacts, syncedGroups, type SyncedContact }
 import { config } from './config';
 import { db, type ExpiredRef } from './db';
 import { dbg } from './log';
-import { fmt, S } from '../strings';
+import { fmt, plural, S } from '../strings';
 import { parseFrame, type ChatRef, type MessageEvent, type NoticeEvent, type StoreEvent, type SyncRef } from './normalize';
 import { hasServiceWorker } from './platform';
 import { encodeMentions, parseStyledMarkdown, type PickedMention, type StyleRange } from './styled';
@@ -135,6 +135,10 @@ export function attachmentLabel(attachments: Array<Partial<Attachment>> | undefi
   if (!attachments || !attachments.length) return '';
   const a = attachments[0];
   const type = a.contentType || '';
+  if (attachments.length > 1) {
+    const photos = attachments.every((x) => (x.contentType || '').indexOf('image/') === 0);
+    return photos ? plural(attachments.length, S.photoOne, S.photoMany) : plural(attachments.length, S.attachmentOne, S.attachmentMany);
+  }
   if (a.viewOnce) return 'View-once media';
   if (a.voiceNote || type.indexOf('audio/') === 0) return 'Voice message';
   if (type.indexOf('image/') === 0) return 'Photo';
@@ -701,35 +705,53 @@ export function sendText(convId: string, text: string, quote?: Quote | null, men
     const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, quote: quote || null });
     if (wire.mentions.length) rec.mentions = mentions;
     const payload: SendPayload = { recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0 };
-    if (quote) {
-      payload.quote_timestamp = quote.timestamp;
-      payload.quote_author = quote.author;
-      payload.quote_message = quote.text;
-      if (quote.attachments && quote.attachments.length) payload.quote_attachments = quote.attachments;
-    }
+    addQuote(payload, quote);
     return sendCore(conv, rec, payload, st.body);
   });
 }
 
-/** `dataUri` is "data:<mime>;base64,…" (a scaled photo, a picked file, or a voice note). View-once media goes without a caption, as in Signal. */
-export function sendAttachment(convId: string, dataUri: string, caption: string, meta: { contentType?: string; filename?: string; size?: number; voiceNote?: boolean; viewOnce?: boolean } = {}): Promise<Message> {
+function addQuote(payload: SendPayload, quote: Quote | null | undefined): void {
+  if (!quote) return;
+  payload.quote_timestamp = quote.timestamp;
+  payload.quote_author = quote.author;
+  payload.quote_message = quote.text;
+  if (quote.attachments && quote.attachments.length) payload.quote_attachments = quote.attachments;
+}
+
+/** Signal-Desktop's composer takes up to 32 attachments per message. */
+export const MAX_ATTACHMENTS = 32;
+
+/** A file to send; `dataUri` is "data:<mime>;base64,…" (a scaled photo, a picked file, or a voice note). */
+export interface OutgoingFile {
+  dataUri: string;
+  contentType?: string;
+  filename?: string;
+  size?: number;
+  voiceNote?: boolean;
+}
+
+/** One message carrying `files` in order, with `caption` as its text. View-once media goes alone and without a caption, as in Signal. */
+export function sendAttachments(convId: string, files: OutgoingFile[], caption: string, opts: { viewOnce?: boolean; quote?: Quote | null } = {}): Promise<Message> {
   let conv: Conversation;
   try {
     conv = convForSend(convId);
+    if (!files.length || files.length > MAX_ATTACHMENTS || (opts.viewOnce && files.length > 1)) throw new Error('Too many attachments');
   } catch (e) {
     return Promise.reject(e);
   }
-  const contentType = meta.contentType || 'image/jpeg';
-  const filename = meta.filename || 'photo.jpg';
-  const att: Attachment = { id: '', contentType, filename, size: meta.size || 0, voiceNote: !!meta.voiceNote };
-  if (meta.viewOnce) att.viewOnce = true;
-  const text = meta.viewOnce ? '' : caption || '';
+  const atts: Attachment[] = files.map((f) => {
+    const att: Attachment = { id: '', contentType: f.contentType || 'image/jpeg', filename: f.filename || 'photo.jpg', size: f.size || 0, voiceNote: !!f.voiceNote };
+    if (opts.viewOnce) att.viewOnce = true;
+    return att;
+  });
+  const text = opts.viewOnce ? '' : caption || '';
   return withDefaultTimer(conv, () => {
     const st = styled(text);
-    const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: [att] });
-    const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, base64_attachments: [dataUri] };
-    if (meta.viewOnce) payload.view_once = true;
-    return sendCore(conv, rec, payload, st.body || attachmentLabel([att]));
+    const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: atts, quote: opts.quote || null });
+    const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, base64_attachments: files.map((f) => f.dataUri) };
+    if (opts.viewOnce) payload.view_once = true;
+    addQuote(payload, opts.quote);
+    return sendCore(conv, rec, payload, st.body || attachmentLabel(atts));
   });
 }
 

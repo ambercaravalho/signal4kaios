@@ -80,7 +80,9 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 
 ## Media
 
-**Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file); the file is sent with its name. Files up to 25 MB can be sent.
+**Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file). Photos, videos, and files wait above the message box (for example **2 photos**) so you can attach more and type a caption; **Send** sends them together as one message, and **Options → Remove attachments** clears them. Voice recordings send right away on their own. A message can carry up to 32 attachments and 25 MB in total, and each file is sent with its name.
+
+- A message with several attachments has **View attachments** first in its options, which lists them to open one.
 
 - Photos show in the chat; small ones download on their own as you scroll to them.
 - Voice messages, audio, and video play in the viewer: OK plays or pauses. Video depends on the phone's codecs; H.264 MP4 is the safe choice.

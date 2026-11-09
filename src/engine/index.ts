@@ -74,6 +74,8 @@ export interface MessageRef {
 }
 
 const MAX_DEVICE_NAME = 64;
+/** Signal-Desktop's composer limit. */
+const MAX_ATTACHMENTS = 32;
 
 function parseDataUri(dataUri: string): { contentType: string; filename?: string; bytes: Uint8Array } {
   const comma = dataUri.indexOf(',');
@@ -809,12 +811,14 @@ export const signalBridge = {
     const poll = payload.poll;
     if (poll && (!target.isGroup || !validPoll(poll.question, poll.options, POLL_QUESTION_MAX_SEND))) throw new Error('Polls need a group, a question, and 2 to 10 options');
 
+    const files = payload.base64_attachments || [];
+    if (files.length > MAX_ATTACHMENTS) throw new Error(`At most ${MAX_ATTACHMENTS} attachments per message`);
     const uploadedAttachments: AttachmentPointer[] = [];
-    for (const dataUri of payload.base64_attachments || []) {
+    for (const dataUri of files) {
       const { contentType, filename, bytes } = parseDataUri(dataUri);
       const ext = contentType.split('/')[1] || 'bin';
       const ptr = await client.uploadAttachment(bytes, contentType, filename || `attachment.${ext}`);
-      if (contentType.startsWith('audio/')) ptr.flags |= AttachmentPointer_Flags.VOICE_MESSAGE;
+      if (contentType.startsWith('audio/') && files.length === 1) ptr.flags |= AttachmentPointer_Flags.VOICE_MESSAGE;
       uploadedAttachments.push(ptr);
     }
 

@@ -237,7 +237,7 @@ export function mainActions(m: Message, clipped: boolean): MainAction[] {
 
 function canForward(m: Message): boolean {
   const att = m.attachments[0];
-  return !m.deleted && !m.notice && !m.contactCard && (!!m.body || !!att) && (!att || (!!att.id && !att.viewOnce));
+  return !m.deleted && !m.notice && !m.contactCard && m.attachments.length <= 1 && (!!m.body || !!att) && (!att || (!!att.id && !att.viewOnce));
 }
 
 function Reactions(props: { reactions: Record<string, string> }) {
@@ -388,6 +388,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   const [draft, setDraft] = useState(() => (conv && conv.draft) || '');
   const [quote, setQuote] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
+  const [tray, setTray] = useState<store.OutgoingFile[]>([]);
   const [pinned, setPinned] = useState<Message[]>([]);
   const [group, setGroup] = useState<GroupDetail | null>(null);
   const mentionsRef = useRef<PickedMention[]>((conv && conv.draftMentions) || []);
@@ -597,7 +598,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   function submit(): void {
     const text = draft.trim();
-    if (!text || !canCompose) return;
+    if ((!text && !tray.length) || !canCompose) return;
     stopTyping();
     const mentions = mentionsRef.current;
     if (editing) {
@@ -618,28 +619,51 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     clearComposer();
     setQuote(null);
     store.setDraft(convId, '', []);
+    if (tray.length) {
+      const files = tray;
+      setTray([]);
+      store.sendAttachments(convId, files, text, { quote: q }).catch((e) => toast(sendError(e)));
+      return;
+    }
     store.sendText(convId, text, q, mentions).catch((e) => toast(sendError(e)));
   }
 
-  /** View-once media goes without a caption, so the draft stays in the composer. */
+  /** Photos, videos, and files wait above the message box until Send; view-once media and voice messages go alone right away. View-once media goes without a caption, so the draft stays in the composer. */
   async function attach(viewOnce: boolean): Promise<void> {
     const file = await chooseFile(viewOnce ? 'image/*,video/*' : undefined);
     if (!file) return;
     const type = file.type || 'application/octet-stream';
     if (viewOnce && type.indexOf('image/') !== 0 && type.indexOf('video/') !== 0) return toast(S.viewOnceOnlyMedia);
     if (file.size > MAX_FILE_BYTES) return toast(S.fileTooLarge);
+    const alone = viewOnce || type.indexOf('audio/') === 0;
+    if (!alone && tray.length >= store.MAX_ATTACHMENTS) return toast(fmt(S.tooManyAttachments, { n: store.MAX_ATTACHMENTS }));
+    if (!alone && tray.reduce((sum, f) => sum + (f.size || 0), 0) + file.size > MAX_FILE_BYTES) return toast(S.attachmentsTooLarge);
     toast(S.preparingFile);
     try {
-      const uri = await readDataUri(file, file.name);
+      const out: store.OutgoingFile = { dataUri: await readDataUri(file, file.name), contentType: type, filename: file.name, size: file.size };
+      if (!alone) {
+        setTray((cur) => cur.concat(out));
+        setFocusedId(null);
+        return;
+      }
       const caption = viewOnce ? '' : draft.trim();
       if (!viewOnce) {
         clearComposer();
         store.setDraft(convId, '', []);
       }
-      await store.sendAttachment(convId, uri, caption, { contentType: type, filename: file.name, size: file.size, viewOnce });
+      await store.sendAttachments(convId, [out], caption, { viewOnce });
     } catch (e) {
       toast(sendError(e));
     }
+  }
+
+  async function pickAttachment(m: Message): Promise<void> {
+    const i = await pick(
+      S.viewAttachments,
+      m.attachments.map((a, n) => ({ value: n, label: a.filename || store.attachmentLabel([a]), sub: a.size ? fmtBytes(a.size) : undefined })),
+      -1
+    );
+    if (i !== undefined && i >= 0) openAttachment(m, m.attachments[i]);
   }
 
   function openAttachment(m: Message, att: Attachment): void {
@@ -752,7 +776,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     const settled = m.status !== 'failed' && m.status !== 'pending' && !request;
     const main: Record<MainAction, MenuEntry[]> = {
       retry: [{ label: S.retry, onSelect: () => store.retryMessage(m).catch((e) => toast(sendError(e))) }],
-      attachment: [att && { label: attachmentAction(att), onSelect: () => openAttachment(m, att) }],
+      attachment: m.attachments.length > 1 ? [{ label: S.viewAttachments, onSelect: () => pickAttachment(m) }] : [att && { label: attachmentAction(att), onSelect: () => openAttachment(m, att) }],
       vote: [!!conv && conv.type === 'group' && !request && { label: S.vote, onSelect: () => vote(m) }],
       card: contactCardOptions(m),
       readFull: [{ label: S.readFull, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) }],
@@ -862,8 +886,9 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       request && { label: S.block, danger: true, onSelect: blockRequest },
       request && { label: S.reportSpam, danger: true, onSelect: reportSpam },
       DIVIDER,
-      canCompose && { label: S.attach, onSelect: () => attach(false) },
-      canCompose && { label: S.attachViewOnce, onSelect: () => attach(true) },
+      canCompose && !editing && { label: S.attach, onSelect: () => attach(false) },
+      canCompose && !editing && { label: S.attachViewOnce, onSelect: () => attach(true) },
+      tray.length > 0 && { label: S.removeAttachments, danger: true, onSelect: () => setTray([]) },
       canCompose && { label: S.insertEmoji, onSelect: () => pickEmoji().then((e) => e && insertText(e)) },
       canCompose && conv && conv.type === 'group' && { label: S.mention, onSelect: mention },
       canCompose && conv && conv.type === 'group' && { label: S.createPoll, onSelect: createPoll },
@@ -949,7 +974,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   useSoftkeys({
     left: quote || editing ? S.cancel : undefined,
-    center: onComposer ? (blocked ? S.unblock : request ? S.accept : canCompose && draft.trim() ? (editing ? S.save : S.send) : null) : S.select,
+    center: onComposer ? (blocked ? S.unblock : request ? S.accept : canCompose && (draft.trim() || tray.length) ? (editing ? S.save : S.send) : null) : S.select,
     right: S.options,
   });
 
@@ -1001,6 +1026,12 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
           <div class="composer-ctx">
             <div class="composer-ctx-title">{editing ? S.editing : S.replyingTo + ' ' + authorName(quote!)}</div>
             <div class="composer-ctx-text">{(editing || quote)!.body || store.attachmentLabel((editing || quote)!.attachments)}</div>
+          </div>
+        )}
+        {tray.length > 0 && canCompose && (
+          <div class="composer-ctx">
+            <div class="composer-ctx-title">{store.attachmentLabel(tray)}</div>
+            <div class="composer-ctx-text">{tray.map((f) => f.filename).join(', ')}</div>
           </div>
         )}
         {blocked ? (

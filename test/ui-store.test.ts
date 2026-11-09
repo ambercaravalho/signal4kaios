@@ -260,11 +260,34 @@ describe('store', () => {
       sent.push(payload);
       return { timestamp: 8000 };
     };
-    const rec = await store.sendAttachment(ALICE, 'data:image/jpeg;base64,AAAA', 'a caption', { contentType: 'image/jpeg', viewOnce: true });
+    const rec = await store.sendAttachments(ALICE, [{ dataUri: 'data:image/jpeg;base64,AAAA', contentType: 'image/jpeg' }], 'a caption', { viewOnce: true });
     assert.equal(sent[0].view_once, true);
     assert.equal(sent[0].message, '');
     assert.equal(rec.body, '');
     assert.equal(rec.attachments[0].viewOnce, true);
+    await assert.rejects(store.sendAttachments(ALICE, [{ dataUri: 'data:image/jpeg;base64,AAAA' }, { dataUri: 'data:image/jpeg;base64,BBBB' }], '', { viewOnce: true }));
+  });
+
+  it('sends several attachments in one message, in order, with the caption and quote', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 8100 };
+    };
+    const files = [
+      { dataUri: 'data:image/jpeg;base64,AAAA', contentType: 'image/jpeg', filename: 'a.jpg', size: 3 },
+      { dataUri: 'data:image/png;base64,BBBB', contentType: 'image/png', filename: 'b.png', size: 3 },
+      { dataUri: 'data:application/pdf;base64,CCCC', contentType: 'application/pdf', filename: 'c.pdf', size: 3 },
+    ];
+    const rec = await store.sendAttachments(ALICE, files, 'trip', { quote: { author: ALICE, timestamp: 1000, text: 'pics?' } });
+    assert.deepEqual(sent[0].base64_attachments, files.map((f) => f.dataUri));
+    assert.equal(sent[0].message, 'trip');
+    assert.equal(sent[0].quote_timestamp, 1000);
+    assert.deepEqual(rec.attachments.map((a) => a.filename), ['a.jpg', 'b.png', 'c.pdf']);
+    assert.equal((await db.getMessage(rec.id))!.attachments.length, 3);
+    assert.equal(store.attachmentLabel(rec.attachments), '3 attachments');
+    assert.equal(store.attachmentLabel(rec.attachments.slice(0, 2)), '2 photos');
+    await assert.rejects(store.sendAttachments(ALICE, Array.from({ length: store.MAX_ATTACHMENTS + 1 }, () => files[0]), ''));
   });
 
   it('reports opened media once and drops view-once copies opened on another device', async () => {
