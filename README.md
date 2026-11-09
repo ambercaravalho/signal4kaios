@@ -1,23 +1,47 @@
+<div align="center">
+
+<img src="src/app/assets/icons/beacon.svg" alt="Beacon icon" width="112">
+
 # Beacon
 
-*Real Signal, on a phone with actual buttons.*
+**Real Signal, on a phone with actual buttons.**
+
+An unofficial, standalone [Signal](https://signal.org) client for KaiOS 3.0, 3.1, and 4.0 feature phones.
 
 [![CI](https://github.com/ambercaravalho/signal4kaios/actions/workflows/ci.yml/badge.svg)](https://github.com/ambercaravalho/signal4kaios/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/ambercaravalho/signal4kaios?include_prereleases)](https://github.com/ambercaravalho/signal4kaios/releases) [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
-Beacon (this repository, signal4kaios) is an unofficial, standalone [Signal](https://signal.org) client for **KaiOS 3.0, 3.1, and 4.0** feature phones. It links to your Signal account as a [linked device](https://support.signal.org/hc/en-us/articles/360007320551), like Signal Desktop, and runs all encryption on the phone with Signal's official [libsignal](https://github.com/signalapp/libsignal) compiled to WebAssembly. Everything is driven by the D-pad and number keys.
+[Download](https://github.com/ambercaravalho/signal4kaios/releases/latest) · [Quickstart](#quickstart) · [Features](#features) · [Documentation](#documentation)
+
+</div>
+
+Beacon (this repository, signal4kaios) puts your Signal chats on a KaiOS phone. It links to your account as a [linked device](https://support.signal.org/hc/en-us/articles/360007320551), just like Signal Desktop, so your number, contacts, and groups come with you. All encryption runs on the phone itself with Signal's official [libsignal](https://github.com/signalapp/libsignal) compiled to WebAssembly, and the phone talks directly to Signal's servers with nothing in between. Everything is driven by the D-pad, softkeys, and number keys.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/welcome.png" alt="Welcome screen with the Beacon icon and a Start softkey" width="200"><br><sub><b>Link in a minute</b></sub></td>
+    <td align="center"><img src="docs/images/chats.png" alt="Chat list with a pinned chat, unread counts, a muted chat, and a typing indicator" width="200"><br><sub><b>All your chats</b></sub></td>
+    <td align="center"><img src="docs/images/chat-dark.png" alt="A conversation in dark mode with a reply, bold text, reactions, and read ticks" width="200"><br><sub><b>Replies, reactions, formatting</b></sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/message-options.png" alt="Message options menu with React, Reply, Copy text, and Pin message" width="200"><br><sub><b>Everything one key away</b></sub></td>
+    <td align="center"><img src="docs/images/chat-settings.png" alt="Chat settings with the contact's avatar, nickname, and disappearing messages" width="200"><br><sub><b>Per-chat settings</b></sub></td>
+    <td align="center"><img src="docs/images/settings.png" alt="Settings with the profile, linked device, chats, and privacy" width="200"><br><sub><b>Light and dark themes</b></sub></td>
+  </tr>
+</table>
 
 > [!NOTE]
 > Beacon is a work in progress. Everyday messaging, groups, and sync work, but calls, stories, link previews, polls, and some other Signal features don't yet. The [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) tracks everything that's missing.
 
-## Screenshots
+## Why Beacon
 
-img1
-
-img2
-
-img3
+- **It's really Signal.** Your messages use the same end-to-end encryption as the official apps, and they reach the people you talk to on Android, iPhone, and Desktop as normal Signal messages.
+- **Private by design.** Keys are created and kept on the phone. There's no gateway, no bridge, and no computer to leave running.
+- **Built for keypads.** Lists, menus, and softkeys follow KaiOS conventions, so every action is a few key presses away and nothing needs a touchscreen.
+- **Plain language.** Screens say what they do in everyday words; the technical details live in **Settings → Debug** for when you need them.
 
 ## Quickstart
+
+You need a KaiOS 3.0, 3.1, or 4.0 phone and a Signal account on your main phone.
 
 1. **Install.** Download `signal4kaios-<version>.zip` from [Releases](https://github.com/ambercaravalho/signal4kaios/releases) and install it from OStore's **Manual Install** tab, or sideload it with [`appscmd`](https://github.com/kaiostech/appscmd).
 2. **Link.** Open Beacon and press **Start**; it shows a QR code. On your main phone, go to Signal → **Settings → Linked devices → Link a new device** and scan it.
@@ -25,6 +49,8 @@ img3
 
 > [!IMPORTANT]
 > KaiOS 4.0 blocks WebAssembly by default. Do the one-time [rooted WebAssembly step](docs/setup.md#kaios-40-enable-webassembly) before the first launch.
+
+The [setup guide](docs/setup.md) covers every install route and what to do if something goes wrong.
 
 ## Features
 
@@ -41,6 +67,10 @@ img3
 
 For what isn't supported yet, see [Known limitations](docs/user-guide.md#known-limitations) and the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap).
 
+## How it works
+
+Beacon is a [Preact](https://preactjs.com) app with a TypeScript Signal engine underneath. The engine speaks Signal's WebSocket and HTTP APIs over pinned TLS straight from the phone and hands every cryptographic operation to libsignal, built from Signal's source through a Rust-to-WebAssembly wrapper. Messages and keys are stored only on the phone, in IndexedDB. [Architecture](docs/architecture.md) walks through the whole stack.
+
 ## Documentation
 
 | Guide | Covers |
@@ -51,6 +81,10 @@ For what isn't supported yet, see [Known limitations](docs/user-guide.md#known-l
 | [Development](docs/development.md) | Building, testing, bumping pins, and releasing |
 | [Changelog](CHANGELOG.md) | Release notes |
 | [Roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) | Signal features that aren't supported yet, by area |
+
+## Contributing
+
+Bug reports and pull requests are welcome. [Development](docs/development.md) explains how to build the app and the libsignal wrapper, run the tests, and package a release; please [open an issue](https://github.com/ambercaravalho/signal4kaios/issues) before starting on anything large.
 
 ## License
 
