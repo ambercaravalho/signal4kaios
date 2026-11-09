@@ -49,10 +49,15 @@ export function TextField(p: TextFieldProps) {
     const el = input.current;
     if (!el || !p.multiline) return;
     el.style.height = 'auto';
-    const lineH = 22;
-    const max = (p.maxLines || 4) * lineH + 8;
-    el.style.height = Math.min(el.scrollHeight, max) + 'px';
-  }, [p.value, p.multiline]);
+    const cs = getComputedStyle(el);
+    const lineH = parseFloat(cs.lineHeight) || 22;
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const borderY = el.offsetHeight - el.clientHeight;
+    const max = (p.maxLines || 4) * lineH + padY + borderY;
+    const want = Math.max(el.scrollHeight, lineH + padY) + borderY;
+    el.style.height = Math.min(want, max) + 'px';
+    el.style.overflowY = want > max ? 'auto' : 'hidden';
+  }, [p.value, p.multiline, p.focused]);
 
   const common = {
     ref: input,

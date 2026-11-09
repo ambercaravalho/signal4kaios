@@ -2,6 +2,23 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.1.1
+
+Fixes from using v2.1.0 on a phone. Install over v2.1.0 or v2.0.1; nothing else changes.
+
+### Changed
+
+- **Archived chats** moved from a tab to an **Archived chats** row at the bottom of the chat list, as in Signal for Android. It shows how many chats are archived and opens them on their own screen. The row appears only when you have archived chats.
+- **Options menus** separate related items into groups, such as attaching and emoji apart from mute and chat settings.
+- **Message times** sit at the end of the last line of text, together with the disappearing-message timer and the ticks, so short messages are one line tall. On a photo with no caption, the time sits on the photo's corner.
+
+### Fixed
+
+- **Long messages and photos** no longer get stuck partly off screen. Long text is shortened with **Read more**, and **Read full message** in the message's options shows all of it. Photos are a little smaller in the chat, and **View photo** still opens them full size. Anything still taller than the screen scrolls a step at a time.
+- **Options menus** no longer push the screen behind them up while they open.
+- **The message box** no longer has a stray line under it or a scrollbar, and its "Message" hint is centered.
+- **Chat settings** shows the photo, name, and member count again when you scroll back to the top.
+
 ## v2.1.0
 
 signal4kaios is now **Beacon**. v2.1.0 is a full redesign: every screen is rebuilt to look and work like a KaiOS 3 and 4 app, in Signal's colors, with wording that makes sense without knowing how Signal works. Your chats, settings, and link carry over; there's nothing to redo.

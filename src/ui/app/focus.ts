@@ -47,17 +47,40 @@ export function useListNav(opts: { count: number; cols?: number; wrap?: boolean;
   return { index: clamped, setIndex: setIndexRaw };
 }
 
-/** A ref that scrolls its element into view when it gains focus, along with a section separator just above it. Keeps DOM focus on a text field so the user can type in it. */
-export function useFocusScroll<T extends HTMLElement>(focused: boolean): { current: T | null } {
+const SCROLLERS = '.body, .sheet-body, .chat-list, .dialog-body';
+
+/** Scroll the nearest scrolling container just enough to show `from` through `to`. `scrollIntoView` would also scroll the stack and `#app`, which slides the whole screen while a menu animates in. */
+function revealInScroller(from: HTMLElement, to: HTMLElement = from): void {
+  const box = from.closest(SCROLLERS) as HTMLElement | null;
+  if (!box) return;
+  const view = box.getBoundingClientRect();
+  const a = from.getBoundingClientRect();
+  const b = to.getBoundingClientRect();
+  if (b.bottom > view.bottom) box.scrollTop += Math.min(b.bottom - view.bottom, a.top - view.top);
+  else if (a.top < view.top) box.scrollTop -= view.top - a.top;
+}
+
+/** Scroll back to the very top when that still shows `el`, so content above a list's first row (a profile header) comes back into view. */
+function scrollToTopIfFits(el: HTMLElement): boolean {
+  const box = el.closest(SCROLLERS) as HTMLElement | null;
+  if (!box) return false;
+  const bottomFromTop = el.getBoundingClientRect().bottom - box.getBoundingClientRect().top + box.scrollTop;
+  if (bottomFromTop > box.clientHeight) return false;
+  box.scrollTop = 0;
+  return true;
+}
+
+/** A ref that scrolls its element into view when it gains focus, along with a section separator just above it. With `first`, it scrolls to the top of the list instead when the element fits there. */
+export function useFocusScroll<T extends HTMLElement>(focused: boolean, first = false): { current: T | null } {
   const ref = useRef<T>(null);
   const top = useIsTop();
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || !focused || !top) return;
-    const prev = el.previousElementSibling;
-    if (prev && prev.classList.contains('sep')) prev.scrollIntoView({ block: 'nearest' });
-    el.scrollIntoView({ block: 'nearest' });
-  }, [focused, top]);
+    if (first && scrollToTopIfFits(el)) return;
+    const prev = el.previousElementSibling as HTMLElement | null;
+    revealInScroller(prev && prev.classList.contains('sep') ? prev : el, el);
+  }, [focused, top, first]);
   return ref;
 }
 

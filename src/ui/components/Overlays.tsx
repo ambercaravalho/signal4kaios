@@ -4,7 +4,7 @@ import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import { router, useKeys, useSoftkeys } from '../app/router';
 import { S } from '../strings';
-import { ActionRow, RowList } from './RowList';
+import { ActionRow, Row, RowList } from './RowList';
 import { TextField } from './TextField';
 
 export interface MenuItem {
@@ -13,15 +13,36 @@ export interface MenuItem {
   onSelect: () => void;
 }
 
-function OptionsMenuView(props: { title: string; items: MenuItem[] }) {
-  const rows: ActionRow[] = props.items.map((it) => ({
-    label: it.label,
-    danger: it.danger,
-    onSelect: () => {
-      router.pop();
-      it.onSelect();
-    },
-  }));
+/** Put between groups of items in `showOptions` to separate them. */
+export const DIVIDER = '-';
+
+export type MenuEntry = MenuItem | typeof DIVIDER | null | false | undefined;
+
+/** Drops absent items, then any divider that would sit at an edge or next to another divider. */
+export function menuRows(items: MenuEntry[]): Array<MenuItem | typeof DIVIDER> {
+  const out: Array<MenuItem | typeof DIVIDER> = [];
+  for (const it of items) {
+    if (!it) continue;
+    if (it === DIVIDER && (!out.length || out[out.length - 1] === DIVIDER)) continue;
+    out.push(it);
+  }
+  while (out.length && out[out.length - 1] === DIVIDER) out.pop();
+  return out;
+}
+
+function OptionsMenuView(props: { title: string; items: Array<MenuItem | typeof DIVIDER> }) {
+  const rows: Row[] = props.items.map((it) =>
+    it === DIVIDER
+      ? { section: '' }
+      : {
+          label: it.label,
+          danger: it.danger,
+          onSelect: () => {
+            router.pop();
+            it.onSelect();
+          },
+        }
+  );
   return (
     <div class="sheet" role="menu">
       <div class="sheet-title">{props.title}</div>
@@ -32,9 +53,9 @@ function OptionsMenuView(props: { title: string; items: MenuItem[] }) {
   );
 }
 
-/** The KaiOS options menu, opened from the right softkey. Items with no action are left out. */
-export function showOptions(items: Array<MenuItem | null | false | undefined>, title: string = S.options): void {
-  const list = items.filter(Boolean) as MenuItem[];
+/** The KaiOS options menu, opened from the right softkey. Absent items are left out, and `DIVIDER` separates groups. */
+export function showOptions(items: MenuEntry[], title: string = S.options): void {
+  const list = menuRows(items);
   if (list.length) router.overlay(OptionsMenuView, { title, items: list });
 }
 

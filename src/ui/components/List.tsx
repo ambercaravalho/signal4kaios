@@ -19,11 +19,13 @@ export interface ListItemProps {
   danger?: boolean;
   disabled?: boolean;
   compact?: boolean;
+  /** The list's first row: focusing it scrolls back to the top of the screen. */
+  first?: boolean;
 }
 
 /** A KaiOS list row: one or two lines with optional avatar or icon and a trailing control. The focused row is solid accent with white text. */
 export function ListItem(p: ListItemProps) {
-  const ref = useFocusScroll<HTMLDivElement>(p.focused);
+  const ref = useFocusScroll<HTMLDivElement>(p.focused, p.first);
   const mq = useMarquee<HTMLDivElement>(p.focused, p.primary);
   const cls = 'li' + (p.focused ? ' focused' : '') + (p.danger ? ' li-danger' : '') + (p.disabled ? ' li-disabled' : '') + (p.compact ? ' li-compact' : '') + (p.end ? ' li-setting' : '');
   return (
@@ -52,8 +54,9 @@ export function ListItem(p: ListItemProps) {
   );
 }
 
+/** A section header, or a thin gap between groups when the label is empty. */
 export function Separator(props: { label: string }) {
-  return <div class="sep">{props.label}</div>;
+  return <div class={props.label ? 'sep' : 'sep sep-gap'}>{props.label}</div>;
 }
 
 export function Badge(props: { count: number }) {

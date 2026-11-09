@@ -38,6 +38,7 @@ button {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  overflow: clip;
   position: relative;
 }
 
@@ -45,6 +46,8 @@ button {
   flex: 1;
   position: relative;
   min-height: 0;
+  overflow: hidden;
+  overflow: clip;
 }
 
 .entry {
@@ -88,32 +91,6 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.tabs {
-  flex: none;
-  display: flex;
-  height: var(--tabs-h);
-  background: var(--header-bg);
-  color: var(--header-text);
-}
-
-.tab {
-  flex: 1;
-  text-align: center;
-  line-height: calc(var(--tabs-h) - 0.3rem);
-  font-size: var(--fs-secondary);
-  opacity: 0.7;
-  border-bottom: 0.3rem solid transparent;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tab.active {
-  opacity: 1;
-  font-weight: 600;
-  border-bottom-color: var(--header-text);
 }
 
 .softkeys {
