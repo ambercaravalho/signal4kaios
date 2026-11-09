@@ -2,7 +2,7 @@
 
 import { dbg } from './log';
 import type { StyleRange } from './styled';
-import type { Attachment, Notice, NoticeKind, Quote } from './types';
+import type { Attachment, ContactCard, Notice, NoticeKind, Quote } from './types';
 
 export interface MessageEvent {
   type: 'message';
@@ -17,6 +17,7 @@ export interface MessageEvent {
   quote: Quote | null;
   attachments: Attachment[];
   expiresInSeconds: number;
+  contactCard?: ContactCard;
 }
 
 export interface NoticeEvent {
@@ -195,34 +196,46 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
 
   const attachments: any[] = Array.isArray(dm.attachments) ? dm.attachments : [];
   const body = dm.message;
-  if (body == null && attachments.length === 0 && !dm.sticker) {
+  const card = contactCardOf(dm);
+  if (body == null && attachments.length === 0 && !dm.sticker && !card) {
     dbg('normalize: message without text');
     return [];
   }
 
-  return [
-    {
-      type: 'message',
-      convId,
-      groupInternalId: conv.groupInternalId,
-      incoming,
-      author,
-      authorName: str(env.sourceName),
-      timestamp: num(dm.timestamp) || num(env.timestamp),
-      body: applyMentions(str(body), dm.mentions, nameOf),
-      styles: stylesOf(dm, nameOf),
-      quote: quoteOf(dm),
-      attachments: attachments.map((a) => ({
-        id: str(a.id),
-        contentType: str(a.contentType),
-        filename: str(a.filename),
-        size: num(a.size),
-        voiceNote: !!a.voiceNote,
-        viewOnce: !!(a.viewOnce || dm.viewOnce),
-      })),
-      expiresInSeconds: num(dm.expiresInSeconds),
-    },
-  ];
+  const ev: MessageEvent = {
+    type: 'message',
+    convId,
+    groupInternalId: conv.groupInternalId,
+    incoming,
+    author,
+    authorName: str(env.sourceName),
+    timestamp: num(dm.timestamp) || num(env.timestamp),
+    body: applyMentions(str(body), dm.mentions, nameOf),
+    styles: stylesOf(dm, nameOf),
+    quote: quoteOf(dm),
+    attachments: attachments.map((a) => ({
+      id: str(a.id),
+      contentType: str(a.contentType),
+      filename: str(a.filename),
+      size: num(a.size),
+      voiceNote: !!a.voiceNote,
+      viewOnce: !!(a.viewOnce || dm.viewOnce),
+    })),
+    expiresInSeconds: num(dm.expiresInSeconds),
+  };
+  if (card) ev.contactCard = card;
+  return [ev];
+}
+
+function strings(list: unknown, max: number): string[] {
+  return Array.isArray(list) ? list.map(str).filter(Boolean).slice(0, max) : [];
+}
+
+function contactCardOf(dm: any): ContactCard | null {
+  const c = Array.isArray(dm.contacts) ? dm.contacts[0] : null;
+  if (!c || typeof c !== 'object') return null;
+  const card: ContactCard = { name: str(c.name).slice(0, 100), phones: strings(c.phones, 5), emails: strings(c.emails, 5) };
+  return card.name || card.phones.length || card.emails.length ? card : null;
 }
 
 function editEvent(env: any, edit: any, author: string, nameOf: NameOf, convOverride?: Conv): StoreEvent[] {

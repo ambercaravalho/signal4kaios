@@ -138,8 +138,8 @@ export function attachmentLabel(attachments: Array<Partial<Attachment>> | undefi
   return a.filename || 'File';
 }
 
-function previewOf(body: string, attachments: Attachment[]): string {
-  return body || attachmentLabel(attachments);
+function previewOf(rec: Pick<Message, 'body' | 'attachments' | 'contactCard'>): string {
+  return rec.body || attachmentLabel(rec.attachments) || (rec.contactCard ? S.sharedContact : '');
 }
 
 /** What a notice line says; `author` is who it's about. */
@@ -155,7 +155,7 @@ export function noticeText(notice: Notice, author: string): string {
 }
 
 function messageText(rec: Message): string {
-  return rec.notice ? noticeText(rec.notice, rec.author) : previewOf(rec.body, rec.attachments);
+  return rec.notice ? noticeText(rec.notice, rec.author) : previewOf(rec);
 }
 
 export function onNotificationClick(fn: (convId: string) => void): void {
@@ -203,6 +203,7 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
     deleted: false,
     edited: false,
   };
+  if (ev.contactCard) rec.contactCard = ev.contactCard;
   if (ev.expiresInSeconds) {
     rec.expireSecs = ev.expiresInSeconds;
     rec.expiresAt = Date.now() + ev.expiresInSeconds * 1000;
@@ -211,7 +212,7 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   db.putMessage(rec);
 
   conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
-  conv.lastPreview = previewOf(rec.body, rec.attachments);
+  conv.lastPreview = previewOf(rec);
   unarchiveOnActivity(conv);
   if (ev.incoming && openConvId !== conv.id) conv.unread = (conv.unread || 0) + 1;
   if (typingMap[conv.id]) {
@@ -292,6 +293,14 @@ function updateTarget(convId: string, ts: number, authors: Array<string | null>,
     emit('message-updated', rec, undefined);
     await db.putMessage(rec);
   });
+}
+
+/** Signal-Desktop's MESSAGE_MAX_EDIT_COUNT. */
+export const MAX_EDITS = 10;
+
+function keepVersion(rec: Message): void {
+  const version = { body: rec.body, styles: rec.styles || [], timestamp: rec.editedAt || rec.timestamp };
+  rec.history = (rec.history || []).concat(version).slice(-MAX_EDITS);
 }
 
 function setPreviewIfLast(convId: string, rec: Message, preview: string): void {
@@ -425,9 +434,12 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
       });
     case 'edit':
       return updateTarget(ev.convId, ev.targetTimestamp, [ev.author, altKeyOf(ev.author), self()], 'edit', (rec) => {
+        if (ev.timestamp && rec.editedAt === ev.timestamp) return;
+        keepVersion(rec);
         rec.body = ev.newBody;
         rec.styles = ev.newStyles || [];
         rec.edited = true;
+        if (ev.timestamp) rec.editedAt = ev.timestamp;
         setPreviewIfLast(ev.convId, rec, ev.newBody);
       });
     case 'pin':
@@ -659,7 +671,9 @@ export function sendEdit(rec: Message, newText: string, mentions: PickedMention[
   }
   const st = styled(newText);
   const wire = encodeMentions(st.body, st.styles, mentions);
-  return signal.send({ recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0, edit_timestamp: rec.timestamp }).then(() => {
+  return signal.send({ recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0, edit_timestamp: rec.timestamp }).then((res) => {
+    keepVersion(rec);
+    rec.editedAt = (res && res.timestamp) || Date.now();
     rec.body = st.body;
     rec.styles = st.styles;
     rec.raw = newText;
@@ -670,6 +684,22 @@ export function sendEdit(rec: Message, newText: string, mentions: PickedMention[
     setPreviewIfLast(conv.id, rec, st.body);
     return rec;
   });
+}
+
+/** A copy of `m` in another chat. Text keeps its formatting but not its mentions; `dataUri` carries the attachment's bytes when it has one. */
+export function forwardMessage(convId: string, m: Message, dataUri?: string): Promise<Message> {
+  let conv: Conversation;
+  try {
+    conv = convForSend(convId);
+  } catch (e) {
+    return Promise.reject(e);
+  }
+  const src = dataUri ? m.attachments[0] : undefined;
+  const attachments: Attachment[] = src ? [{ id: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: !!src.voiceNote }] : [];
+  const rec = newOutgoingRec(conv, { body: m.body, styles: m.styles || [], attachments });
+  const payload: SendPayload = { recipients: [conv.sendId!], message: m.body, styles: m.styles || [], expire_timer: conv.expireTimer || 0 };
+  if (dataUri) payload.base64_attachments = [dataUri];
+  return sendCore(conv, rec, payload, previewOf(rec));
 }
 
 export function retryMessage(rec: Message): Promise<Message> {

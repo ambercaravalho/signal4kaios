@@ -60,6 +60,38 @@ describe('store', () => {
     assert.equal(rec.body, '');
   });
 
+  it('keeps earlier versions of edited messages once each', async () => {
+    store.ingestRaw(incoming(1500, 'first'));
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: 1600, editMessage: { targetSentTimestamp: 1500, dataMessage: { timestamp: 1600, message: 'second' } } } });
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: 1600, editMessage: { targetSentTimestamp: 1500, dataMessage: { timestamp: 1600, message: 'second' } } } });
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: 1700, editMessage: { targetSentTimestamp: 1500, dataMessage: { timestamp: 1700, message: 'third' } } } });
+    await settle();
+    const rec = (await db.getMessage(ALICE + '|1500|' + ALICE))!;
+    assert.equal(rec.body, 'third');
+    assert.equal(rec.editedAt, 1700);
+    assert.deepEqual(rec.history, [
+      { body: 'first', styles: [], timestamp: 1500 },
+      { body: 'second', styles: [], timestamp: 1600 },
+    ]);
+  });
+
+  it('forwards text with its formatting and an attachment without its mentions', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 5050 };
+    };
+    const src = (await db.getMessage(ALICE + '|1500|' + ALICE))!;
+    const fwd = { ...src, body: 'hi @Bob', styles: [{ start: 0, length: 2, style: 'BOLD' }], mentions: [{ name: 'Bob', uuid: 'aci-bob' }], attachments: [{ id: 'x', contentType: 'image/png', filename: 'a.png', size: 3 }] };
+    const rec = await store.forwardMessage(ALICE, fwd, 'data:image/png;base64,AAAA');
+    assert.equal(sent[0].message, 'hi @Bob');
+    assert.deepEqual(sent[0].styles, [{ start: 0, length: 2, style: 'BOLD' }]);
+    assert.equal(sent[0].mentions, undefined);
+    assert.deepEqual(sent[0].base64_attachments, ['data:image/png;base64,AAAA']);
+    assert.equal(rec.attachments[0].id, '');
+    assert.equal(rec.incoming, false);
+  });
+
   it('sends with formatting and the chat timer, then tracks receipts', async () => {
     const sent: any[] = [];
     (signal as any).send = async (payload: any) => {

@@ -665,6 +665,29 @@ describe('Sync and service IDs', () => {
     assert.deepEqual(quoted.quote, { id: 7, authorUuid: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }] });
   });
 
+  it('reduces shared contacts to a name, numbers, and emails', () => {
+    const env = { sourceUuid: BOB, sourceDevice: 1, timestamp: 1000 } as any;
+    const dm = contentToNormalizedFrame(
+      env,
+      create(ContentSchema, {
+        content: {
+          case: 'dataMessage',
+          value: {
+            timestamp: 1000n,
+            contact: [
+              { name: { givenName: 'Clara', familyName: 'Oswald' }, number: [{ value: '+15550123' }, { value: '' }], email: [{ value: 'clara@example.com' }] },
+              { organization: 'TARDIS Ltd' },
+            ],
+          },
+        },
+      })
+    ).envelope.dataMessage;
+    assert.deepEqual(dm.contacts, [
+      { name: 'Clara Oswald', phones: ['+15550123'], emails: ['clara@example.com'] },
+      { name: 'TARDIS Ltd', phones: [], emails: [] },
+    ]);
+  });
+
   it('turns viewed and view-once-open syncs into normalize frames', () => {
     const env = { sourceUuid: BOB, sourceDevice: 2, timestamp: 1000 } as any;
     const sync = contentToNormalizedFrame(

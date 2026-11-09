@@ -52,6 +52,20 @@ export function MessageDetailsScreen(props: { msg: Message }) {
             <div class="details-value">{v}</div>
           </div>
         ))}
+        {!m.deleted && m.history && m.history.length > 0 && (
+          <div class="details-row">
+            <div class="details-label">{S.earlierVersions}</div>
+            {m.history
+              .slice()
+              .reverse()
+              .map((v) => (
+                <div class="details-value" key={v.timestamp}>
+                  <div class="details-label">{fmtTimeFull(v.timestamp)}</div>
+                  <RichText text={v.body} styles={v.styles} revealSpoilers />
+                </div>
+              ))}
+          </div>
+        )}
         {reactions.length > 0 && (
           <div class="details-row">
             <div class="details-label">{S.reactions}</div>

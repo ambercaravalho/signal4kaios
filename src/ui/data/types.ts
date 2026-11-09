@@ -33,6 +33,20 @@ export interface Notice {
   video?: boolean;
 }
 
+/** A shared contact (Signal's contact card), reduced to what the phone shows. */
+export interface ContactCard {
+  name: string;
+  phones: string[];
+  emails: string[];
+}
+
+/** An earlier version of an edited message, with when that version was sent. */
+export interface MessageVersion {
+  body: string;
+  styles: StyleRange[];
+  timestamp: number;
+}
+
 export interface Message {
   /** `convId|timestamp|author` */
   id: string;
@@ -59,6 +73,10 @@ export interface Message {
   notice?: Notice;
   /** A received voice message, video, or view-once media was opened, here or on another device. */
   viewed?: boolean;
+  contactCard?: ContactCard;
+  /** Earlier versions, oldest first; `editedAt` is when the current text was sent. */
+  history?: MessageVersion[];
+  editedAt?: number;
 }
 
 export interface Conversation {

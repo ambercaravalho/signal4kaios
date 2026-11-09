@@ -54,6 +54,21 @@ export function cachedAttachment(att: Attachment): Promise<Blob | null> {
   );
 }
 
+/** A file or downloaded attachment as the "data:<mime>;filename=…;base64,…" URI the send path takes. */
+export function readDataUri(blob: Blob, filename?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const uri = String(r.result);
+      if (!filename) return resolve(uri);
+      const safe = String(filename).replace(/[;,]/g, '_');
+      resolve(uri.replace(/^data:([^;,]*);base64,/, 'data:$1;filename=' + safe + ';base64,'));
+    };
+    r.onerror = () => reject(r.error || new Error('read failed'));
+    r.readAsDataURL(blob);
+  });
+}
+
 export function storageKindFor(type: string): string {
   if (type.indexOf('image/') === 0) return 'pictures';
   if (type.indexOf('audio/') === 0) return 'music';

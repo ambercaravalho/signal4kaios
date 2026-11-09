@@ -54,6 +54,14 @@ describe('parseFrame', () => {
     assert.deepEqual(rs, { type: 'readSync', entries: [{ sender: '+4', timestamp: 3 }] });
   });
 
+  it('keeps the first shared contact and drops empty ones', () => {
+    const env = { sourceNumber: '+3', timestamp: 8 };
+    const [ev] = parseFrame({ envelope: { ...env, dataMessage: { timestamp: 8, contacts: [{ name: 'Clara', phones: ['+1555', 7], emails: [] }] } } }, '+1', nameOf) as any[];
+    assert.deepEqual(ev.contactCard, { name: 'Clara', phones: ['+1555'], emails: [] });
+    assert.equal(ev.body, '');
+    assert.deepEqual(parseFrame({ envelope: { ...env, dataMessage: { timestamp: 8, contacts: [{ name: '' }] } } }, '+1', nameOf), []);
+  });
+
   it('counts viewed receipts as read and parses viewed and view-once syncs', () => {
     const env = { sourceNumber: '+3' };
     const [rc] = parseFrame({ envelope: { ...env, receiptMessage: { isViewed: true, timestamps: [7] } } }, '+1', nameOf);

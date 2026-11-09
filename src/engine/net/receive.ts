@@ -42,6 +42,9 @@ import {
 import type { SignalProtocolStore } from '../protocol/store';
 import { isAci } from './proto';
 
+const MAX_CONTACT_CARDS = 5;
+const MAX_CARD_FIELDS = 5;
+
 /** Envelope metadata after decryption; `sourceUuid` is the sender's service ID (from Sealed Sender when the envelope is sealed). */
 export interface IncomingEnvelope {
   type: number;
@@ -167,6 +170,18 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
       viewOnce: !!dm.isViewOnce,
     })),
   };
+
+  if (dm.contact.length > 0) {
+    out.contacts = dm.contact.slice(0, MAX_CONTACT_CARDS).map((c) => {
+      const n = c.name;
+      const name = n ? n.nickname || [n.prefix, n.givenName, n.middleName, n.familyName, n.suffix].filter(Boolean).join(' ') : '';
+      return {
+        name: name || c.organization || '',
+        phones: c.number.map((p) => p.value).filter(Boolean).slice(0, MAX_CARD_FIELDS),
+        emails: c.email.map((e) => e.value).filter(Boolean).slice(0, MAX_CARD_FIELDS),
+      };
+    });
+  }
 
   if (dm.quote) {
     out.quote = {

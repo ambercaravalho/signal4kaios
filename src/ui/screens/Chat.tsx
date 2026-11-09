@@ -13,19 +13,20 @@ import { Screen } from '../components/Screen';
 import { TextField } from '../components/TextField';
 import { toast } from '../components/Toast';
 import { groupDetail, signal, type GroupDetail } from '../data/api';
-import { ATTACHMENT_CACHE_KEEP, autoDownloads, cachedAttachment, isImage, loadAttachment } from '../data/attachments';
+import { ATTACHMENT_CACHE_KEEP, autoDownloads, cachedAttachment, isImage, loadAttachment, readDataUri } from '../data/attachments';
 import { config } from '../data/config';
 import { db } from '../data/db';
 import { fmtBytes, fmtClock, fmtDay, fmtMsgTime } from '../data/format';
 import { openUrl } from '../data/platform';
 import * as store from '../data/store';
 import { extractUrls, isJumboEmoji, type PickedMention } from '../data/styled';
-import type { Attachment, Conversation, Message, MessageStatus, Notice, Quote } from '../data/types';
+import type { Attachment, ContactCard, Conversation, Message, MessageStatus, Notice, Quote } from '../data/types';
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
 import { MessageDetailsScreen } from './MessageDetails';
 import { SafetyNumberScreen } from './SafetyNumber';
+import { ForwardScreen } from './SearchList';
 import { ViewerScreen } from './Viewer';
 
 const PAGE = 50;
@@ -161,6 +162,29 @@ function AttachmentView(props: { att: Attachment; meta?: VNode | null }) {
   );
 }
 
+function ContactCardView(props: { card: ContactCard }) {
+  const { card } = props;
+  const title = card.name || card.phones[0] || card.emails[0];
+  const sub = card.name ? card.phones[0] || card.emails[0] : '';
+  return (
+    <div class="msg-file">
+      <Icon name="person" />
+      <span class="msg-file-name">{title}</span>
+      {sub ? <span class="msg-file-size">{sub}</span> : null}
+    </div>
+  );
+}
+
+/** The Signal user a shared contact's number belongs to, when it's someone we already know. */
+function cardContact(card: ContactCard) {
+  return store.contactsList().find((c) => !!c.uuid && !!c.number && card.phones.some((p) => p.replace(/[\s()-]/g, '') === c.number));
+}
+
+function canForward(m: Message): boolean {
+  const att = m.attachments[0];
+  return !m.deleted && !m.notice && !m.contactCard && (!!m.body || !!att) && (!att || (!!att.id && !att.viewOnce));
+}
+
 function Reactions(props: { reactions: Record<string, string> }) {
   const counts: Record<string, number> = {};
   const order: string[] = [];
@@ -234,6 +258,7 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
         {attachments.map((a, i) => (
           <AttachmentView key={a.id || i} att={a} meta={metaOnAttachment && i === attachments.length - 1 ? meta : null} />
         ))}
+        {m.contactCard && !m.deleted && <ContactCardView card={m.contactCard} />}
         {text && (
           <div class={'msg-body' + (jumbo ? ' jumbo' : '') + (clipped ? ' clipped' : '')} ref={bodyRef}>
             <RichText text={text} styles={m.deleted ? [] : m.styles} revealSpoilers={props.focused} />
@@ -264,21 +289,6 @@ export function NoticeLine(props: { m: Message; focused: boolean }) {
       <span class="notice-time">{fmtClock(m.timestamp)}</span>
     </div>
   );
-}
-
-function withFilename(dataUri: string, name: string): string {
-  if (!name) return dataUri;
-  const safe = String(name).replace(/[;,]/g, '_');
-  return dataUri.replace(/^data:([^;,]*);base64,/, 'data:$1;filename=' + safe + ';base64,');
-}
-
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = () => reject(r.error || new Error('read failed'));
-    r.readAsDataURL(file);
-  });
 }
 
 /** The OS picker on KaiOS already offers the camera, recorder, and gallery, so one file input covers photos, voice notes, and files. */
@@ -560,7 +570,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     if (file.size > MAX_FILE_BYTES) return toast(S.fileTooLarge);
     toast(S.preparingFile);
     try {
-      const uri = withFilename(await readAsDataUrl(file), file.name);
+      const uri = await readDataUri(file, file.name);
       const caption = viewOnce ? '' : draft.trim();
       if (!viewOnce) {
         clearComposer();
@@ -601,8 +611,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     if (url) openUrl(url).catch(() => toast(S.errGeneric));
   }
 
-  function copyText(m: Message): void {
-    const text = m.body;
+  function copyText(text: string): void {
     const clip = (navigator as Navigator & { clipboard?: { writeText(t: string): Promise<void> } }).clipboard;
     const fallback = () => {
       insertText(text);
@@ -629,6 +638,14 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     ]);
   }
 
+  function contactCardOptions(m: Message) {
+    const card = !m.deleted && m.contactCard;
+    if (!card) return [];
+    const known = cardContact(card);
+    if (known) return [{ label: fmt(S.messageName, { name: card.name || store.displayName(known.id) }), onSelect: () => openChat(store.conversationWith(known).id) }];
+    return card.phones.length ? [{ label: S.copyNumber, onSelect: () => copyText(card.phones[0]) }] : [];
+  }
+
   function messageOptions(m: Message): void {
     if (m.notice) return noticeOptions(m);
     const urls = m.deleted ? [] : extractUrls(m.body);
@@ -647,9 +664,11 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       },
       DIVIDER,
       !m.deleted && att && { label: attachmentAction(att), onSelect: () => openAttachment(m, att) },
+      ...contactCardOptions(m),
       urls.length > 0 && { label: S.openLink, onSelect: () => openLinks(urls) },
-      !m.deleted && !!m.body && { label: S.copyText, onSelect: () => copyText(m) },
-      canChange(m) && !m.attachments.length && {
+      !m.deleted && !!m.body && { label: S.copyText, onSelect: () => copyText(m.body) },
+      settled && canForward(m) && { label: S.forward, onSelect: () => router.push(ForwardScreen, { msg: m }) },
+      canChange(m) && !m.attachments.length && (m.history || []).length < store.MAX_EDITS && {
         label: S.edit,
         onSelect: () => {
           saveDraft();
