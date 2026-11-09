@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* IndexedDB persistence. signal-cli-rest-api has no message-history API, so this database IS the message history: everything received over the websocket (and everything sent) is stored here.
+  /* IndexedDB persistence. Signal has no server-side message history, so this database IS the message history: everything received over the websocket (and everything sent) is stored here, alongside the on-device Signal Protocol state.
 
      Stores:
        messages       keyPath 'id' = convId + '|' + timestamp + '|' + author
@@ -12,13 +12,17 @@
        attachments    keyPath 'id' (v2) — LRU blob cache for viewed media
        signal_keystore    keyPath 'k' (v3) — local Signal identity & registration state
        signal_identities  keyPath 'address' (v3) — remote peer identity keys & trust status
-       signal_sessions    keyPath 'address' (v3) — Double Ratchet session state (<aci>.<deviceId>)
-       signal_prekeys     keyPath 'id' (v3) — one-time, signed, and PQ PreKeys
-       signal_sender_keys keyPath 'id' (v3) — group SenderKey state
+       signal_sessions    keyPath 'address' (v3) — serialized libsignal SessionRecord (<serviceId>.<deviceId>)
+       signal_prekeys     keyPath 'id' (v3) — serialized libsignal PreKey, SignedPreKey, and KyberPreKey records
+       signal_sender_keys keyPath 'id' (v3) — serialized libsignal SenderKeyRecord (<serviceId>.<deviceId>::<distributionId>)
+
+     v4 switched the protocol state to records produced by Signal's official libsignal. v3 state came from the old hand-written engine and is not readable by libsignal, so the upgrade clears every signal_* store and the device must be linked again (messages, conversations, and contacts are kept).
   */
 
-  var DB_VERSION = 3;
+  var DB_VERSION = 4;
+  var SIGNAL_STORES = ['signal_keystore', 'signal_identities', 'signal_sessions', 'signal_prekeys', 'signal_sender_keys'];
   var opened = null;
+  var signalStateReset = false;
 
   /* Each account gets its own database. */
   function dbName() {
@@ -63,6 +67,11 @@
         if (!db.objectStoreNames.contains('signal_sender_keys')) {
           db.createObjectStore('signal_sender_keys', { keyPath: 'id' });
         }
+        if (e.oldVersion > 0 && e.oldVersion < 4) {
+          var upgrade = e.target.transaction;
+          SIGNAL_STORES.forEach(function (name) { upgrade.objectStore(name).clear(); });
+          signalStateReset = true;
+        }
       };
       req.onsuccess = function () { resolve(req.result); };
       req.onerror = function () { reject(req.error); };
@@ -104,6 +113,16 @@
   }
 
   App.db = {
+    /* Opens (and if needed upgrades) the active account's database. */
+    ready: function () {
+      return open().then(function () {});
+    },
+
+    /* True when this launch upgraded a pre-libsignal (v3) database and discarded its protocol state; the device has to be linked again. */
+    signalStateWasReset: function () {
+      return signalStateReset;
+    },
+
     putMessage: function (rec) {
       return tx('messages', 'readwrite', function (s) { s.put(rec); });
     },
@@ -283,7 +302,7 @@
         .then(function (row) { return row ? row.v : undefined; });
     },
 
-    /* ---- On-device Signal Protocol stores (v3) ---- */
+    /* ---- On-device Signal Protocol stores (libsignal records since v4) ---- */
 
     signalKeySet: function (k, v) {
       return tx('signal_keystore', 'readwrite', function (s) { s.put({ k: k, v: v }); });
@@ -343,6 +362,19 @@
     getSenderKey: function (id) {
       return tx('signal_sender_keys', 'readonly', function (s) { return reqValue(s.get(id)); })
         .then(function (row) { return row ? row.data : undefined; });
+    },
+
+    /* Drop every protocol record (identity, sessions, PreKeys, sender keys) for the active account, keeping message history. Used before linking again. */
+    clearSignalState: function () {
+      return open().then(function (db) {
+        return new Promise(function (resolve, reject) {
+          var t = db.transaction(SIGNAL_STORES, 'readwrite');
+          SIGNAL_STORES.forEach(function (name) { t.objectStore(name).clear(); });
+          t.oncomplete = function () { resolve(); };
+          t.onerror = function () { reject(t.error); };
+          t.onabort = function () { reject(t.error); };
+        });
+      });
     },
 
     wipe: function () {

@@ -14,7 +14,9 @@ img3
 
 ## How it works
 
-In v2.0.0, **Signal encryption and decryption run directly on your KaiOS phone**. The phone links to your Signal account as a secondary device (just like Signal Desktop) by displaying a `sgnl://linkdevice` QR code on screen, holds its own Curve25519 / X3DH / Double Ratchet / Sender Key state in IndexedDB, and connects directly to Signal's servers (`chat.signal.org` and `cdn.signal.org`).
+In v2.0.0, **Signal encryption and decryption run directly on your KaiOS phone**. The phone links to your Signal account as a secondary device (just like Signal Desktop) by displaying a `sgnl://linkdevice` QR code on screen, keeps its own encryption state in IndexedDB, and connects directly to Signal's servers (`chat.signal.org`, `storage.signal.org`, and Signal's CDNs).
+
+The cryptography is not reimplemented: the app runs Signal's official [libsignal](https://github.com/signalapp/libsignal), pinned to a release and compiled to WebAssembly, for PQXDH, the Double Ratchet, Sealed Sender, Sender Keys, safety numbers, device linking, zkgroup, and usernames. Message formats come from Signal-Desktop's own `.proto` files, and the build is tested against Signal's official Node library. On KaiOS 4.0 this needs a one-time [WebAssembly step](docs/setup.md#kaios-40-enable-webassembly) on the rooted phone.
 
 ## Quickstart
 
@@ -28,7 +30,7 @@ The full walkthrough is in **[Setup](docs/setup.md)**.
 
 | Area | What you get |
 | --- | --- |
-| **On-device E2EE** | X3DH, Double Ratchet, Sealed Sender, Sender Keys, and AES-256 attachment encryption directly on the phone |
+| **On-device E2EE** | Signal's official libsignal on the phone: PQXDH, Double Ratchet, Sealed Sender, Sender Keys, and AES-256 attachment encryption |
 | **Messaging** | Real-time 1:1 and group chat, reactions, replies, edits, read receipts, and typing indicators |
 | **Disappearing messages** | Per-chat timer, live countdown on a message, and automatic deletion when it expires |
 | **Offline queue** | Signal servers hold messages while your phone is offline and deliver them when you reconnect |
@@ -46,4 +48,4 @@ Contributing (or pointing an AI agent at this repo)? Start with **[AGENTS.md](AG
 
 ## License
 
-[GPL-3.0](LICENSE).
+[GPL-3.0](LICENSE). The app bundles Signal's [libsignal](https://github.com/signalapp/libsignal), which is AGPL-3.0-only, compiled to WebAssembly; the combined work is distributed under GPL-3.0 section 13, which permits combining with AGPL-3.0 code. See [NOTICE](NOTICE).

@@ -9,7 +9,7 @@ Signal4KaiOS is now a standalone on-device Signal client for KaiOS 3.0, 3.1, and
 ### On-device Signal protocol
 
 - Link your phone directly to your Signal account by scanning a QR code shown on the KaiOS screen from Signal on your main phone (**Settings → Linked devices → Link a new device**). No computer, server, or Docker container is required.
-- Full on-device Signal Protocol engine: Curve25519 / XEdDSA, PQXDH (Kyber-1024 / ML-KEM-1024 post-quantum PreKeys), X3DH, Double Ratchet sessions, inbound and outbound Sealed Sender (`SenderCertificate` + `Unidentified-Access-Key`), `DecryptionErrorMessage` retry receipts, Group Sender Keys, 60-digit Safety Number computation and QR verification, and AES-256-CBC + HMAC-SHA256 attachment encryption against Signal's CDN.
+- Full on-device Signal Protocol engine built on Signal's official [libsignal](https://github.com/signalapp/libsignal) v0.106.2 compiled to WebAssembly, with message formats generated from Signal-Desktop's `.proto` files and interop tests against `@signalapp/libsignal-client`: PQXDH (Kyber-1024 post-quantum PreKeys), Double Ratchet sessions, inbound and outbound Sealed Sender (`SenderCertificate` + `Unidentified-Access-Key`), `DecryptionErrorMessage` retry receipts, Group Sender Keys, 60-digit Safety Number computation and QR verification, and AES-256-CBC + HMAC-SHA256 attachment encryption against Signal's CDN.
 - Signal Storage Service (`StorageManifest`, `ContactRecord`, `GroupV2Record`, `AccountRecord`) and full `SyncMessage` support (`Verified`, `Blocked`, `Configuration`, `FetchLatest`), plus Groups V2 `MasterKey` derivation, encrypted Profile / Avatar hydration, Signal username lookup, incoming call missed-call notices, Stickers, View-Once media, and group `@mention` insertion.
 - Direct WebSocket connection to Signal's servers (`chat.signal.org`): messages sent while your phone is offline are held by Signal's servers and decrypted when you reconnect, with closed-app background wake probes in `sw.js`.
 - Contacts and groups sync directly from your primary Signal device over Storage Service and encrypted sync blobs.
@@ -17,6 +17,8 @@ Signal4KaiOS is now a standalone on-device Signal client for KaiOS 3.0, 3.1, and
 ### Platform changes
 
 - Targets **KaiOS 3.0, 3.1, and 4.0** (Gecko 84 and Gecko 123). **KaiOS 2.5 support is dropped.**
+- KaiOS 4.0 needs a one-time rooted step to allow WebAssembly; see [Setup](docs/setup.md#kaios-40-enable-webassembly).
+- Bundles libsignal (AGPL-3.0-only); see `NOTICE`.
 - Removed `gateway/`, `docker/`, and `app/manifest.webapp`.
 
 ## v1.1.3

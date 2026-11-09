@@ -134,7 +134,7 @@
           App.util.dbg('ws: offline queue drain complete');
           return;
         }
-        if (req.path === '/api/v1/message' && req.body) {
+        if (req.path === '/api/v1/message' && req.body && req.body.length) {
           var isSilent = drainingQueue;
           framesThisSession += 1;
           App.signal.processIncomingEnvelope(req.body).then(function (frame) {

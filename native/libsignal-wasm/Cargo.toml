@@ -1,0 +1,39 @@
+[package]
+name = "libsignal-wasm"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+publish = false
+description = "Thin wasm-bindgen wrapper over Signal's official libsignal crates for signal4kaios"
+
+[lib]
+crate-type = ["cdylib"]
+
+# Every libsignal crate is pinned to the same official release commit (libsignal v0.106.2).
+# Bump all of them together; see docs/development.md "Bumping the libsignal pin".
+[dependencies]
+libsignal-protocol = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
+libsignal-account-keys = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
+libsignal-provisioning = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
+usernames = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
+zkgroup = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
+
+async-trait = "0.1.79"
+futures-util = { version = "=0.3.32", default-features = false }
+rand = "0.9.4"
+uuid = "1.5"
+
+wasm-bindgen = "=0.2.126"
+js-sys = "=0.3.103"
+
+# Route OS randomness to crypto.getRandomValues on wasm32-unknown-unknown.
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
+getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

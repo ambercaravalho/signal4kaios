@@ -111,8 +111,8 @@
     });
   }
 
-  /* Raw binary upload/download for Signal CDN encrypted attachments. Resolves to Uint8Array. */
-  function rawBinary(method, url, bodyBytes, headers, timeout) {
+  /* Raw binary request (Signal CDN attachments, storage.signal.org protobufs). Resolves to { status, body: Uint8Array, location }; rejects on non-2xx with err.status set. */
+  function rawRequest(method, url, bodyBytes, headers, timeout) {
     return new Promise(function (resolve, reject) {
       var xhr = makeXhr();
       xhr.open(method, url, true);
@@ -125,13 +125,19 @@
       }
       xhr.onload = function () {
         if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0));
+          resolve({
+            status: xhr.status,
+            body: xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0),
+            location: xhr.getResponseHeader('Location')
+          });
         } else {
-          reject(new Error('CDN HTTP ' + xhr.status));
+          var err = new Error('HTTP ' + xhr.status);
+          err.status = xhr.status;
+          reject(err);
         }
       };
-      xhr.onerror = function () { reject(new Error('CDN network error')); };
-      xhr.ontimeout = function () { reject(new Error('CDN timeout')); };
+      xhr.onerror = function () { reject(new Error('Network error')); };
+      xhr.ontimeout = function () { reject(new Error('Request timed out')); };
       if (bodyBytes) {
         xhr.send(bodyBytes);
       } else {
@@ -140,9 +146,14 @@
     });
   }
 
+  function rawBinary(method, url, bodyBytes, headers, timeout) {
+    return rawRequest(method, url, bodyBytes, headers, timeout).then(function (res) { return res.body; });
+  }
+
   App.http = {
     request: request,
     rawBinary: rawBinary,
+    rawRequest: rawRequest,
     get: function (path, opts) { return request('GET', path, null, opts); },
     post: function (path, body, opts) { return request('POST', path, body, opts); },
     put: function (path, body, opts) { return request('PUT', path, body, opts); },

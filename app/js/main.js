@@ -61,6 +61,25 @@
     registerServiceWorker();
     App.router.init(document.getElementById('screens'));
 
+    // Every Signal operation runs in the libsignal WebAssembly module, so nothing that touches App.signal may start until it has loaded.
+    App.signal.ready().then(function (version) {
+      App.util.dbg('libsignal ' + version + ' ready');
+      return App.db.ready().then(function () {
+        // A pre-libsignal database was upgraded and its protocol state discarded: the old link can't be used any more.
+        if (App.db.signalStateWasReset() && App.config.isConfigured()) {
+          App.util.dbg('boot: protocol state reset by the libsignal upgrade, relink required');
+          App.config.forgetPairing();
+        }
+      }, function (e) {
+        App.util.dbg('boot: database open failed ' + (e && e.message));
+      }).then(start);
+    }, function (err) {
+      App.util.dbg('libsignal failed to load: ' + ((err && err.reason) || '') + ' ' + (err && err.message));
+      App.router.push(App.screens.wasmerror.create(err));
+    });
+  }
+
+  function start() {
     // Surface connection drops as a top-of-screen in-app notice (distinct from the transient toast). Only fire on an actual open -> offline transition.
     var lastConn = null;
     App.store.on('connection', function (state) {
@@ -100,7 +119,7 @@
       }, 5000);
     });
 
-    // Background push is always on: subscribe and (re-)register with the gateway (endpoints can change across reboots/updates). Best-effort, non-blocking; a clean no-op on KaiOS 2.5 / where Push is unsupported.
+    // Background push is always on: subscribe and re-register (endpoints can change across reboots/updates). Best-effort, non-blocking; a clean no-op where Push is unsupported.
     if (App.push) App.push.sync();
   }
 

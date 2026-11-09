@@ -1,18 +1,11 @@
-/* Signal Attachment & Profile Avatar encryption and decryption.
+/* Signal attachment encryption and decryption (Signal-Desktop AttachmentCrypto).
  * Signal attachments use a 64-byte composite key (32-byte AES-256-CBC key + 32-byte HMAC-SHA256 key).
  * Wire format on Signal CDN: [16-byte IV][AES-256-CBC ciphertext][32-byte HMAC-SHA256(iv || ciphertext)]
  * Digest: SHA-256(iv || ciphertext || hmac)
  */
 
 import { concatBytes, constantTimeEqual, randomBytes } from '../bytes';
-import {
-  aesCbcDecrypt,
-  aesCbcEncrypt,
-  aesGcmDecrypt,
-  aesGcmEncrypt,
-  hashSha256,
-  hmacSha256,
-} from './primitives';
+import { aesCbcDecrypt, aesCbcEncrypt, hashSha256, hmacSha256 } from './primitives';
 
 export interface EncryptedAttachmentResult {
   key: Uint8Array;        // 64-byte composite key (32B AES + 32B HMAC)
@@ -21,8 +14,13 @@ export interface EncryptedAttachmentResult {
   plaintextLength: number;
 }
 
+/** Signal-Desktop's logPadSize: plaintext is zero-padded to a 1.05^n bucket (minimum 541 bytes) so ciphertext sizes leak less. */
+export function attachmentPaddedSize(size: number): number {
+  return Math.max(541, Math.floor(1.05 ** Math.ceil(Math.log(size) / Math.log(1.05))));
+}
+
 /**
- * Encrypt an attachment buffer for upload to Signal CDN.
+ * Pad and encrypt an attachment buffer for upload to Signal CDN; the pointer's `size` must carry the unpadded length.
  */
 export async function encryptAttachment(
   plaintext: Uint8Array,
@@ -33,7 +31,9 @@ export async function encryptAttachment(
   const macKey = key.slice(32, 64);
   const iv = randomBytes(16);
 
-  const encrypted = await aesCbcEncrypt(aesKey, iv, plaintext);
+  const padded = new Uint8Array(attachmentPaddedSize(plaintext.length));
+  padded.set(plaintext);
+  const encrypted = await aesCbcEncrypt(aesKey, iv, padded);
   const ivAndCipher = concatBytes(iv, encrypted);
   const mac = hmacSha256(macKey, ivAndCipher);
   const fullPayload = concatBytes(ivAndCipher, mac);
@@ -83,37 +83,4 @@ export async function decryptAttachment(
   const iv = ivAndCipher.slice(0, 16);
   const ciphertext = ivAndCipher.slice(16);
   return aesCbcDecrypt(aesKey, iv, ciphertext);
-}
-
-/**
- * Decrypt a Signal profile field (name, about, or avatar) encrypted with a 32-byte ProfileKey using AES-256-GCM.
- * Wire format: [12-byte nonce][ciphertext + 16-byte GCM tag]
- */
-export async function decryptProfileField(
-  encrypted: Uint8Array,
-  profileKey32: Uint8Array
-): Promise<Uint8Array> {
-  if (encrypted.length < 12 + 16) {
-    throw new Error('Encrypted profile field too short');
-  }
-  const nonce = encrypted.slice(0, 12);
-  const ciphertextAndTag = encrypted.slice(12);
-  const padded = await aesGcmDecrypt(profileKey32, nonce, ciphertextAndTag);
-  // Profile fields are null-padded; strip trailing 0x00 bytes for text fields
-  return padded;
-}
-
-export async function encryptProfileField(
-  plaintext: Uint8Array,
-  profileKey32: Uint8Array,
-  paddedLength?: number
-): Promise<Uint8Array> {
-  const nonce = randomBytes(12);
-  let input = plaintext;
-  if (paddedLength && paddedLength > plaintext.length) {
-    input = new Uint8Array(paddedLength);
-    input.set(plaintext, 0);
-  }
-  const ciphertextAndTag = await aesGcmEncrypt(profileKey32, nonce, input);
-  return concatBytes(nonce, ciphertextAndTag);
 }

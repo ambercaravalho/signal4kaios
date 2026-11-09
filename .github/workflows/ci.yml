@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  WASM_BINDGEN_VERSION: 0.2.126
+
 jobs:
   app:
     name: Build, test & package app
@@ -18,7 +21,33 @@ jobs:
         with:
           node-version: 24
           cache: npm
+
+      - name: Install protoc and binaryen
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler binaryen
+
+      - name: Install the pinned Rust toolchain
+        working-directory: native/libsignal-wasm
+        run: rustup toolchain install
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/wasm-bindgen
+            native/libsignal-wasm/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('native/libsignal-wasm/Cargo.lock', 'native/libsignal-wasm/rust-toolchain.toml') }}-wbg${{ env.WASM_BINDGEN_VERSION }}
+
+      - name: Install wasm-bindgen-cli
+        run: |
+          if ! wasm-bindgen --version 2>/dev/null | grep -q " $WASM_BINDGEN_VERSION$"; then
+            cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked --force
+          fi
+
       - run: npm ci
+      - run: npm run build:wasm
+      - name: Generated protobuf codecs are up to date
+        run: npm run gen:protos && git diff --exit-code -- src/engine/gen
       - run: npm run typecheck
       - run: npm test
-      - run: sh app/scripts/package.sh
+      - run: SKIP_WASM_BUILD=1 sh app/scripts/package.sh

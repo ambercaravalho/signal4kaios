@@ -1,25 +1,18 @@
-/* Encrypted Signal Profiles, CDN Profile Avatars, and Username Discovery.
- *
- * Implements:
- * 1. `fetchAndDecryptProfile`: `GET /v1/profile/{uuid}` -> decrypts AES-256-GCM `name`, `about`, `aboutEmoji`
- *    using the contact's 32-byte `ProfileKey`.
- * 2. `downloadAndDecryptProfileAvatar`: downloads encrypted avatar from Signal CDN (`https://cdn.signal.org/{avatarUrlPath}`)
- *    and decrypts it using AES-256-GCM with the contact's `ProfileKey`.
- * 3. `uploadOwnProfile`: encrypts our own `name` and `about` with our `AccountCredentials.profileKey`
- *    and uploads via `PUT /v1/profile`.
- * 4. `resolveSignalUsername`: resolves a Signal username (`@alice.01` or `https://signal.me/#eu/...`)
- *    via `GET /v1/accounts/username_hash/{hash}` or `/v1/accounts/username_link/{uuid}`.
- */
+/* Signal profiles, profile avatars, and username lookup. The profile cipher, padding, and request bodies follow Signal-Desktop (Crypto.node.ts, encryptProfileData.preload.ts, WebAPI getProfile/putProfile); profile key versions, commitments, access keys, and username hashes come from libsignal (zkgroup, usernames). */
 
-import { fromBase64, toBase64 } from './bytes';
-import {
-  decryptProfileField,
-  encryptProfileField,
-} from './crypto/attachment';
-import { hashSha256 } from './crypto/primitives';
+import { fromBase64, randomBytes, toBase64 } from './bytes';
+import { aesGcmDecrypt, aesGcmEncrypt } from './crypto/primitives';
+import { libsignal } from './libsignal';
 import type { SignalHttpJsonFn } from './provisioning';
 import type { SignalProtocolStore } from './storage';
 import { DEFAULT_SIGNAL_CDN, DEFAULT_SIGNAL_SERVER, SignalHttpBinaryFn } from './transport';
+
+/** Signal-Desktop PaddedLengths. */
+const PADDED_LENGTHS = {
+  name: [53, 257],
+  about: [128, 254, 512],
+  aboutEmoji: [32],
+};
 
 export interface DecryptedProfile {
   uuid: string;
@@ -30,168 +23,141 @@ export interface DecryptedProfile {
   about: string;
   aboutEmoji: string;
   avatarUrlPath?: string;
+  phoneNumberSharing?: string;
   unidentifiedAccess?: string;
   unrestrictedUnidentifiedAccess?: boolean;
 }
 
-function unpadProfileString(padded: Uint8Array): string {
-  let end = padded.length;
-  for (let i = 0; i < padded.length; i++) {
-    if (padded[i] === 0x00) {
-      end = i;
-      break;
-    }
-  }
-  return new TextDecoder().decode(padded.slice(0, end));
+export async function encryptProfile(data: Uint8Array, profileKey: Uint8Array): Promise<Uint8Array> {
+  if (profileKey.length !== 32) throw new Error('Got invalid length profile key');
+  const iv = randomBytes(12);
+  const ct = await aesGcmEncrypt(profileKey, iv, data);
+  const out = new Uint8Array(12 + ct.length);
+  out.set(iv);
+  out.set(ct, 12);
+  return out;
+}
+
+export async function decryptProfile(data: Uint8Array, profileKey: Uint8Array): Promise<Uint8Array> {
+  if (data.length < 12 + 16 + 1) throw new Error(`Got too short input: ${data.length}`);
+  if (profileKey.length !== 32) throw new Error('Got invalid length profile key');
+  return aesGcmDecrypt(profileKey, data.subarray(0, 12), data.subarray(12));
+}
+
+async function encryptPadded(item: Uint8Array, profileKey: Uint8Array, lengths: number[]): Promise<Uint8Array> {
+  const padded = lengths.find((l) => item.length <= l);
+  if (!padded) throw new Error('Oversized value');
+  const buf = new Uint8Array(padded);
+  buf.set(item);
+  return encryptProfile(buf, profileKey);
+}
+
+function untilNul(bytes: Uint8Array): string {
+  const end = bytes.indexOf(0);
+  return new TextDecoder().decode(end < 0 ? bytes : bytes.subarray(0, end));
+}
+
+/** Decrypt a profile `name`: given name up to the first NUL, family name up to the next. */
+export async function decryptProfileName(encryptedB64: string, profileKey: Uint8Array): Promise<{ givenName: string; familyName: string; fullName: string }> {
+  const padded = await decryptProfile(fromBase64(encryptedB64), profileKey);
+  let givenEnd = padded.indexOf(0);
+  if (givenEnd < 0) givenEnd = padded.length;
+  const givenName = new TextDecoder().decode(padded.subarray(0, givenEnd));
+  const familyName = givenEnd + 1 < padded.length ? untilNul(padded.subarray(givenEnd + 1)) : '';
+  return { givenName, familyName, fullName: [givenName, familyName].filter(Boolean).join(' ') };
+}
+
+export async function encryptProfileName(givenName: string, familyName: string, profileKey: Uint8Array): Promise<string> {
+  const full = [givenName, familyName].filter(Boolean).join('\0');
+  return toBase64(await encryptPadded(new TextEncoder().encode(full), profileKey, PADDED_LENGTHS.name));
 }
 
 /**
- * Decrypt a Signal profile `name` field (which separates givenName and familyName by a 0x00 byte).
- */
-export async function decryptProfileName(
-  encryptedB64: string,
-  profileKey32: Uint8Array
-): Promise<{ givenName: string; familyName: string; fullName: string }> {
-  const padded = await decryptProfileField(fromBase64(encryptedB64), profileKey32);
-  const firstNull = padded.indexOf(0x00);
-  if (firstNull < 0) {
-    const given = new TextDecoder().decode(padded).trim();
-    return { givenName: given, familyName: '', fullName: given };
-  }
-  const givenName = new TextDecoder().decode(padded.slice(0, firstNull)).trim();
-  const rest = padded.slice(firstNull + 1);
-  const secondNull = rest.indexOf(0x00);
-  const familyBytes = secondNull >= 0 ? rest.slice(0, secondNull) : rest;
-  const familyName = new TextDecoder().decode(familyBytes).trim();
-  const fullName = [givenName, familyName].filter(Boolean).join(' ');
-  return { givenName, familyName, fullName };
-}
-
-/**
- * Encrypt a Signal profile `name` field (givenName + optional `\0` + familyName, padded to standard 53/257 bytes).
- */
-export async function encryptProfileName(
-  givenName: string,
-  familyName: string,
-  profileKey32: Uint8Array
-): Promise<string> {
-  const gBytes = new TextEncoder().encode(givenName.trim());
-  const fBytes = new TextEncoder().encode((familyName || '').trim());
-  const combined = new Uint8Array(gBytes.length + (fBytes.length > 0 ? 1 + fBytes.length : 0));
-  combined.set(gBytes, 0);
-  if (fBytes.length > 0) {
-    combined[gBytes.length] = 0x00;
-    combined.set(fBytes, gBytes.length + 1);
-  }
-  const padTarget = combined.length <= 53 ? 53 : 257;
-  const encrypted = await encryptProfileField(combined, profileKey32, padTarget);
-  return toBase64(encrypted);
-}
-
-/**
- * Fetch and decrypt a contact's Signal profile using `GET /v1/profile/{uuid}`.
+ * Fetch a profile with `GET /v1/profile/{aci}/{version}` (the versioned path returns the fields encrypted under that profile key) and decrypt it.
  */
 export async function fetchAndDecryptProfile(
   store: SignalProtocolStore,
   httpJson: SignalHttpJsonFn,
-  uuid: string,
-  profileKey32?: Uint8Array,
+  aci: string,
+  profileKey?: Uint8Array,
   serverUrl = DEFAULT_SIGNAL_SERVER
 ): Promise<DecryptedProfile | null> {
   const acc = await store.getAccount();
   if (!acc) return null;
+  const hasKey = !!profileKey && profileKey.length === 32;
+  const path = hasKey
+    ? `/v1/profile/${encodeURIComponent(aci)}/${libsignal.profileKeyGetVersion(profileKey!, aci)}`
+    : `/v1/profile/${encodeURIComponent(aci)}`;
 
-  const res = await httpJson(
-    'GET',
-    `/v1/profile/${encodeURIComponent(uuid)}`,
-    null,
-    {
-      baseUrl: serverUrl,
-      basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
-      timeout: 15000,
-    }
-  );
+  const res = await httpJson('GET', path, null, {
+    baseUrl: serverUrl,
+    basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
+    timeout: 15000,
+  });
   if (!res) return null;
 
-  let givenName = '';
-  let familyName = '';
-  let fullName = '';
-  let about = '';
-  let aboutEmoji = '';
-
-  if (profileKey32 && profileKey32.length === 32) {
-    if (res.name) {
-      try {
-        const nm = await decryptProfileName(res.name, profileKey32);
-        givenName = nm.givenName;
-        familyName = nm.familyName;
-        fullName = nm.fullName;
-      } catch {
-        // Ignore name decryption failure if key is outdated
-      }
-    }
-    if (res.about) {
-      try {
-        const ab = await decryptProfileField(fromBase64(res.about), profileKey32);
-        about = unpadProfileString(ab);
-      } catch {
-        // Ignore
-      }
-    }
-    if (res.aboutEmoji) {
-      try {
-        const em = await decryptProfileField(fromBase64(res.aboutEmoji), profileKey32);
-        aboutEmoji = unpadProfileString(em);
-      } catch {
-        // Ignore
-      }
-    }
-  }
-
-  if (res.identityKey) {
-    try {
-      await store.saveIdentity(uuid, fromBase64(res.identityKey), { uuid });
-    } catch {
-      // Ignore
-    }
-  }
-
-  return {
-    uuid,
-    identityKey: res.identityKey ? fromBase64(res.identityKey) : undefined,
-    givenName,
-    familyName,
-    fullName,
-    about,
-    aboutEmoji,
-    avatarUrlPath: res.avatar || undefined,
+  const out: DecryptedProfile = {
+    uuid: aci,
+    givenName: '',
+    familyName: '',
+    fullName: '',
+    about: '',
+    aboutEmoji: '',
+    avatarUrlPath: typeof res.avatar === 'string' ? res.avatar : undefined,
+    phoneNumberSharing: typeof res.phoneNumberSharing === 'string' ? res.phoneNumberSharing : undefined,
     unidentifiedAccess: res.unidentifiedAccess,
     unrestrictedUnidentifiedAccess: !!res.unrestrictedUnidentifiedAccess,
   };
+
+  if (hasKey) {
+    if (typeof res.name === 'string' && res.name) {
+      try {
+        Object.assign(out, await decryptProfileName(res.name, profileKey!));
+      } catch {
+        // stale profile key
+      }
+    }
+    if (typeof res.about === 'string' && res.about) {
+      try {
+        out.about = untilNul(await decryptProfile(fromBase64(res.about), profileKey!));
+      } catch {
+        // stale profile key
+      }
+    }
+    if (typeof res.aboutEmoji === 'string' && res.aboutEmoji) {
+      try {
+        out.aboutEmoji = untilNul(await decryptProfile(fromBase64(res.aboutEmoji), profileKey!));
+      } catch {
+        // stale profile key
+      }
+    }
+  }
+
+  if (typeof res.identityKey === 'string') {
+    try {
+      out.identityKey = fromBase64(res.identityKey);
+      await store.saveIdentity(aci, out.identityKey, { uuid: aci });
+    } catch {
+      // malformed identity key
+    }
+  }
+  return out;
 }
 
-/**
- * Download and decrypt a contact's profile avatar from Signal CDN using their 32-byte `ProfileKey`.
- */
+/** Download a profile avatar from CDN 0 and decrypt it with the owner's profile key. */
 export async function downloadAndDecryptProfileAvatar(
   httpBinary: SignalHttpBinaryFn,
   avatarUrlPath: string,
-  profileKey32: Uint8Array,
+  profileKey: Uint8Array,
   cdnUrl = DEFAULT_SIGNAL_CDN
 ): Promise<Uint8Array> {
   const cleanPath = avatarUrlPath.replace(/^\/+/, '');
-  const encrypted = await httpBinary(
-    'GET',
-    `${cdnUrl}/${cleanPath}`,
-    null,
-    {},
-    20000
-  );
-  return decryptProfileField(encrypted, profileKey32);
+  const encrypted = await httpBinary('GET', `${cdnUrl}/${cleanPath}`, null, {}, 20000);
+  return decryptProfile(encrypted, profileKey);
 }
 
 /**
- * Encrypt and upload our own Signal profile (`name`, `about`, `aboutEmoji`).
+ * Write our profile with `PUT /v1/profile` like Signal-Desktop: version and commitment from zkgroup, padded encrypted fields, and the existing avatar kept (`avatar: false, sameAvatar: true`). Fields not in `patch` are carried over from the current profile so a name change doesn't clear the about text.
  */
 export async function uploadOwnProfile(
   store: SignalProtocolStore,
@@ -200,36 +166,34 @@ export async function uploadOwnProfile(
   serverUrl = DEFAULT_SIGNAL_SERVER
 ): Promise<void> {
   const acc = await store.getAccount();
-  if (!acc || !acc.profileKey || acc.profileKey.length !== 32) {
-    return;
+  if (!acc || !acc.profileKey || acc.profileKey.length !== 32) return;
+  const key = acc.profileKey;
+
+  let current: DecryptedProfile | null = null;
+  try {
+    current = await fetchAndDecryptProfile(store, httpJson, acc.aci, key, serverUrl);
+  } catch {
+    // no profile yet
   }
 
   const parts = (patch.name || '').trim().split(/\s+/);
   const givenName = parts[0] || patch.name;
   const familyName = parts.slice(1).join(' ');
+  const about = patch.about !== undefined ? patch.about : current ? current.about : '';
+  const emoji = patch.emoji !== undefined ? patch.emoji : current ? current.aboutEmoji : '';
 
-  const encryptedName = await encryptProfileName(
-    givenName,
-    familyName,
-    acc.profileKey
-  );
-
-  const body: Record<string, unknown> = {
-    name: encryptedName,
+  const body = {
+    version: libsignal.profileKeyGetVersion(key, acc.aci),
+    name: await encryptProfileName(givenName, familyName, key),
+    about: about ? toBase64(await encryptPadded(new TextEncoder().encode(about), key, PADDED_LENGTHS.about)) : null,
+    aboutEmoji: emoji ? toBase64(await encryptPadded(new TextEncoder().encode(emoji), key, PADDED_LENGTHS.aboutEmoji)) : null,
+    badgeIds: [],
+    paymentAddress: null,
+    avatar: false,
+    sameAvatar: true,
+    commitment: toBase64(libsignal.profileKeyGetCommitment(key, acc.aci)),
+    phoneNumberSharing: (current && current.phoneNumberSharing) || toBase64(await encryptProfile(new Uint8Array([0]), key)),
   };
-
-  if (patch.about !== undefined) {
-    const aboutBytes = new TextEncoder().encode(patch.about);
-    const padLen = aboutBytes.length <= 128 ? 128 : 512;
-    const encAbout = await encryptProfileField(aboutBytes, acc.profileKey, padLen);
-    body.about = toBase64(encAbout);
-  }
-
-  if (patch.emoji !== undefined) {
-    const emojiBytes = new TextEncoder().encode(patch.emoji);
-    const encEmoji = await encryptProfileField(emojiBytes, acc.profileKey, 32);
-    body.aboutEmoji = toBase64(encEmoji);
-  }
 
   await httpJson('PUT', '/v1/profile', body, {
     baseUrl: serverUrl,
@@ -238,8 +202,12 @@ export async function uploadOwnProfile(
   });
 }
 
+function toWebSafeBase64(bytes: Uint8Array): string {
+  return toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 /**
- * Resolve a Signal username (`@alice.42` or `alice.42`) to a Signal `ACI` (UUID) via Signal server.
+ * Resolve a Signal username (`@alice.42` or `alice.42`) to an ACI via `GET /v1/accounts/username_hash/{hash}`, hashing with libsignal's username hash.
  */
 export async function resolveSignalUsername(
   store: SignalProtocolStore,
@@ -247,38 +215,28 @@ export async function resolveSignalUsername(
   rawUsername: string,
   serverUrl = DEFAULT_SIGNAL_SERVER
 ): Promise<{ uuid: string; username: string } | null> {
-  const clean = rawUsername.trim().replace(/^@/, '').toLowerCase();
+  const clean = rawUsername.trim().replace(/^@/, '');
   if (!clean) return null;
 
-  const acc = await store.getAccount();
-  const auth = acc
-    ? { username: `${acc.aci}.${acc.deviceId}`, password: acc.password }
-    : undefined;
-
-  // Compute URL-safe base64 SHA-256 username hash
-  const digest = hashSha256(new TextEncoder().encode(clean));
-  const b64Url = toBase64(digest)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-
+  let hash: Uint8Array;
   try {
-    const res = await httpJson(
-      'GET',
-      `/v1/accounts/username_hash/${encodeURIComponent(b64Url)}`,
-      null,
-      {
-        baseUrl: serverUrl,
-        basicAuth: auth,
-        noAuth: !auth,
-        timeout: 10000,
-      }
-    );
-    if (res && res.uuid) {
-      return { uuid: res.uuid, username: clean };
-    }
+    hash = libsignal.usernameHash(clean);
   } catch {
-    // Fallback if server rejects hash format or username not found
+    return null;
+  }
+
+  const acc = await store.getAccount();
+  const auth = acc ? { username: `${acc.aci}.${acc.deviceId}`, password: acc.password } : undefined;
+  try {
+    const res = await httpJson('GET', `/v1/accounts/username_hash/${toWebSafeBase64(hash)}`, null, {
+      baseUrl: serverUrl,
+      basicAuth: auth,
+      noAuth: !auth,
+      timeout: 10000,
+    });
+    if (res && typeof res.uuid === 'string') return { uuid: res.uuid, username: clean };
+  } catch {
+    // not found
   }
   return null;
 }
