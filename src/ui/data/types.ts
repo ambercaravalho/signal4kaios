@@ -19,6 +19,14 @@ export interface Quote {
   text: string;
 }
 
+export type NoticeKind = 'missedCall' | 'safetyNumber' | 'groupCall';
+
+/** A line in the chat about the chat itself rather than a message someone wrote. */
+export interface Notice {
+  kind: NoticeKind;
+  video?: boolean;
+}
+
 export interface Message {
   /** `convId|timestamp|author` */
   id: string;
@@ -40,6 +48,7 @@ export interface Message {
   pinned?: boolean;
   expireSecs?: number;
   expiresAt?: number;
+  notice?: Notice;
 }
 
 export interface Conversation {

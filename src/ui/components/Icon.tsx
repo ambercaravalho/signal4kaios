@@ -13,6 +13,7 @@ const PATHS: Record<string, string> = {
   mic: 'M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3zM6 11a6 6 0 0012 0M12 17v4',
   file: 'M6 3h8l4 4v14H6zM14 3v4h4',
   play: 'M8 5v14l11-7z',
+  phone: 'M6 3h3l2 5-2.5 1.5a11 11 0 005 5L15 12l5 2v3a2 2 0 01-2 2A15 15 0 014 5a2 2 0 012-2z',
   lock: 'M6 11h12v10H6zM8 11V7a4 4 0 018 0v4',
   verified: 'M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6zM8.5 12l2.5 2.5 4.5-5',
   person: 'M12 4a4 4 0 100 8 4 4 0 000-8zM4 21c0-4 4-6 8-6s8 2 8 6',

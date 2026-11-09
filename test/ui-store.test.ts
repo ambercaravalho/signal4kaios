@@ -100,6 +100,19 @@ describe('store', () => {
     assert.equal(store.conversation(ALICE)!.unread, 0);
   });
 
+  it('stores a missed call as an unread notice line', async () => {
+    const before = store.conversation(ALICE)!.unread;
+    const ts = Date.now() + 60000;
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: ts, notice: { kind: 'missedCall', timestamp: ts } } });
+    await settle();
+    const rec = (await db.getMessage(ALICE + '|' + ts + '|' + ALICE))!;
+    assert.deepEqual(rec.notice, { kind: 'missedCall' });
+    assert.equal(rec.body, '');
+    const conv = store.conversation(ALICE)!;
+    assert.equal(conv.unread, before + 1);
+    assert.equal(conv.lastPreview, 'Missed voice call');
+  });
+
   it('archives, keeps muted chats archived, and limits pinned chats', async () => {
     (signal as any).syncChatState = async () => {};
     store.setArchived(ALICE, true);

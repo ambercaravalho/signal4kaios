@@ -92,7 +92,8 @@ describe('libsignal sessions (PQXDH + ratchet)', () => {
       envelopeBytes({ type: Envelope_Type.PREKEY_MESSAGE, sourceServiceId: ALICE, sourceDeviceId: 2, clientTimestamp: 1700000555000n, content: call.body })
     );
     assert.ok(decCall);
-    assert.equal(decCall.normalizedFrame.envelope.dataMessage.message, '\u{1F4DE} Missed voice call');
+    assert.deepEqual(decCall.normalizedFrame.envelope.notice, { kind: 'missedCall', video: false, timestamp: 1700000555000 });
+    assert.equal(decCall.normalizedFrame.envelope.dataMessage, undefined);
 
     const sticker = await encryptForDevice(
       alice.store,

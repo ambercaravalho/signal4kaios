@@ -20,11 +20,12 @@ import { fmtBytes, fmtClock, fmtDay, fmtMsgTime } from '../data/format';
 import { openUrl } from '../data/platform';
 import * as store from '../data/store';
 import { extractUrls, isJumboEmoji } from '../data/styled';
-import type { Attachment, Conversation, Message, MessageStatus } from '../data/types';
+import type { Attachment, Conversation, Message, MessageStatus, Notice } from '../data/types';
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
 import { MessageDetailsScreen } from './MessageDetails';
+import { SafetyNumberScreen } from './SafetyNumber';
 import { ViewerScreen } from './Viewer';
 
 const PAGE = 50;
@@ -226,6 +227,23 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
       </div>
       {!m.deleted && <Reactions reactions={m.reactions} />}
       {m.status === 'failed' && <div class="msg-failed">{S.notSent}</div>}
+    </div>
+  );
+}
+
+function noticeIcon(n: Notice): string {
+  if (n.kind === 'safetyNumber') return 'verified';
+  return 'phone';
+}
+
+export function NoticeLine(props: { m: Message; focused: boolean }) {
+  const { m } = props;
+  const ref = useFocusScroll<HTMLDivElement>(props.focused);
+  return (
+    <div class={'notice' + (props.focused ? ' focused' : '')} ref={ref} role="listitem">
+      <Icon name={noticeIcon(m.notice!)} />
+      <span class="notice-text">{store.noticeText(m.notice!, m.author)}</span>
+      <span class="notice-time">{fmtClock(m.timestamp)}</span>
     </div>
   );
 }
@@ -515,7 +533,26 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     else fallback();
   }
 
+  function deleteForMeItem(m: Message) {
+    return {
+      label: S.deleteForMe,
+      onSelect: async () => {
+        if (await confirm({ title: S.deleteForMeTitle, body: S.deleteForMeBody, ok: S.delete, danger: true })) store.deleteLocal(m);
+      },
+    };
+  }
+
+  function noticeOptions(m: Message): void {
+    const n = m.notice!;
+    showOptions([
+      n.kind === 'safetyNumber' && { label: S.viewSafetyNumber, onSelect: () => router.push(SafetyNumberScreen, { target: m.author, name: store.displayName(m.author) }) },
+      DIVIDER,
+      deleteForMeItem(m),
+    ]);
+  }
+
   function messageOptions(m: Message): void {
+    if (m.notice) return noticeOptions(m);
     const urls = m.deleted ? [] : extractUrls(m.body);
     const att = m.attachments[0];
     const settled = m.status !== 'failed' && m.status !== 'pending';
@@ -549,12 +586,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       clippedIds.current.has(m.id) && { label: S.readFull, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) },
       { label: S.messageDetails, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) },
       DIVIDER,
-      {
-        label: S.deleteForMe,
-        onSelect: async () => {
-          if (await confirm({ title: S.deleteForMeTitle, body: S.deleteForMeBody, ok: S.delete, danger: true })) store.deleteLocal(m);
-        },
-      },
+      deleteForMeItem(m),
       canChange(m) && {
         label: S.deleteForEveryone,
         danger: true,
@@ -674,13 +706,13 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   const rows = msgs.map((m) => {
     const day = fmtDay(m.timestamp);
     const showDay = day !== prevDay;
-    const showAuthor = !!conv && conv.type === 'group' && m.incoming && (showDay || !prev || !prev.incoming || prev.author !== m.author);
+    const showAuthor = !!conv && conv.type === 'group' && m.incoming && (showDay || !prev || !prev.incoming || !!prev.notice || prev.author !== m.author);
     prevDay = day;
     prev = m;
     return (
       <div key={m.id}>
         {showDay && <div class="day-sep">{day}</div>}
-        <Bubble m={m} focused={m.id === focusedId} showAuthor={showAuthor} onClipped={onClipped} />
+        {m.notice ? <NoticeLine m={m} focused={m.id === focusedId} /> : <Bubble m={m} focused={m.id === focusedId} showAuthor={showAuthor} onClipped={onClipped} />}
       </div>
     );
   });

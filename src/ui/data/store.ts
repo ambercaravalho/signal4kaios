@@ -5,10 +5,11 @@ import { signal, syncedContacts, syncedGroups, type SyncedContact } from './api'
 import { config } from './config';
 import { db, type ExpiredRef } from './db';
 import { dbg } from './log';
-import { parseFrame, type MessageEvent, type StoreEvent } from './normalize';
+import { fmt, S } from '../strings';
+import { parseFrame, type MessageEvent, type NoticeEvent, type StoreEvent } from './normalize';
 import { hasServiceWorker } from './platform';
 import { parseStyledMarkdown, type StyleRange } from './styled';
-import type { Attachment, Connection, Contact, Conversation, GroupRef, Message, Quote } from './types';
+import type { Attachment, Connection, Contact, Conversation, GroupRef, Message, Notice, Quote } from './types';
 
 export interface StoreEvents {
   conversations: [];
@@ -109,7 +110,7 @@ function newConv(id: string, type: 'direct' | 'group', name: string, sendId: str
   return c;
 }
 
-function ensureConv(ev: MessageEvent): Conversation {
+function ensureConv(ev: Pick<MessageEvent, 'convId' | 'groupInternalId' | 'incoming' | 'authorName'>): Conversation {
   let conv = convs[ev.convId];
   if (conv) return conv;
   if (ev.groupInternalId) {
@@ -141,6 +142,22 @@ function previewOf(body: string, attachments: Attachment[]): string {
   return body || attachmentLabel(attachments);
 }
 
+/** What a notice line says; `author` is who it's about. */
+export function noticeText(notice: Notice, author: string): string {
+  switch (notice.kind) {
+    case 'missedCall':
+      return notice.video ? S.missedVideoCall : S.missedVoiceCall;
+    case 'safetyNumber':
+      return fmt(S.safetyNumberChanged, { name: displayName(author) });
+    case 'groupCall':
+      return author && !isSelfKey(author) ? fmt(S.startedGroupCall, { name: displayName(author) }) : S.groupCall;
+  }
+}
+
+function messageText(rec: Message): string {
+  return rec.notice ? noticeText(rec.notice, rec.author) : previewOf(rec.body, rec.attachments);
+}
+
 export function onNotificationClick(fn: (convId: string) => void): void {
   notificationClick = fn;
 }
@@ -148,8 +165,8 @@ export function onNotificationClick(fn: (convId: string) => void): void {
 function notify(conv: Conversation, rec: Message): void {
   if (conv.muted || !document.hidden || typeof Notification === 'undefined') return;
   const title = conv.name || 'Beacon';
-  let body = rec.body || attachmentLabel(rec.attachments) || 'New message';
-  if (conv.type === 'group') body = displayName(rec.author) + ': ' + body;
+  let body = messageText(rec) || 'New message';
+  if (conv.type === 'group' && !rec.notice) body = displayName(rec.author) + ': ' + body;
   const opts: NotificationOptions = { body: body.slice(0, 100), tag: conv.id, icon: '/assets/icons/kaios_112.png', data: { convId: conv.id } };
 
   if (hasServiceWorker() && navigator.serviceWorker) {
@@ -208,6 +225,42 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   // Draining the offline queue (silent) must not notify per message: the queue replays on every reconnect.
   if (ev.incoming && !silent) notify(conv, rec);
   if (ev.incoming && openConvId === conv.id) markRead(conv.id);
+}
+
+/** Missed calls count as unread and notify, as in Signal; other notices only show in the chat. */
+function applyNotice(ev: NoticeEvent, silent: boolean): void {
+  const conv = ensureConv({ convId: ev.convId, groupInternalId: ev.groupInternalId, incoming: true, authorName: '' });
+  const rec: Message = {
+    id: msgId(ev.convId, ev.timestamp, ev.author),
+    convId: ev.convId,
+    incoming: true,
+    author: ev.author,
+    authorName: '',
+    timestamp: ev.timestamp,
+    body: '',
+    styles: [],
+    quote: null,
+    attachments: [],
+    reactions: {},
+    status: 'received',
+    deleted: false,
+    edited: false,
+    notice: ev.notice,
+  };
+  db.putMessage(rec);
+  const alerts = ev.notice.kind === 'missedCall';
+  if (ev.timestamp >= (conv.lastTs || 0)) {
+    conv.lastTs = ev.timestamp;
+    conv.lastPreview = messageText(rec);
+  }
+  if (alerts) {
+    unarchiveOnActivity(conv);
+    if (openConvId !== conv.id) conv.unread = (conv.unread || 0) + 1;
+  }
+  persistConv(conv);
+  emit('message', rec);
+  emit('conversations');
+  if (alerts && !silent) notify(conv, rec);
 }
 
 /* Read-modify-write updates to stored messages run through one queue so, e.g., a reaction and a receipt arriving together don't clobber each other. */
@@ -313,6 +366,8 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
   switch (ev.type) {
     case 'message':
       return applyMessage(ev, silent);
+    case 'notice':
+      return applyNotice(ev, silent);
     case 'reaction':
       return updateTarget(ev.convId, ev.targetTimestamp, [ev.targetAuthor, altKeyOf(ev.targetAuthor), self()], 'reaction', (rec) => {
         rec.reactions = rec.reactions || {};

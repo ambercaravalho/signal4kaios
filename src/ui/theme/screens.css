@@ -80,6 +80,35 @@
   color: var(--text-2);
 }
 
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.2rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 1.2rem;
+  font-size: var(--fs-small);
+  color: var(--text-2);
+  text-align: center;
+}
+
+.notice .icon {
+  width: 1.4rem;
+  height: 1.4rem;
+  flex: none;
+}
+
+.notice-time {
+  opacity: 0.8;
+}
+
+.notice.focused {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 .msg {
   display: flex;
   flex-direction: column;

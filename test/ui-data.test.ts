@@ -54,6 +54,12 @@ describe('parseFrame', () => {
     assert.deepEqual(rs, { type: 'readSync', entries: [{ sender: '+4', timestamp: 3 }] });
   });
 
+  it('turns notices into notice events and drops unknown kinds', () => {
+    const [ev] = parseFrame({ envelope: { sourceNumber: '+3', timestamp: 8, notice: { kind: 'missedCall', video: true, timestamp: 9 } } }, '+1', nameOf);
+    assert.deepEqual(ev, { type: 'notice', convId: '+3', groupInternalId: null, author: '+3', timestamp: 9, notice: { kind: 'missedCall', video: true } });
+    assert.deepEqual(parseFrame({ envelope: { sourceNumber: '+3', notice: { kind: 'somethingNew' } } }, '+1', nameOf), []);
+  });
+
   it('drops malformed frames without throwing', () => {
     assert.deepEqual(parseFrame(null, '+1', nameOf), []);
     assert.deepEqual(parseFrame({ envelope: 'nope' }, '+1', nameOf), []);

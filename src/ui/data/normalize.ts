@@ -2,7 +2,7 @@
 
 import { dbg } from './log';
 import type { StyleRange } from './styled';
-import type { Attachment, Quote } from './types';
+import type { Attachment, Notice, NoticeKind, Quote } from './types';
 
 export interface MessageEvent {
   type: 'message';
@@ -19,8 +19,18 @@ export interface MessageEvent {
   expiresInSeconds: number;
 }
 
+export interface NoticeEvent {
+  type: 'notice';
+  convId: string;
+  groupInternalId: string | null;
+  author: string;
+  timestamp: number;
+  notice: Notice;
+}
+
 export type StoreEvent =
   | MessageEvent
+  | NoticeEvent
   | { type: 'edit'; convId: string; author: string; targetTimestamp: number; newBody: string; newStyles: StyleRange[]; timestamp: number }
   | { type: 'reaction'; convId: string; reactor: string; emoji: string; remove: boolean; targetAuthor: string; targetTimestamp: number }
   | { type: 'remoteDelete'; convId: string; author: string; targetTimestamp: number }
@@ -111,6 +121,19 @@ export function stylesOf(dm: any, nameOf: NameOf): StyleRange[] {
     if (end > start) out.push({ start, length: end - start, style: s.style });
   }
   return out;
+}
+
+const NOTICE_KINDS: NoticeKind[] = ['missedCall', 'safetyNumber', 'groupCall'];
+
+function noticeEvent(env: any, n: any, conv: Conv): StoreEvent[] {
+  const kind = str(n && n.kind) as NoticeKind;
+  if (NOTICE_KINDS.indexOf(kind) < 0 || !conv.convId) {
+    dbg('normalize: unknown notice');
+    return [];
+  }
+  const notice: Notice = { kind };
+  if (n.video) notice.video = true;
+  return [{ type: 'notice', convId: conv.convId, groupInternalId: conv.groupInternalId, author: peerKey(env) || '', timestamp: num(n.timestamp) || num(env.timestamp), notice }];
 }
 
 function quoteOf(dm: any): Quote | null {
@@ -219,6 +242,7 @@ export function parseFrame(frame: any, selfNumber: string, nameOf: NameOf): Stor
     return [];
   }
 
+  if (env.notice) return noticeEvent(env, env.notice, { convId: peerKey(env), groupInternalId: null });
   if (env.dataMessage) return dataMessageEvents(env, env.dataMessage, true, nameOf);
   if (env.editMessage) return editEvent(env, env.editMessage, peerKey(env) || '', nameOf);
 

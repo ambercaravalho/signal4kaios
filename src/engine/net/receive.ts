@@ -223,14 +223,10 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
       break;
     case 'callMessage':
       if (c.value.offer) {
-        const isVideo = c.value.offer.type === CallMessage_Offer_Type.OFFER_VIDEO_CALL;
-        frameEnv.dataMessage = {
+        frameEnv.notice = {
+          kind: 'missedCall',
+          video: c.value.offer.type === CallMessage_Offer_Type.OFFER_VIDEO_CALL,
           timestamp: env.timestamp || Date.now(),
-          message: isVideo ? '\u{1F4F9} Missed video call' : '\u{1F4DE} Missed voice call',
-          expiresInSeconds: 0,
-          mentions: [],
-          textStyles: [],
-          attachments: [],
         };
       }
       break;
