@@ -1,10 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Http1Client, ResponseParser } from '../engine/net/transport/http1';
-import { ByteStream, concatBytes, Connector, TransportError } from '../engine/net/transport/stream';
-import { connectTls, TlsSession } from '../engine/net/transport/tls-stream';
-import { decodeFrame, encodeFrame, PinnedWebSocket, websocketAccept } from '../engine/net/transport/websocket';
+import { Http1Client, ResponseParser } from '../src/engine/net/transport/http1';
+import { ByteStream, concatBytes, Connector, TransportError } from '../src/engine/net/transport/stream';
+import { connectTls, TlsSession } from '../src/engine/net/transport/tls-stream';
+import { decodeFrame, encodeFrame, PinnedWebSocket, websocketAccept } from '../src/engine/net/transport/websocket';
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const dec = (b: Uint8Array) => new TextDecoder().decode(b);

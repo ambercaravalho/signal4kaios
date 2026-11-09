@@ -8,10 +8,10 @@ import { AccountEntropyPool } from '@signalapp/libsignal-client/dist/AccountKeys
 import { encryptProvisionMessage, RecvProvisionCiphertextState } from '@signalapp/libsignal-client/dist/Provisioning.js';
 import * as zk from '@signalapp/libsignal-client/zkgroup';
 
-import { fromBase64, fromHex, randomBytes, toBase64, toHex, uuidToBytes } from '../engine/bytes';
-import { deriveGroupV2Keys } from '../engine/services/groups-v2';
-import { libsignal } from '../engine/protocol/libsignal';
-import { decryptProfileName } from '../engine/services/profiles';
+import { fromBase64, fromHex, randomBytes, toBase64, toHex, uuidToBytes } from '../src/engine/bytes';
+import { deriveGroupV2Keys } from '../src/engine/services/groups-v2';
+import { libsignal } from '../src/engine/protocol/libsignal';
+import { decryptProfileName } from '../src/engine/services/profiles';
 import {
   decryptPreKey,
   decryptSenderKey,
@@ -24,8 +24,8 @@ import {
   safetyNumber,
   sealedEncryptForDevice,
   unseal,
-} from '../engine/protocol/protocol';
-import { deriveStorageItemKey, deriveStorageManifestKey, deriveStorageServiceKey } from '../engine/services/storage-service';
+} from '../src/engine/protocol/protocol';
+import { deriveStorageItemKey, deriveStorageManifestKey, deriveStorageServiceKey } from '../src/engine/services/storage-service';
 import { loadWasmForTests, newAccount, serverKeysFor } from './support';
 
 const ALICE = '11111111-1111-4111-8111-111111111111';

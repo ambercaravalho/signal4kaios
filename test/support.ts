@@ -6,16 +6,16 @@ import { join } from 'node:path';
 
 import type { MessageInitShape } from '@bufbuild/protobuf';
 
-import { ContentSchema, EnvelopeSchema } from '../engine/gen/SignalService_pb';
-import { libsignal, loadLibsignalSync } from '../engine/protocol/libsignal';
-import { create, toBinary } from '../engine/net/proto';
-import { generatePreKeyUpload } from '../engine/protocol/prekeys';
-import { localIdentity, parsePreKeyResponse, processPreKeyBundle } from '../engine/protocol/protocol';
-import { MemorySignalStore } from '../engine/protocol/store';
-import { ByteStream, Connector, TransportError } from '../engine/net/transport/stream';
+import { ContentSchema, EnvelopeSchema } from '../src/engine/gen/SignalService_pb';
+import { libsignal, loadLibsignalSync } from '../src/engine/protocol/libsignal';
+import { create, toBinary } from '../src/engine/net/proto';
+import { generatePreKeyUpload } from '../src/engine/protocol/prekeys';
+import { localIdentity, parsePreKeyResponse, processPreKeyBundle } from '../src/engine/protocol/protocol';
+import { MemorySignalStore } from '../src/engine/protocol/store';
+import { ByteStream, Connector, TransportError } from '../src/engine/net/transport/stream';
 
 export function loadWasmForTests(): string {
-  return loadLibsignalSync(readFileSync(join(process.cwd(), 'app/vendor/libsignal_wasm_bg.wasm')));
+  return loadLibsignalSync(readFileSync(join(process.cwd(), 'src/app/vendor/libsignal_wasm_bg.wasm')));
 }
 
 export interface TestAccount {
@@ -43,7 +43,7 @@ export function newAccount(aci: string, deviceId: number, number = ''): TestAcco
 export async function serverKeysFor(account: TestAccount, oneTime = 2): Promise<any> {
   const acc = (await account.store.getAccount())!;
   const upload = await generatePreKeyUpload(account.store, 'aci', acc.aciIdentityKeyPair, oneTime);
-  const { toBase64 } = await import('../engine/bytes');
+  const { toBase64 } = await import('../src/engine/bytes');
   return {
     identityKey: toBase64(acc.aciIdentityKeyPair.pubKey),
     devices: [

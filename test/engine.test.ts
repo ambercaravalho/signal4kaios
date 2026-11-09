@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import * as official from '@signalapp/libsignal-client';
 import * as zk from '@signalapp/libsignal-client/zkgroup';
 
-import { concatBytes, fromBase64, fromHex, randomBytes, toBase64, toHex, uuidToBytes } from '../engine/bytes';
-import { attachmentPaddedSize, decryptAttachment, encryptAttachment } from '../engine/crypto/attachment';
-import { aesGcmEncrypt } from '../engine/crypto/primitives';
-import { ContactDetailsSchema, ContentSchema, DataMessage_Flags } from '../engine/gen/SignalService_pb';
+import { concatBytes, fromBase64, fromHex, randomBytes, toBase64, toHex, uuidToBytes } from '../src/engine/bytes';
+import { attachmentPaddedSize, decryptAttachment, encryptAttachment } from '../src/engine/crypto/attachment';
+import { aesGcmEncrypt } from '../src/engine/crypto/primitives';
+import { ContactDetailsSchema, ContentSchema, DataMessage_Flags } from '../src/engine/gen/SignalService_pb';
 import {
   AccessControl_AccessRequired,
   GroupAttributeBlobSchema,
@@ -18,7 +18,7 @@ import {
   GroupResponseSchema,
   GroupSchema,
   Member_Role,
-} from '../engine/gen/Groups_pb';
+} from '../src/engine/gen/Groups_pb';
 import {
   addMembersActions,
   applyGroupChange,
@@ -29,7 +29,7 @@ import {
   roleActions,
   snapshotGroup,
   titleActions,
-} from '../engine/services/group-changes';
+} from '../src/engine/services/group-changes';
 import {
   ContactRecord_NameSchema,
   ContactRecordSchema,
@@ -40,11 +40,11 @@ import {
   StorageManifestSchema,
   StorageRecordSchema,
   WriteOperationSchema,
-} from '../engine/gen/SignalStorage_pb';
-import { decodeGroupState, deriveGroupV2Keys, groupIdFromMasterKey } from '../engine/services/groups-v2';
-import { libsignal } from '../engine/protocol/libsignal';
-import { decryptProfile, decryptProfileName, encryptProfileName } from '../engine/services/profiles';
-import { create, fromBinary, serviceIdFrom, toBinary } from '../engine/net/proto';
+} from '../src/engine/gen/SignalStorage_pb';
+import { decodeGroupState, deriveGroupV2Keys, groupIdFromMasterKey } from '../src/engine/services/groups-v2';
+import { libsignal } from '../src/engine/protocol/libsignal';
+import { decryptProfile, decryptProfileName, encryptProfileName } from '../src/engine/services/profiles';
+import { create, fromBinary, serviceIdFrom, toBinary } from '../src/engine/net/proto';
 import {
   decryptStorageValue,
   deriveStorageItemKey,
@@ -53,11 +53,11 @@ import {
   mutateStorage,
   pullFromStorageService,
   StorageWriteQueue,
-} from '../engine/services/storage-service';
-import { MemorySignalStore } from '../engine/protocol/store';
-import { deleteUsername, setUsername, usernameCandidates, usernameLinkUrl } from '../engine/services/usernames';
+} from '../src/engine/services/storage-service';
+import { MemorySignalStore } from '../src/engine/protocol/store';
+import { deleteUsername, setUsername, usernameCandidates, usernameLinkUrl } from '../src/engine/services/usernames';
 import { loadWasmForTests } from './support';
-import { contentToNormalizedFrame, parseContactsSyncBlob } from '../engine/net/receive';
+import { contentToNormalizedFrame, parseContactsSyncBlob } from '../src/engine/net/receive';
 
 const ALICE = '11111111-1111-4111-8111-111111111111';
 const BOB = '22222222-2222-4222-8222-222222222222';

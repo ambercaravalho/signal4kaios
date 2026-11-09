@@ -1,9 +1,9 @@
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { padMessagePlaintext } from '../engine/crypto/primitives';
-import { libsignal } from '../engine/protocol/libsignal';
-import { CallMessage_Offer_Type, Envelope_Type } from '../engine/gen/SignalService_pb';
+import { padMessagePlaintext } from '../src/engine/crypto/primitives';
+import { libsignal } from '../src/engine/protocol/libsignal';
+import { CallMessage_Offer_Type, Envelope_Type } from '../src/engine/gen/SignalService_pb';
 import {
   CIPHERTEXT_PREKEY,
   CIPHERTEXT_WHISPER,
@@ -15,9 +15,9 @@ import {
   localIdentity,
   plaintextContentBody,
   safetyNumber,
-} from '../engine/protocol/protocol';
+} from '../src/engine/protocol/protocol';
 import { connect, contentBytes, envelopeBytes, loadWasmForTests, newAccount } from './support';
-import { decryptEnvelope, DecryptFailure } from '../engine/net/receive';
+import { decryptEnvelope, DecryptFailure } from '../src/engine/net/receive';
 
 const ALICE = '11111111-1111-4111-8111-111111111111';
 const BOB = '22222222-2222-4222-8222-222222222222';
@@ -191,7 +191,7 @@ describe('libsignal sender keys', () => {
     const m2 = libsignal.groupEncrypt(ps, ALICE, 2, dist, text('second'));
     ps.free();
 
-    const { decryptSenderKey, processSenderKeyDistribution } = await import('../engine/protocol/protocol');
+    const { decryptSenderKey, processSenderKeyDistribution } = await import('../src/engine/protocol/protocol');
     await processSenderKeyDistribution(bob.store, bobLocal, ALICE, 2, skdm);
     assert.ok(await bob.store.loadSenderKey(ALICE, 2, dist));
     assert.deepEqual(await decryptSenderKey(bob.store, bobLocal, ALICE, 2, m2), text('second'));

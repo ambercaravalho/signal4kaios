@@ -3,10 +3,10 @@ Copyright (C) signal4kaios contributors
 
 signal4kaios is free software licensed under the GNU General Public License version 3 (see LICENSE).
 
-This software includes libsignal (https://github.com/signalapp/libsignal), Copyright Signal Messenger, LLC, licensed under the GNU Affero General Public License version 3 only (AGPL-3.0-only, https://www.gnu.org/licenses/agpl-3.0.html). It is statically linked, together with the wrapper crate in native/libsignal-wasm/ (also AGPL-3.0-only), into app/vendor/libsignal_wasm_bg.wasm.
+This software includes libsignal (https://github.com/signalapp/libsignal), Copyright Signal Messenger, LLC, licensed under the GNU Affero General Public License version 3 only (AGPL-3.0-only, https://www.gnu.org/licenses/agpl-3.0.html). It is statically linked, together with the wrapper crate in src/native/libsignal-wasm/ (also AGPL-3.0-only), into src/app/vendor/libsignal_wasm_bg.wasm.
 
 Section 13 of the GNU General Public License version 3 permits combining this work with AGPL-3.0 code. The signal4kaios code remains under GPL-3.0, and the terms of the AGPL-3.0, including its section 13 on interaction through a network, apply to the combined work as distributed.
 
-The complete corresponding source, including the pinned libsignal revision (native/libsignal-wasm/Cargo.toml and Cargo.lock) and the build scripts, is available at https://github.com/ambercaravalho/signal4kaios.
+The complete corresponding source, including the pinned libsignal revision (src/native/libsignal-wasm/Cargo.toml and Cargo.lock) and the build scripts, is available at https://github.com/ambercaravalho/signal4kaios.
 
-The protobuf schemas in protos/ are copied unmodified from Signal-Desktop (https://github.com/signalapp/Signal-Desktop, AGPL-3.0-only) and libsignal (AGPL-3.0-only); engine/gen/ is generated from them.
+The protobuf schemas in src/protos/ are copied unmodified from Signal-Desktop (https://github.com/signalapp/Signal-Desktop, AGPL-3.0-only) and libsignal (AGPL-3.0-only); src/engine/gen/ is generated from them.

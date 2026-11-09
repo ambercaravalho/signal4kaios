@@ -1,11 +1,11 @@
 # Packaged app output (produced by scripts/package.sh)
 dist/
-app/vendor/signal-engine.bundle.js
-app/vendor/libsignal_wasm_bg.wasm
+src/app/vendor/signal-engine.bundle.js
+src/app/vendor/libsignal_wasm_bg.wasm
 
 # libsignal wasm wrapper build output (produced by npm run build:wasm)
-native/libsignal-wasm/target/
-native/libsignal-wasm/pkg/
+src/native/libsignal-wasm/target/
+src/native/libsignal-wasm/pkg/
 
 # OS cruft
 .DS_Store

@@ -1,10 +1,10 @@
 ---
 description: Rules for the Rust wasm-bindgen wrapper over official libsignal (pins, toolchain, API shape, license)
-globs: native/**
+globs: src/native/**
 alwaysApply: false
 ---
 
-# libsignal wrapper (`native/libsignal-wasm/`)
+# libsignal wrapper (`src/native/libsignal-wasm/`)
 
 - Every libsignal crate in `Cargo.toml` uses the **same** official release commit (`rev`). Bump them together, with `@signalapp/libsignal-client` in `package.json` at the same version; see `docs/development.md` "Bumping the libsignal pin".
 - `wasm-bindgen` is pinned with `=` and must equal the installed CLI (`build.sh` checks). The version also lives in `WASM_BINDGEN_VERSION` in `.github/workflows/ci.yml`.

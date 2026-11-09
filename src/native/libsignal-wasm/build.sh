@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the libsignal wasm wrapper: cargo (wasm32) -> wasm-bindgen (--target web) -> optional wasm-opt -> app/vendor.
+# Build the libsignal wasm wrapper: cargo (wasm32) -> wasm-bindgen (--target web) -> optional wasm-opt -> src/app/vendor.
 #
 # Requires the Rust toolchain pinned in rust-toolchain.toml (rustup installs it automatically), protoc (libsignal's build scripts compile .proto files), wasm-bindgen-cli matching the wasm-bindgen version pinned in Cargo.toml, and a clang that can target wasm32 plus llvm-ar (ring, used by the pinned TLS client, compiles C).
 set -eu
@@ -54,4 +54,4 @@ fi
 
 mkdir -p ../../app/vendor
 cp pkg/libsignal_wasm_bg.wasm ../../app/vendor/libsignal_wasm_bg.wasm
-echo "OK: app/vendor/libsignal_wasm_bg.wasm ($(wc -c < pkg/libsignal_wasm_bg.wasm | tr -d ' ') bytes)"
+echo "OK: src/app/vendor/libsignal_wasm_bg.wasm ($(wc -c < pkg/libsignal_wasm_bg.wasm | tr -d ' ') bytes)"

@@ -3,13 +3,13 @@
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { libsignal } from '../../engine/protocol/libsignal';
-import { decodeWebSocketMessage } from '../../engine/net/proto';
-import { WebSocketMessage_Type } from '../../engine/gen/chat_websocket_pb';
-import { Http1Client } from '../../engine/net/transport/http1';
-import { Connector, TransportError } from '../../engine/net/transport/stream';
-import { connectTls } from '../../engine/net/transport/tls-stream';
-import { PinnedWebSocket } from '../../engine/net/transport/websocket';
+import { libsignal } from '../../src/engine/protocol/libsignal';
+import { decodeWebSocketMessage } from '../../src/engine/net/proto';
+import { WebSocketMessage_Type } from '../../src/engine/gen/chat_websocket_pb';
+import { Http1Client } from '../../src/engine/net/transport/http1';
+import { Connector, TransportError } from '../../src/engine/net/transport/stream';
+import { connectTls } from '../../src/engine/net/transport/tls-stream';
+import { PinnedWebSocket } from '../../src/engine/net/transport/websocket';
 import { loadWasmForTests, nodeConnector } from '../support';
 
 const raw = nodeConnector();

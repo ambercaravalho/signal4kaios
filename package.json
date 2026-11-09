@@ -4,9 +4,9 @@
   "private": true,
   "description": "Standalone on-device Signal client for KaiOS 3.0, 3.1, and 4.0",
   "scripts": {
-    "build:wasm": "sh native/libsignal-wasm/build.sh",
+    "build:wasm": "sh src/native/libsignal-wasm/build.sh",
     "gen:protos": "PATH=\"$PWD/node_modules/.bin:$PATH\" buf generate",
-    "build": "esbuild engine/index.ts --bundle --format=iife --target=es2020 --log-override:empty-import-meta=silent --outfile=app/vendor/signal-engine.bundle.js",
+    "build": "esbuild src/engine/index.ts --bundle --format=iife --target=es2020 --log-override:empty-import-meta=silent --outfile=src/app/vendor/signal-engine.bundle.js",
     "typecheck": "tsc --noEmit",
     "test": "esbuild test/*.test.ts --bundle --platform=node --format=cjs --target=node20 --log-override:empty-import-meta=silent --external:@signalapp/libsignal-client --external:'@signalapp/libsignal-client/*' --outdir=dist-test && node --test 'dist-test/*.test.js'",
     "test:live": "esbuild test/live/*.live.ts --bundle --platform=node --format=cjs --target=node20 --log-override:empty-import-meta=silent --outdir=dist-test/live && node --test 'dist-test/live/*.live.js'",
