@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { useStoreEvents } from '../app/hooks';
 import { router } from '../app/router';
 import { Avatar } from '../components/Avatar';
-import { confirm, pick, pickMany, prompt, showOptions } from '../components/Overlays';
+import { confirm, DIVIDER, pick, pickMany, prompt, showOptions } from '../components/Overlays';
 import { Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
 import { toast } from '../components/Toast';
@@ -140,6 +140,7 @@ function groupRows(conv: Conversation, d: GroupDetail | null, reload: () => void
       [
         !!link && mode !== 'disabled' && { label: S.showQrCode, onSelect: () => router.push(QrScreen, { title: S.groupLink, text: link!, caption: S.groupLinkHint }) },
         mode !== 'disabled' && { label: S.resetLink, onSelect: () => run(signal.updateGroup(sendId!, { group_link: mode, reset_link: true }), S.saved, reload) },
+        DIVIDER,
         ...(['disabled', 'enabled', 'enabled-with-approval'] as const)
           .filter((m) => m !== mode)
           .map((m) => ({ label: linkLabel(m), onSelect: () => run(signal.updateGroup(sendId!, { group_link: m }), S.saved, reload) })),
@@ -219,8 +220,10 @@ export function MembersScreen(props: { convId: string }) {
       [
         !isMe(id) && !pending && { label: S.messageMember, onSelect: () => router.push(ChatScreen, { convId: store.conversationWith(id.charAt(0) === '+' ? { number: id } : { uuid: id }).id }) },
         !isMe(id) && !pending && { label: S.viewSafetyNumber, onSelect: () => router.push(SafetyNumberScreen, { target: id, name }) },
+        DIVIDER,
         admin && pending && { label: S.cancelInvite, onSelect: () => run(signal.removeGroupMembers(sendId!, [id]), S.saved, reload) },
         admin && !pending && { label: isAdmin ? S.removeAdmin : S.makeAdmin, onSelect: () => run(signal.setGroupAdmins(sendId!, [id], !isAdmin), S.saved, reload) },
+        DIVIDER,
         admin && !pending && !isMe(id) && {
           label: S.removeFromGroup,
           danger: true,

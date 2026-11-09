@@ -6,15 +6,16 @@ import { renderToString } from 'preact-render-to-string';
 import { _stackForTest, router, RouterView } from '../src/ui/app/router';
 import { Avatar, AVATAR_COLORS, avatarColorIndex } from '../src/ui/components/Avatar';
 import { Badge, ListItem } from '../src/ui/components/List';
-import { confirm, showOptions } from '../src/ui/components/Overlays';
+import { confirm, DIVIDER, menuRows, showOptions } from '../src/ui/components/Overlays';
 import { QrCode } from '../src/ui/components/Qr';
 import { RichText } from '../src/ui/components/RichText';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
-import { ChatScreen } from '../src/ui/screens/Chat';
+import type { Message } from '../src/ui/data/types';
+import { Bubble, ChatScreen } from '../src/ui/screens/Chat';
 import { ChatSettingsScreen } from '../src/ui/screens/ChatSettings';
-import { HomeScreen } from '../src/ui/screens/Home';
+import { ArchivedScreen, HomeScreen } from '../src/ui/screens/Home';
 import { LinkScreen, WelcomeScreen } from '../src/ui/screens/Onboarding';
 import { NewChatScreen, SearchScreen } from '../src/ui/screens/SearchList';
 import { SettingsScreen } from '../src/ui/screens/Settings';
@@ -72,6 +73,13 @@ describe('components', () => {
     assert.match(out, /class="link"/);
   });
 
+  it('drops dividers at the edges and next to each other', () => {
+    const a = { label: 'A', onSelect() {} };
+    const b = { label: 'B', onSelect() {} };
+    assert.deepEqual(menuRows([DIVIDER, a, null, DIVIDER, false, DIVIDER, b, DIVIDER]), [a, DIVIDER, b]);
+    assert.deepEqual(menuRows([DIVIDER, null, DIVIDER]), []);
+  });
+
   it('draws a QR code as one SVG path', () => {
     const out = renderToString(<QrCode text="sgnl://linkdevice?uuid=x" />);
     assert.match(out, /<svg/);
@@ -96,13 +104,40 @@ describe('screens', () => {
 
   it('lists chats with previews and unread counts', async () => {
     router.reset(HomeScreen, {});
-    assert.match(html(), />Chats</);
+    assert.doesNotMatch(html(), /class="tabs?"/);
     store.ingestRaw({ envelope: { sourceNumber: ALICE, sourceName: 'Alice', timestamp: 1000, dataMessage: { timestamp: 1000, message: 'hello there' } } });
     await settle();
     const out = html();
     assert.match(out, /Alice/);
     assert.match(out, /hello there/);
     assert.match(out, /class="badge">1</);
+    assert.doesNotMatch(out, new RegExp(S.archivedChats));
+  });
+
+  it('keeps archived chats behind a row at the bottom of the list', async () => {
+    store.setArchived(ALICE, true);
+    await settle();
+    router.reset(HomeScreen, {});
+    let out = html();
+    assert.match(out, new RegExp(S.archivedChats));
+    assert.doesNotMatch(out, /hello there/);
+    router.push(ArchivedScreen, {});
+    out = html();
+    assert.match(out, /hello there/);
+    store.setArchived(ALICE, false);
+    await settle();
+    router.reset(HomeScreen, {});
+    assert.doesNotMatch(html(), new RegExp(S.archivedChats));
+  });
+
+  it('puts the time at the end of the text, or over a photo-only message', () => {
+    const base: Message = { id: 'm1', convId: ALICE, author: ALICE, timestamp: 1000, body: 'short', incoming: true, status: 'received', attachments: [], reactions: {} } as unknown as Message;
+    router.reset(() => <Bubble m={base} focused={false} showAuthor={false} onClipped={() => {}} />, {});
+    assert.match(html(), /class="msg-body"><[^]*class="msg-meta"[^]*<\/div>/);
+    assert.doesNotMatch(html(), /msg-meta-line/);
+    const file = { ...base, body: '', attachments: [{ id: 'a1', contentType: 'application/pdf', size: 10 }] } as unknown as Message;
+    router.reset(() => <Bubble m={file} focused={false} showAuthor={false} onClipped={() => {}} />, {});
+    assert.match(html(), /class="msg-file"[^]*class="msg-meta"/);
   });
 
   it('opens a chat with its title and message box', () => {

@@ -1,3 +1,4 @@
+import type { VNode } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useFocusScroll } from '../app/focus';
 import { useStoreEvent, useStoreEvents } from '../app/hooks';
@@ -6,7 +7,7 @@ import { ConnectionBanner } from '../components/ConnectionBanner';
 import { pickEmoji, pickReaction } from '../components/Emoji';
 import { Icon } from '../components/Icon';
 import { Spinner } from '../components/List';
-import { confirm, pick, showOptions } from '../components/Overlays';
+import { confirm, DIVIDER, pick, showOptions } from '../components/Overlays';
 import { RichText } from '../components/RichText';
 import { Screen } from '../components/Screen';
 import { TextField } from '../components/TextField';
@@ -35,6 +36,8 @@ const TYPING_IDLE_MS = 5000;
 /** Signal allows edits and delete-for-everyone for 24 hours. */
 const CHANGE_WINDOW_MS = 24 * 3600 * 1000;
 const LATEST = Number.MAX_SAFE_INTEGER;
+/** How far Up and Down scroll through a message taller than the screen before focus moves on. */
+const STEP_PX = 60;
 
 export function openChat(convId: string, targetTs?: number): void {
   router.push(ChatScreen, { convId, targetTs });
@@ -85,8 +88,8 @@ function StatusIcon(props: { status: MessageStatus }) {
   return null;
 }
 
-/** An inline photo once it's downloaded; anything else is a labelled row that opens in the viewer. */
-function AttachmentView(props: { att: Attachment }) {
+/** An inline photo once it's downloaded; anything else is a labelled row that opens in the viewer. `meta` sits over the photo's corner, or below a file row. */
+function AttachmentView(props: { att: Attachment; meta?: VNode | null }) {
   const { att } = props;
   const ref = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -127,14 +130,18 @@ function AttachmentView(props: { att: Attachment }) {
     return (
       <div class="msg-media" ref={ref}>
         <img src={url} alt="" />
+        {props.meta}
       </div>
     );
   return (
-    <div class="msg-file" ref={ref}>
-      <Icon name={attachmentIcon(att)} />
-      <span class="msg-file-name">{att.viewOnce ? S.viewOnceMedia : store.attachmentLabel([att])}</span>
-      {!att.viewOnce && att.size ? <span class="msg-file-size">{fmtBytes(att.size)}</span> : null}
-    </div>
+    <>
+      <div class="msg-file" ref={ref}>
+        <Icon name={attachmentIcon(att)} />
+        <span class="msg-file-name">{att.viewOnce ? S.viewOnceMedia : store.attachmentLabel([att])}</span>
+        {!att.viewOnce && att.size ? <span class="msg-file-size">{fmtBytes(att.size)}</span> : null}
+      </div>
+      {props.meta}
+    </>
   );
 }
 
@@ -158,11 +165,41 @@ function Reactions(props: { reactions: Record<string, string> }) {
   );
 }
 
-function Bubble(props: { m: Message; focused: boolean; showAuthor: boolean }) {
+function MessageMeta(props: { m: Message }) {
+  const { m } = props;
+  return (
+    <span class="msg-meta">
+      {m.pinned && <Icon name="pin" />}
+      {m.edited && !m.deleted && <span>{S.edited}</span>}
+      {m.expiresAt ? <Icon name="timer" /> : null}
+      <span>{fmtClock(m.timestamp)}</span>
+      {!m.incoming && <StatusIcon status={m.status} />}
+    </span>
+  );
+}
+
+/** Whether the text overflows its clamp. Measured once per text so moving the time out of the text can't flip it back. */
+function useClipped(ref: { current: HTMLElement | null }, text: string): boolean {
+  const [clipped, setClipped] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    setClipped(!!el && el.scrollHeight > el.clientHeight + 2);
+  }, [text]);
+  return clipped;
+}
+
+export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolean; onClipped(id: string, clipped: boolean): void }) {
   const { m } = props;
   const ref = useFocusScroll<HTMLDivElement>(props.focused);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const text = m.deleted ? S.deletedMessage : m.body;
   const jumbo = !m.deleted && !m.attachments.length && !m.quote && isJumboEmoji(m.body);
+  const clipped = useClipped(bodyRef, text || '');
+  useEffect(() => props.onClipped(m.id, clipped), [clipped]);
+  const attachments = m.deleted ? [] : m.attachments;
+  const meta = <MessageMeta m={m} />;
+  const metaInText = !!text && !jumbo && !clipped;
+  const metaOnAttachment = !text && attachments.length > 0;
   const cls = 'msg ' + (m.incoming ? 'msg-in' : 'msg-out') + (props.focused ? ' focused' : '');
   const bubbleCls = 'bubble' + (jumbo ? ' bubble-jumbo' : '') + (m.deleted ? ' bubble-deleted' : '') + (m.status === 'failed' ? ' bubble-failed' : '');
   return (
@@ -175,19 +212,17 @@ function Bubble(props: { m: Message; focused: boolean; showAuthor: boolean }) {
             <div class="msg-quote-text">{(m.quote.text || S.photo).slice(0, 120)}</div>
           </div>
         )}
-        {!m.deleted && m.attachments.map((a, i) => <AttachmentView key={a.id || i} att={a} />)}
+        {attachments.map((a, i) => (
+          <AttachmentView key={a.id || i} att={a} meta={metaOnAttachment && i === attachments.length - 1 ? meta : null} />
+        ))}
         {text && (
-          <div class={'msg-body' + (jumbo ? ' jumbo' : '')}>
+          <div class={'msg-body' + (jumbo ? ' jumbo' : '') + (clipped ? ' clipped' : '')} ref={bodyRef}>
             <RichText text={text} styles={m.deleted ? [] : m.styles} revealSpoilers={props.focused} />
+            {metaInText && meta}
           </div>
         )}
-        <div class="msg-meta">
-          {m.pinned && <Icon name="pin" />}
-          {m.edited && !m.deleted && <span>{S.edited}</span>}
-          {m.expiresAt ? <Icon name="timer" /> : null}
-          <span>{fmtClock(m.timestamp)}</span>
-          {!m.incoming && <StatusIcon status={m.status} />}
-        </div>
+        {clipped && <div class="msg-more">{S.readMore}</div>}
+        {!metaInText && !metaOnAttachment && <div class="msg-meta-line">{meta}</div>}
       </div>
       {!m.deleted && <Reactions reactions={m.reactions} />}
       {m.status === 'failed' && <div class="msg-failed">{S.notSent}</div>}
@@ -255,6 +290,11 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   msgsRef.current = msgs;
   const focusedRef = useRef(focusedId);
   focusedRef.current = focusedId;
+  const clippedIds = useRef(new Set<string>());
+  const onClipped = useRef((id: string, clipped: boolean) => {
+    if (clipped) clippedIds.current.add(id);
+    else clippedIds.current.delete(id);
+  }).current;
 
   const contact = conv && conv.type === 'direct' ? store.contactByKey(conv.id) : undefined;
   const blocked = !!(contact && contact.blocked);
@@ -490,6 +530,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
           setFocusedId(null);
         },
       },
+      DIVIDER,
       !m.deleted && att && { label: attachmentAction(att), onSelect: () => router.push(ViewerScreen, { att, title: authorName(m) }) },
       urls.length > 0 && { label: S.openLink, onSelect: () => openLinks(urls) },
       !m.deleted && !!m.body && { label: S.copyText, onSelect: () => copyText(m) },
@@ -503,8 +544,11 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
         },
       },
       m.status === 'failed' && { label: S.retry, onSelect: () => store.retryMessage(m).catch((e) => toast(sendError(e))) },
+      DIVIDER,
       !m.deleted && settled && { label: m.pinned ? S.unpinMessage : S.pinMessage, onSelect: () => store.setMessagePinned(m, !m.pinned).catch((e) => toast(sendError(e))) },
+      clippedIds.current.has(m.id) && { label: S.readFull, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) },
       { label: S.messageDetails, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) },
+      DIVIDER,
       {
         label: S.deleteForMe,
         onSelect: async () => {
@@ -536,7 +580,9 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       !blocked && { label: S.attach, onSelect: attach },
       !blocked && { label: S.insertEmoji, onSelect: () => pickEmoji().then((e) => e && insertText(e)) },
       !blocked && conv && conv.type === 'group' && { label: S.mention, onSelect: mention },
+      DIVIDER,
       pinned.length > 0 && { label: S.pinnedMessages, onSelect: showPinned },
+      DIVIDER,
       conv && { label: conv.muted ? S.unmute : S.muteNotifications, onSelect: () => store.setMuted(convId, !conv.muted) },
       { label: S.chatSettings, onSelect: () => router.push(ChatSettingsScreen, { convId }) },
     ]);
@@ -553,6 +599,19 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   const index = focusedId === null ? -1 : msgs.findIndex((m) => m.id === focusedId);
   const onComposer = index < 0;
 
+  /** Scrolls a step through the focused message when it doesn't fit, so its hidden edge comes into view before focus moves. */
+  function stepThroughTall(down: boolean): boolean {
+    const list = listRef.current;
+    const el = list && (list.querySelector('.msg.focused') as HTMLElement | null);
+    if (!list || !el) return false;
+    const view = list.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const hidden = down ? r.bottom - view.bottom : view.top - r.top;
+    if (hidden <= 1) return false;
+    list.scrollTop += (down ? 1 : -1) * Math.min(STEP_PX, hidden);
+    return true;
+  }
+
   useKeys((e) => {
     switch (e.key) {
       case 'ArrowUp': {
@@ -562,6 +621,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
           if (msgs.length) setFocusedId(msgs[msgs.length - 1].id);
           return true;
         }
+        if (stepThroughTall(false)) return true;
         if (index > 0) setFocusedId(msgs[index - 1].id);
         else if (hasMore)
           loadOlder().then((rows) => {
@@ -571,6 +631,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       }
       case 'ArrowDown':
         if (onComposer) return false;
+        if (stepThroughTall(true)) return true;
         setFocusedId(index < msgs.length - 1 ? msgs[index + 1].id : null);
         return true;
       case 'Enter':
@@ -619,7 +680,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     return (
       <div key={m.id}>
         {showDay && <div class="day-sep">{day}</div>}
-        <Bubble m={m} focused={m.id === focusedId} showAuthor={showAuthor} />
+        <Bubble m={m} focused={m.id === focusedId} showAuthor={showAuthor} onClipped={onClipped} />
       </div>
     );
   });

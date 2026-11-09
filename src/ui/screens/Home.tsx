@@ -1,12 +1,11 @@
-import { useState } from 'preact/hooks';
 import { useStoreEvents } from '../app/hooks';
 import { router } from '../app/router';
 import { Avatar } from '../components/Avatar';
 import { Icon } from '../components/Icon';
 import { Badge, EmptyState, Spinner } from '../components/List';
-import { showOptions } from '../components/Overlays';
+import { DIVIDER, showOptions } from '../components/Overlays';
 import { EmojiText } from '../components/RichText';
-import { ActionRow, RowList } from '../components/RowList';
+import { ActionRow, Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { toast } from '../components/Toast';
@@ -19,15 +18,17 @@ import { ChatSettingsScreen } from './ChatSettings';
 import { NewChatScreen, SearchScreen } from './SearchList';
 import { SettingsScreen } from './Settings';
 
-function convRow(conv: Conversation, archivedTab: boolean): ActionRow {
-  const t = !archivedTab && store.typing(conv.id);
+const ARCHIVED_ROW = 'archived';
+
+function convRow(conv: Conversation, archived: boolean): ActionRow {
+  const t = !archived && store.typing(conv.id);
   return {
     key: conv.id,
     label: conv.name || S.unknown,
     leading: <Avatar conv={conv} />,
     meta: (
       <>
-        {conv.pinned && !archivedTab && <Icon name="pin" class="meta-icon" />}
+        {conv.pinned && !archived && <Icon name="pin" class="meta-icon" />}
         {conv.muted && <Icon name="mute" class="meta-icon" />}
         {fmtTime(conv.lastTs)}
       </>
@@ -39,38 +40,66 @@ function convRow(conv: Conversation, archivedTab: boolean): ActionRow {
   };
 }
 
-function chatOptions(conv: Conversation | undefined, archivedTab: boolean): void {
+function homeOptions(conv: Conversation | undefined): void {
   showOptions([
     conv && { label: S.chatSettings, onSelect: () => router.push(ChatSettingsScreen, { convId: conv.id }) },
-    conv && !archivedTab && { label: conv.pinned ? S.unpinChat : S.pinChat, onSelect: () => store.setConvPinned(conv.id, !conv.pinned) || toast(S.pinLimit) },
-    conv && { label: conv.archived ? S.unarchive : S.archive, onSelect: () => store.setArchived(conv.id, !conv.archived) },
+    conv && { label: conv.pinned ? S.unpinChat : S.pinChat, onSelect: () => store.setConvPinned(conv.id, !conv.pinned) || toast(S.pinLimit) },
+    conv && { label: S.archive, onSelect: () => store.setArchived(conv.id, true) },
     conv && { label: conv.muted ? S.unmute : S.muteNotifications, onSelect: () => store.setMuted(conv.id, !conv.muted) },
-    !archivedTab && { label: S.markAllRead, onSelect: () => store.markAllRead() },
+    DIVIDER,
+    { label: S.markAllRead, onSelect: () => store.markAllRead() },
+    DIVIDER,
     { label: S.search, onSelect: () => router.push(SearchScreen, {}) },
     { label: S.settings, onSelect: () => router.push(SettingsScreen, {}) },
   ]);
 }
 
-/** The chat list, with Chats and Archived tabs. */
+/** The chat list. Archived chats sit behind a row at the bottom, as in Signal for Android. */
 export function HomeScreen() {
   useStoreEvents(['conversations', 'typing']);
-  const [tab, setTab] = useState(0);
-  const archivedTab = tab === 1;
-  const list = archivedTab ? store.archivedConversations() : store.conversations();
+  const list = store.conversations();
+  const archivedCount = store.archivedConversations().length;
+  const rows: Row[] = list.map((c) => convRow(c, false));
+  if (archivedCount)
+    rows.push({ key: ARCHIVED_ROW, label: S.archivedChats, icon: 'archive', meta: String(archivedCount), action: S.open, onSelect: () => router.push(ArchivedScreen, {}) });
 
-  const empty = !store.isReady() ? <Spinner /> : archivedTab ? <EmptyState title={S.noArchived} body={S.noArchivedHint} /> : <EmptyState title={S.noChats} body={S.noChatsHint} />;
+  const empty = !store.isReady() ? <Spinner /> : <EmptyState title={S.noChats} body={S.noChatsHint} />;
 
   return (
-    <Screen title={APP_NAME} tabs={{ labels: [S.chats, S.archived], index: tab, onChange: setTab }} banner={<ConnectionBanner />}>
+    <Screen title={APP_NAME} banner={<ConnectionBanner />}>
       <RowList
-        key={tab}
-        rows={list.map((c) => convRow(c, archivedTab))}
+        rows={rows}
         empty={empty}
-        softkeys={() => ({ left: archivedTab ? null : S.newChat, right: S.options })}
+        softkeys={() => ({ left: S.newChat, right: S.options })}
         onKey={(e, row) => {
-          if (e.key === 'SoftLeft' && !archivedTab) router.push(NewChatScreen, {});
-          else if (e.key === 'SoftRight') chatOptions(row ? store.conversation(row.key!) : undefined, archivedTab);
+          if (e.key === 'SoftLeft') router.push(NewChatScreen, {});
+          else if (e.key === 'SoftRight') homeOptions(row && row.key !== ARCHIVED_ROW ? store.conversation(row.key!) : undefined);
           else return false;
+          return true;
+        }}
+      />
+    </Screen>
+  );
+}
+
+/** Archived chats, opened from the row at the bottom of the chat list. */
+export function ArchivedScreen() {
+  useStoreEvents(['conversations']);
+  const list = store.archivedConversations();
+  return (
+    <Screen title={S.archivedChats}>
+      <RowList
+        rows={list.map((c) => convRow(c, true))}
+        empty={<EmptyState title={S.noArchived} body={S.noArchivedHint} />}
+        softkeys={(row) => ({ right: row ? S.options : null })}
+        onKey={(e, row) => {
+          const conv = e.key === 'SoftRight' && row ? store.conversation(row.key!) : undefined;
+          if (!conv) return false;
+          showOptions([
+            { label: S.chatSettings, onSelect: () => router.push(ChatSettingsScreen, { convId: conv.id }) },
+            { label: S.unarchive, onSelect: () => store.setArchived(conv.id, false) },
+            { label: conv.muted ? S.unmute : S.muteNotifications, onSelect: () => store.setMuted(conv.id, !conv.muted) },
+          ]);
           return true;
         }}
       />

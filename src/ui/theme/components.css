@@ -119,6 +119,10 @@
   text-overflow: ellipsis;
 }
 
+.sep-gap {
+  height: 0.4rem;
+}
+
 .badge {
   flex: none;
   min-width: 2rem;
@@ -451,6 +455,8 @@
   line-height: 2.2rem;
   outline: none;
   resize: none;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
 
 .tf.focused .tf-input {

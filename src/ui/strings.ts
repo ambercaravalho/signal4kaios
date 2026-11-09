@@ -34,7 +34,7 @@ export const S = {
 
   // Home
   chats: 'Chats',
-  archived: 'Archived',
+  archivedChats: 'Archived chats',
   newChat: 'New chat',
   noChats: 'No chats yet',
   noChatsHint: 'Start a new chat, or wait for messages from your contacts.',
@@ -104,6 +104,8 @@ export const S = {
   noMessages: 'No messages yet',
   groupNotReady: 'This group is still loading. Try again in a moment.',
   pinnedMessages: 'Pinned messages',
+  readMore: 'Read more',
+  readFull: 'Read full message',
   messageDetails: 'Message details',
   from: 'From',
   to: 'To',

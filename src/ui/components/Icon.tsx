@@ -18,6 +18,7 @@ const PATHS: Record<string, string> = {
   person: 'M12 4a4 4 0 100 8 4 4 0 000-8zM4 21c0-4 4-6 8-6s8 2 8 6',
   group: 'M9 5a3.5 3.5 0 100 7 3.5 3.5 0 000-7zM2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5M16 5.5a3 3 0 010 6M18 14.5c2.5.5 4 2.5 4 5.5',
   note: 'M6 3h12v18H6zM9 8h6M9 12h6M9 16h4',
+  archive: 'M3 4h18v4H3zM5 8v12h14V8M10 12h4',
 };
 
 export function Icon(props: { name: keyof typeof PATHS | string; class?: string }) {

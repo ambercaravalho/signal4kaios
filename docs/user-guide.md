@@ -20,7 +20,7 @@ Beacon follows the KaiOS layout: the bar at the bottom names what the left softk
 | Key | Chats list | Inside a chat |
 | --- | --- | --- |
 | **Up / Down** | Move between chats | Move between messages and the message box |
-| **Left / Right** | Switch between **Chats** and **Archived** | Move the cursor while typing |
+| **Left / Right** | Not used | Move the cursor while typing |
 | **OK** | Open the chat | **Send** from the message box, or open a message's options |
 | **Left softkey** | **New chat** | **Back**, or **Cancel** a reply or edit |
 | **Right softkey** | **Options** | **Options** |
@@ -33,11 +33,13 @@ Beacon follows the KaiOS layout: the bar at the bottom names what the left softk
 
 Each row shows the avatar (profile photo, or initials on the person's Signal color), the name, the time, a preview or "Typing…", and an unread count. Pinned (📌) chats sort first; muted chats show a muted icon. Your own number appears as **Note to Self**. A strip under the header says **Connecting…** or **No connection** while Beacon isn't connected.
 
-**Options** on a chat: Chat settings, Pin or Unpin chat (up to 4), Archive or Unarchive, Mute or Unmute, Mark all as read, Search, and Settings.
+As in Signal for Android, archived chats sit behind an **Archived chats** row at the bottom of the list, which shows how many there are and appears only when you have some. Open it to see them; **Options** there has Chat settings, Unarchive, and Mute.
+
+**Options** on a chat: Chat settings, Pin or Unpin chat (up to 4), Archive, Mute or Unmute, Mark all as read, Search, and Settings.
 
 ## Inside a chat
 
-Messages run oldest to newest with the message box at the bottom; moving up past the top loads older messages. Sent messages show a clock while sending, one tick when sent, two when delivered, and two blue ticks when read. A message that didn't send says **Not sent**.
+Messages run oldest to newest with the message box at the bottom; moving up past the top loads older messages. The time, the disappearing-message timer, and the ticks sit at the end of the last line of text. A long message is shortened to fit the screen and ends with **Read more**; a message still too tall to fit scrolls a step at a time as you press Up or Down. Sent messages show a clock while sending, one tick when sent, two when delivered, and two blue ticks when read. A message that didn't send says **Not sent**.
 
 OK on a message opens its options:
 
@@ -45,8 +47,8 @@ OK on a message opens its options:
 - **Reply**, **Copy text**, and **Open link** when the message has links.
 - **View photo**, **Play video**, **Play voice message**, or **Open file** for attachments.
 - **Edit** and **Delete for everyone** on your own messages for 24 hours, as in Signal.
-- **Try again** on a message that didn't send.
-- **Pin message** (for everyone in the chat), **Message details** (the full text, when it was sent, its status, reactions, and when it disappears), and **Delete for me**.
+- **Retry** on a message that didn't send.
+- **Pin message** (for everyone in the chat), **Read full message** on a shortened message, **Message details** (the full text, when it was sent, its status, reactions, and when it disappears), and **Delete for me**.
 
 **Options** in a chat: Attach, Insert emoji, Mention (groups), Pinned messages, Mute, and Chat settings.
 

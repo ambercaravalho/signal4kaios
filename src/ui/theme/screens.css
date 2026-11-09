@@ -175,14 +175,26 @@
 }
 
 .msg-media {
+  position: relative;
   margin: 0.2rem -0.4rem 0.4rem;
 }
 
 .msg-media img {
   display: block;
   max-width: 100%;
-  max-height: 16rem;
+  max-height: 12rem;
   border-radius: 1rem;
+}
+
+.msg-media .msg-meta {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 0.8rem;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  opacity: 1;
 }
 
 .msg-file {
@@ -212,18 +224,43 @@
   font-size: var(--fs-small);
 }
 
+/* Tall text is clamped so a message always fits the chat area; "Read full message" opens all of it. */
 .msg-body {
+  display: flow-root;
+  max-height: 11rem;
+  overflow: hidden;
   white-space: pre-wrap;
 }
 
+.msg-body.clipped {
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+
+.msg-more {
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
 .msg-meta {
-  display: flex;
-  justify-content: flex-end;
+  display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  margin-top: 0.2rem;
   font-size: 1.1rem;
+  line-height: 1.6rem;
   opacity: 0.75;
+  white-space: nowrap;
+}
+
+/* After the text, the float sits at the end of the last line when it fits and drops below it when it doesn't. */
+.msg-body .msg-meta {
+  float: right;
+  margin: 0.3rem 0 0 0.8rem;
+}
+
+.msg-meta-line {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.2rem;
 }
 
 .msg-meta .icon {
@@ -294,6 +331,8 @@
 
 .composer .tf {
   margin: 0.4rem 0.6rem;
+  padding: 0;
+  border-bottom: 0;
 }
 
 .composer-typing {

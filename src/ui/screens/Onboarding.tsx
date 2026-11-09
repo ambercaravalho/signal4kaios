@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { router, useKeys, useSoftkeys } from '../app/router';
 import { Spinner } from '../components/List';
-import { prompt, showOptions } from '../components/Overlays';
+import { DIVIDER, prompt, showOptions } from '../components/Overlays';
 import { QrCode } from '../components/Qr';
 import { Screen } from '../components/Screen';
 import { toast } from '../components/Toast';
@@ -112,6 +112,7 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
       showOptions([
         { label: S.newCode, onSelect: () => setAttempt((n) => n + 1) },
         { label: S.deviceName, onSelect: rename },
+        DIVIDER,
         { label: S.userGuide, onSelect: () => openUrl(SETUP_URL).catch(() => {}) },
       ]);
     else if (busy && (e.key === 'Backspace' || e.key === 'SoftLeft')) return true;

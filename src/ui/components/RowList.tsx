@@ -73,6 +73,7 @@ export function RowList(props: {
             checked={r.checked}
             danger={r.danger}
             compact={props.compact}
+            first={n === 0}
           />
         );
       })}
