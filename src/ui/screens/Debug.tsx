@@ -11,13 +11,27 @@ import { signal } from '../data/api';
 import { db } from '../data/db';
 import { fmtBytes, fmtTimeFull } from '../data/format';
 import { logLines, redactedLog } from '../data/log';
-import { appVersion, openActivity } from '../data/platform';
+import { NativeTlsState, nativeTlsState, onNativeTlsChange, probe } from '../data/nativeTls';
+import { appVersion, openActivity, openUrl } from '../data/platform';
 import { connectionState } from '../data/store';
 import * as ws from '../data/ws';
 import { friendlyError } from '../errors';
-import { DEBUG } from '../strings';
+import { DEBUG, S } from '../strings';
+import { SETUP_URL } from './Onboarding';
 
 type Diagnostics = Awaited<ReturnType<typeof signal.diagnostics>>;
+
+export const CERT_GUIDE_URL = SETUP_URL + '#optional-for-rooted-phones-trust-signals-certificate';
+
+function useNativeTls(): NativeTlsState {
+  const [state, setState] = useState(nativeTlsState());
+  useEffect(() => onNativeTlsChange(setState), []);
+  return state;
+}
+
+function fasterLabel(state: NativeTlsState): string {
+  return state === 'trusted' ? DEBUG.fasterOn : state === 'untrusted' ? DEBUG.fasterOff : DEBUG.fasterChecking;
+}
 
 function storageEstimate(): Promise<{ usage?: number; quota?: number } | null> {
   const s = (navigator as Navigator & { storage?: { estimate?(): Promise<{ usage?: number; quota?: number }> } }).storage;
@@ -31,6 +45,7 @@ function shareLog(): void {
 
 export function DebugScreen() {
   useStoreEvents(['connection']);
+  const tlsState = useNativeTls();
   const [diag, setDiag] = useState<Diagnostics | null>(null);
   const [lib, setLib] = useState('');
   const [version, setVersion] = useState('');
@@ -71,6 +86,7 @@ export function DebugScreen() {
     info('kpk', DEBUG.kyberPreKeys, diag ? (diag.preKeys ? diag.preKeys.kyber : DEBUG.preKeysUnknown) : undefined),
     info('ws', DEBUG.connection, connectionState()),
     info('tls', DEBUG.tls, net.pinnedTlsAvailable() ? DEBUG.available : DEBUG.unavailable),
+    { key: 'faster', label: DEBUG.fasterConnection, sub: fasterLabel(tlsState), end: 'chevron', onSelect: () => router.push(FasterConnectionScreen, {}) },
     info('last', DEBUG.lastMessage, last ? fmtTimeFull(last) : DEBUG.never),
     info('db', DEBUG.database, db.name()),
     info('store', DEBUG.storage, storage || DEBUG.unavailable),
@@ -83,6 +99,33 @@ export function DebugScreen() {
   ];
   return (
     <Screen title={DEBUG.title}>
+      <RowList rows={rows} compact />
+    </Screen>
+  );
+}
+
+/** Whether attachment transfers use the platform's TLS, which needs Signal's root certificate on a rooted phone. */
+export function FasterConnectionScreen() {
+  const state = useNativeTls();
+  const [checking, setChecking] = useState(false);
+  async function checkAgain(): Promise<void> {
+    if (checking) return;
+    setChecking(true);
+    const ok = await probe();
+    setChecking(false);
+    toast(ok ? DEBUG.fasterNowOn : DEBUG.fasterStillOff);
+  }
+  const rows: Row[] = [
+    { key: 'state', label: DEBUG.fasterStatus, sub: checking ? DEBUG.fasterChecking : fasterLabel(state) },
+    { key: 'scope', label: DEBUG.fasterUsedFor, sub: DEBUG.fasterUsedForValue },
+    { key: 'needs', label: DEBUG.fasterNeeds, sub: DEBUG.fasterNeedsValue },
+    { key: 'other', label: DEBUG.fasterOther, sub: DEBUG.fasterOtherValue },
+    { section: '' },
+    { key: 'how', label: DEBUG.fasterHowTo, end: 'chevron', onSelect: () => openUrl(CERT_GUIDE_URL).catch(() => toast(S.errGeneric)) },
+    { key: 'check', label: DEBUG.fasterCheckAgain, onSelect: checkAgain },
+  ];
+  return (
+    <Screen title={DEBUG.fasterConnection}>
       <RowList rows={rows} compact />
     </Screen>
   );

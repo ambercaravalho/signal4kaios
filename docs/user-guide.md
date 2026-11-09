@@ -97,6 +97,8 @@ Each account has its own history on the phone, and switching accounts restarts B
 
 **Debug** shows the details a bug report needs: app and library versions, account and device IDs, how many one-time keys the server holds, the connection state, when the last message arrived, and storage use. It can refresh keys, ask your main phone to sync, reconnect, show the log, and **Share debug log**. The shared log has phone numbers, account IDs, and keys removed.
 
+**Debug → Faster connection** shows whether photos, video, voice notes, and files travel over the phone's built-in TLS. That needs a rooted phone that trusts Signal's root certificate; **How to turn it on** opens [the setup steps](setup.md#optional-for-rooted-phones-trust-signals-certificate), and **Check again** looks again after you install it.
+
 ## Notifications
 
 With Beacon in the background, new messages raise a notification unless the chat is muted; group notifications start with the sender's name. Selecting one opens the chat.
@@ -117,4 +119,4 @@ Beacon doesn't yet support every Signal feature. Calls, stories, link previews, 
 | --- | --- |
 | Starting a chat by phone number | Works for numbers in your synced contacts and for Signal usernames. Other numbers can't be looked up, because the phone can't run Signal's contact discovery yet ([details](development.md#phone-number-lookup-cdsi-spike-findings)). |
 | Scanning a username QR code | Not supported yet; ask for the username instead. Codes with a phone number work. |
-| Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |
+| Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open, and trusting Signal's certificate on a rooted phone doesn't change that. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |

@@ -9,6 +9,7 @@ import { db } from './data/db';
 import { installEngineHost } from './data/engine-host';
 import * as http from './data/http';
 import { dbg } from './data/log';
+import * as nativeTls from './data/nativeTls';
 import { hasServiceWorker } from './data/platform';
 import * as store from './data/store';
 import { setupWake } from './data/wake';
@@ -93,6 +94,8 @@ function start(): void {
     return;
   }
   store.onNotificationClick(openConversation);
+  nativeTls.installProbeHandlers();
+  nativeTls.probe();
   store.init().then(() => {
     ws.connect();
     ws.installWakeHandlers();

@@ -72,6 +72,8 @@ flowchart LR
 
 Only `*.signal.org` goes through this path. Other hosts, and environments without `TCPSocket` (desktop browsers, the tests' fallbacks), use mozSystem XHR and the platform `WebSocket`. A redirect off Signal's hosts drops the `Authorization` header and continues over XHR.
 
+On a rooted phone whose Gecko trusts Signal's root ([setup](setup.md#optional-for-rooted-phones-trust-signals-certificate), [`scripts/signal-cert.mjs`](../scripts/signal-cert.mjs)), [`src/ui/data/nativeTls.ts`](../src/ui/data/nativeTls.ts) detects it with one unauthenticated `HEAD https://cdn.signal.org/` per launch, reconnect, and `online` event. While that succeeds, [`http.ts`](../src/ui/data/http.ts) sends requests to the attachment CDNs (`cdn`, `cdn2`, `cdn3`) over mozSystem XHR, capped at 200 MiB like the pinned client, and a network failure switches back to the pinned client for good. The platform trusts every public CA, so nothing carrying account credentials or keys takes this path: the chat socket, the chat and Storage Service APIs, and provisioning (where a forged server could substitute its own QR address) always stay pinned. Attachments are end-to-end encrypted and MAC-checked, and uploads use one-time upload forms.
+
 The chat WebSocket authenticates with an `Authorization: Basic` header on the upgrade request. Signal's server treats query-string credentials as an anonymous socket that never receives messages, which is why only the pinned client can carry the main connection.
 
 A ServiceWorker can't use any of this, because workers have no `TCPSocket`, and the browser `WebSocket` can't set the header. So a closed app can't receive messages: [`sw.js`](../src/app/sw.js) only relays wake alarms to an open window and handles notification taps. See [the user guide](user-guide.md#known-limitations).
@@ -91,7 +93,7 @@ src/
     app/                  router, focus and key handling, hooks, theme
     components/           shared building blocks (lists, dialogs, softkeys, QR, emoji)
     screens/              one module per screen or group of related screens
-    data/                 store, ws, db, config, http, normalize, attachments, platform (B2G APIs)
+    data/                 store, ws, db, config, http, nativeTls, normalize, attachments, platform (B2G APIs)
     theme/                CSS tokens and styles
     strings.ts            every user-facing string, plus the Debug screen's wording
   engine/                 on-device Signal engine (signalBridge)
@@ -103,7 +105,7 @@ src/
     gen/                  generated protobuf codecs (never hand-edited)
   native/libsignal-wasm/  Rust wrapper crate (AGPL-3.0-only)
   protos/                 vendored Signal .proto files
-scripts/                  build.mjs, icons.mjs, package.sh, install.sh
+scripts/                  build.mjs, icons.mjs, package.sh, install.sh, signal-cert.mjs
 test/                     unit, interop, and known-answer tests
 docs/                     these guides
 ```
@@ -281,6 +283,6 @@ Upgrading from a database older than version 4 discards the protocol state and a
 - **Sync messages** are accepted only from our own ACI. Recipients must be ACIs.
 - **Identity changes.** A contact's first identity key is trusted on first use. If it later changes, the contact drops to untrusted, and if you had verified them, sending stops until you review the new safety number.
 - **Sealed Sender** certificates are checked against Signal's production trust roots.
-- **TLS.** Connections to Signal's hosts trust only the two roots libsignal pins, not the phone's certificate store, so a CA added to the phone can't intercept them.
+- **TLS.** Connections to Signal's hosts trust only the two roots libsignal pins, not the phone's certificate store, so a CA added to the phone can't intercept them. The one exception is opt-in: once the phone trusts Signal's root, attachment CDN transfers use the platform's TLS, whose contents are end-to-end encrypted and MAC-checked ([Network](#network)).
 - **CSP.** The privileged-app CSP forbids `eval`, `new Function`, and inline scripts, and `scripts/package.sh` fails the build if any shipped script contains them.
 - **Logs.** The debug log never records keys, passwords, or provisioning codes. Everyday screens show plain-language errors (`friendlyError` in [`src/ui/errors.ts`](../src/ui/errors.ts)); the technical detail goes only to the log, which Settings > Debug shows.
