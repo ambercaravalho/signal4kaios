@@ -14,7 +14,13 @@ const slimEmoji = {
       const slim = groups.map((g) => ({
         name: g.name,
         slug: g.slug,
-        emojis: g.emojis.filter((e) => parseFloat(e.emoji_version) <= MAX_EMOJI_VERSION).map((e) => ({ emoji: e.emoji, emoji_version: e.emoji_version })),
+        emojis: g.emojis
+          .filter((e) => parseFloat(e.emoji_version) <= MAX_EMOJI_VERSION)
+          .map((e) =>
+            e.skin_tone_support
+              ? { emoji: e.emoji, emoji_version: e.emoji_version, skin_tone_support: true, skin_tone_support_unicode_version: e.skin_tone_support_unicode_version }
+              : { emoji: e.emoji, emoji_version: e.emoji_version }
+          ),
       }));
       return { contents: JSON.stringify(slim), loader: 'json' };
     });

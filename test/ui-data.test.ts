@@ -5,7 +5,7 @@ import { expireLabel, fmtDuration, formatSafetyNumber, initials } from '../src/u
 import { dbg, redactedLog } from '../src/ui/data/log';
 import { applyMentions, parseFrame } from '../src/ui/data/normalize';
 import { attachmentLabel, contactName } from '../src/ui/data/store';
-import { emojiRuns, encodeMentions, isJumboEmoji, linkRuns, parseStyledMarkdown, styleSegments } from '../src/ui/data/styled';
+import { emojiRuns, encodeMentions, isJumboEmoji, linkRuns, parseStyledMarkdown, SKIN_TONES, styleSegments, withSkinTone } from '../src/ui/data/styled';
 
 const nameOf = (k: string) => (k === 'aci-bob' ? 'Bob' : k);
 
@@ -205,6 +205,15 @@ describe('styled text', () => {
     assert.equal(isJumboEmoji('❤️👍'), true);
     assert.equal(isJumboEmoji('ok 👍'), false);
     assert.deepEqual(linkRuns('see https://signal.org.'), [{ text: 'see ' }, { text: 'https://signal.org', url: 'https://signal.org' }, { text: '.' }]);
+  });
+
+  it('adds a skin tone after the first code point, without VS16, and skips ZWJ sequences', () => {
+    assert.equal(withSkinTone('👋', SKIN_TONES[3]), '👋\u{1F3FD}');
+    assert.equal(withSkinTone('☝\uFE0F', SKIN_TONES[1]), '☝\u{1F3FB}');
+    assert.equal(withSkinTone('👨‍🦰', SKIN_TONES[5]), '👨‍🦰');
+    assert.equal(withSkinTone('👋', SKIN_TONES[0]), '👋');
+    assert.equal(SKIN_TONES.length, 6);
+    assert.deepEqual(emojiRuns(withSkinTone('✌\uFE0F', SKIN_TONES[4])), [{ text: '✌\u{1F3FE}', emoji: true }]);
   });
 });
 

@@ -299,6 +299,16 @@ describe('store', () => {
     }
   });
 
+  it('lists a chat’s media newest first without view-once or unsaved sends', async () => {
+    const media = await store.chatMedia(ALICE);
+    const ids = media.map((x) => x.att.id);
+    assert.deepEqual(ids.slice(0, 2), ['att-photo', 'att-voice']);
+    assert.equal(ids.indexOf('att-once'), -1);
+    assert.equal(ids.indexOf(''), -1);
+    assert.equal(media[0].msg.timestamp, 9200);
+    assert.deepEqual((await store.chatMedia(ALICE, 1)).map((x) => x.att.id), ['att-photo']);
+  });
+
   it('syncs a delete for me and applies one from another device', async () => {
     const synced: any[] = [];
     (signal as any).sendDeleteForMe = async (body: any) => {

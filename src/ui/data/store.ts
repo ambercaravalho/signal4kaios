@@ -142,6 +142,28 @@ export function attachmentLabel(attachments: Array<Partial<Attachment>> | undefi
   return a.filename || 'File';
 }
 
+const MEDIA_PAGE = 200;
+
+/** A chat's attachments that can be opened again, newest first; view-once media and files sent from this phone are left out. */
+export async function chatMedia(convId: string, limit: number = 300): Promise<Array<{ msg: Message; att: Attachment }>> {
+  const out: Array<{ msg: Message; att: Attachment }> = [];
+  let before = Number.MAX_SAFE_INTEGER;
+  for (;;) {
+    const page = await db.getMessagesPage(convId, before, MEDIA_PAGE);
+    for (let i = page.length - 1; i >= 0; i--) {
+      const m = page[i];
+      if (m.deleted || !m.attachments) continue;
+      for (const att of m.attachments) {
+        if (!att.id || att.viewOnce) continue;
+        out.push({ msg: m, att });
+        if (out.length >= limit) return out;
+      }
+    }
+    if (page.length < MEDIA_PAGE) return out;
+    before = page[0].timestamp;
+  }
+}
+
 function previewOf(rec: Pick<Message, 'body' | 'attachments' | 'contactCard'>): string {
   return rec.body || attachmentLabel(rec.attachments) || (rec.contactCard ? S.sharedContact : '');
 }

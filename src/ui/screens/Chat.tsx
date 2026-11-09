@@ -88,7 +88,7 @@ function quoteText(q: Quote): string {
   return q.text || store.attachmentLabel(q.attachments) || S.photo;
 }
 
-function attachmentIcon(att: Pick<Attachment, 'contentType'> & Partial<Attachment>): string {
+export function attachmentIcon(att: Pick<Attachment, 'contentType'> & Partial<Attachment>): string {
   const t = att.contentType || '';
   if (att.voiceNote || t.indexOf('audio/') === 0) return 'mic';
   if (t.indexOf('video/') === 0) return 'play';
