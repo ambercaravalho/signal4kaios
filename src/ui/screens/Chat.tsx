@@ -12,15 +12,15 @@ import { RichText } from '../components/RichText';
 import { Screen } from '../components/Screen';
 import { TextField } from '../components/TextField';
 import { toast } from '../components/Toast';
-import { groupDetail, signal } from '../data/api';
+import { groupDetail, signal, type GroupDetail } from '../data/api';
 import { ATTACHMENT_CACHE_KEEP, autoDownloads, cachedAttachment, isImage, loadAttachment } from '../data/attachments';
 import { config } from '../data/config';
 import { db } from '../data/db';
 import { fmtBytes, fmtClock, fmtDay, fmtMsgTime } from '../data/format';
 import { openUrl } from '../data/platform';
 import * as store from '../data/store';
-import { extractUrls, isJumboEmoji } from '../data/styled';
-import type { Attachment, Conversation, Message, MessageStatus, Notice } from '../data/types';
+import { extractUrls, isJumboEmoji, type PickedMention } from '../data/styled';
+import type { Attachment, Conversation, Message, MessageStatus, Notice, Quote } from '../data/types';
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
@@ -36,6 +36,7 @@ const TYPING_REPEAT_MS = 10000;
 const TYPING_IDLE_MS = 5000;
 /** Signal allows edits and delete-for-everyone for 24 hours. */
 const CHANGE_WINDOW_MS = 24 * 3600 * 1000;
+const DRAFT_SAVE_MS = 800;
 const LATEST = Number.MAX_SAFE_INTEGER;
 /** How far Up and Down scroll through a message taller than the screen before focus moves on. */
 const STEP_PX = 60;
@@ -72,7 +73,21 @@ function attachmentAction(att: Attachment): string {
   return S.openFile;
 }
 
-function attachmentIcon(att: Attachment): string {
+function isMe(id: string): boolean {
+  return id === store.selfNumber() || (!!config.aci() && id === config.aci());
+}
+
+/** Only admins can send in an announcement-only group. */
+function canSendIn(group: GroupDetail | null): boolean {
+  if (!group || !group.permissions || group.permissions.send_messages !== 'only-admins') return true;
+  return (group.admins || []).some(isMe);
+}
+
+function quoteText(q: Quote): string {
+  return q.text || store.attachmentLabel(q.attachments) || S.photo;
+}
+
+function attachmentIcon(att: Pick<Attachment, 'contentType'> & Partial<Attachment>): string {
   const t = att.contentType || '';
   if (att.voiceNote || t.indexOf('audio/') === 0) return 'mic';
   if (t.indexOf('video/') === 0) return 'play';
@@ -210,7 +225,10 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
         {m.quote && !m.deleted && (
           <div class="msg-quote">
             <div class="msg-quote-author">{quoteAuthorName(m.quote.author)}</div>
-            <div class="msg-quote-text">{(m.quote.text || S.photo).slice(0, 120)}</div>
+            <div class="msg-quote-text">
+              {m.quote.attachments && m.quote.attachments.length > 0 && <Icon name={attachmentIcon(m.quote.attachments[0])} />}
+              {quoteText(m.quote).slice(0, 120)}
+            </div>
           </div>
         )}
         {attachments.map((a, i) => (
@@ -297,10 +315,16 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(() => (conv && conv.draft) || '');
   const [quote, setQuote] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
   const [pinned, setPinned] = useState<Message[]>([]);
+  const [group, setGroup] = useState<GroupDetail | null>(null);
+  const mentionsRef = useRef<PickedMention[]>((conv && conv.draftMentions) || []);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const typingRef = useRef<{ last: number; idle: ReturnType<typeof setTimeout> | null }>({ last: 0, idle: null });
@@ -316,8 +340,26 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   const contact = conv && conv.type === 'direct' ? store.contactByKey(conv.id) : undefined;
   const blocked = !!(contact && contact.blocked);
+  const readOnly = !blocked && !canSendIn(group);
+  const canCompose = !blocked && !readOnly;
 
   const reloadPinned = () => db.getPinned(convId).then(setPinned, () => {});
+  const groupSendId = conv && conv.type === 'group' ? conv.sendId : null;
+  const reloadGroup = () => {
+    if (groupSendId) groupDetail(groupSendId).then(setGroup, () => {});
+  };
+  useEffect(reloadGroup, [groupSendId]);
+  useStoreEvent('conversations', reloadGroup);
+
+  function saveDraft(): void {
+    if (!editingRef.current) store.setDraft(convId, draftRef.current, mentionsRef.current);
+  }
+
+  useEffect(() => {
+    if (editing) return;
+    const t = setTimeout(saveDraft, DRAFT_SAVE_MS);
+    return () => clearTimeout(t);
+  }, [draft, editing]);
 
   function loadOlder(): Promise<Message[]> {
     const first = msgsRef.current[0];
@@ -381,6 +423,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       live = false;
       store.setOpenConv(null);
       stopTyping();
+      saveDraft();
     };
   }, [convId]);
 
@@ -463,27 +506,48 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     });
   }
 
+  function clearComposer(): void {
+    setDraft('');
+    mentionsRef.current = [];
+  }
+
+  /** Back to the chat's own draft after editing a sent message. */
+  function restoreDraft(): void {
+    const c = convRef.current;
+    setDraft((c && c.draft) || '');
+    mentionsRef.current = (c && c.draftMentions) || [];
+  }
+
   function clearContext(): void {
-    if (editing) setDraft('');
+    if (editing) restoreDraft();
     setQuote(null);
     setEditing(null);
   }
 
   function submit(): void {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || !canCompose) return;
     stopTyping();
+    const mentions = mentionsRef.current;
     if (editing) {
       const target = editing;
       setEditing(null);
-      setDraft('');
-      store.sendEdit(target, text).catch((e) => toast(sendError(e)));
+      restoreDraft();
+      store.sendEdit(target, text, mentions).catch((e) => toast(sendError(e)));
       return;
     }
-    const q = quote ? { author: quote.incoming ? quote.author : store.selfNumber(), timestamp: quote.timestamp, text: quote.body } : null;
-    setDraft('');
+    const q: Quote | null = quote
+      ? {
+          author: quote.incoming ? quote.author : store.selfNumber(),
+          timestamp: quote.timestamp,
+          text: quote.body,
+          attachments: quote.attachments.length ? quote.attachments.map((a) => ({ contentType: a.contentType, filename: a.filename })) : undefined,
+        }
+      : null;
+    clearComposer();
     setQuote(null);
-    store.sendText(convId, text, q).catch((e) => toast(sendError(e)));
+    store.setDraft(convId, '', []);
+    store.sendText(convId, text, q, mentions).catch((e) => toast(sendError(e)));
   }
 
   async function attach(): Promise<void> {
@@ -494,7 +558,8 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     try {
       const uri = withFilename(await readAsDataUrl(file), file.name);
       const caption = draft.trim();
-      setDraft('');
+      clearComposer();
+      store.setDraft(convId, '', []);
       await store.sendAttachment(convId, uri, caption, { contentType: file.type || 'application/octet-stream', filename: file.name, size: file.size });
     } catch (e) {
       toast(sendError(e));
@@ -508,7 +573,10 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     const options = (detail.members || []).filter((id) => id !== me && id !== config.aci()).map((id) => ({ value: id, label: store.displayName(id) }));
     if (!options.length) return toast(S.groupNotReady);
     const id = await pick(S.mention, options, '');
-    if (id) insertText('@' + store.displayName(id) + ' ');
+    if (!id) return;
+    const name = store.displayName(id);
+    mentionsRef.current = mentionsRef.current.filter((p) => p.uuid !== id).concat({ name, uuid: id });
+    insertText('@' + name + ' ');
   }
 
   async function react(m: Message): Promise<void> {
@@ -561,7 +629,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       !m.deleted && settled && {
         label: S.reply,
         onSelect: () => {
-          if (editing) setDraft('');
+          if (editing) restoreDraft();
           setEditing(null);
           setQuote(m);
           setFocusedId(null);
@@ -574,9 +642,11 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       canChange(m) && !m.attachments.length && {
         label: S.edit,
         onSelect: () => {
+          saveDraft();
           setQuote(null);
           setEditing(m);
           setDraft(m.raw != null ? m.raw : m.body);
+          mentionsRef.current = m.mentions || [];
           setFocusedId(null);
         },
       },
@@ -609,9 +679,9 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   function chatOptions(): void {
     showOptions([
-      !blocked && { label: S.attach, onSelect: attach },
-      !blocked && { label: S.insertEmoji, onSelect: () => pickEmoji().then((e) => e && insertText(e)) },
-      !blocked && conv && conv.type === 'group' && { label: S.mention, onSelect: mention },
+      canCompose && { label: S.attach, onSelect: attach },
+      canCompose && { label: S.insertEmoji, onSelect: () => pickEmoji().then((e) => e && insertText(e)) },
+      canCompose && conv && conv.type === 'group' && { label: S.mention, onSelect: mention },
       DIVIDER,
       pinned.length > 0 && { label: S.pinnedMessages, onSelect: showPinned },
       DIVIDER,
@@ -669,7 +739,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       case 'Enter':
         if (onComposer) {
           if (blocked) unblock();
-          else submit();
+          else if (canCompose) submit();
         } else messageOptions(msgs[index]);
         return true;
       case 'SoftRight':
@@ -693,7 +763,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   useSoftkeys({
     left: quote || editing ? S.cancel : undefined,
-    center: onComposer ? (blocked ? S.unblock : draft.trim() ? (editing ? S.save : S.send) : null) : S.select,
+    center: onComposer ? (blocked ? S.unblock : canCompose && draft.trim() ? (editing ? S.save : S.send) : null) : S.select,
     right: S.options,
   });
 
@@ -749,6 +819,8 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
         )}
         {blocked ? (
           <div class="composer-blocked">{S.blockedChat}</div>
+        ) : readOnly ? (
+          <div class="composer-blocked">{S.onlyAdminsCanSend}</div>
         ) : (
           <TextField focused={onComposer} value={draft} onInput={onDraft} placeholder={S.messagePlaceholder} multiline maxLines={3} inputRef={inputRef} />
         )}

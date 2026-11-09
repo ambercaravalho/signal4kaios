@@ -139,7 +139,10 @@ function noticeEvent(env: any, n: any, conv: Conv): StoreEvent[] {
 function quoteOf(dm: any): Quote | null {
   const q = dm.quote;
   if (!q || typeof q !== 'object') return null;
-  return { author: str(q.authorNumber) || str(q.authorUuid) || str(q.author), timestamp: num(q.id) || num(q.timestamp), text: str(q.text) };
+  const out: Quote = { author: str(q.authorNumber) || str(q.authorUuid) || str(q.author), timestamp: num(q.id) || num(q.timestamp), text: str(q.text) };
+  const atts = Array.isArray(q.attachments) ? q.attachments.filter((a: any) => a && typeof a === 'object').slice(0, 10) : [];
+  if (atts.length) out.attachments = atts.map((a: any) => ({ contentType: str(a.contentType), filename: str(a.filename) }));
+  return out;
 }
 
 function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf, authorOverride?: string, convOverride?: Conv): StoreEvent[] {

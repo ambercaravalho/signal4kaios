@@ -87,6 +87,30 @@ describe('store', () => {
     assert.equal((await db.getMessage(ALICE + '|5000|' + ME))!.status, 'read');
   });
 
+  it('sends picked mentions and quoted attachment types, and keeps them for a retry', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 5100 };
+    };
+    const quote = { author: ALICE, timestamp: 1000, text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }] };
+    const rec = await store.sendText(ALICE, 'hey @Bob', quote, [{ name: 'Bob', uuid: 'aci-bob' }]);
+    assert.equal(sent[0].message, 'hey \uFFFC');
+    assert.deepEqual(sent[0].mentions, [{ start: 4, length: 1, uuid: 'aci-bob' }]);
+    assert.deepEqual(sent[0].quote_attachments, [{ contentType: 'image/jpeg', filename: 'a.jpg' }]);
+    assert.equal(rec.body, 'hey @Bob');
+    assert.deepEqual(rec.mentions, [{ name: 'Bob', uuid: 'aci-bob' }]);
+  });
+
+  it('keeps a chat draft until it is cleared', () => {
+    store.setDraft(ALICE, 'half a thought', [{ name: 'Bob', uuid: 'aci-bob' }]);
+    assert.equal(store.conversation(ALICE)!.draft, 'half a thought');
+    assert.deepEqual(store.conversation(ALICE)!.draftMentions, [{ name: 'Bob', uuid: 'aci-bob' }]);
+    store.setDraft(ALICE, '   ', []);
+    assert.equal(store.conversation(ALICE)!.draft, undefined);
+    assert.equal(store.conversation(ALICE)!.draftMentions, undefined);
+  });
+
   it('marks a failed send and clears unread from another device', async () => {
     (signal as any).send = async () => {
       throw new Error('offline');

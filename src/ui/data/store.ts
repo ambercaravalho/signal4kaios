@@ -8,7 +8,7 @@ import { dbg } from './log';
 import { fmt, S } from '../strings';
 import { parseFrame, type MessageEvent, type NoticeEvent, type StoreEvent } from './normalize';
 import { hasServiceWorker } from './platform';
-import { parseStyledMarkdown, type StyleRange } from './styled';
+import { encodeMentions, parseStyledMarkdown, type PickedMention, type StyleRange } from './styled';
 import type { Attachment, Connection, Contact, Conversation, GroupRef, Message, Notice, Quote } from './types';
 
 export interface StoreEvents {
@@ -127,7 +127,7 @@ function ensureConv(ev: Pick<MessageEvent, 'convId' | 'groupInternalId' | 'incom
 }
 
 /** The chat-list preview for a message with no text. */
-export function attachmentLabel(attachments: Attachment[] | undefined): string {
+export function attachmentLabel(attachments: Array<Partial<Attachment>> | undefined): string {
   if (!attachments || !attachments.length) return '';
   const a = attachments[0];
   const type = a.contentType || '';
@@ -564,7 +564,7 @@ function styled(text: string): { body: string; styles: StyleRange[] } {
   return { body: text || '', styles: [] };
 }
 
-export function sendText(convId: string, text: string, quote?: Quote | null): Promise<Message> {
+export function sendText(convId: string, text: string, quote?: Quote | null, mentions: PickedMention[] = []): Promise<Message> {
   let conv: Conversation;
   try {
     conv = convForSend(convId);
@@ -572,12 +572,15 @@ export function sendText(convId: string, text: string, quote?: Quote | null): Pr
     return Promise.reject(e);
   }
   const st = styled(text);
+  const wire = encodeMentions(st.body, st.styles, mentions);
   const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, quote: quote || null });
-  const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0 };
+  if (wire.mentions.length) rec.mentions = mentions;
+  const payload: SendPayload = { recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0 };
   if (quote) {
     payload.quote_timestamp = quote.timestamp;
     payload.quote_author = quote.author;
     payload.quote_message = quote.text;
+    if (quote.attachments && quote.attachments.length) payload.quote_attachments = quote.attachments;
   }
   return sendCore(conv, rec, payload, st.body);
 }
@@ -599,7 +602,7 @@ export function sendAttachment(convId: string, dataUri: string, caption: string,
   return sendCore(conv, rec, payload, st.body || attachmentLabel([att]));
 }
 
-export function sendEdit(rec: Message, newText: string): Promise<Message> {
+export function sendEdit(rec: Message, newText: string, mentions: PickedMention[] = []): Promise<Message> {
   let conv: Conversation;
   try {
     conv = convForSend(rec.convId);
@@ -607,10 +610,12 @@ export function sendEdit(rec: Message, newText: string): Promise<Message> {
     return Promise.reject(e);
   }
   const st = styled(newText);
-  return signal.send({ recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, edit_timestamp: rec.timestamp }).then(() => {
+  const wire = encodeMentions(st.body, st.styles, mentions);
+  return signal.send({ recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0, edit_timestamp: rec.timestamp }).then(() => {
     rec.body = st.body;
     rec.styles = st.styles;
     rec.raw = newText;
+    rec.mentions = wire.mentions.length ? mentions : undefined;
     rec.edited = true;
     db.putMessage(rec);
     emit('message-updated', rec, undefined);
@@ -622,7 +627,24 @@ export function sendEdit(rec: Message, newText: string): Promise<Message> {
 export function retryMessage(rec: Message): Promise<Message> {
   db.deleteMessage(rec.id);
   emit('message-removed', { id: rec.id, convId: rec.convId, timestamp: rec.timestamp });
-  return sendText(rec.convId, rec.raw != null ? rec.raw : rec.body, rec.quote);
+  return sendText(rec.convId, rec.raw != null ? rec.raw : rec.body, rec.quote, rec.mentions || []);
+}
+
+/** Keep (or clear) a chat's unsent composer text. */
+export function setDraft(convId: string, text: string, mentions: PickedMention[]): void {
+  const conv = convs[convId];
+  if (!conv) return;
+  const draft = text.trim() ? text : '';
+  if ((conv.draft || '') === draft) return;
+  if (draft) {
+    conv.draft = draft;
+    conv.draftMentions = mentions.length ? mentions : undefined;
+  } else {
+    delete conv.draft;
+    delete conv.draftMentions;
+  }
+  persistConv(conv);
+  emit('conversations');
 }
 
 /** Delete a message from this phone only. */

@@ -16,6 +16,15 @@
   color: inherit;
 }
 
+.draft-label {
+  color: var(--danger);
+  font-style: italic;
+}
+
+.li.focused .draft-label {
+  color: inherit;
+}
+
 .emoji {
   font-family: 'Noto Color Emoji', var(--font);
 }
@@ -201,6 +210,13 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.msg-quote-text .icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  margin-right: 0.3rem;
+  vertical-align: -0.2rem;
 }
 
 .msg-media {

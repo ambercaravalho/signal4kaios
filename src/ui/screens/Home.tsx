@@ -33,7 +33,15 @@ function convRow(conv: Conversation, archived: boolean): ActionRow {
         {fmtTime(conv.lastTs)}
       </>
     ),
-    sub: t ? <span class="typing">{S.typingNow}</span> : <EmojiText text={conv.lastPreview || ''} />,
+    sub: t ? (
+      <span class="typing">{S.typingNow}</span>
+    ) : conv.draft ? (
+      <>
+        <span class="draft-label">{S.draft}</span> <EmojiText text={conv.draft} />
+      </>
+    ) : (
+      <EmojiText text={conv.lastPreview || ''} />
+    ),
     badge: <Badge count={conv.unread} />,
     action: S.open,
     onSelect: () => openChat(conv.id),

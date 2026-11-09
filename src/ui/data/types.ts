@@ -1,6 +1,6 @@
 /* Records the app keeps in IndexedDB. Field names match what 2.0.x stored, so history carries over on upgrade. */
 
-import type { StyleRange } from './styled';
+import type { PickedMention, StyleRange } from './styled';
 
 export type MessageStatus = 'pending' | 'failed' | 'sent' | 'delivered' | 'read' | 'received';
 
@@ -13,10 +13,16 @@ export interface Attachment {
   viewOnce?: boolean;
 }
 
+export interface QuotedAttachment {
+  contentType: string;
+  filename: string;
+}
+
 export interface Quote {
   author: string;
   timestamp: number;
   text: string;
+  attachments?: QuotedAttachment[];
 }
 
 export type NoticeKind = 'missedCall' | 'safetyNumber' | 'groupCall';
@@ -39,6 +45,8 @@ export interface Message {
   styles: StyleRange[];
   /** What the user typed, with formatting markers, so a retry or edit sends the same thing. */
   raw?: string;
+  /** People picked with Mention when this was typed, so a retry or edit mentions them again. */
+  mentions?: PickedMention[];
   quote: Quote | null;
   attachments: Attachment[];
   reactions: Record<string, string>;
@@ -67,6 +75,9 @@ export interface Conversation {
   muted?: boolean;
   pinned?: boolean;
   expireTimer?: number;
+  /** Unsent text in the composer, kept until it's sent or cleared. */
+  draft?: string;
+  draftMentions?: PickedMention[];
 }
 
 export interface Contact {

@@ -714,6 +714,7 @@ export const signalBridge = {
     quote_timestamp?: number;
     quote_author?: string;
     quote_message?: string;
+    quote_attachments?: Array<{ contentType: string; filename: string }>;
     base64_attachments?: string[];
     edit_timestamp?: number;
     mentions?: Array<{ start: number; length: number; uuid: string }>;
@@ -736,6 +737,12 @@ export const signalBridge = {
 
     const expireTimer = payload.expire_timer || 0;
 
+    const mentions: Array<{ start: number; length: number; uuid: string }> = [];
+    for (const m of payload.mentions || []) {
+      const aci = await resolveAci(m.uuid);
+      if (aci) mentions.push({ start: m.start, length: m.length, uuid: aci });
+    }
+
     const acc = await store.getAccount();
     const dm: DataMessageInit = {
       body: bodyText,
@@ -743,13 +750,18 @@ export const signalBridge = {
       expireTimer: expireTimer || undefined,
       profileKey: acc ? acc.profileKey : undefined,
       attachments: uploadedAttachments,
-      bodyRanges: stylesToBodyRanges(styles, payload.mentions),
+      bodyRanges: stylesToBodyRanges(styles, mentions),
       groupV2: target.groupV2,
     };
 
     if (payload.quote_timestamp) {
       const authorAci = await resolveAci(payload.quote_author || '');
-      dm.quote = { id: BigInt(payload.quote_timestamp), authorAci: authorAci || undefined, text: payload.quote_message || '' };
+      dm.quote = {
+        id: BigInt(payload.quote_timestamp),
+        authorAci: authorAci || undefined,
+        text: payload.quote_message || '',
+        attachments: (payload.quote_attachments || []).map((a) => ({ contentType: a.contentType || undefined, fileName: a.filename || undefined })),
+      };
     }
 
     const content = payload.edit_timestamp

@@ -657,6 +657,8 @@ describe('Sync and service IDs', () => {
     const timer = frame({ timestamp: 1000n, flags: DataMessage_Flags.EXPIRATION_TIMER_UPDATE, expireTimer: 3600, expireTimerVersion: 3 });
     assert.equal(timer.expirationTimerUpdate, true);
     assert.equal(timer.expiresInSeconds, 3600);
+    const quoted = frame({ timestamp: 1000n, body: 'nice', quote: { id: 7n, authorAci: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', fileName: 'a.jpg' }] } });
+    assert.deepEqual(quoted.quote, { id: 7, authorUuid: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }] });
   });
 
   it('reads service IDs from strings or 16/17-byte binaries', () => {

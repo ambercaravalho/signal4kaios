@@ -173,6 +173,7 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
       id: num(dm.quote.id),
       authorUuid: serviceIdFrom(dm.quote.authorAci, dm.quote.authorAciBinary) || undefined,
       text: dm.quote.text || '',
+      attachments: dm.quote.attachments.map((a) => ({ contentType: a.contentType || '', filename: a.fileName || '' })),
     };
   }
 

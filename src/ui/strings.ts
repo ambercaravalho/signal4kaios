@@ -121,6 +121,8 @@ export const S = {
   startedGroupCall: '{name} started a group call',
   groupCall: 'Group call',
   blockedChat: 'You blocked this chat. Unblock to send messages.',
+  onlyAdminsCanSend: 'Only admins can send messages',
+  draft: 'Draft:',
   blocked: 'Blocked',
   unblocked: 'Unblocked',
   unblockBody: 'They’ll be able to message and call you.',
