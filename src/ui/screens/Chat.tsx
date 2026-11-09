@@ -351,8 +351,9 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   const contact = conv && conv.type === 'direct' ? store.contactByKey(conv.id) : undefined;
   const blocked = !!(contact && contact.blocked);
-  const readOnly = !blocked && !canSendIn(group);
-  const canCompose = !blocked && !readOnly;
+  const request = !blocked && !!(conv && conv.request);
+  const readOnly = !blocked && !request && !canSendIn(group);
+  const canCompose = !blocked && !request && !readOnly;
 
   const reloadPinned = () => db.getPinned(convId).then(setPinned, () => {});
   const groupSendId = conv && conv.type === 'group' ? conv.sendId : null;
@@ -650,7 +651,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     if (m.notice) return noticeOptions(m);
     const urls = m.deleted ? [] : extractUrls(m.body);
     const att = m.attachments[0];
-    const settled = m.status !== 'failed' && m.status !== 'pending';
+    const settled = m.status !== 'failed' && m.status !== 'pending' && !request;
     showOptions([
       !m.deleted && settled && { label: S.react, onSelect: () => react(m) },
       !m.deleted && settled && {
@@ -717,8 +718,32 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     if (m) focusTimestamp(m.timestamp);
   }
 
+  function acceptRequest(): void {
+    store.acceptRequest(convId).catch((e) => toast(friendlyError(e)));
+  }
+
+  async function deleteRequest(): Promise<void> {
+    if (!(await confirm({ title: S.deleteChatTitle, body: S.deleteChatBody, ok: S.delete, danger: true }))) return;
+    store.deleteRequest(convId).then(
+      () => router.pop(),
+      (e) => toast(friendlyError(e))
+    );
+  }
+
+  async function blockRequest(): Promise<void> {
+    if (!(await confirm({ title: S.block, body: S.blockConfirm, ok: S.block, danger: true }))) return;
+    store.blockRequest(convId).then(
+      () => toast(S.blocked),
+      (e) => toast(friendlyError(e))
+    );
+  }
+
   function chatOptions(): void {
     showOptions([
+      request && { label: S.accept, onSelect: acceptRequest },
+      request && { label: S.delete, danger: true, onSelect: deleteRequest },
+      request && { label: S.block, danger: true, onSelect: blockRequest },
+      DIVIDER,
       canCompose && { label: S.attach, onSelect: () => attach(false) },
       canCompose && { label: S.attachViewOnce, onSelect: () => attach(true) },
       canCompose && { label: S.insertEmoji, onSelect: () => pickEmoji().then((e) => e && insertText(e)) },
@@ -780,6 +805,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       case 'Enter':
         if (onComposer) {
           if (blocked) unblock();
+          else if (request) acceptRequest();
           else if (canCompose) submit();
         } else messageOptions(msgs[index]);
         return true;
@@ -804,7 +830,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   useSoftkeys({
     left: quote || editing ? S.cancel : undefined,
-    center: onComposer ? (blocked ? S.unblock : canCompose && draft.trim() ? (editing ? S.save : S.send) : null) : S.select,
+    center: onComposer ? (blocked ? S.unblock : request ? S.accept : canCompose && draft.trim() ? (editing ? S.save : S.send) : null) : S.select,
     right: S.options,
   });
 
@@ -860,6 +886,11 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
         )}
         {blocked ? (
           <div class="composer-blocked">{S.blockedChat}</div>
+        ) : request ? (
+          <div class="composer-blocked">
+            <div class="composer-request">{fmt(S.wantsToMessage, { name: (conv && conv.name) || S.unknown })}</div>
+            {S.requestHint}
+          </div>
         ) : readOnly ? (
           <div class="composer-blocked">{S.onlyAdminsCanSend}</div>
         ) : (

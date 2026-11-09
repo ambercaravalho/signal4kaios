@@ -216,7 +216,7 @@ export function ForwardScreen(props: { msg: Message }) {
     );
   }
 
-  const recent = store.conversations().filter((c) => !lq || matches(c.name, lq));
+  const recent = store.conversations().filter((c) => !c.request && (!lq || matches(c.name, lq)));
   const inRecent = (id: string) => recent.some((c) => c.id === id);
   const contacts = store.contactsList().filter((c) => (c.number || c.uuid) && !inRecent(c.number || c.uuid) && !inRecent(c.uuid) && (!lq || matches(c.name, lq)));
   const groups = store.groupsList().filter((g) => !inRecent('g:' + g.internal_id) && (!lq || matches(g.name, lq)));

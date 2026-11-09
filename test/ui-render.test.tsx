@@ -92,6 +92,8 @@ describe('screens', () => {
   before(async () => {
     config.set({ number: ME, aci: '00000000-0000-4000-8000-000000000000', deviceId: 2, deviceToken: 'test-only' });
     await db.ready();
+    await db.kvSet('syncedContacts', [{ uuid: '', number: ALICE, name: 'Alice' }]);
+    await store.refreshDirectory();
   });
 
   it('shows the first-run welcome and the linking screen', () => {

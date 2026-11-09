@@ -22,6 +22,8 @@ describe('store', () => {
   before(async () => {
     config.set({ number: ME, aci: 'aci-me', deviceId: 2, deviceToken: 'test-only' });
     await db.ready();
+    await db.kvSet('syncedContacts', [{ uuid: '', number: ALICE, name: 'Alice' }]);
+    await store.refreshDirectory();
   });
 
   it('stores an incoming message and counts it unread', async () => {
@@ -178,7 +180,7 @@ describe('store', () => {
     assert.deepEqual(rec.notice, { kind: 'safetyNumber' });
     assert.equal(store.conversation(ALICE)!.unread, unread);
     assert.equal(store.conversation('+15550077'), undefined);
-    assert.equal(store.noticeText({ kind: 'safetyNumber' }, ALICE), 'Your safety number with ' + ALICE + ' has changed');
+    assert.equal(store.noticeText({ kind: 'safetyNumber' }, ALICE), 'Your safety number with Alice has changed');
   });
 
   it('archives, keeps muted chats archived, and limits pinned chats', async () => {
@@ -340,6 +342,52 @@ describe('store', () => {
     assert.equal(rec.deletedByAdmin, true);
     assert.equal(rec.body, '');
     assert.equal(store.conversation('g:R1JQ')!.lastPreview, 'An admin deleted this message.');
+  });
+
+  it('holds a stranger’s chat as a message request, without read receipts, until it is accepted', async () => {
+    const ERIN = '+15550006';
+    const receipts: any[] = [];
+    const responses: any[] = [];
+    (signal as any).sendReadReceipt = async (to: string, ts: number) => {
+      receipts.push([to, ts]);
+    };
+    (signal as any).sendMessageRequestResponse = async (to: string, response: string) => {
+      responses.push([to, response]);
+    };
+    store.ingestRaw({ envelope: { sourceNumber: ERIN, timestamp: 50000, dataMessage: { timestamp: 50000, message: 'hi, it’s me' } } });
+    await settle();
+    assert.equal(store.conversation(ERIN)!.request, true);
+    store.markRead(ERIN);
+    await settle();
+    assert.equal(store.conversation(ERIN)!.unread, 0);
+    assert.deepEqual(receipts, []);
+
+    await store.acceptRequest(ERIN);
+    await settle();
+    assert.deepEqual(responses, [[ERIN, 'accept']]);
+    assert.equal(store.conversation(ERIN)!.request, undefined);
+    assert.deepEqual(receipts, [[ERIN, 50000]]);
+  });
+
+  it('starts requests for contacts we don’t share our profile with, and clears or deletes them from other devices', async () => {
+    const FRANK = '+15550007';
+    const GINA = '+15550008';
+    await db.kvSet('syncedContacts', [
+      { uuid: 'aci-frank', number: FRANK, name: 'Frank', whitelisted: false },
+      { uuid: 'aci-gina', number: GINA, name: 'Gina', whitelisted: false },
+    ]);
+    await store.refreshDirectory();
+    store.ingestRaw({ envelope: { sourceNumber: FRANK, timestamp: 51000, dataMessage: { timestamp: 51000, message: 'hello' } } });
+    store.ingestRaw({ envelope: { sourceNumber: GINA, timestamp: 51000, dataMessage: { timestamp: 51000, message: 'hello' } } });
+    await settle();
+    assert.equal(store.conversation(FRANK)!.request, true);
+    assert.equal(store.conversation(GINA)!.request, true);
+
+    store.ingestRaw({ envelope: { sourceNumber: ME, timestamp: 51100, syncMessage: { sentMessage: { destinationNumber: GINA, timestamp: 51100, message: 'hey Gina' } } } });
+    store.ingestRaw({ envelope: { sourceNumber: ME, syncMessage: { messageRequestResponse: { threadUuid: 'aci-frank', type: 'delete' } } } });
+    await settle();
+    assert.equal(store.conversation(GINA)!.request, undefined);
+    assert.equal(store.conversation(FRANK), undefined);
   });
 
   it('saves the About emoji locally and on Signal', async () => {

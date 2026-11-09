@@ -20,6 +20,7 @@ import {
   Envelope_Type,
   EnvelopeSchema,
   ReceiptMessage_Type,
+  SyncMessage_MessageRequestResponse_Type,
   TypingMessage_Action,
 } from '../gen/SignalService_pb';
 import { groupIdFromMasterKey } from '../services/groups-v2';
@@ -46,6 +47,15 @@ import { isAci } from './proto';
 
 const MAX_CONTACT_CARDS = 5;
 const MAX_CARD_FIELDS = 5;
+
+const REQUEST_RESPONSES: Record<number, string> = {
+  [SyncMessage_MessageRequestResponse_Type.ACCEPT]: 'accept',
+  [SyncMessage_MessageRequestResponse_Type.DELETE]: 'delete',
+  [SyncMessage_MessageRequestResponse_Type.BLOCK]: 'block',
+  [SyncMessage_MessageRequestResponse_Type.BLOCK_AND_DELETE]: 'blockAndDelete',
+  [SyncMessage_MessageRequestResponse_Type.SPAM]: 'spam',
+  [SyncMessage_MessageRequestResponse_Type.BLOCK_AND_SPAM]: 'blockAndSpam',
+};
 
 /** Envelope metadata after decryption; `sourceUuid` is the sender's service ID (from Sealed Sender when the envelope is sealed). */
 export interface IncomingEnvelope {
@@ -339,6 +349,14 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
       if (sm.read.length > 0) syncOut.readMessages = sm.read.map(ref);
       if (sm.viewed.length > 0) syncOut.viewedMessages = sm.viewed.map(ref);
       if (sm.content.case === 'viewOnceOpen') syncOut.viewOnceOpen = ref(sm.content.value);
+      if (sm.content.case === 'messageRequestResponse') {
+        const r = sm.content.value;
+        syncOut.messageRequestResponse = {
+          threadUuid: serviceIdFrom(r.threadAci, r.threadAciBinary) || undefined,
+          groupId: r.groupId.length ? toBase64(r.groupId) : undefined,
+          type: REQUEST_RESPONSES[r.type] || 'unknown',
+        };
+      }
       if (sm.content.case === 'deleteForMe') {
         const d = sm.content.value;
         syncOut.deleteForMe = {

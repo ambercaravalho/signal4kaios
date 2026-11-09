@@ -12,6 +12,8 @@ export interface SyncedContact {
   number: string;
   name: string;
   blocked?: boolean;
+  whitelisted?: boolean;
+  systemContact?: boolean;
   expireTimer?: number;
   username?: string;
   profile_name?: string;

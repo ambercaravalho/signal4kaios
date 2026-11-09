@@ -42,7 +42,11 @@ export type StoreEvent =
   | { type: 'readSync'; entries: SyncRef[] }
   | { type: 'viewedSync'; entries: SyncRef[]; viewOnce: boolean }
   | { type: 'adminDelete'; convId: string; admin: string; targetAuthor: string; targetTimestamp: number; timestamp: number }
-  | { type: 'deleteSync'; messages: Array<{ chat: ChatRef; items: SyncRef[] }>; chats: ChatDelete[] };
+  | { type: 'deleteSync'; messages: Array<{ chat: ChatRef; items: SyncRef[] }>; chats: ChatDelete[] }
+  | { type: 'requestResponse'; chat: ChatRef; response: RequestResponse };
+
+export type RequestResponse = 'accept' | 'delete' | 'block' | 'blockAndDelete' | 'spam' | 'blockAndSpam';
+const REQUEST_RESPONSES: RequestResponse[] = ['accept', 'delete', 'block', 'blockAndDelete', 'spam', 'blockAndSpam'];
 
 /** A message our other device read or opened: who sent it and when. */
 export interface SyncRef {
@@ -370,6 +374,12 @@ function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEven
     if (viewed.length) out.push({ type: 'viewedSync', entries: viewed, viewOnce: false });
     const opened = syncRefs(sm.viewOnceOpen ? [sm.viewOnceOpen] : undefined);
     if (opened.length) out.push({ type: 'viewedSync', entries: opened, viewOnce: true });
+    const mrr = sm.messageRequestResponse;
+    if (mrr && typeof mrr === 'object') {
+      const chat = chatRef({ groupId: mrr.groupId, uuid: mrr.threadUuid });
+      const response = str(mrr.type) as RequestResponse;
+      if (chat && REQUEST_RESPONSES.indexOf(response) >= 0) out.push({ type: 'requestResponse', chat, response });
+    }
     if (sm.deleteForMe && typeof sm.deleteForMe === 'object') {
       const del = deleteSyncEvent(sm.deleteForMe);
       if (del) out.push(del);

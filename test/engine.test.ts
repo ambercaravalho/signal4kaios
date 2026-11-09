@@ -7,7 +7,7 @@ import * as zk from '@signalapp/libsignal-client/zkgroup';
 import { concatBytes, fromBase64, fromHex, randomBytes, toBase64, toHex, uuidToBytes } from '../src/engine/bytes';
 import { attachmentPaddedSize, decryptAttachment, encryptAttachment } from '../src/engine/crypto/attachment';
 import { aesGcmEncrypt } from '../src/engine/crypto/primitives';
-import { ContactDetailsSchema, ContentSchema, DataMessage_Flags } from '../src/engine/gen/SignalService_pb';
+import { ContactDetailsSchema, ContentSchema, DataMessage_Flags, SyncMessage_MessageRequestResponse_Type } from '../src/engine/gen/SignalService_pb';
 import {
   AccessControl_AccessRequired,
   GroupAttributeBlobSchema,
@@ -737,6 +737,14 @@ describe('Sync and service IDs', () => {
         { conversation: { number: '+15550002' }, mostRecent: [], mostRecentNonExpiring: [], isFullDelete: true },
       ],
     });
+  });
+
+  it('turns message request responses into normalize frames', () => {
+    const env = { sourceUuid: BOB, sourceDevice: 2, timestamp: 1000 } as any;
+    const frame = (value: any) => contentToNormalizedFrame(env, create(ContentSchema, { content: { case: 'syncMessage', value: { content: { case: 'messageRequestResponse', value } } } })).envelope.syncMessage.messageRequestResponse;
+    assert.deepEqual(frame({ threadAciBinary: uuidToBytes(ALICE), type: SyncMessage_MessageRequestResponse_Type.BLOCK_AND_DELETE }), { threadUuid: ALICE, groupId: undefined, type: 'blockAndDelete' });
+    assert.deepEqual(frame({ threadAci: ALICE, type: SyncMessage_MessageRequestResponse_Type.ACCEPT }), { threadUuid: ALICE, groupId: undefined, type: 'accept' });
+    assert.equal(frame({ threadAci: ALICE }).type, 'unknown');
   });
 
   it('reads service IDs from strings or 16/17-byte binaries', () => {

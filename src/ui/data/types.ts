@@ -102,6 +102,8 @@ export interface Conversation {
   /** Unsent text in the composer, kept until it's sent or cleared. */
   draft?: string;
   draftMentions?: PickedMention[];
+  /** A message request: someone we don't share our profile with started this 1:1 chat. */
+  request?: boolean;
 }
 
 export interface Contact {
@@ -112,6 +114,8 @@ export interface Contact {
   name: string;
   blocked: boolean;
   hasAvatar?: boolean;
+  /** From Storage Service: whether their chats are accepted (profile shared or in the address book). Unknown for other contacts. */
+  whitelisted?: boolean;
 }
 
 export interface GroupRef {

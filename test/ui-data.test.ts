@@ -92,6 +92,14 @@ describe('parseFrame', () => {
     ]);
   });
 
+  it('parses message request responses from other devices', () => {
+    const parse = (mrr: any) => parseFrame({ envelope: { sourceNumber: '+1', syncMessage: { messageRequestResponse: mrr } } }, '+1', nameOf);
+    assert.deepEqual(parse({ threadUuid: 'aci-4', type: 'accept' }), [{ type: 'requestResponse', chat: { key: 'aci-4' }, response: 'accept' }]);
+    assert.deepEqual(parse({ groupId: 'R1', type: 'blockAndSpam' }), [{ type: 'requestResponse', chat: { key: 'g:R1' }, response: 'blockAndSpam' }]);
+    assert.deepEqual(parse({ threadUuid: 'aci-4', type: 'unknown' }), []);
+    assert.deepEqual(parse({ type: 'accept' }), []);
+  });
+
   it('turns notices into notice events and drops unknown kinds', () => {
     const [ev] = parseFrame({ envelope: { sourceNumber: '+3', timestamp: 8, notice: { kind: 'missedCall', video: true, timestamp: 9 } } }, '+1', nameOf);
     assert.deepEqual(ev, { type: 'notice', convId: '+3', groupInternalId: null, author: '+3', timestamp: 9, notice: { kind: 'missedCall', video: true } });

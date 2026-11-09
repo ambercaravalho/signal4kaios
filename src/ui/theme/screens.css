@@ -418,6 +418,12 @@
   color: var(--on-accent);
 }
 
+.composer-request {
+  font-size: var(--fs-primary);
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
 /* Viewer */
 .viewer {
   height: 100%;

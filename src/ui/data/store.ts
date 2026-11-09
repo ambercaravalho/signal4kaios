@@ -121,6 +121,10 @@ function ensureConv(ev: Pick<MessageEvent, 'convId' | 'groupInternalId' | 'incom
     const known = displayName(ev.convId);
     const name = known === ev.convId && ev.incoming && ev.authorName ? ev.authorName : known;
     conv = newConv(ev.convId, 'direct', directName(ev.convId, name), ev.convId);
+    if (ev.incoming && !isSelfKey(ev.convId)) {
+      const c = contactByKey(ev.convId);
+      if (!c || c.whitelisted === false) conv.request = true;
+    }
   }
   convs[conv.id] = conv;
   return conv;
@@ -209,6 +213,7 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
     rec.expiresAt = Date.now() + ev.expiresInSeconds * 1000;
   }
   if ((conv.expireTimer || 0) !== ev.expiresInSeconds) conv.expireTimer = ev.expiresInSeconds;
+  if (!ev.incoming) delete conv.request;
   db.putMessage(rec);
 
   conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
@@ -411,7 +416,8 @@ export function markViewed(m: Message): void {
     emit('message-updated', rec, undefined);
     await db.putMessage(rec);
   });
-  signal.sendViewed(m.author, m.timestamp, { receipt: config.sendReadReceipts(), viewOnce: !!att.viewOnce }).catch((e) => dbg('viewed receipt failed ' + (e && e.message)));
+  const conv = convs[m.convId];
+  signal.sendViewed(m.author, m.timestamp, { receipt: config.sendReadReceipts() && !(conv && conv.request), viewOnce: !!att.viewOnce }).catch((e) => dbg('viewed receipt failed ' + (e && e.message)));
 }
 
 export function applyEvent(ev: StoreEvent, silent: boolean): void {
@@ -459,6 +465,8 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
       return applyDeleteSync(ev);
     case 'adminDelete':
       return applyAdminDelete(ev);
+    case 'requestResponse':
+      return applyRequestResponse(ev);
     case 'timer': {
       const conv = convs[ev.convId];
       if (!conv || (conv.expireTimer || 0) === ev.seconds) return;
@@ -496,6 +504,7 @@ export async function refreshDirectory(): Promise<boolean> {
   for (const c of contacts) {
     const rec: Contact = { id: c.uuid || c.number, number: c.number || '', uuid: c.uuid || '', name: contactName(c), blocked: !!c.blocked, hasAvatar: c.profile ? !!c.profile.has_avatar : undefined };
     if (!rec.id) continue;
+    if (c.whitelisted !== undefined) rec.whitelisted = !!c.whitelisted || !!c.systemContact;
     records.push(rec);
     if (rec.number) contactsByKey[rec.number] = rec;
     if (rec.uuid) contactsByKey[rec.uuid] = rec;
@@ -520,6 +529,12 @@ export async function refreshDirectory(): Promise<boolean> {
       const name = directName(conv.id, displayName(conv.id));
       if (name !== conv.id && name !== conv.name) {
         conv.name = name;
+        persistConv(conv);
+        changed = true;
+      }
+      const c = conv.request ? contactByKey(conv.id) : undefined;
+      if (c && c.whitelisted === true) {
+        delete conv.request;
         persistConv(conv);
         changed = true;
       }
@@ -832,6 +847,49 @@ function applyDeleteSync(ev: Extract<StoreEvent, { type: 'deleteSync' }>): void 
   });
 }
 
+function clearRequest(conv: Conversation): void {
+  if (!conv.request) return;
+  delete conv.request;
+  persistConv(conv);
+  emit('conversations');
+}
+
+/** Accept a message request: our other devices hear about it, they get our profile, and what we've read gets its read receipts. */
+export function acceptRequest(convId: string): Promise<void> {
+  const conv = convs[convId];
+  if (!conv || !conv.sendId) return Promise.reject(new Error('unknown chat'));
+  return signal.sendMessageRequestResponse(conv.sendId, 'accept').then(() => {
+    clearRequest(conv);
+    markRead(convId);
+  });
+}
+
+/** Delete a message request; the response tells our other devices to delete it too. */
+export function deleteRequest(convId: string): Promise<void> {
+  const conv = convs[convId];
+  if (!conv || !conv.sendId) return Promise.reject(new Error('unknown chat'));
+  return signal.sendMessageRequestResponse(conv.sendId, 'delete').then(() => removeChat(conv));
+}
+
+/** Block the person behind a message request. The chat stays, blocked. */
+export function blockRequest(convId: string): Promise<void> {
+  const conv = convs[convId];
+  if (!conv || !conv.sendId) return Promise.reject(new Error('unknown chat'));
+  const sendId = conv.sendId;
+  return signal
+    .sendMessageRequestResponse(sendId, 'block')
+    .then(() => signal.setContactBlocked(sendId, true))
+    .then(() => clearRequest(conv));
+}
+
+/** Another of our devices answered a message request (or deleted a chat through one). */
+function applyRequestResponse(ev: Extract<StoreEvent, { type: 'requestResponse' }>): void {
+  const conv = chatFor(ev.chat);
+  if (!conv) return;
+  if (ev.response === 'accept' || ev.response === 'block') return clearRequest(conv);
+  enqueueMutation(() => removeChat(conv));
+}
+
 /** Signal-Desktop's default `global.adminDeleteMaxAgeInSeconds` (one day); receivers allow another day of grace. */
 export const ADMIN_DELETE_MAX_AGE = 24 * 60 * 60 * 1000;
 const DELETE_RECEIVE_GRACE = 24 * 60 * 60 * 1000;
@@ -1045,14 +1103,17 @@ export function markRead(convId: string): void {
     conv.markedUnread = false;
     syncChatState(conv, { markedUnread: false });
   }
-  db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, 25).then((rows) => {
-    const pending = rows.filter((r) => r.incoming && r.timestamp > (conv.lastReadTs || 0));
-    if (config.sendReadReceipts()) {
-      for (const r of pending.slice(-10)) signal.sendReadReceipt(r.author, r.timestamp).catch((e) => dbg('receipt failed ' + (e && e.message)));
-    }
-    if (pending.length) conv.lastReadTs = pending[pending.length - 1].timestamp;
-    persistConv(conv);
-  });
+  // A message request stays unread for the sender until it's accepted, as in Signal.
+  if (conv.request) persistConv(conv);
+  else
+    db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, 25).then((rows) => {
+      const pending = rows.filter((r) => r.incoming && r.timestamp > (conv.lastReadTs || 0));
+      if (config.sendReadReceipts()) {
+        for (const r of pending.slice(-10)) signal.sendReadReceipt(r.author, r.timestamp).catch((e) => dbg('receipt failed ' + (e && e.message)));
+      }
+      if (pending.length) conv.lastReadTs = pending[pending.length - 1].timestamp;
+      persistConv(conv);
+    });
   if (hadUnread) emit('conversations');
 }
 

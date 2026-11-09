@@ -34,7 +34,9 @@ function convRow(conv: Conversation, archived: boolean): ActionRow {
         {fmtTime(conv.lastTs)}
       </>
     ),
-    sub: t ? (
+    sub: conv.request ? (
+      <span class="draft-label">{S.messageRequest}</span>
+    ) : t ? (
       <span class="typing">{S.typingNow}</span>
     ) : conv.draft ? (
       <>

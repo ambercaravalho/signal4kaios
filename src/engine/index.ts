@@ -17,6 +17,7 @@ import {
   DataMessageSchema,
   ReceiptMessage_Type,
   SyncMessage_FetchLatest_Type,
+  SyncMessage_MessageRequestResponse_Type,
   TypingMessage_Action,
   Verified_State,
 } from './gen/SignalService_pb';
@@ -484,6 +485,8 @@ async function syncFromStorageService(): Promise<boolean> {
         name: fullName,
         username: sc.username || prev.username,
         blocked: sc.blocked ?? prev.blocked ?? false,
+        whitelisted: !!sc.whitelisted,
+        systemContact: !!sc.systemContact,
         profileKey: sc.profileKey ? toBase64(sc.profileKey) : prev.profileKey,
       });
 
@@ -614,6 +617,15 @@ async function handleIncomingSyncMessage(env: IncomingEnvelope, content: Content
       for (const g of groups) g.blocked = blockedGrpIds.has(g.internal_id);
       await host().db.kvSet('syncedGroups', groups);
       invalidateBlocked();
+      break;
+    }
+    case 'messageRequestResponse': {
+      const aci = serviceIdFrom(c.value.threadAci, c.value.threadAciBinary);
+      if (c.value.type === SyncMessage_MessageRequestResponse_Type.ACCEPT && isAci(aci)) {
+        await updateSyncedContact(await contactIds(aci), (ct) => {
+          ct.whitelisted = true;
+        });
+      }
       break;
     }
     case 'configuration': {
@@ -1057,6 +1069,32 @@ export const signalBridge = {
         },
       },
     ]);
+  },
+
+  /** Answer a 1:1 message request on our other devices. Accepting also shares our profile with them, in Storage Service and with a PROFILE_KEY_UPDATE message, as Signal-Desktop does. */
+  async sendMessageRequestResponse(sendId: string, response: 'accept' | 'delete' | 'block'): Promise<void> {
+    const ids = await contactIds(sendId);
+    if (!ids.aci) throw new Error('No Signal account known for ' + sendId);
+    const type = response === 'accept' ? SyncMessage_MessageRequestResponse_Type.ACCEPT : response === 'delete' ? SyncMessage_MessageRequestResponse_Type.DELETE : SyncMessage_MessageRequestResponse_Type.BLOCK;
+    await client.sendSyncMessage(create(ContentSchema, { content: { case: 'syncMessage', value: { content: { case: 'messageRequestResponse', value: { threadAci: ids.aci, type } } } } }));
+    if (response !== 'accept') return;
+    await updateSyncedContact(ids, (c) => {
+      c.whitelisted = true;
+    });
+    await storageQueue.enqueue([
+      {
+        type: 'contact',
+        aci: ids.aci,
+        e164: ids.e164 || undefined,
+        update: (c) => {
+          c.whitelisted = true;
+        },
+      },
+    ]);
+    const acc = await store.getAccount();
+    if (!acc || !acc.profileKey || acc.profileKey.length !== 32) return;
+    const ts = Date.now();
+    await client.sendContentToRecipient(ids.aci, dataContent({ timestamp: BigInt(ts), flags: DataMessage_Flags.PROFILE_KEY_UPDATE, profileKey: acc.profileKey }), ts);
   },
 
   /** Change a 1:1 chat's disappearing-message timer with an explicit EXPIRATION_TIMER_UPDATE message and a newer `expireTimerVersion`, as Signal-Desktop does. */
