@@ -25,6 +25,6 @@
     "@signalapp/libsignal-client": "0.106.2",
     "@types/node": "^22.10.0",
     "esbuild": "^0.25.0",
-    "typescript": "^5.7.2"
+    "typescript": "^7.0.2"
   }
 }
