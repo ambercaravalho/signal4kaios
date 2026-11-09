@@ -1,6 +1,6 @@
-/* Incoming envelope decryption, and conversion of decrypted Content into the JSON frames App.normalize consumes.
+/* Incoming envelope decryption, and conversion of decrypted Content into the JSON frames the app's normalizer consumes.
  *
- * Bridges Signal wire messages (Envelope + Content protobufs, generated from Signal-Desktop's SignalService.proto) to the JSON envelope structure consumed by App.normalize and App.store.
+ * Bridges Signal wire messages (Envelope + Content protobufs, generated from Signal-Desktop's SignalService.proto) to the JSON envelope structure consumed by the app's normalizer and store.
  */
 
 import { fromBase64, toBase64 } from '../bytes';
@@ -205,7 +205,7 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
 }
 
 /**
- * Convert a decrypted Signal Content + Envelope metadata into the JSON frame format consumed by `App.normalize.parse`.
+ * Convert a decrypted Signal Content + Envelope metadata into the JSON frame format consumed by the app's `parseFrame`.
  */
 export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content): { envelope: any } {
   const frameEnv: any = {

@@ -435,7 +435,7 @@ export class SignalClient {
   }
 
   /**
-   * Compute safety numbers for all known remote ACI identities, matching `App.api.identities()` shape.
+   * Compute safety numbers for all known remote ACI identities, for the safety number screen.
    */
   async listIdentitiesWithSafetyNumbers(): Promise<
     Array<{

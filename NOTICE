@@ -1,4 +1,4 @@
-signal4kaios
+Beacon (signal4kaios)
 Copyright (C) signal4kaios contributors
 
 signal4kaios is free software licensed under the GNU General Public License version 3 (see LICENSE).
@@ -10,3 +10,11 @@ Section 13 of the GNU General Public License version 3 permits combining this wo
 The complete corresponding source, including the pinned libsignal revision (src/native/libsignal-wasm/Cargo.toml and Cargo.lock) and the build scripts, is available at https://github.com/ambercaravalho/signal4kaios.
 
 The protobuf schemas in src/protos/ are copied unmodified from Signal-Desktop (https://github.com/signalapp/Signal-Desktop, AGPL-3.0-only) and libsignal (AGPL-3.0-only); src/engine/gen/ is generated from them.
+
+The app bundle (src/app/build/app.js) also includes these JavaScript libraries, each under its own license:
+
+- Preact (https://github.com/preactjs/preact), MIT License, Copyright (c) 2015-present Jason Miller.
+- qr (https://github.com/paulmillr/qr), MIT License or Apache License 2.0, Copyright (c) 2023 Paul Miller.
+- unicode-emoji-json (https://github.com/muan/unicode-emoji-json), MIT License, Copyright (c) 2019 Mu-An Chiou; its data is derived from the Unicode emoji data files (Unicode License v3, https://www.unicode.org/license.txt).
+- @noble/hashes (https://github.com/paulmillr/noble-hashes), MIT License, Copyright (c) 2022 Paul Miller.
+- Protobuf-ES runtime, @bufbuild/protobuf (https://github.com/bufbuild/protobuf-es), Apache License 2.0 and BSD-3-Clause.

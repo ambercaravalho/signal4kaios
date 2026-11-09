@@ -1,10 +1,11 @@
 # Architecture
 
-How signal4kaios turns a KaiOS phone into a Signal linked device. For building and testing, see [Development](development.md).
+How Beacon (the signal4kaios repository) turns a KaiOS phone into a Signal linked device. For building and testing, see [Development](development.md).
 
 - [Overview](#overview)
 - [Network](#network)
 - [Repository layout](#repository-layout)
+- [The app](#the-app)
 - [Receiving](#receiving)
 - [Sending](#sending)
 - [Storage Service writes](#storage-service-writes)
@@ -22,8 +23,8 @@ The app has three layers, and the phone talks only to Signal's servers.
 ```mermaid
 flowchart LR
   subgraph phone [KaiOS phone]
-    ui["src/app/js: screens, store, ws"]
-    engine["engine: App.signal bundle"]
+    ui["src/ui: Preact screens, store, ws"]
+    engine["src/engine: signalBridge"]
     wasm["libsignal_wasm_bg.wasm"]
     idb[(IndexedDB)]
     ui <--> engine
@@ -42,8 +43,8 @@ flowchart LR
 
 | Layer | Where | Role |
 | --- | --- | --- |
-| **UI** | [`src/app/js/`](../src/app/js) | Plain ES5-style IIFE modules on `window.App`, loaded in [`index.html`](../src/app/index.html) order |
-| **Engine** | [`src/engine/`](../src/engine) | TypeScript bundled by esbuild into `src/app/vendor/signal-engine.bundle.js`, exposed as `App.signal` |
+| **App** | [`src/ui/`](../src/ui) | [Preact](https://preactjs.com) and TypeScript: screens, components, and the data layer (store, WebSocket, IndexedDB). See [The app](#the-app) |
+| **Engine** | [`src/engine/`](../src/engine) | TypeScript Signal engine, imported by the app as `signalBridge` and bundled with it into `src/app/build/app.js` |
 | **libsignal** | [`src/native/libsignal-wasm/`](../src/native/libsignal-wasm) | A wasm-bindgen wrapper over Signal's official [libsignal](https://github.com/signalapp/libsignal) crates, shipped as `src/app/vendor/libsignal_wasm_bg.wasm` |
 
 Wire formats come from Signal-Desktop's and libsignal's own `.proto` files in [`src/protos/`](../src/protos), compiled to TypeScript with [protobuf-es](https://github.com/bufbuild/protobuf-es).
@@ -54,7 +55,7 @@ Every Signal service (`chat`, `storage`, `cdn`, `cdn2`, `cdn3`) presents a certi
 
 ```mermaid
 flowchart LR
-  callers["http.js, ws.js, provisioning.ts"] --> net["App.signal.net (src/engine/net/transport)"]
+  callers["ui/data/http.ts, ui/data/ws.ts, provisioning.ts"] --> net["signalBridge.net (src/engine/net/transport)"]
   net --> h1["http1.ts / websocket.ts"]
   h1 --> tls["tls-stream.ts"]
   tls --> conn["TlsConn in wasm (rustls, pinned roots)"]
@@ -73,19 +74,27 @@ Only `*.signal.org` goes through this path. Other hosts, and environments withou
 
 The chat WebSocket authenticates with an `Authorization: Basic` header on the upgrade request. Signal's server treats query-string credentials as an anonymous socket that never receives messages, which is why only the pinned client can carry the main connection.
 
-The ServiceWorker's closed-app check can't use any of this, because workers have no `TCPSocket`, and the browser `WebSocket` can't set the header. It stays as a best-effort probe; see [the user guide](user-guide.md#known-limitations).
+A ServiceWorker can't use any of this, because workers have no `TCPSocket`, and the browser `WebSocket` can't set the header. So a closed app can't receive messages: [`sw.js`](../src/app/sw.js) only relays wake alarms to an open window and handles notification taps. See [the user guide](user-guide.md#known-limitations).
 
 ## Repository layout
 
 ```text
 src/
   app/                    the packaged KaiOS app (zipped as-is)
-    js/core/              bootstrap, platform (B2G APIs), util, config, theme, toast, http, db
-    js/data/              api (App.api), normalize, ws (Signal WebSocket), store, wake (closed-app alarms)
-    js/ui/                nav, softkeys, router, dialogs, menus, avatars
-    js/screens/           one module per screen
-    sw.js                 ServiceWorker: wake alarms and notification clicks
-  engine/                 on-device Signal engine (App.signal)
+    index.html            loads build/app.js and build/app.css
+    build/                esbuild output (gitignored)
+    assets/icons/         beacon.svg and the launcher PNGs rendered from it
+    vendor/               libsignal_wasm_bg.wasm
+    sw.js                 ServiceWorker: wake alarms and notification taps
+  ui/                     the app (Preact + TypeScript)
+    main.tsx              startup: theme, engine host, ServiceWorker, first screen
+    app/                  router, focus and key handling, hooks, theme
+    components/           shared building blocks (lists, dialogs, softkeys, QR, emoji)
+    screens/              one module per screen or group of related screens
+    data/                 store, ws, db, config, http, normalize, attachments, platform (B2G APIs)
+    theme/                CSS tokens and styles
+    strings.ts            every user-facing string, plus the Debug screen's wording
+  engine/                 on-device Signal engine (signalBridge)
     protocol/             libsignal loader, protocol operations, PreKeys, protocol store
     net/                  HTTP shapes, protobuf helpers, provisioning, receive, send client
     net/transport/        pinned TLS over TCPSocket: HTTP/1.1 and WebSocket clients
@@ -94,26 +103,41 @@ src/
     gen/                  generated protobuf codecs (never hand-edited)
   native/libsignal-wasm/  Rust wrapper crate (AGPL-3.0-only)
   protos/                 vendored Signal .proto files
-scripts/                  package.sh, install.sh
+scripts/                  build.mjs, icons.mjs, package.sh, install.sh
 test/                     unit, interop, and known-answer tests
 docs/                     these guides
 ```
+
+## The app
+
+The app is a single Preact tree built for Gecko 84, the oldest engine it supports (KaiOS 3.0). [`scripts/build.mjs`](../scripts/build.mjs) bundles `src/ui/main.tsx`, the engine, and the CSS into `src/app/build/`, so `index.html` loads one script and one stylesheet, with no inline code for the privileged CSP to reject.
+
+| Piece | Role |
+| --- | --- |
+| [`app/router.tsx`](../src/ui/app/router.tsx) | A screen stack. `router.push` opens a screen, `router.overlay` opens a menu or dialog above it and resolves a promise with the choice, `pop`/`replace`/`reset` move back. Screens below the top stay mounted, so going back keeps their state and scroll position |
+| `useKeys`, `useSoftkeys` | Keys go to the top entry, innermost handler first. Each entry declares its softkey labels, and the left one defaults to **Back** on pushed screens |
+| [`components/RowList.tsx`](../src/ui/components/RowList.tsx) | The KaiOS list most screens are built from: rows with optional section headers, toggles, and per-row center labels |
+| [`data/store.ts`](../src/ui/data/store.ts) | Conversations and messages in IndexedDB, plus an event hub. Screens subscribe with `useStoreEvents` and re-render on the events they care about |
+| [`strings.ts`](../src/ui/strings.ts) | Every user-facing string. `S` must stay free of protocol jargon (a test enforces this); `DEBUG` holds the Settings > Debug wording |
+| [`theme/`](../src/ui/theme) | KaiOS metrics (header, softkey bar, list rows) with Signal's light and dark colors, switched by `data-theme` on `<html>` |
+
+Startup ([`main.tsx`](../src/ui/main.tsx)) loads libsignal and opens the database, then shows the chats if the phone is linked, or the welcome and linking screens if not. If libsignal or the database can't load, it shows a startup error with a restart option instead.
 
 ## Receiving
 
 ```mermaid
 sequenceDiagram
   participant S as chat.signal.org
-  participant WS as ws.js
-  participant E as App.signal
+  participant WS as ws.ts
+  participant E as signalBridge
   participant L as libsignal wasm
-  participant St as store.js
+  participant St as store.ts
   S->>WS: WebSocketMessage PUT /api/v1/message
   WS->>E: processIncomingEnvelope(bytes)
   E->>L: unseal and decrypt (serialized queue)
   L-->>E: Content
   E-->>WS: normalized JSON frame
-  WS->>St: ingestRaw(frame) via normalize.js
+  WS->>St: ingestRaw(frame) via normalize.ts
   St->>St: persist to IndexedDB
   WS->>S: 200 ACK
 ```
@@ -122,7 +146,7 @@ A frame is acknowledged only after it has been decrypted and stored, so a crash 
 
 ## Sending
 
-`App.store.send*` writes an optimistic `pending` message, then calls [`App.api`](../src/app/js/data/api.js) → `App.signal.send`. The engine:
+`store.send*` in [`src/ui/data/store.ts`](../src/ui/data/store.ts) writes an optimistic `pending` message, then calls the engine's `signalBridge.send`. The engine:
 
 1. Resolves the recipient to an ACI (phone numbers via synced contacts).
 2. Builds the `Content` protobuf and pads it.
@@ -140,7 +164,7 @@ Contact nicknames, blocking, archive, mute, pinned chats, and the username are a
 
 ```mermaid
 sequenceDiagram
-  participant B as App.signal
+  participant B as signalBridge
   participant Q as StorageWriteQueue
   participant SS as storage.signal.org
   participant D as Your other devices
@@ -154,7 +178,7 @@ sequenceDiagram
   Q->>D: SyncMessage.FetchLatest(STORAGE_MANIFEST)
 ```
 
-The new manifest keeps every identifier it doesn't touch, including record types this app doesn't read, and unknown protobuf fields survive the re-encode. Each pull marks the records another device wrote since the previous pull as `changed`. Archive, mute, and pinned-chat state is applied only from those records, and `App.store.applyChatState` applies it without writing it back, so local and remote changes don't overwrite each other in a loop.
+The new manifest keeps every identifier it doesn't touch, including record types this app doesn't read, and unknown protobuf fields survive the re-encode. Each pull marks the records another device wrote since the previous pull as `changed`. Archive, mute, and pinned-chat state is applied only from those records, and the store's `applyChatState` applies it without writing it back, so local and remote changes don't overwrite each other in a loop.
 
 The username itself is claimed on the chat server first: [`services/usernames.ts`](../src/engine/services/usernames.ts) reserves one of libsignal's candidates (`PUT /v1/accounts/username_hash/reserve`) and confirms it with a zero-knowledge proof and an encrypted username link (`PUT /v1/accounts/username_hash/confirm`). Only then are the username and link written to the account record. The QR code is `https://signal.me/#eu/` followed by the link's entropy and server ID.
 
@@ -219,17 +243,17 @@ Every libsignal call that touches protocol state goes through [`src/engine/proto
 
 | File | Responsibility |
 | --- | --- |
-| [`index.ts`](../src/engine/index.ts) | The `App.signal` bridge: recipients, sync messages, sends, blocking, group changes, pins, usernames, chat-list state, Storage Service refresh |
+| [`index.ts`](../src/engine/index.ts) | `signalBridge`: recipients, sync messages, sends, blocking, group changes, pins, usernames, chat-list state, Storage Service refresh |
 | [`protocol/libsignal.ts`](../src/engine/protocol/libsignal.ts) | Loads the wasm module (`ready()`) |
 | [`protocol/protocol.ts`](../src/engine/protocol/protocol.ts) | Hydrate, call, and flush around each libsignal operation; trust policy; Sealed Sender trust roots |
 | [`protocol/prekeys.ts`](../src/engine/protocol/prekeys.ts) | Signed, last-resort Kyber, and one-time PreKeys |
 | [`protocol/store.ts`](../src/engine/protocol/store.ts) | `SignalProtocolStore` over IndexedDB (and in memory for tests) |
-| [`net/http.ts`](../src/engine/net/http.ts) | Signal hosts and the HTTP function shapes passed in from `src/app/js/core/http.js` |
+| [`net/http.ts`](../src/engine/net/http.ts) | Signal hosts and the HTTP function shapes passed in from [`src/ui/data/http.ts`](../src/ui/data/http.ts) |
 | [`net/proto.ts`](../src/engine/net/proto.ts) | WebSocket framing, service IDs, and delimited streams over the generated codecs |
 | [`net/provisioning.ts`](../src/engine/net/provisioning.ts) | Linking, device name cipher, and the initial PreKey upload |
 | [`net/receive.ts`](../src/engine/net/receive.ts) | Envelope decryption and `Content` → JSON frames; contact sync blobs |
 | [`net/client.ts`](../src/engine/net/client.ts) | `SignalClient`: device fanout, Sealed Sender, retry receipts, attachment upload and download |
-| [`net/transport/`](../src/engine/net/transport) | `App.signal.net`: pinned TLS, HTTP/1.1, and WebSocket for Signal's hosts |
+| [`net/transport/`](../src/engine/net/transport) | `signalBridge.net`: pinned TLS, HTTP/1.1, and WebSocket for Signal's hosts |
 | [`services/storage-service.ts`](../src/engine/services/storage-service.ts) | Storage Service pull and writes (`mutateStorage`, `StorageWriteQueue`), with Signal-Desktop's key derivation |
 | [`services/profiles.ts`](../src/engine/services/profiles.ts) | Versioned profile fetch and decrypt, profile upload, avatars, username lookup, expiring profile key credentials |
 | [`services/groups-v2.ts`](../src/engine/services/groups-v2.ts) | zkgroup group IDs, `GroupContextV2`, group state fetch and decode, invite links |
@@ -239,7 +263,7 @@ Every libsignal call that touches protocol state goes through [`src/engine/proto
 
 ## Storage
 
-Each account has its own IndexedDB database (`App.db`, schema version 4):
+Each account has its own IndexedDB database ([`src/ui/data/db.ts`](../src/ui/data/db.ts), schema version 4), named `signal4kaios:<number>`:
 
 | Store | Holds |
 | --- | --- |
@@ -248,15 +272,15 @@ Each account has its own IndexedDB database (`App.db`, schema version 4):
 | `attachments` | Cached decrypted media (LRU) |
 | `signal_keystore`, `signal_identities`, `signal_sessions`, `signal_prekeys`, `signal_sender_keys` | Serialized libsignal records and remote identity keys |
 
-Upgrading from a database older than version 4 discards the protocol state and asks you to link again. The database is named after the account's number, which isn't known until the `ProvisionMessage` arrives, so linking switches to the new account's database (`App.db.useAccount`) before it saves any keys.
+Upgrading from a database older than version 4 discards the protocol state and asks you to link again. The database is named after the account's number, which isn't known until the `ProvisionMessage` arrives, so linking switches to the new account's database (`db.useAccount`) before it saves any keys.
 
 ## Security model
 
-- **Keys stay on the phone.** Identity keys, sessions, and the account password live only in IndexedDB. The ServiceWorker's wake probe caches the login in origin-isolated Cache Storage so it can check Signal's queue.
+- **Keys stay on the phone.** Identity keys and sessions live only in IndexedDB, and the device password only in the app's `localStorage`. 2.0.x also cached the login for the ServiceWorker; 2.1.0 deletes that copy on upgrade.
 - **Untrusted input.** WebSocket frames, protobufs, and HTTP responses are all parsed defensively; a bad frame is logged and dropped.
 - **Sync messages** are accepted only from our own ACI. Recipients must be ACIs.
 - **Identity changes.** A contact's first identity key is trusted on first use. If it later changes, the contact drops to untrusted, and if you had verified them, sending stops until you review the new safety number.
 - **Sealed Sender** certificates are checked against Signal's production trust roots.
 - **TLS.** Connections to Signal's hosts trust only the two roots libsignal pins, not the phone's certificate store, so a CA added to the phone can't intercept them.
 - **CSP.** The privileged-app CSP forbids `eval`, `new Function`, and inline scripts, and `scripts/package.sh` fails the build if any shipped script contains them.
-- **Logs.** The debug log never records keys, passwords, or provisioning codes.
+- **Logs.** The debug log never records keys, passwords, or provisioning codes. Everyday screens show plain-language errors (`friendlyError` in [`src/ui/errors.ts`](../src/ui/errors.ts)); the technical detail goes only to the log, which Settings > Debug shows.

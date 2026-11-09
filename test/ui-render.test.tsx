@@ -1,0 +1,158 @@
+import './ui-env';
+import { before, describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { renderToString } from 'preact-render-to-string';
+
+import { _stackForTest, router, RouterView } from '../src/ui/app/router';
+import { Avatar, AVATAR_COLORS, avatarColorIndex } from '../src/ui/components/Avatar';
+import { Badge, ListItem } from '../src/ui/components/List';
+import { confirm, showOptions } from '../src/ui/components/Overlays';
+import { QrCode } from '../src/ui/components/Qr';
+import { RichText } from '../src/ui/components/RichText';
+import { config } from '../src/ui/data/config';
+import { db } from '../src/ui/data/db';
+import * as store from '../src/ui/data/store';
+import { ChatScreen } from '../src/ui/screens/Chat';
+import { ChatSettingsScreen } from '../src/ui/screens/ChatSettings';
+import { HomeScreen } from '../src/ui/screens/Home';
+import { LinkScreen, WelcomeScreen } from '../src/ui/screens/Onboarding';
+import { NewChatScreen, SearchScreen } from '../src/ui/screens/SearchList';
+import { SettingsScreen } from '../src/ui/screens/Settings';
+import { StartupErrorScreen } from '../src/ui/screens/StartupError';
+import { S } from '../src/ui/strings';
+
+const ME = '+15550000';
+const ALICE = '+15550001';
+const JARGON = /\b(pre-?keys?|aci|pni|uuid|websocket|libsignal|wasm|provisioning|e2ee|protobuf)\b/i;
+
+function settle(ms = 30): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function html(): string {
+  return renderToString(<RouterView />);
+}
+
+function text(markup: string): string {
+  return markup.replace(/<[^>]+>/g, ' ').replace(/&#39;|&rsquo;/g, '’');
+}
+
+describe('components', () => {
+  it('highlights the focused row and shows its parts', () => {
+    router.reset(() => <ListItem focused primary="Alice" secondary="hi" meta="12:00" />, {});
+    const out = html();
+    assert.match(out, /class="li focused"/);
+    assert.match(out, /Alice/);
+    assert.match(out, /12:00/);
+    assert.equal(renderToString(<Badge count={0} />), '');
+    assert.match(renderToString(<Badge count={120} />), /99\+/);
+  });
+
+  it('draws initials on the Signal avatar color', () => {
+    const idx = avatarColorIndex({ e164: ALICE });
+    assert.ok(idx >= 0 && idx < AVATAR_COLORS.length);
+    assert.equal(avatarColorIndex({ e164: ALICE }), idx);
+    const out = renderToString(<Avatar conv={{ id: ALICE, type: 'direct', name: 'Alice Smith' }} />);
+    assert.match(out, />AS</);
+    assert.match(out, new RegExp(AVATAR_COLORS[idx][0].replace('#', '#?'), 'i'));
+  });
+
+  it('renders formatting, spoilers, and links', () => {
+    const out = renderToString(
+      <RichText
+        text="bold secret https://signal.org"
+        styles={[
+          { start: 0, length: 4, style: 'BOLD' },
+          { start: 5, length: 6, style: 'SPOILER' },
+        ]}
+      />
+    );
+    assert.match(out, /class="fmt-b"/);
+    assert.match(out, /class="fmt-spoiler"/);
+    assert.match(out, /class="link"/);
+  });
+
+  it('draws a QR code as one SVG path', () => {
+    const out = renderToString(<QrCode text="sgnl://linkdevice?uuid=x" />);
+    assert.match(out, /<svg/);
+    assert.match(out, /<path/);
+  });
+});
+
+describe('screens', () => {
+  before(async () => {
+    config.set({ number: ME, aci: '00000000-0000-4000-8000-000000000000', deviceId: 2, deviceToken: 'test-only' });
+    await db.ready();
+  });
+
+  it('shows the first-run welcome and the linking screen', () => {
+    router.reset(WelcomeScreen, {});
+    assert.match(html(), /Welcome to Beacon/);
+    router.reset(LinkScreen, { mode: 'relink' as const });
+    const out = html();
+    assert.match(out, new RegExp(S.linkTitle));
+    assert.match(text(out), /unlinked/);
+  });
+
+  it('lists chats with previews and unread counts', async () => {
+    router.reset(HomeScreen, {});
+    assert.match(html(), />Chats</);
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, sourceName: 'Alice', timestamp: 1000, dataMessage: { timestamp: 1000, message: 'hello there' } } });
+    await settle();
+    const out = html();
+    assert.match(out, /Alice/);
+    assert.match(out, /hello there/);
+    assert.match(out, /class="badge">1</);
+  });
+
+  it('opens a chat with its title and message box', () => {
+    router.reset(HomeScreen, {});
+    router.push(ChatScreen, { convId: ALICE });
+    const out = html();
+    assert.equal(_stackForTest().length, 2);
+    assert.match(out, /entry hidden/);
+    assert.match(out, /placeholder="Message"/);
+  });
+
+  it('draws options and dialogs as overlays above the screen', () => {
+    router.reset(HomeScreen, {});
+    showOptions([{ label: 'First', onSelect() {} }, null, { label: 'Second', onSelect() {} }]);
+    let out = html();
+    assert.match(out, /entry entry-overlay/);
+    assert.match(out, /First/);
+    assert.match(out, /Second/);
+    router.pop();
+    confirm({ title: 'Delete message?', body: 'Gone for good.' });
+    out = html();
+    assert.match(out, /Delete message\?/);
+    router.pop();
+    assert.equal(_stackForTest().length, 1);
+  });
+
+  it('renders every everyday screen without technical terms', () => {
+    const screens: Array<[any, any]> = [
+      [HomeScreen, {}],
+      [ChatScreen, { convId: ALICE }],
+      [ChatSettingsScreen, { convId: ALICE }],
+      [NewChatScreen, {}],
+      [SearchScreen, {}],
+      [SettingsScreen, {}],
+      [WelcomeScreen, {}],
+      [StartupErrorScreen, { reason: 'blocked', detail: 'LibsignalUnavailableError: wasm blocked' }],
+    ];
+    for (const [C, props] of screens) {
+      router.reset(C, props);
+      const out = text(html());
+      assert.ok(out.trim().length > 0, C.name);
+      assert.ok(!JARGON.test(out), C.name + ': ' + out);
+    }
+  });
+
+  it('shows chat settings for a person', () => {
+    router.reset(ChatSettingsScreen, { convId: ALICE });
+    const out = html();
+    assert.match(out, new RegExp(S.disappearingMessages));
+    assert.match(out, new RegExp(S.viewSafetyNumber));
+    assert.match(out, new RegExp('>' + S.block + '<'));
+  });
+});

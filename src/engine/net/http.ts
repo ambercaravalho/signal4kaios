@@ -1,11 +1,11 @@
-/* Signal service endpoints and the HTTP function shapes the engine receives from app/js/http.js (mozSystem XHR). */
+/* Signal service endpoints and the HTTP function shapes the engine receives from the app (src/ui/data/http.ts). */
 
 export const DEFAULT_SIGNAL_SERVER = 'https://chat.signal.org';
 export const DEFAULT_SIGNAL_WS = 'wss://chat.signal.org';
 export const DEFAULT_SIGNAL_CDN = 'https://cdn.signal.org';
 export const DEFAULT_STORAGE_SERVER = 'https://storage.signal.org';
 
-export const SIGNAL_USER_AGENT = 'Signal4KaiOS/2.0.1';
+export const SIGNAL_USER_AGENT = 'Signal4KaiOS/2.1.0';
 
 /** Signal-Desktop config/production.json `cdn` map. */
 export const SIGNAL_CDNS: Record<number, string> = {

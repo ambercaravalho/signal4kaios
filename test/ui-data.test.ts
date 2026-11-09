@@ -1,0 +1,159 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { expireLabel, fmtDuration, formatSafetyNumber, initials } from '../src/ui/data/format';
+import { dbg, redactedLog } from '../src/ui/data/log';
+import { applyMentions, parseFrame } from '../src/ui/data/normalize';
+import { attachmentLabel, contactName } from '../src/ui/data/store';
+import { emojiRuns, isJumboEmoji, linkRuns, parseStyledMarkdown, styleSegments } from '../src/ui/data/styled';
+
+const nameOf = (k: string) => (k === 'aci-bob' ? 'Bob' : k);
+
+describe('parseFrame', () => {
+  it('turns an incoming data message into a message event', () => {
+    const evs = parseFrame({ envelope: { sourceNumber: '+15550001', sourceName: 'Alice', timestamp: 5, dataMessage: { timestamp: 10, message: 'hi', expiresInSeconds: 30 } } }, '+15559999', nameOf);
+    assert.equal(evs.length, 1);
+    const ev = evs[0];
+    assert.equal(ev.type, 'message');
+    if (ev.type !== 'message') return;
+    assert.equal(ev.convId, '+15550001');
+    assert.equal(ev.incoming, true);
+    assert.equal(ev.timestamp, 10);
+    assert.equal(ev.body, 'hi');
+    assert.equal(ev.expiresInSeconds, 30);
+  });
+
+  it('routes group messages to the group chat', () => {
+    const [ev] = parseFrame({ envelope: { sourceUuid: 'aci-bob', dataMessage: { message: 'yo', groupInfo: { groupId: 'GID' } } } }, '+1', nameOf);
+    assert.equal(ev.type, 'message');
+    if (ev.type === 'message') {
+      assert.equal(ev.convId, 'g:GID');
+      assert.equal(ev.groupInternalId, 'GID');
+    }
+  });
+
+  it('attributes messages sent from another linked device to self', () => {
+    const [ev] = parseFrame({ envelope: { sourceNumber: '+1', syncMessage: { sentMessage: { destinationNumber: '+2', timestamp: 7, message: 'sent elsewhere' } } } }, '+1', nameOf);
+    assert.equal(ev.type, 'message');
+    if (ev.type === 'message') {
+      assert.equal(ev.convId, '+2');
+      assert.equal(ev.incoming, false);
+      assert.equal(ev.author, '+1');
+    }
+  });
+
+  it('parses reactions, deletes, receipts, typing, and read syncs', () => {
+    const env = { sourceNumber: '+3' };
+    assert.equal(parseFrame({ envelope: { ...env, dataMessage: { reaction: { emoji: '👍', targetAuthorNumber: '+1', targetSentTimestamp: 9 } } } }, '+1', nameOf)[0].type, 'reaction');
+    assert.equal(parseFrame({ envelope: { ...env, dataMessage: { remoteDelete: { timestamp: 9 } } } }, '+1', nameOf)[0].type, 'remoteDelete');
+    const [rc] = parseFrame({ envelope: { ...env, receiptMessage: { isRead: true, timestamps: [1, 2] } } }, '+1', nameOf);
+    assert.deepEqual(rc, { type: 'receipt', peer: '+3', kind: 'read', timestamps: [1, 2] });
+    const [ty] = parseFrame({ envelope: { ...env, typingMessage: { action: 'STARTED' } } }, '+1', nameOf);
+    assert.deepEqual(ty, { type: 'typing', convId: '+3', author: '+3', started: true });
+    const [rs] = parseFrame({ envelope: { ...env, syncMessage: { readMessages: [{ senderNumber: '+4', timestamp: 3 }, { timestamp: 4 }] } } }, '+1', nameOf);
+    assert.deepEqual(rs, { type: 'readSync', entries: [{ sender: '+4', timestamp: 3 }] });
+  });
+
+  it('drops malformed frames without throwing', () => {
+    assert.deepEqual(parseFrame(null, '+1', nameOf), []);
+    assert.deepEqual(parseFrame({ envelope: 'nope' }, '+1', nameOf), []);
+    assert.deepEqual(parseFrame({ envelope: { dataMessage: { message: 'no sender' } } }, '+1', nameOf), []);
+    assert.deepEqual(parseFrame({ envelope: { sourceNumber: '+3', dataMessage: {} } }, '+1', nameOf), []);
+    assert.deepEqual(parseFrame({ envelope: { sourceNumber: '+3', somethingNew: {} } }, '+1', nameOf), []);
+  });
+
+  it('splices mentions and keeps style ranges aligned', () => {
+    assert.equal(applyMentions('hi \uFFFC!', [{ start: 3, length: 1, uuid: 'aci-bob' }], nameOf), 'hi @Bob!');
+    const [ev] = parseFrame({ envelope: { sourceNumber: '+3', dataMessage: { message: '\uFFFC bold', mentions: [{ start: 0, length: 1, uuid: 'aci-bob' }], textStyles: ['2:4:BOLD'] } } }, '+1', nameOf);
+    assert.equal(ev.type, 'message');
+    if (ev.type === 'message') {
+      assert.equal(ev.body, '@Bob bold');
+      assert.deepEqual(ev.styles, [{ start: 5, length: 4, style: 'BOLD' }]);
+      assert.equal(ev.body.substr(ev.styles[0].start, ev.styles[0].length), 'bold');
+    }
+  });
+});
+
+describe('styled text', () => {
+  it('parses typed markers into body ranges', () => {
+    assert.deepEqual(parseStyledMarkdown('a **b** *c* ~d~ `e` ||f||'), {
+      body: 'a b c d e f',
+      styles: [
+        { start: 2, length: 1, style: 'BOLD' },
+        { start: 4, length: 1, style: 'ITALIC' },
+        { start: 6, length: 1, style: 'STRIKETHROUGH' },
+        { start: 8, length: 1, style: 'MONOSPACE' },
+        { start: 10, length: 1, style: 'SPOILER' },
+      ],
+    });
+  });
+
+  it('leaves unmatched and escaped markers as text', () => {
+    assert.deepEqual(parseStyledMarkdown('2 * 3'), { body: '2 * 3', styles: [] });
+    assert.deepEqual(parseStyledMarkdown('\\*not\\*'), { body: '*not*', styles: [] });
+  });
+
+  it('splits overlapping ranges into segments', () => {
+    assert.deepEqual(
+      styleSegments('abcd', [
+        { start: 0, length: 3, style: 'BOLD' },
+        { start: 2, length: 2, style: 'italic' },
+      ]),
+      [
+        { text: 'ab', styles: ['BOLD'] },
+        { text: 'c', styles: ['BOLD', 'ITALIC'] },
+        { text: 'd', styles: ['ITALIC'] },
+      ]
+    );
+    assert.deepEqual(styleSegments('x', [{ start: 0, length: 1, style: 'UNDERLINE' }]), [{ text: 'x', styles: [] }]);
+  });
+
+  it('finds emoji, jumbo emoji, and links', () => {
+    assert.deepEqual(emojiRuns('hi 👋🏽!'), [
+      { text: 'hi ', emoji: false },
+      { text: '👋🏽', emoji: true },
+      { text: '!', emoji: false },
+    ]);
+    assert.equal(isJumboEmoji('❤️👍'), true);
+    assert.equal(isJumboEmoji('ok 👍'), false);
+    assert.deepEqual(linkRuns('see https://signal.org.'), [{ text: 'see ' }, { text: 'https://signal.org', url: 'https://signal.org' }, { text: '.' }]);
+  });
+});
+
+describe('format', () => {
+  it('formats durations, timers, initials, and safety numbers', () => {
+    assert.equal(fmtDuration(45), '45s');
+    assert.equal(fmtDuration(3600), '1h');
+    assert.equal(expireLabel(604800), '1 week');
+    assert.equal(expireLabel(0), 'Off');
+    assert.equal(initials('ada lovelace'), 'AL');
+    assert.equal(initials(''), '?');
+    assert.deepEqual(formatSafetyNumber('123456789012345'), ['12345', '67890', '12345']);
+  });
+});
+
+describe('store helpers', () => {
+  it('picks the best contact name', () => {
+    assert.equal(contactName({ uuid: 'u', number: '+1', name: 'Ann' }), 'Ann');
+    assert.equal(contactName({ uuid: 'u', number: '+1', name: '', nickname: { given_name: 'Al', family_name: 'B' } }), 'Al B');
+    assert.equal(contactName({ uuid: 'u', number: '+1', name: 'Note to Self', username: 'al.01' }), 'al.01');
+    assert.equal(contactName({ uuid: 'u', number: '', name: '' }), 'u');
+  });
+
+  it('labels attachment-only messages', () => {
+    assert.equal(attachmentLabel([{ id: '', contentType: 'image/jpeg', filename: '', size: 0 }]), 'Photo');
+    assert.equal(attachmentLabel([{ id: '', contentType: 'audio/aac', filename: '', size: 0, voiceNote: true }]), 'Voice message');
+    assert.equal(attachmentLabel([{ id: '', contentType: 'application/pdf', filename: 'a.pdf', size: 0 }]), 'a.pdf');
+  });
+});
+
+describe('debug log', () => {
+  it('redacts numbers, account IDs, and tokens when shared', () => {
+    dbg('from +15551234567 aci 12345678-1234-1234-1234-123456789abc key ' + 'A'.repeat(40));
+    const out = redactedLog();
+    assert.ok(!out.includes('+15551234567'));
+    assert.ok(!out.includes('123456789abc'));
+    assert.ok(!out.includes('A'.repeat(40)));
+    assert.ok(out.includes('+…67'));
+  });
+});

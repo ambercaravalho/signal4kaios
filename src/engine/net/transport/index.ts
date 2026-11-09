@@ -1,5 +1,5 @@
 /**
- * Network transport for Signal's servers (`App.signal.net`).
+ * Network transport for Signal's servers (`signalBridge.net`).
  *
  * Every `*.signal.org` service presents a certificate from Signal's own root, which KaiOS's Gecko doesn't trust. On the phone, requests and WebSockets to those hosts therefore run over a raw `TCPSocket` with libsignal's pinned roots (native/libsignal-wasm/src/tls.rs). Other hosts, and environments without `TCPSocket`, keep using the platform's XHR and `WebSocket`.
  */

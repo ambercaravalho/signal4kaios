@@ -1,0 +1,559 @@
+.icon {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+}
+
+/* Lists */
+
+.li {
+  display: flex;
+  align-items: center;
+  min-height: var(--row-h);
+  padding: 0.6rem var(--pad);
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+}
+
+.li-compact {
+  min-height: var(--menu-row-h);
+}
+
+.li > * + * {
+  margin-left: 1rem;
+}
+
+.li.focused {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-bottom-color: transparent;
+}
+
+.li-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.li-line {
+  display: flex;
+  align-items: center;
+}
+
+.li-primary {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-primary);
+  line-height: 2.2rem;
+}
+
+.li-secondary {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-secondary);
+  line-height: 1.9rem;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.li-meta {
+  flex: none;
+  margin-left: 0.6rem;
+  font-size: var(--fs-small);
+  color: var(--text-2);
+}
+
+.li.focused .li-secondary,
+.li.focused .li-meta {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.li-setting.focused .li-secondary {
+  white-space: normal;
+}
+
+.li-icon {
+  color: var(--text-2);
+}
+
+.li.focused .li-icon,
+.li.focused .li-end {
+  color: var(--on-accent);
+}
+
+.li-end {
+  color: var(--text-3);
+  width: 1.6rem;
+  height: 1.6rem;
+}
+
+.li-danger .li-primary,
+.li-danger .li-icon {
+  color: var(--danger);
+}
+
+.li-danger.focused {
+  background: var(--danger);
+}
+
+.li-danger.focused .li-primary,
+.li-danger.focused .li-icon {
+  color: #ffffff;
+}
+
+.li-disabled {
+  opacity: 0.5;
+}
+
+.sep {
+  height: var(--sep-h);
+  line-height: var(--sep-h);
+  padding: 0 var(--pad);
+  background: var(--sep-bg);
+  color: var(--sep-text);
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  flex: none;
+  min-width: 2rem;
+  height: 2rem;
+  line-height: 2rem;
+  margin-left: 0.6rem;
+  padding: 0 0.6rem;
+  border-radius: 1rem;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  text-align: center;
+}
+
+.li.focused .badge {
+  background: var(--on-accent);
+  color: var(--accent);
+}
+
+/* Toggles: a KaiOS-style switch, radio, and checkbox. */
+
+.switch {
+  flex: none;
+  position: relative;
+  width: 3.4rem;
+  height: 2rem;
+  border-radius: 1rem;
+  background: var(--text-3);
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 0.2rem;
+  left: 0.2rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.switch.on {
+  background: var(--accent);
+}
+
+.switch.on::after {
+  left: 1.6rem;
+}
+
+.li.focused .switch {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.li.focused .switch.on {
+  background: #ffffff;
+}
+
+.li.focused .switch.on::after {
+  background: var(--accent);
+}
+
+.radio,
+.checkbox {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border: 0.2rem solid var(--text-2);
+  position: relative;
+}
+
+.radio {
+  border-radius: 50%;
+}
+
+.checkbox {
+  border-radius: 0.3rem;
+}
+
+.radio.on,
+.checkbox.on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.radio.on::after {
+  content: '';
+  position: absolute;
+  top: 0.4rem;
+  left: 0.4rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.checkbox.on::after {
+  content: '';
+  position: absolute;
+  top: 0.1rem;
+  left: 0.5rem;
+  width: 0.5rem;
+  height: 1rem;
+  border: solid #ffffff;
+  border-width: 0 0.2rem 0.2rem 0;
+  transform: rotate(45deg);
+}
+
+.li.focused .radio,
+.li.focused .checkbox {
+  border-color: #ffffff;
+}
+
+.li.focused .radio.on,
+.li.focused .checkbox.on {
+  background: #ffffff;
+}
+
+.li.focused .radio.on::after {
+  background: var(--accent);
+}
+
+.li.focused .checkbox.on::after {
+  border-color: var(--accent);
+}
+
+/* Avatars */
+
+.avatar {
+  flex: none;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.avatar-lg {
+  width: 8rem;
+  height: 8rem;
+  font-size: 3rem;
+}
+
+.avatar-lg .icon {
+  width: 4rem;
+  height: 4rem;
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Empty, loading */
+
+.empty {
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.empty-title {
+  font-size: var(--fs-primary);
+  font-weight: 600;
+}
+
+.empty-body {
+  margin-top: 0.8rem;
+  font-size: var(--fs-secondary);
+  color: var(--text-2);
+}
+
+.spinner-wrap {
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
+.spinner {
+  width: 3.2rem;
+  height: 3.2rem;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 0.3rem solid var(--line);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+
+.spinner-label {
+  margin-top: 1rem;
+  font-size: var(--fs-secondary);
+  color: var(--text-2);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Overlays: options menu and pickers rise from the bottom; dialogs sit at the bottom like KaiOS's. */
+
+.sheet,
+.dialog {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 85%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  color: var(--text);
+  animation: rise 0.15s ease-out;
+}
+
+.sheet-title,
+.dialog-title {
+  flex: none;
+  padding: 0.6rem var(--pad);
+  text-align: center;
+  font-size: var(--fs-primary);
+  font-weight: 600;
+  background: var(--sep-bg);
+}
+
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.dialog-body {
+  padding: 1.2rem var(--pad) 1.6rem;
+  font-size: var(--fs-secondary);
+  line-height: 2rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.dialog-hint {
+  padding: 0 var(--pad) 1rem;
+  font-size: var(--fs-small);
+  color: var(--text-2);
+}
+
+.dialog-danger-bar {
+  height: 0.3rem;
+  background: var(--danger);
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Toast drops from the top; banners sit under the header. */
+
+.toast {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  padding: 0.8rem var(--pad);
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  font-size: var(--fs-secondary);
+  line-height: 2rem;
+  animation: drop 0.2s ease-out;
+}
+
+@keyframes drop {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.banner {
+  flex: none;
+  padding: 0.3rem var(--pad);
+  font-size: var(--fs-small);
+  text-align: center;
+  background: var(--bg-sunken);
+  color: var(--text-2);
+}
+
+.banner-warn {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+/* Text fields */
+
+.tf {
+  padding: 0.8rem var(--pad);
+  border-bottom: 1px solid var(--line);
+}
+
+.tf-label {
+  font-size: var(--fs-secondary);
+  color: var(--text-2);
+  margin-bottom: 0.4rem;
+}
+
+.tf.focused .tf-label {
+  color: var(--accent);
+}
+
+.tf-input {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 0.1rem solid var(--line);
+  border-radius: 0.3rem;
+  background: var(--bg);
+  font-size: var(--fs-primary);
+  line-height: 2.2rem;
+  outline: none;
+  resize: none;
+}
+
+.tf.focused .tf-input {
+  border: 0.2rem solid var(--accent);
+  padding: 0.3rem 0.5rem;
+}
+
+/* QR */
+
+.qr {
+  padding: 1rem;
+  display: flex;
+  justify-content: center;
+}
+
+.qr svg {
+  width: 18rem;
+  height: 18rem;
+}
+
+.scan-body {
+  position: relative;
+  background: #000000;
+  overflow: hidden;
+}
+
+.scan-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 16rem;
+  height: 16rem;
+  margin: -9rem 0 0 -8rem;
+  border: 0.3rem solid rgba(255, 255, 255, 0.85);
+  border-radius: 1rem;
+}
+
+.scan-status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0.6rem var(--pad);
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  font-size: var(--fs-secondary);
+  text-align: center;
+}
+
+/* Emoji */
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  padding: 0.4rem;
+}
+
+.emoji-cell {
+  height: 3.8rem;
+  line-height: 3.8rem;
+  text-align: center;
+  font-size: 2.4rem;
+  border-radius: 0.6rem;
+}
+
+.emoji-cell.focused {
+  background: var(--accent);
+}
+
+.reaction-bar {
+  position: absolute;
+  left: 0.6rem;
+  right: 0.6rem;
+  bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.6rem;
+  border-radius: 2.4rem;
+  background: var(--bg-raised);
+  animation: rise 0.15s ease-out;
+}
+
+.reaction-choice {
+  width: 3.4rem;
+  height: 3.4rem;
+  line-height: 3.4rem;
+  text-align: center;
+  font-size: 2.2rem;
+  border-radius: 50%;
+  color: var(--text-2);
+}
+
+.reaction-choice.chosen {
+  background: var(--bg-sunken);
+}
+
+.reaction-choice.focused {
+  background: var(--accent);
+  color: #ffffff;
+}

@@ -1,141 +1,31 @@
 'use strict';
 
-/* ServiceWorker for signal4kaios (KaiOS 3.0 / 3.1 / 4.0).
-   Handles:
-     1. 'systemmessage' (alarm) —
-        - If a window client is open, relays `{ type: 's4k-wake' }` so `ws.js` reconnects and drains messages.
-        - If the app is completely closed (no window clients), re-schedules the next KaiOS wake alarm,
-          connects briefly to Signal's WebSocket (`wss://chat.signal.org/v1/websocket/`) without ACKing envelopes
-          to check if any `/api/v1/message` frames are waiting in the offline queue, and if so raises a
-          system notification ("New Signal message") so tapping it launches the app and decrypts the queue.
-     2. 'notificationclick' — focuses/opens the app on the tapped conversation.
-*/
+/* Beacon's ServiceWorker (KaiOS 3.0 / 3.1 / 4.0). It relays the app's wake alarm to an open window so the app reconnects, and opens the right chat when a notification is tapped. A closed app can't read messages: Signal only accepts the app's own authenticated connection. */
 
-var NOTIF_ICON = '/assets/icons/kaios_112.png';
 var WAKE_CACHE = 's4k-wake';
-var WAKE_CFG_KEY = '/__s4k_wake_cfg';
+var LEGACY_CREDENTIALS_KEY = '/__s4k_wake_cfg';
 var PENDING_CONV_KEY = '/__s4k_pending_conv';
-var WAKE_ALARM_MS = 300000; // 5 minutes
 
 self.addEventListener('install', function () {
   self.skipWaiting();
 });
 
+/* SECURITY-REVIEW: 2.0.x cached the device login here for a closed-app check; delete it on upgrade. */
+function dropLegacyCredentials() {
+  if (!self.caches) return Promise.resolve();
+  return self.caches.open(WAKE_CACHE).then(function (cache) {
+    return cache['delete'](LEGACY_CREDENTIALS_KEY);
+  })['catch'](function () {});
+}
+
 self.addEventListener('activate', function (event) {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(Promise.all([self.clients.claim(), dropLegacyCredentials()]));
 });
 
-/* Replaces any pending wake alarm, like App.platform.scheduleAlarm in the page. */
-function scheduleNextAlarm() {
-  try {
-    var b2g = self.navigator && self.navigator.b2g;
-    var am = b2g && b2g.alarmManager;
-    if (am && am.add) {
-      var cleared = (am.getAll && am.remove) ? Promise.resolve(am.getAll()).then(function (list) {
-        (list || []).forEach(function (a) {
-          if (a && a.data && a.data.type === 's4k-wake') am.remove(a.id);
-        });
-      })['catch'](function () {}) : Promise.resolve();
-      return cleared.then(function () {
-        return am.add({
-          date: new Date(Date.now() + WAKE_ALARM_MS),
-          data: { type: 's4k-wake' },
-          ignoreTimezone: false
-        });
-      })['catch'](function () {});
-    }
-  } catch (e) { /* unavailable in worker context */ }
-  return Promise.resolve();
-}
-
-function readWakeCfg() {
-  if (!self.caches) return Promise.resolve(null);
-  return self.caches.open(WAKE_CACHE).then(function (cache) {
-    return cache.match(WAKE_CFG_KEY);
-  }).then(function (res) {
-    return res ? res.json() : null;
-  })['catch'](function () { return null; });
-}
-
-/* Probe Signal's WebSocket while the app is closed to see if any queued `/api/v1/message` envelopes
-   arrive before `/api/v1/queue/empty`. Does NOT send 200 OK ACKs so the envelopes stay safely on the server
-   until the user opens the app (or the page decrypts them).
-   Workers have no TCPSocket, so this can't use the app's pinned TLS client: it only connects on phones whose certificate store already trusts Signal's root, and otherwise fails quietly. Even then the browser WebSocket can't send the Authorization header Signal's chat server authenticates by, so the server treats the probe as anonymous and it finds nothing. */
-function probeOfflineQueue(cfg) {
-  return new Promise(function (resolve) {
-    if (!cfg || !cfg.wsUrl || !cfg.login || !cfg.password || typeof WebSocket === 'undefined') {
-      resolve(0);
-      return;
-    }
-    var count = 0;
-    var done = false;
-    var sock = null;
-    var timer = setTimeout(function () {
-      finish();
-    }, 6000);
-
-    function finish() {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      if (sock) {
-        try { sock.close(); } catch (e) {}
-        sock = null;
-      }
-      resolve(count);
-    }
-
-    try {
-      var url = cfg.wsUrl.replace(/\/+$/, '') + '/v1/websocket/?agent=OWD' +
-        '&login=' + encodeURIComponent(cfg.login) +
-        '&password=' + encodeURIComponent(cfg.password);
-      sock = new WebSocket(url);
-      sock.binaryType = 'arraybuffer';
-      sock.onmessage = function (evt) {
-        try {
-          var bytes = new Uint8Array(evt.data);
-          var text = new TextDecoder().decode(bytes);
-          if (text.indexOf('/api/v1/message') >= 0) {
-            count += 1;
-            finish();
-          } else if (text.indexOf('/api/v1/queue/empty') >= 0) {
-            finish();
-          }
-        } catch (e) {
-          finish();
-        }
-      };
-      sock.onerror = finish;
-      sock.onclose = finish;
-    } catch (e) {
-      finish();
-    }
-  });
-}
-
-function handleWakeAlarm() {
-  return scheduleNextAlarm().then(function () {
-    return self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-  }).then(function (clientList) {
-    if (clientList && clientList.length > 0) {
-      clientList.forEach(function (client) {
-        try { client.postMessage({ type: 's4k-wake' }); } catch (e) {}
-      });
-      return null;
-    }
-    // App is completely closed: check if Signal has queued messages for us
-    return readWakeCfg().then(function (cfg) {
-      return probeOfflineQueue(cfg);
-    }).then(function (pendingCount) {
-      if (pendingCount > 0 && self.registration && self.registration.showNotification) {
-        return self.registration.showNotification('Signal', {
-          body: 'New encrypted message waiting — open Signal to read',
-          tag: 'signal',
-          icon: NOTIF_ICON,
-          data: { convId: null }
-        });
-      }
-      return null;
+function relayWake() {
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+    (clientList || []).forEach(function (client) {
+      try { client.postMessage({ type: 's4k-wake' }); } catch (e) { /* client gone */ }
     });
   })['catch'](function () {});
 }
@@ -146,9 +36,10 @@ self.addEventListener('systemmessage', function (event) {
   var payload = event.data || {};
   var data = payload.data || payload;
   if (data && data.type && data.type !== 's4k-wake') return;
-  event.waitUntil(handleWakeAlarm());
+  event.waitUntil(relayWake());
 });
 
+/* A closed app can't receive postMessage, so the chat to open waits in Cache Storage for the next launch. */
 function savePendingConv(convId) {
   if (!convId || !self.caches) return Promise.resolve();
   return self.caches.open(WAKE_CACHE).then(function (cache) {
@@ -156,32 +47,26 @@ function savePendingConv(convId) {
       JSON.stringify({ convId: convId, ts: Date.now() }),
       { headers: { 'Content-Type': 'application/json' } }
     ));
-  })['catch'](function () { /* best-effort */ });
+  })['catch'](function () {});
 }
 
 self.addEventListener('notificationclick', function (event) {
   var n = event.notification;
-  var convId = (n && n.data && n.data.convId) || (n && n.tag) || null;
-  if (convId === 'signal') convId = null;
-  event.notification.close();
+  var convId = (n && n.data && typeof n.data.convId === 'string' && n.data.convId) || null;
+  n.close();
   event.waitUntil(
-    self.clients
-      .matchAll({ type: 'window', includeUncontrolled: true })
-      .then(function (clientList) {
-        var msg = { type: 's4k-open-conversation', convId: convId };
-        for (var i = 0; i < clientList.length; i++) {
-          var client = clientList[i];
-          if ('focus' in client) {
-            try { client.postMessage(msg); } catch (e) { /* client gone */ }
-            return client.focus();
-          }
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+      var msg = { type: 's4k-open-conversation', convId: convId };
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if ('focus' in client) {
+          try { client.postMessage(msg); } catch (e) { /* client gone */ }
+          return client.focus();
         }
-        return savePendingConv(convId).then(function () {
-          if (self.clients.openWindow) {
-            return self.clients.openWindow('/index.html');
-          }
-          return null;
-        });
-      })
+      }
+      return savePendingConv(convId).then(function () {
+        return self.clients.openWindow ? self.clients.openWindow('/index.html') : null;
+      });
+    })
   );
 });
