@@ -137,16 +137,18 @@ Keep Beacon open in the background to get notifications. Nothing is lost when it
 
 Message history exists only on the phone, starting from when you linked. Each chat keeps about its **500 most recent messages**, and viewed media is kept in a small cache. **Settings → Linked device → Delete all data** removes everything.
 
-Archive, mute, mark as unread, pinned chats, the default timer for new chats, and the private delivery icon setting sync with your other devices through Signal's encrypted storage; Signal allows 4 pinned chats.
+Archive, mute, mark as unread, pinned chats, the default timer for new chats, the private delivery icon setting, and phone number privacy sync with your other devices through Signal's encrypted storage; Signal allows 4 pinned chats.
 
 ## Known limitations
 
-Beacon doesn't yet support every Signal feature. Calls, stories, link previews, polls, and more are tracked on the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap). These work only partly:
+Beacon doesn't yet support every Signal feature. Calls, stories, and more are tracked on the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap). These work only partly:
 
 | Action | What happens now |
 | --- | --- |
 | Starting a chat by phone number | Works for numbers in your synced contacts and for Signal usernames. Other numbers can't be looked up, because the phone can't run Signal's contact discovery yet ([details](development.md#phone-number-lookup-cdsi-spike-findings)). |
 | Scanning a username QR code | Not supported yet; ask for the username instead. Codes with a phone number work. |
+| Sending link previews | Not supported yet. Links you send arrive as plain links; previews other people send do show. |
+| Polls in one-to-one chats | Not supported yet. You can vote in and end polls anywhere, but **Create poll** is only in groups. |
 | Group message requests | Not supported yet. A group someone you don't know adds you to shows as a normal chat; leave or block it in **Chat settings**. |
 | Forwarding files you sent from this phone | Not possible, because the phone doesn't keep a copy it can resend. They're also left out of **Media**. |
 | Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open, and trusting Signal's certificate on a rooted phone doesn't change that. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |

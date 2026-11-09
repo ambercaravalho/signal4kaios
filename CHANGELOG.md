@@ -4,6 +4,8 @@ Each `## v<version>` section becomes the notes of that GitHub Release; the relea
 
 ## v2.5.0
 
+The third round of Signal features from the roadmap. Install over v2.4.0; your chats and settings carry over.
+
 ### New
 
 - **Polls.** Polls show in the chat with their answers and vote counts. OK on one → **Vote** (pick again to change it, or **Remove my vote**), **View votes** lists who picked what, and the poll's author can **End poll**. In a group, **Options → Create poll** asks for a question and 2 to 10 answers, and whether people can pick more than one.
