@@ -4,17 +4,20 @@ import type { MessageInitShape } from '@bufbuild/protobuf';
 
 import { bytesToUuid, constantTimeEqual, fromBase64, toBase64, uuidToBytes } from './bytes';
 import {
+  AddressableMessageSchema,
   AttachmentPointer,
   AttachmentPointer_Flags,
   BodyRange_Style,
   BodyRangeSchema,
   Content,
   ContentSchema,
+  ConversationIdentifierSchema,
   DataMessage,
   DataMessage_Flags,
   DataMessageSchema,
   ReceiptMessage_Type,
   SyncMessage_FetchLatest_Type,
+  SyncMessage_MessageRequestResponse_Type,
   TypingMessage_Action,
   Verified_State,
 } from './gen/SignalService_pb';
@@ -59,6 +62,14 @@ import { ChatStateEntry, host } from './host';
 type DataMessageInit = MessageInitShape<typeof DataMessageSchema>;
 type BodyRangeInit = MessageInitShape<typeof BodyRangeSchema>;
 type PinnedConversationInit = MessageInitShape<typeof AccountRecord_PinnedConversationSchema>;
+type AddressableMessageInit = MessageInitShape<typeof AddressableMessageSchema>;
+type ConversationIdentifierInit = MessageInitShape<typeof ConversationIdentifierSchema>;
+
+/** A message as the app names it: its author (number or ACI) and sent time. */
+export interface MessageRef {
+  author: string;
+  timestamp: number;
+}
 
 const MAX_DEVICE_NAME = 64;
 
@@ -309,12 +320,37 @@ async function groupTargets(recipient: string): Promise<{ isGroup: boolean; peer
   return { isGroup: true, peers: grp.members, groupV2, internalId: grp.internalId };
 }
 
-async function deliver(target: { isGroup: boolean; peers: string[] }, content: Content, ts: number, online = false): Promise<void> {
-  if (target.isGroup) {
-    await client.sendGroupContent(target.peers, content, ts, online);
-  } else {
-    for (const peer of target.peers) await client.sendContentToRecipient(peer, content, ts, online);
+/** A chat as sync messages name it, from its send ID: the group ID, else the person's ACI, else their number. */
+async function conversationIdentifier(sendId: string): Promise<ConversationIdentifierInit | null> {
+  if (sendId.startsWith('group.')) {
+    const id = fromBase64(sendId.replace(/^group\./, ''));
+    return id.length ? { identifier: { case: 'threadGroupId', value: id } } : null;
   }
+  const ids = await contactIds(sendId);
+  if (ids.aci) return { identifier: { case: 'threadServiceId', value: ids.aci } };
+  if (ids.e164) return { identifier: { case: 'threadE164', value: ids.e164 } };
+  return null;
+}
+
+async function addressableMessages(refs: MessageRef[]): Promise<AddressableMessageInit[]> {
+  const acc = await store.getAccount();
+  const out: AddressableMessageInit[] = [];
+  for (const r of refs) {
+    const mine = !!acc && (r.author === acc.number || r.author === acc.aci);
+    const aci = mine ? acc!.aci : await resolveAci(r.author);
+    const sentTimestamp = BigInt(r.timestamp);
+    if (aci) out.push({ author: { case: 'authorServiceId', value: aci }, sentTimestamp });
+    else if (r.author.startsWith('+')) out.push({ author: { case: 'authorE164', value: r.author }, sentTimestamp });
+  }
+  return out;
+}
+
+/** Resolves to whether every recipient got it sealed. */
+async function deliver(target: { isGroup: boolean; peers: string[] }, content: Content, ts: number, online = false): Promise<boolean> {
+  if (target.isGroup) return client.sendGroupContent(target.peers, content, ts, online);
+  let sealed = target.peers.length > 0;
+  for (const peer of target.peers) if (!(await client.sendContentToRecipient(peer, content, ts, online))) sealed = false;
+  return sealed;
 }
 
 /**
@@ -449,6 +485,8 @@ async function syncFromStorageService(): Promise<boolean> {
         name: fullName,
         username: sc.username || prev.username,
         blocked: sc.blocked ?? prev.blocked ?? false,
+        whitelisted: !!sc.whitelisted,
+        systemContact: !!sc.systemContact,
         profileKey: sc.profileKey ? toBase64(sc.profileKey) : prev.profileKey,
       });
 
@@ -499,6 +537,7 @@ async function syncFromStorageService(): Promise<boolean> {
     if (res.account.typingIndicators !== undefined) patch.typingIndicators = res.account.typingIndicators;
     if (res.account.linkPreviews !== undefined) patch.linkPreviews = res.account.linkPreviews;
     if (res.account.sealedSenderIndicators !== undefined) patch.sealedSenderIndicators = res.account.sealedSenderIndicators;
+    if (res.account.universalExpireTimer !== undefined) patch.defaultExpireTimer = res.account.universalExpireTimer;
     if (Object.keys(patch).length > 0) host().config.set(patch);
     const acc = await store.getAccount();
     if (acc && res.account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!res.account.noteToSelfArchived, markedUnread: !!res.account.noteToSelfMarkedUnread });
@@ -579,6 +618,15 @@ async function handleIncomingSyncMessage(env: IncomingEnvelope, content: Content
       for (const g of groups) g.blocked = blockedGrpIds.has(g.internal_id);
       await host().db.kvSet('syncedGroups', groups);
       invalidateBlocked();
+      break;
+    }
+    case 'messageRequestResponse': {
+      const aci = serviceIdFrom(c.value.threadAci, c.value.threadAciBinary);
+      if (c.value.type === SyncMessage_MessageRequestResponse_Type.ACCEPT && isAci(aci)) {
+        await updateSyncedContact(await contactIds(aci), (ct) => {
+          ct.whitelisted = true;
+        });
+      }
       break;
     }
     case 'configuration': {
@@ -705,7 +753,8 @@ export const signalBridge = {
     const acc = await store.getAccount();
     const fromSelf = !!acc && sender === acc.aci;
 
-    if (!fromSelf && c.case !== 'syncMessage' && (await isFromBlocked(res.envelope, res.content))) return null;
+    if (c.case === 'syncMessage' && !fromSelf) return null;
+    if (!fromSelf && (await isFromBlocked(res.envelope, res.content))) return null;
 
     if (c.case === 'dataMessage') {
       const dm = c.value;
@@ -747,7 +796,7 @@ export const signalBridge = {
     edit_timestamp?: number;
     mentions?: Array<{ start: number; length: number; uuid: string }>;
     view_once?: boolean;
-  }): Promise<{ timestamp: number }> {
+  }): Promise<{ timestamp: number; sealed: boolean }> {
     const ts = Date.now();
     const bodyText = payload.message || '';
     const styles = payload.styles || [];
@@ -800,9 +849,9 @@ export const signalBridge = {
         })
       : dataContent(dm);
 
-    await deliver(target, content, ts);
+    const sealed = await deliver(target, content, ts);
     await client.sendSyncMessage(syncSent(target.isGroup ? '' : target.peers[0], ts, dm, payload.edit_timestamp), ts);
-    return { timestamp: ts };
+    return { timestamp: ts, sealed };
   },
 
   async sendReaction(recipient: string, targetAuthor: string, targetTimestamp: number, emoji: string, remove: boolean): Promise<void> {
@@ -829,6 +878,47 @@ export const signalBridge = {
     };
     await deliver(target, dataContent(dm), ts);
     await client.sendSyncMessage(syncSent(target.isGroup ? '' : target.peers[0], ts, dm), ts);
+  },
+
+  /** As a group admin, delete someone else's message for everyone (Signal-Desktop's AdminDelete). Members check that we are an admin. */
+  async sendAdminDelete(groupSendId: string, targetAuthor: string, targetTimestamp: number): Promise<void> {
+    const ts = Date.now();
+    const target = await groupTargets(groupSendId);
+    if (!target.isGroup) throw new Error('Admin delete only works in groups');
+    const authorAci = await resolveAci(targetAuthor);
+    if (!authorAci) throw new Error('No Signal account known for ' + targetAuthor);
+    const dm: DataMessageInit = {
+      timestamp: BigInt(ts),
+      groupV2: target.groupV2,
+      adminDelete: { targetAuthorAciBinary: uuidToBytes(authorAci), targetSentTimestamp: BigInt(targetTimestamp) },
+    };
+    await deliver(target, dataContent(dm), ts);
+    await client.sendSyncMessage(syncSent('', ts, dm), ts);
+  },
+
+  /** Tell our other devices we deleted messages or whole chats here (Signal-Desktop's DeleteForMe sync). `chat` is the chat's send ID; a chat with no messages to name goes as a local-only delete. */
+  async sendDeleteForMe(body: { messages?: Array<{ chat: string; items: MessageRef[] }>; chats?: Array<{ chat: string; mostRecent: MessageRef[]; mostRecentNonExpiring: MessageRef[] }> }): Promise<void> {
+    const messageDeletes: Array<{ conversation: ConversationIdentifierInit; messages: AddressableMessageInit[] }> = [];
+    for (const m of body.messages || []) {
+      const conversation = await conversationIdentifier(m.chat);
+      const messages = await addressableMessages(m.items);
+      if (conversation && messages.length) messageDeletes.push({ conversation, messages });
+    }
+    const conversationDeletes: Array<{ conversation: ConversationIdentifierInit; mostRecentMessages: AddressableMessageInit[]; mostRecentNonExpiringMessages: AddressableMessageInit[]; isFullDelete: boolean }> = [];
+    const localOnlyConversationDeletes: Array<{ conversation: ConversationIdentifierInit }> = [];
+    for (const c of body.chats || []) {
+      const conversation = await conversationIdentifier(c.chat);
+      if (!conversation) continue;
+      const mostRecentMessages = await addressableMessages(c.mostRecent);
+      if (!mostRecentMessages.length) localOnlyConversationDeletes.push({ conversation });
+      else conversationDeletes.push({ conversation, mostRecentMessages, mostRecentNonExpiringMessages: await addressableMessages(c.mostRecentNonExpiring), isFullDelete: true });
+    }
+    if (!messageDeletes.length && !conversationDeletes.length && !localOnlyConversationDeletes.length) return;
+    await client.sendSyncMessage(
+      create(ContentSchema, {
+        content: { case: 'syncMessage', value: { content: { case: 'deleteForMe', value: { messageDeletes, conversationDeletes, localOnlyConversationDeletes } } } },
+      })
+    );
   },
 
   /** Pin a message for everyone in the chat (forever), or unpin it, as Signal-Desktop's PinMessage / UnpinMessage data messages. */
@@ -980,6 +1070,32 @@ export const signalBridge = {
         },
       },
     ]);
+  },
+
+  /** Answer a 1:1 message request on our other devices. Accepting also shares our profile with them, in Storage Service and with a PROFILE_KEY_UPDATE message, as Signal-Desktop does. */
+  async sendMessageRequestResponse(sendId: string, response: 'accept' | 'delete' | 'block'): Promise<void> {
+    const ids = await contactIds(sendId);
+    if (!ids.aci) throw new Error('No Signal account known for ' + sendId);
+    const type = response === 'accept' ? SyncMessage_MessageRequestResponse_Type.ACCEPT : response === 'delete' ? SyncMessage_MessageRequestResponse_Type.DELETE : SyncMessage_MessageRequestResponse_Type.BLOCK;
+    await client.sendSyncMessage(create(ContentSchema, { content: { case: 'syncMessage', value: { content: { case: 'messageRequestResponse', value: { threadAci: ids.aci, type } } } } }));
+    if (response !== 'accept') return;
+    await updateSyncedContact(ids, (c) => {
+      c.whitelisted = true;
+    });
+    await storageQueue.enqueue([
+      {
+        type: 'contact',
+        aci: ids.aci,
+        e164: ids.e164 || undefined,
+        update: (c) => {
+          c.whitelisted = true;
+        },
+      },
+    ]);
+    const acc = await store.getAccount();
+    if (!acc || !acc.profileKey || acc.profileKey.length !== 32) return;
+    const ts = Date.now();
+    await client.sendContentToRecipient(ids.aci, dataContent({ timestamp: BigInt(ts), flags: DataMessage_Flags.PROFILE_KEY_UPDATE, profileKey: acc.profileKey }), ts);
   },
 
   /** Change a 1:1 chat's disappearing-message timer with an explicit EXPIRATION_TIMER_UPDATE message and a newer `expireTimerVersion`, as Signal-Desktop does. */
@@ -1134,6 +1250,31 @@ export const signalBridge = {
       });
     }
     await storageQueue.enqueue(mutations);
+  },
+
+  /** The disappearing-message timer new 1:1 chats start with (`AccountRecord.universalExpireTimer`), shared with our other devices. */
+  async setUniversalExpireTimer(seconds: number): Promise<void> {
+    const secs = Math.max(0, Math.floor(seconds) || 0);
+    await storageQueue.enqueue([
+      {
+        type: 'account',
+        update: (a) => {
+          a.universalExpireTimer = secs;
+        },
+      },
+    ]);
+  },
+
+  /** Whether messages show when they were delivered privately (`AccountRecord.sealedSenderIndicators`), shared with our other devices. */
+  async setSealedSenderIndicators(on: boolean): Promise<void> {
+    await storageQueue.enqueue([
+      {
+        type: 'account',
+        update: (a) => {
+          a.sealedSenderIndicators = on;
+        },
+      },
+    ]);
   },
 
   /** Block a group like Signal-Desktop's "Block and leave": leave it if we're still in it, then `GroupV2Record.blocked` in Storage Service and the Blocked sync. Unblocking only clears the block. */

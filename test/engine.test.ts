@@ -7,7 +7,7 @@ import * as zk from '@signalapp/libsignal-client/zkgroup';
 import { concatBytes, fromBase64, fromHex, randomBytes, toBase64, toHex, uuidToBytes } from '../src/engine/bytes';
 import { attachmentPaddedSize, decryptAttachment, encryptAttachment } from '../src/engine/crypto/attachment';
 import { aesGcmEncrypt } from '../src/engine/crypto/primitives';
-import { ContactDetailsSchema, ContentSchema, DataMessage_Flags } from '../src/engine/gen/SignalService_pb';
+import { ContactDetailsSchema, ContentSchema, DataMessage_Flags, SyncMessage_MessageRequestResponse_Type } from '../src/engine/gen/SignalService_pb';
 import {
   AccessControl_AccessRequired,
   GroupAttributeBlobSchema,
@@ -180,11 +180,11 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
     const put = (key: Uint8Array, record: any) => putRaw(key, toBinary(StorageRecordSchema, create(StorageRecordSchema, { record })));
     const contactBytes = toBinary(
       ContactRecordSchema,
-      create(ContactRecordSchema, { aci: ALICE, e164: '+15553334444', givenName: 'Clara', familyName: 'Oswald', profileKey, blocked: true })
+      create(ContactRecordSchema, { aci: ALICE, e164: '+15553334444', givenName: 'Clara', familyName: 'Oswald', profileKey, blocked: true, systemGivenName: 'Clara' })
     );
     await putRaw(contactKey, rawContactRecord(concatBytes(contactBytes, UNKNOWN_FIELD)));
     await put(groupKey, { case: 'groupV2', value: { masterKey: groupMasterKey, archived: true, markedUnread: true } });
-    await put(accountKey, { case: 'account', value: { givenName: 'Me', readReceipts: true, linkPreviews: true, sealedSenderIndicators: true, noteToSelfMarkedUnread: true } });
+    await put(accountKey, { case: 'account', value: { givenName: 'Me', readReceipts: true, linkPreviews: true, sealedSenderIndicators: true, noteToSelfMarkedUnread: true, universalExpireTimer: 86400 } });
     records.set(toBase64(stickerKey), randomBytes(40));
 
     const urls: string[] = [];
@@ -265,6 +265,8 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(res.contacts[0].aci, ALICE);
       assert.equal(res.contacts[0].givenName, 'Clara');
       assert.equal(res.contacts[0].blocked, true);
+      assert.equal(res.contacts[0].whitelisted, false);
+      assert.equal(res.contacts[0].systemContact, true);
       assert.deepEqual(res.contacts[0].profileKey, srv.profileKey);
       assert.deepEqual(res.groupsV2[0].masterKey, srv.groupMasterKey);
       assert.equal(res.groupsV2[0].archived, true);
@@ -273,6 +275,7 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(res.account?.readReceipts, true);
       assert.equal(res.account?.linkPreviews, true);
       assert.equal(res.account?.sealedSenderIndicators, true);
+      assert.equal(res.account?.universalExpireTimer, 86400);
       assert.equal(res.account?.noteToSelfMarkedUnread, true);
 
       srv.urls.length = 0;
@@ -290,7 +293,8 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
         { type: 'contact', aci: ALICE, update: (c) => { c.blocked = false; c.nickname = create(ContactRecord_NameSchema, { given: 'Clara O.' }); } },
         { type: 'contact', aci: ALICE, update: (c) => { c.archived = true; } },
         { type: 'groupV2', masterKey: newGroup, update: (g) => { g.mutedUntilTimestamp = 99n; } },
-        { type: 'account', update: (a) => { a.username = 'clara.42'; } },
+        { type: 'account', update: (a) => { a.username = 'clara.42'; a.universalExpireTimer = 3600; a.sealedSenderIndicators = false; } },
+        { type: 'contact', aci: ALICE, update: (c) => { c.whitelisted = true; } },
       ]);
       assert.equal(changed, true);
       assert.equal(srv.version(), 8n);
@@ -313,6 +317,9 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(res.groupsV2.length, 2);
       assert.equal(res.groupsV2.find((g) => toBase64(g.masterKey) === toBase64(newGroup))?.mutedUntilTimestamp, 99);
       assert.equal(res.account?.username, 'clara.42');
+      assert.equal(res.account?.universalExpireTimer, 3600);
+      assert.equal(res.account?.sealedSenderIndicators, false);
+      assert.equal(res.contacts[0].whitelisted, true);
     });
   }
 
@@ -665,6 +672,29 @@ describe('Sync and service IDs', () => {
     assert.deepEqual(quoted.quote, { id: 7, authorUuid: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }] });
   });
 
+  it('reduces shared contacts to a name, numbers, and emails', () => {
+    const env = { sourceUuid: BOB, sourceDevice: 1, timestamp: 1000 } as any;
+    const dm = contentToNormalizedFrame(
+      env,
+      create(ContentSchema, {
+        content: {
+          case: 'dataMessage',
+          value: {
+            timestamp: 1000n,
+            contact: [
+              { name: { givenName: 'Clara', familyName: 'Oswald' }, number: [{ value: '+15550123' }, { value: '' }], email: [{ value: 'clara@example.com' }] },
+              { organization: 'TARDIS Ltd' },
+            ],
+          },
+        },
+      })
+    ).envelope.dataMessage;
+    assert.deepEqual(dm.contacts, [
+      { name: 'Clara Oswald', phones: ['+15550123'], emails: ['clara@example.com'] },
+      { name: 'TARDIS Ltd', phones: [], emails: [] },
+    ]);
+  });
+
   it('turns viewed and view-once-open syncs into normalize frames', () => {
     const env = { sourceUuid: BOB, sourceDevice: 2, timestamp: 1000 } as any;
     const sync = contentToNormalizedFrame(
@@ -678,6 +708,50 @@ describe('Sync and service IDs', () => {
     ).envelope.syncMessage;
     assert.deepEqual(sync.viewedMessages, [{ sender: ALICE, senderUuid: ALICE, timestamp: 5 }]);
     assert.deepEqual(sync.viewOnceOpen, { sender: ALICE, senderUuid: ALICE, timestamp: 6 });
+  });
+
+  it('turns admin deletes and delete-for-me syncs into normalize frames', () => {
+    const env = { sourceUuid: BOB, sourceDevice: 2, timestamp: 1000 } as any;
+    const dm = contentToNormalizedFrame(
+      env,
+      create(ContentSchema, { content: { case: 'dataMessage', value: { timestamp: 1000n, adminDelete: { targetAuthorAciBinary: uuidToBytes(ALICE), targetSentTimestamp: 900n } } } })
+    ).envelope.dataMessage;
+    assert.deepEqual(dm.adminDelete, { targetAuthorUuid: ALICE, targetSentTimestamp: 900 });
+
+    const groupId = new Uint8Array(32).fill(7);
+    const sync = contentToNormalizedFrame(
+      env,
+      create(ContentSchema, {
+        content: {
+          case: 'syncMessage',
+          value: {
+            content: {
+              case: 'deleteForMe',
+              value: {
+                messageDeletes: [{ conversation: { identifier: { case: 'threadServiceId', value: ALICE } }, messages: [{ author: { case: 'authorServiceIdBinary', value: uuidToBytes(ALICE) }, sentTimestamp: 5n }] }],
+                conversationDeletes: [{ conversation: { identifier: { case: 'threadGroupId', value: groupId } }, mostRecentMessages: [{ author: { case: 'authorE164', value: '+15550001' }, sentTimestamp: 6n }], isFullDelete: true }],
+                localOnlyConversationDeletes: [{ conversation: { identifier: { case: 'threadE164', value: '+15550002' } } }],
+              },
+            },
+          },
+        },
+      })
+    ).envelope.syncMessage;
+    assert.deepEqual(sync.deleteForMe, {
+      messages: [{ conversation: { uuid: ALICE }, messages: [{ author: ALICE, timestamp: 5 }] }],
+      conversations: [
+        { conversation: { groupId: toBase64(groupId) }, mostRecent: [{ author: '+15550001', timestamp: 6 }], mostRecentNonExpiring: [], isFullDelete: true },
+        { conversation: { number: '+15550002' }, mostRecent: [], mostRecentNonExpiring: [], isFullDelete: true },
+      ],
+    });
+  });
+
+  it('turns message request responses into normalize frames', () => {
+    const env = { sourceUuid: BOB, sourceDevice: 2, timestamp: 1000 } as any;
+    const frame = (value: any) => contentToNormalizedFrame(env, create(ContentSchema, { content: { case: 'syncMessage', value: { content: { case: 'messageRequestResponse', value } } } })).envelope.syncMessage.messageRequestResponse;
+    assert.deepEqual(frame({ threadAciBinary: uuidToBytes(ALICE), type: SyncMessage_MessageRequestResponse_Type.BLOCK_AND_DELETE }), { threadUuid: ALICE, groupId: undefined, type: 'blockAndDelete' });
+    assert.deepEqual(frame({ threadAci: ALICE, type: SyncMessage_MessageRequestResponse_Type.ACCEPT }), { threadUuid: ALICE, groupId: undefined, type: 'accept' });
+    assert.equal(frame({ threadAci: ALICE }).type, 'unknown');
   });
 
   it('reads service IDs from strings or 16/17-byte binaries', () => {

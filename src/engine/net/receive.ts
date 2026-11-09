@@ -6,6 +6,7 @@
 import { fromBase64, toBase64 } from '../bytes';
 import { unpadMessagePlaintext } from '../crypto/primitives';
 import {
+  AddressableMessage,
   AttachmentPointer,
   AttachmentPointer_Flags,
   BodyRange_Style,
@@ -13,11 +14,13 @@ import {
   ContactDetailsSchema,
   Content,
   ContentSchema,
+  ConversationIdentifier,
   DataMessage,
   DataMessage_Flags,
   Envelope_Type,
   EnvelopeSchema,
   ReceiptMessage_Type,
+  SyncMessage_MessageRequestResponse_Type,
   TypingMessage_Action,
 } from '../gen/SignalService_pb';
 import { groupIdFromMasterKey } from '../services/groups-v2';
@@ -41,6 +44,18 @@ import {
 } from '../protocol/protocol';
 import type { SignalProtocolStore } from '../protocol/store';
 import { isAci } from './proto';
+
+const MAX_CONTACT_CARDS = 5;
+const MAX_CARD_FIELDS = 5;
+
+const REQUEST_RESPONSES: Record<number, string> = {
+  [SyncMessage_MessageRequestResponse_Type.ACCEPT]: 'accept',
+  [SyncMessage_MessageRequestResponse_Type.DELETE]: 'delete',
+  [SyncMessage_MessageRequestResponse_Type.BLOCK]: 'block',
+  [SyncMessage_MessageRequestResponse_Type.BLOCK_AND_DELETE]: 'blockAndDelete',
+  [SyncMessage_MessageRequestResponse_Type.SPAM]: 'spam',
+  [SyncMessage_MessageRequestResponse_Type.BLOCK_AND_SPAM]: 'blockAndSpam',
+};
 
 /** Envelope metadata after decryption; `sourceUuid` is the sender's service ID (from Sealed Sender when the envelope is sealed). */
 export interface IncomingEnvelope {
@@ -168,6 +183,18 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
     })),
   };
 
+  if (dm.contact.length > 0) {
+    out.contacts = dm.contact.slice(0, MAX_CONTACT_CARDS).map((c) => {
+      const n = c.name;
+      const name = n ? n.nickname || [n.prefix, n.givenName, n.middleName, n.familyName, n.suffix].filter(Boolean).join(' ') : '';
+      return {
+        name: name || c.organization || '',
+        phones: c.number.map((p) => p.value).filter(Boolean).slice(0, MAX_CARD_FIELDS),
+        emails: c.email.map((e) => e.value).filter(Boolean).slice(0, MAX_CARD_FIELDS),
+      };
+    });
+  }
+
   if (dm.quote) {
     out.quote = {
       id: num(dm.quote.id),
@@ -190,6 +217,13 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
     out.remoteDelete = { timestamp: num(dm.delete.targetSentTimestamp) };
   }
 
+  if (dm.adminDelete) {
+    out.adminDelete = {
+      targetAuthorUuid: serviceIdFrom(undefined, dm.adminDelete.targetAuthorAciBinary) || undefined,
+      targetSentTimestamp: num(dm.adminDelete.targetSentTimestamp),
+    };
+  }
+
   const pin = dm.pinMessage || dm.unpinMessage;
   if (pin) {
     const target = {
@@ -206,6 +240,30 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
   return out;
 }
 
+/** A sync message's chat: `{ groupId }` (internal ID, base64) or `{ uuid }` / `{ number }` for a person. */
+function chatRef(c: ConversationIdentifier | undefined): { groupId?: string; uuid?: string; number?: string } {
+  const id = c && c.identifier;
+  if (!id) return {};
+  switch (id.case) {
+    case 'threadGroupId':
+      return id.value.length ? { groupId: toBase64(id.value) } : {};
+    case 'threadServiceId':
+      return { uuid: id.value };
+    case 'threadServiceIdBinary':
+      return { uuid: serviceIdFrom(undefined, id.value) };
+    case 'threadE164':
+      return { number: id.value };
+    default:
+      return {};
+  }
+}
+
+function messageRef(m: AddressableMessage): { author: string; timestamp: number } {
+  const a = m.author;
+  const author = a.case === 'authorServiceId' ? a.value : a.case === 'authorServiceIdBinary' ? serviceIdFrom(undefined, a.value) : a.case === 'authorE164' ? a.value : '';
+  return { author, timestamp: num(m.sentTimestamp) };
+}
+
 /**
  * Convert a decrypted Signal Content + Envelope metadata into the JSON frame format consumed by the app's `parseFrame`.
  */
@@ -217,6 +275,7 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
     sourceDevice: env.sourceDevice || 1,
     timestamp: env.timestamp || Date.now(),
   };
+  if (env.type === Envelope_Type.UNIDENTIFIED_SENDER) frameEnv.sealed = true;
   const c = content.content;
 
   switch (c.case) {
@@ -281,6 +340,7 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
             destinationNumber: s.destinationE164 || undefined,
             destinationUuid: destination && isAci(destination) ? destination : undefined,
             timestamp: num(s.timestamp) || innerDm.timestamp || Date.now(),
+            sealed: s.unidentifiedStatus.length > 0 && s.unidentifiedStatus.every((u) => !!u.unidentified),
           };
         }
       }
@@ -291,6 +351,28 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
       if (sm.read.length > 0) syncOut.readMessages = sm.read.map(ref);
       if (sm.viewed.length > 0) syncOut.viewedMessages = sm.viewed.map(ref);
       if (sm.content.case === 'viewOnceOpen') syncOut.viewOnceOpen = ref(sm.content.value);
+      if (sm.content.case === 'messageRequestResponse') {
+        const r = sm.content.value;
+        syncOut.messageRequestResponse = {
+          threadUuid: serviceIdFrom(r.threadAci, r.threadAciBinary) || undefined,
+          groupId: r.groupId.length ? toBase64(r.groupId) : undefined,
+          type: REQUEST_RESPONSES[r.type] || 'unknown',
+        };
+      }
+      if (sm.content.case === 'deleteForMe') {
+        const d = sm.content.value;
+        syncOut.deleteForMe = {
+          messages: d.messageDeletes.map((md) => ({ conversation: chatRef(md.conversation), messages: md.messages.map(messageRef) })),
+          conversations: d.conversationDeletes
+            .map((cd) => ({
+              conversation: chatRef(cd.conversation),
+              mostRecent: cd.mostRecentMessages.map(messageRef),
+              mostRecentNonExpiring: cd.mostRecentNonExpiringMessages.map(messageRef),
+              isFullDelete: !!cd.isFullDelete,
+            }))
+            .concat(d.localOnlyConversationDeletes.map((ld) => ({ conversation: chatRef(ld.conversation), mostRecent: [], mostRecentNonExpiring: [], isFullDelete: true }))),
+        };
+      }
       frameEnv.syncMessage = syncOut;
       break;
     }

@@ -2,7 +2,7 @@
 
 import { dbg } from './log';
 import type { StyleRange } from './styled';
-import type { Attachment, Notice, NoticeKind, Quote } from './types';
+import type { Attachment, ContactCard, Notice, NoticeKind, Quote } from './types';
 
 export interface MessageEvent {
   type: 'message';
@@ -17,6 +17,9 @@ export interface MessageEvent {
   quote: Quote | null;
   attachments: Attachment[];
   expiresInSeconds: number;
+  contactCard?: ContactCard;
+  /** Delivered without revealing the sender to Signal's servers (Sealed Sender). */
+  sealed?: boolean;
 }
 
 export interface NoticeEvent {
@@ -39,13 +42,34 @@ export type StoreEvent =
   | { type: 'typing'; convId: string; author: string; started: boolean }
   | { type: 'receipt'; peer: string; kind: 'read' | 'delivery' | 'other'; timestamps: number[] }
   | { type: 'readSync'; entries: SyncRef[] }
-  | { type: 'viewedSync'; entries: SyncRef[]; viewOnce: boolean };
+  | { type: 'viewedSync'; entries: SyncRef[]; viewOnce: boolean }
+  | { type: 'adminDelete'; convId: string; admin: string; targetAuthor: string; targetTimestamp: number; timestamp: number }
+  | { type: 'deleteSync'; messages: Array<{ chat: ChatRef; items: SyncRef[] }>; chats: ChatDelete[] }
+  | { type: 'requestResponse'; chat: ChatRef; response: RequestResponse };
+
+export type RequestResponse = 'accept' | 'delete' | 'block' | 'blockAndDelete' | 'spam' | 'blockAndSpam';
+const REQUEST_RESPONSES: RequestResponse[] = ['accept', 'delete', 'block', 'blockAndDelete', 'spam', 'blockAndSpam'];
 
 /** A message our other device read or opened: who sent it and when. */
 export interface SyncRef {
   sender: string;
   timestamp: number;
 }
+
+/** A chat named by a sync message: `g:` + group ID, or a person's number or ACI. */
+export interface ChatRef {
+  key: string;
+}
+
+/** A chat our other device deleted: everything up to its newest listed message, and the chat itself on a full delete. */
+export interface ChatDelete {
+  chat: ChatRef;
+  mostRecent: SyncRef[];
+  mostRecentNonExpiring: SyncRef[];
+  isFullDelete: boolean;
+}
+
+const MAX_SYNC_DELETES = 500;
 
 type NameOf = (key: string) => string;
 type Conv = { convId: string | null; groupInternalId: string | null };
@@ -178,6 +202,14 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
 
   if (dm.remoteDelete) return [{ type: 'remoteDelete', convId, author, targetTimestamp: num(dm.remoteDelete.timestamp) }];
 
+  if (dm.adminDelete) {
+    const ad = dm.adminDelete;
+    const admin = str(env.sourceUuid);
+    const targetAuthor = str(ad.targetAuthorUuid);
+    if (!conv.groupInternalId || !admin || !targetAuthor) return [];
+    return [{ type: 'adminDelete', convId, admin, targetAuthor, targetTimestamp: num(ad.targetSentTimestamp), timestamp: num(dm.timestamp) || num(env.timestamp) }];
+  }
+
   if (dm.pinMessage || dm.unpinMessage) {
     const pin = dm.pinMessage || dm.unpinMessage;
     return [
@@ -195,34 +227,47 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
 
   const attachments: any[] = Array.isArray(dm.attachments) ? dm.attachments : [];
   const body = dm.message;
-  if (body == null && attachments.length === 0 && !dm.sticker) {
+  const card = contactCardOf(dm);
+  if (body == null && attachments.length === 0 && !dm.sticker && !card) {
     dbg('normalize: message without text');
     return [];
   }
 
-  return [
-    {
-      type: 'message',
-      convId,
-      groupInternalId: conv.groupInternalId,
-      incoming,
-      author,
-      authorName: str(env.sourceName),
-      timestamp: num(dm.timestamp) || num(env.timestamp),
-      body: applyMentions(str(body), dm.mentions, nameOf),
-      styles: stylesOf(dm, nameOf),
-      quote: quoteOf(dm),
-      attachments: attachments.map((a) => ({
-        id: str(a.id),
-        contentType: str(a.contentType),
-        filename: str(a.filename),
-        size: num(a.size),
-        voiceNote: !!a.voiceNote,
-        viewOnce: !!(a.viewOnce || dm.viewOnce),
-      })),
-      expiresInSeconds: num(dm.expiresInSeconds),
-    },
-  ];
+  const ev: MessageEvent = {
+    type: 'message',
+    convId,
+    groupInternalId: conv.groupInternalId,
+    incoming,
+    author,
+    authorName: str(env.sourceName),
+    timestamp: num(dm.timestamp) || num(env.timestamp),
+    body: applyMentions(str(body), dm.mentions, nameOf),
+    styles: stylesOf(dm, nameOf),
+    quote: quoteOf(dm),
+    attachments: attachments.map((a) => ({
+      id: str(a.id),
+      contentType: str(a.contentType),
+      filename: str(a.filename),
+      size: num(a.size),
+      voiceNote: !!a.voiceNote,
+      viewOnce: !!(a.viewOnce || dm.viewOnce),
+    })),
+    expiresInSeconds: num(dm.expiresInSeconds),
+  };
+  if (card) ev.contactCard = card;
+  if (incoming ? env.sealed === true : dm.sealed === true) ev.sealed = true;
+  return [ev];
+}
+
+function strings(list: unknown, max: number): string[] {
+  return Array.isArray(list) ? list.map(str).filter(Boolean).slice(0, max) : [];
+}
+
+function contactCardOf(dm: any): ContactCard | null {
+  const c = Array.isArray(dm.contacts) ? dm.contacts[0] : null;
+  if (!c || typeof c !== 'object') return null;
+  const card: ContactCard = { name: str(c.name).slice(0, 100), phones: strings(c.phones, 5), emails: strings(c.emails, 5) };
+  return card.name || card.phones.length || card.emails.length ? card : null;
 }
 
 function editEvent(env: any, edit: any, author: string, nameOf: NameOf, convOverride?: Conv): StoreEvent[] {
@@ -271,6 +316,31 @@ function syncRefs(list: unknown): SyncRef[] {
   return out;
 }
 
+function chatRef(c: any): ChatRef | null {
+  if (!c || typeof c !== 'object') return null;
+  const key = c.groupId ? 'g:' + str(c.groupId) : str(c.number) || str(c.uuid);
+  return key && key !== 'g:' ? { key } : null;
+}
+
+function addressed(list: unknown): SyncRef[] {
+  return syncRefs(Array.isArray(list) ? list.slice(0, MAX_SYNC_DELETES).map((m: any) => m && { sender: m.author, timestamp: m.timestamp }) : []);
+}
+
+function deleteSyncEvent(d: any): StoreEvent | null {
+  const messages: Array<{ chat: ChatRef; items: SyncRef[] }> = [];
+  for (const md of Array.isArray(d.messages) ? d.messages : []) {
+    const chat = md && chatRef(md.conversation);
+    const items = md ? addressed(md.messages) : [];
+    if (chat && items.length) messages.push({ chat, items });
+  }
+  const chats: ChatDelete[] = [];
+  for (const cd of Array.isArray(d.conversations) ? d.conversations : []) {
+    const chat = cd && chatRef(cd.conversation);
+    if (chat) chats.push({ chat, mostRecent: addressed(cd.mostRecent), mostRecentNonExpiring: addressed(cd.mostRecentNonExpiring), isFullDelete: !!cd.isFullDelete });
+  }
+  return messages.length || chats.length ? { type: 'deleteSync', messages, chats } : null;
+}
+
 function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEvent[] {
   if (env.notice) return noticeEvent(env, env.notice, { convId: peerKey(env), groupInternalId: null }, peerKey(env) || '');
   if (env.dataMessage) return dataMessageEvents(env, env.dataMessage, true, nameOf);
@@ -307,6 +377,16 @@ function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEven
     if (viewed.length) out.push({ type: 'viewedSync', entries: viewed, viewOnce: false });
     const opened = syncRefs(sm.viewOnceOpen ? [sm.viewOnceOpen] : undefined);
     if (opened.length) out.push({ type: 'viewedSync', entries: opened, viewOnce: true });
+    const mrr = sm.messageRequestResponse;
+    if (mrr && typeof mrr === 'object') {
+      const chat = chatRef({ groupId: mrr.groupId, uuid: mrr.threadUuid });
+      const response = str(mrr.type) as RequestResponse;
+      if (chat && REQUEST_RESPONSES.indexOf(response) >= 0) out.push({ type: 'requestResponse', chat, response });
+    }
+    if (sm.deleteForMe && typeof sm.deleteForMe === 'object') {
+      const del = deleteSyncEvent(sm.deleteForMe);
+      if (del) out.push(del);
+    }
     if (!out.length) dbg('normalize: unhandled sync message ' + Object.keys(sm).join(','));
     return out;
   }

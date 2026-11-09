@@ -12,6 +12,7 @@ import { toast } from '../components/Toast';
 import { signal, syncedContacts, syncedGroups, unlink, updateProfile } from '../data/api';
 import { config, type ThemeName } from '../data/config';
 import { db } from '../data/db';
+import { EXPIRE_OPTIONS, expireLabel } from '../data/format';
 import { appVersion, openUrl } from '../data/platform';
 import * as store from '../data/store';
 import * as ws from '../data/ws';
@@ -235,9 +236,27 @@ export function ChatsSettingsScreen() {
 
 export function PrivacyScreen() {
   const refresh = useRefresh();
+  const defaultTimer = config.defaultExpireTimer();
+
+  async function chooseDefaultTimer(): Promise<void> {
+    const secs = await pick(S.defaultTimer, EXPIRE_OPTIONS.map((o) => ({ value: o.secs, label: o.label })), defaultTimer);
+    if (secs === undefined || secs === defaultTimer) return;
+    config.set({ defaultExpireTimer: secs });
+    refresh();
+    signal.setUniversalExpireTimer(secs).catch((e) => toast(friendlyError(e)));
+  }
+
+  function setPrivateIcon(on: boolean): void {
+    config.set({ sealedSenderIndicators: on });
+    refresh();
+    signal.setSealedSenderIndicators(on).catch((e) => toast(friendlyError(e)));
+  }
+
   const rows: Row[] = [
     toggle('receipts', S.readReceipts, config.sendReadReceipts(), (v) => (config.set({ sendReadReceipts: v }), refresh()), S.readReceiptsHint),
     toggle('typing', S.typingIndicators, config.typingIndicators(), (v) => (config.set({ typingIndicators: v }), refresh()), S.typingIndicatorsHint),
+    { key: 'timer', label: S.defaultTimer, sub: expireLabel(defaultTimer), onSelect: chooseDefaultTimer },
+    toggle('private', S.privateDeliveryIcon, config.sealedSenderIndicators(), setPrivateIcon, S.privateDeliveryHint),
     { key: 'blocked', label: S.blockedPeople, end: 'chevron', onSelect: () => router.push(BlockedScreen, {}) },
   ];
   return (

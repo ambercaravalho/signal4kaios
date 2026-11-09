@@ -2,14 +2,18 @@ import groups from 'unicode-emoji-json/data-by-group.json';
 import { useMemo, useState } from 'preact/hooks';
 import { useFocusScroll, useListNav } from '../app/focus';
 import { router, useKeys, useSoftkeys } from '../app/router';
+import { SKIN_TONES, withSkinTone } from '../data/styled';
 import { S } from '../strings';
-import { pick } from './Overlays';
+import { pick, showOptions } from './Overlays';
 import { Screen } from './Screen';
 
 /** Signal's default reactions. */
 export const QUICK_REACTIONS = ['❤️', '👍', '👎', '😂', '😮', '😢'];
 
 const COLS = 6;
+/** The newest emoji release the KaiOS 3.x system emoji font can draw; matches `MAX_EMOJI_VERSION` in scripts/build.mjs. */
+const MAX_EMOJI_VERSION = 12.1;
+const SKIN_TONE_KEY = 's4k.emojiSkinTone';
 const RECENT_KEY = 's4k.emojiRecent';
 const MAX_RECENT = 24;
 
@@ -44,15 +48,44 @@ interface Category {
   emojis: string[];
 }
 
-function categories(): Category[] {
+/** Index into `SKIN_TONES`; 0 is the default yellow. */
+function skinTone(): number {
+  const n = parseInt(localStorage.getItem(SKIN_TONE_KEY) || '0', 10);
+  return n > 0 && n < SKIN_TONES.length ? n : 0;
+}
+
+interface EmojiEntry {
+  emoji: string;
+  emoji_version: string;
+  skin_tone_support?: boolean;
+  skin_tone_support_unicode_version?: string;
+}
+
+function categories(tone: number): Category[] {
   const list: Category[] = [];
   const r = recent();
   if (r.length) list.push({ id: 'recent', label: S.recentEmoji, emojis: r });
-  for (const g of groups as Array<{ slug: string; name: string; emojis: Array<{ emoji: string; emoji_version: string }> }>) {
-    const emojis = g.emojis.filter((e) => parseFloat(e.emoji_version) <= 12.1).map((e) => e.emoji);
+  const mod = SKIN_TONES[tone] || '';
+  for (const g of groups as Array<{ slug: string; name: string; emojis: EmojiEntry[] }>) {
+    const emojis = g.emojis
+      .filter((e) => parseFloat(e.emoji_version) <= MAX_EMOJI_VERSION)
+      .map((e) => (mod && e.skin_tone_support && parseFloat(e.skin_tone_support_unicode_version || '99') <= MAX_EMOJI_VERSION ? withSkinTone(e.emoji, mod) : e.emoji));
     if (emojis.length) list.push({ id: g.slug, label: CATEGORY_LABELS[g.slug] || g.name, emojis });
   }
   return list;
+}
+
+const SKIN_TONE_LABELS = [S.skinToneDefault, S.skinToneLight, S.skinToneMediumLight, S.skinToneMedium, S.skinToneMediumDark, S.skinToneDark];
+
+function chooseSkinTone(): Promise<number | undefined> {
+  return pick(
+    S.skinTone,
+    SKIN_TONES.map((t, i) => ({ value: i, label: withSkinTone('✋', t) + ' ' + SKIN_TONE_LABELS[i] })),
+    skinTone()
+  ).then((i) => {
+    if (i !== undefined) localStorage.setItem(SKIN_TONE_KEY, String(i));
+    return i;
+  });
 }
 
 function Cell(props: { emoji: string; focused: boolean }) {
@@ -77,31 +110,43 @@ export function EmojiGrid(props: { emojis: string[]; onPick(e: string): void }) 
 }
 
 function EmojiScreen(props: { title: string; resolve(e: string | undefined): void }) {
-  const cats = useMemo(categories, []);
-  const [cat, setCat] = useState(0);
+  const [tone, setTone] = useState(skinTone);
+  const cats = useMemo(() => categories(tone), [tone]);
+  const [catId, setCatId] = useState(cats[0].id);
+  const c = cats.find((x) => x.id === catId) || cats[0];
   const finish = (e: string | undefined) => {
     router.pop();
     if (e) remember(e);
     props.resolve(e);
   };
-  useSoftkeys({ left: S.cancel, center: S.select, right: S.category });
+  const chooseCategory = () =>
+    pick(
+      S.category,
+      cats.map((x) => ({ value: x.id, label: x.label })),
+      c.id
+    ).then((id) => {
+      if (id !== undefined) setCatId(id);
+    });
+  useSoftkeys({ left: S.cancel, center: S.select, right: S.options });
   useKeys((e) => {
     if (e.key === 'SoftLeft') finish(undefined);
     else if (e.key === 'SoftRight')
-      pick(
-        S.category,
-        cats.map((c, i) => ({ value: i, label: c.label })),
-        cat
-      ).then((i) => {
-        if (i !== undefined) setCat(i);
-      });
+      showOptions([
+        { label: S.category, onSelect: chooseCategory },
+        {
+          label: S.skinTone,
+          onSelect: () =>
+            chooseSkinTone().then((i) => {
+              if (i !== undefined) setTone(i);
+            }),
+        },
+      ]);
     else return false;
     return true;
   });
-  const c = cats[cat];
   return (
     <Screen title={props.title + ' · ' + c.label}>
-      <EmojiGrid key={c.id} emojis={c.emojis} onPick={finish} />
+      <EmojiGrid key={c.id + tone} emojis={c.emojis} onPick={finish} />
     </Screen>
   );
 }

@@ -5,7 +5,7 @@ import { expireLabel, fmtDuration, formatSafetyNumber, initials } from '../src/u
 import { dbg, redactedLog } from '../src/ui/data/log';
 import { applyMentions, parseFrame } from '../src/ui/data/normalize';
 import { attachmentLabel, contactName } from '../src/ui/data/store';
-import { emojiRuns, encodeMentions, isJumboEmoji, linkRuns, parseStyledMarkdown, styleSegments } from '../src/ui/data/styled';
+import { emojiRuns, encodeMentions, isJumboEmoji, linkRuns, parseStyledMarkdown, SKIN_TONES, styleSegments, withSkinTone } from '../src/ui/data/styled';
 
 const nameOf = (k: string) => (k === 'aci-bob' ? 'Bob' : k);
 
@@ -54,6 +54,14 @@ describe('parseFrame', () => {
     assert.deepEqual(rs, { type: 'readSync', entries: [{ sender: '+4', timestamp: 3 }] });
   });
 
+  it('keeps the first shared contact and drops empty ones', () => {
+    const env = { sourceNumber: '+3', timestamp: 8 };
+    const [ev] = parseFrame({ envelope: { ...env, dataMessage: { timestamp: 8, contacts: [{ name: 'Clara', phones: ['+1555', 7], emails: [] }] } } }, '+1', nameOf) as any[];
+    assert.deepEqual(ev.contactCard, { name: 'Clara', phones: ['+1555'], emails: [] });
+    assert.equal(ev.body, '');
+    assert.deepEqual(parseFrame({ envelope: { ...env, dataMessage: { timestamp: 8, contacts: [{ name: '' }] } } }, '+1', nameOf), []);
+  });
+
   it('counts viewed receipts as read and parses viewed and view-once syncs', () => {
     const env = { sourceNumber: '+3' };
     const [rc] = parseFrame({ envelope: { ...env, receiptMessage: { isViewed: true, timestamps: [7] } } }, '+1', nameOf);
@@ -63,6 +71,33 @@ describe('parseFrame', () => {
       { type: 'viewedSync', entries: [{ sender: 'aci-4', timestamp: 5 }], viewOnce: false },
       { type: 'viewedSync', entries: [{ sender: 'aci-5', timestamp: 6 }], viewOnce: true },
     ]);
+  });
+
+  it('parses admin deletes in groups and delete-for-me syncs', () => {
+    const group = { groupInfo: { groupId: 'R1' } };
+    const [ad] = parseFrame({ envelope: { sourceNumber: '+3', sourceUuid: 'aci-3', timestamp: 9, dataMessage: { ...group, timestamp: 9, adminDelete: { targetAuthorUuid: 'aci-4', targetSentTimestamp: 5 } } } }, '+1', nameOf);
+    assert.deepEqual(ad, { type: 'adminDelete', convId: 'g:R1', admin: 'aci-3', targetAuthor: 'aci-4', targetTimestamp: 5, timestamp: 9 });
+    assert.deepEqual(parseFrame({ envelope: { sourceNumber: '+3', sourceUuid: 'aci-3', dataMessage: { adminDelete: { targetAuthorUuid: 'aci-4', targetSentTimestamp: 5 } } } }, '+1', nameOf), []);
+
+    const deleteForMe = {
+      messages: [{ conversation: { uuid: 'aci-4' }, messages: [{ author: 'aci-4', timestamp: 5 }, { author: '', timestamp: 6 }] }, { conversation: {}, messages: [{ author: 'aci-4', timestamp: 7 }] }],
+      conversations: [{ conversation: { groupId: 'R1' }, mostRecent: [{ author: '+1', timestamp: 8 }], mostRecentNonExpiring: [], isFullDelete: true }],
+    };
+    assert.deepEqual(parseFrame({ envelope: { sourceNumber: '+1', syncMessage: { deleteForMe } } }, '+1', nameOf), [
+      {
+        type: 'deleteSync',
+        messages: [{ chat: { key: 'aci-4' }, items: [{ sender: 'aci-4', timestamp: 5 }] }],
+        chats: [{ chat: { key: 'g:R1' }, mostRecent: [{ sender: '+1', timestamp: 8 }], mostRecentNonExpiring: [], isFullDelete: true }],
+      },
+    ]);
+  });
+
+  it('parses message request responses from other devices', () => {
+    const parse = (mrr: any) => parseFrame({ envelope: { sourceNumber: '+1', syncMessage: { messageRequestResponse: mrr } } }, '+1', nameOf);
+    assert.deepEqual(parse({ threadUuid: 'aci-4', type: 'accept' }), [{ type: 'requestResponse', chat: { key: 'aci-4' }, response: 'accept' }]);
+    assert.deepEqual(parse({ groupId: 'R1', type: 'blockAndSpam' }), [{ type: 'requestResponse', chat: { key: 'g:R1' }, response: 'blockAndSpam' }]);
+    assert.deepEqual(parse({ threadUuid: 'aci-4', type: 'unknown' }), []);
+    assert.deepEqual(parse({ type: 'accept' }), []);
   });
 
   it('turns notices into notice events and drops unknown kinds', () => {
@@ -170,6 +205,15 @@ describe('styled text', () => {
     assert.equal(isJumboEmoji('❤️👍'), true);
     assert.equal(isJumboEmoji('ok 👍'), false);
     assert.deepEqual(linkRuns('see https://signal.org.'), [{ text: 'see ' }, { text: 'https://signal.org', url: 'https://signal.org' }, { text: '.' }]);
+  });
+
+  it('adds a skin tone after the first code point, without VS16, and skips ZWJ sequences', () => {
+    assert.equal(withSkinTone('👋', SKIN_TONES[3]), '👋\u{1F3FD}');
+    assert.equal(withSkinTone('☝\uFE0F', SKIN_TONES[1]), '☝\u{1F3FB}');
+    assert.equal(withSkinTone('👨‍🦰', SKIN_TONES[5]), '👨‍🦰');
+    assert.equal(withSkinTone('👋', SKIN_TONES[0]), '👋');
+    assert.equal(SKIN_TONES.length, 6);
+    assert.deepEqual(emojiRuns(withSkinTone('✌\uFE0F', SKIN_TONES[4])), [{ text: '✌\u{1F3FE}', emoji: true }]);
   });
 });
 

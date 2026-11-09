@@ -1,12 +1,12 @@
 /* App state and its event hub. Flow: WebSocket frame, then `parseFrame`, then `applyEvent`, then IndexedDB, then an event screens subscribe to. */
 
 import type { ChatStateEntry, PinnedChat } from '../../engine/host';
-import { signal, syncedContacts, syncedGroups, type SyncedContact } from './api';
+import { groupDetail, signal, syncedContacts, syncedGroups, type SyncedContact } from './api';
 import { config } from './config';
 import { db, type ExpiredRef } from './db';
 import { dbg } from './log';
 import { fmt, S } from '../strings';
-import { parseFrame, type MessageEvent, type NoticeEvent, type StoreEvent, type SyncRef } from './normalize';
+import { parseFrame, type ChatRef, type MessageEvent, type NoticeEvent, type StoreEvent, type SyncRef } from './normalize';
 import { hasServiceWorker } from './platform';
 import { encodeMentions, parseStyledMarkdown, type PickedMention, type StyleRange } from './styled';
 import type { Attachment, Connection, Contact, Conversation, GroupRef, Message, Notice, Quote } from './types';
@@ -121,6 +121,10 @@ function ensureConv(ev: Pick<MessageEvent, 'convId' | 'groupInternalId' | 'incom
     const known = displayName(ev.convId);
     const name = known === ev.convId && ev.incoming && ev.authorName ? ev.authorName : known;
     conv = newConv(ev.convId, 'direct', directName(ev.convId, name), ev.convId);
+    if (ev.incoming && !isSelfKey(ev.convId)) {
+      const c = contactByKey(ev.convId);
+      if (!c || c.whitelisted === false) conv.request = true;
+    }
   }
   convs[conv.id] = conv;
   return conv;
@@ -138,8 +142,30 @@ export function attachmentLabel(attachments: Array<Partial<Attachment>> | undefi
   return a.filename || 'File';
 }
 
-function previewOf(body: string, attachments: Attachment[]): string {
-  return body || attachmentLabel(attachments);
+const MEDIA_PAGE = 200;
+
+/** A chat's attachments that can be opened again, newest first; view-once media and files sent from this phone are left out. */
+export async function chatMedia(convId: string, limit: number = 300): Promise<Array<{ msg: Message; att: Attachment }>> {
+  const out: Array<{ msg: Message; att: Attachment }> = [];
+  let before = Number.MAX_SAFE_INTEGER;
+  for (;;) {
+    const page = await db.getMessagesPage(convId, before, MEDIA_PAGE);
+    for (let i = page.length - 1; i >= 0; i--) {
+      const m = page[i];
+      if (m.deleted || !m.attachments) continue;
+      for (const att of m.attachments) {
+        if (!att.id || att.viewOnce) continue;
+        out.push({ msg: m, att });
+        if (out.length >= limit) return out;
+      }
+    }
+    if (page.length < MEDIA_PAGE) return out;
+    before = page[0].timestamp;
+  }
+}
+
+function previewOf(rec: Pick<Message, 'body' | 'attachments' | 'contactCard'>): string {
+  return rec.body || attachmentLabel(rec.attachments) || (rec.contactCard ? S.sharedContact : '');
 }
 
 /** What a notice line says; `author` is who it's about. */
@@ -155,7 +181,7 @@ export function noticeText(notice: Notice, author: string): string {
 }
 
 function messageText(rec: Message): string {
-  return rec.notice ? noticeText(rec.notice, rec.author) : previewOf(rec.body, rec.attachments);
+  return rec.notice ? noticeText(rec.notice, rec.author) : previewOf(rec);
 }
 
 export function onNotificationClick(fn: (convId: string) => void): void {
@@ -203,15 +229,18 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
     deleted: false,
     edited: false,
   };
+  if (ev.contactCard) rec.contactCard = ev.contactCard;
+  if (ev.sealed) rec.sealed = true;
   if (ev.expiresInSeconds) {
     rec.expireSecs = ev.expiresInSeconds;
     rec.expiresAt = Date.now() + ev.expiresInSeconds * 1000;
   }
   if ((conv.expireTimer || 0) !== ev.expiresInSeconds) conv.expireTimer = ev.expiresInSeconds;
+  if (!ev.incoming) delete conv.request;
   db.putMessage(rec);
 
   conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
-  conv.lastPreview = previewOf(rec.body, rec.attachments);
+  conv.lastPreview = previewOf(rec);
   unarchiveOnActivity(conv);
   if (ev.incoming && openConvId !== conv.id) conv.unread = (conv.unread || 0) + 1;
   if (typingMap[conv.id]) {
@@ -292,6 +321,14 @@ function updateTarget(convId: string, ts: number, authors: Array<string | null>,
     emit('message-updated', rec, undefined);
     await db.putMessage(rec);
   });
+}
+
+/** Signal-Desktop's MESSAGE_MAX_EDIT_COUNT. */
+export const MAX_EDITS = 10;
+
+function keepVersion(rec: Message): void {
+  const version = { body: rec.body, styles: rec.styles || [], timestamp: rec.editedAt || rec.timestamp };
+  rec.history = (rec.history || []).concat(version).slice(-MAX_EDITS);
 }
 
 function setPreviewIfLast(convId: string, rec: Message, preview: string): void {
@@ -402,7 +439,8 @@ export function markViewed(m: Message): void {
     emit('message-updated', rec, undefined);
     await db.putMessage(rec);
   });
-  signal.sendViewed(m.author, m.timestamp, { receipt: config.sendReadReceipts(), viewOnce: !!att.viewOnce }).catch((e) => dbg('viewed receipt failed ' + (e && e.message)));
+  const conv = convs[m.convId];
+  signal.sendViewed(m.author, m.timestamp, { receipt: config.sendReadReceipts() && !(conv && conv.request), viewOnce: !!att.viewOnce }).catch((e) => dbg('viewed receipt failed ' + (e && e.message)));
 }
 
 export function applyEvent(ev: StoreEvent, silent: boolean): void {
@@ -425,9 +463,12 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
       });
     case 'edit':
       return updateTarget(ev.convId, ev.targetTimestamp, [ev.author, altKeyOf(ev.author), self()], 'edit', (rec) => {
+        if (ev.timestamp && rec.editedAt === ev.timestamp) return;
+        keepVersion(rec);
         rec.body = ev.newBody;
         rec.styles = ev.newStyles || [];
         rec.edited = true;
+        if (ev.timestamp) rec.editedAt = ev.timestamp;
         setPreviewIfLast(ev.convId, rec, ev.newBody);
       });
     case 'pin':
@@ -443,6 +484,12 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
       return applyReadSync(ev.entries);
     case 'viewedSync':
       return applyViewedSync(ev.entries, ev.viewOnce);
+    case 'deleteSync':
+      return applyDeleteSync(ev);
+    case 'adminDelete':
+      return applyAdminDelete(ev);
+    case 'requestResponse':
+      return applyRequestResponse(ev);
     case 'timer': {
       const conv = convs[ev.convId];
       if (!conv || (conv.expireTimer || 0) === ev.seconds) return;
@@ -480,6 +527,7 @@ export async function refreshDirectory(): Promise<boolean> {
   for (const c of contacts) {
     const rec: Contact = { id: c.uuid || c.number, number: c.number || '', uuid: c.uuid || '', name: contactName(c), blocked: !!c.blocked, hasAvatar: c.profile ? !!c.profile.has_avatar : undefined };
     if (!rec.id) continue;
+    if (c.whitelisted !== undefined) rec.whitelisted = !!c.whitelisted || !!c.systemContact;
     records.push(rec);
     if (rec.number) contactsByKey[rec.number] = rec;
     if (rec.uuid) contactsByKey[rec.uuid] = rec;
@@ -504,6 +552,12 @@ export async function refreshDirectory(): Promise<boolean> {
       const name = directName(conv.id, displayName(conv.id));
       if (name !== conv.id && name !== conv.name) {
         conv.name = name;
+        persistConv(conv);
+        changed = true;
+      }
+      const c = conv.request ? contactByKey(conv.id) : undefined;
+      if (c && c.whitelisted === true) {
+        delete conv.request;
         persistConv(conv);
         changed = true;
       }
@@ -538,6 +592,7 @@ function sendCore(conv: Conversation, rec: Message, payload: SendPayload, previe
         persistConv(conv);
       }
       rec.status = 'sent';
+      if (res && res.sealed) rec.sealed = true;
       db.putMessage(rec);
       emit('message-updated', rec, oldId);
       return rec;
@@ -603,6 +658,19 @@ function convForSend(convId: string): Conversation {
   return conv;
 }
 
+/** Signal-Desktop's universal timer: our first message in a 1:1 chat with no history and no timer starts the account's default timer first. */
+function withDefaultTimer(conv: Conversation, send: () => Promise<Message>): Promise<Message> {
+  const secs = config.defaultExpireTimer();
+  if (!secs || conv.type !== 'direct' || conv.expireTimer || conv.lastTs > 0 || isSelfConv(conv) || !conv.sendId) return send();
+  return signal
+    .setDirectExpireTimer(conv.sendId, secs)
+    .then(
+      () => setConvExpire(conv.id, secs),
+      (e) => dbg('default timer failed: ' + (e && e.message))
+    )
+    .then(send);
+}
+
 /** With styled text on, typed markers become formatting locally and in what's sent. */
 function styled(text: string): { body: string; styles: StyleRange[] } {
   if (config.styledText() && text) return parseStyledMarkdown(text);
@@ -616,18 +684,20 @@ export function sendText(convId: string, text: string, quote?: Quote | null, men
   } catch (e) {
     return Promise.reject(e);
   }
-  const st = styled(text);
-  const wire = encodeMentions(st.body, st.styles, mentions);
-  const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, quote: quote || null });
-  if (wire.mentions.length) rec.mentions = mentions;
-  const payload: SendPayload = { recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0 };
-  if (quote) {
-    payload.quote_timestamp = quote.timestamp;
-    payload.quote_author = quote.author;
-    payload.quote_message = quote.text;
-    if (quote.attachments && quote.attachments.length) payload.quote_attachments = quote.attachments;
-  }
-  return sendCore(conv, rec, payload, st.body);
+  return withDefaultTimer(conv, () => {
+    const st = styled(text);
+    const wire = encodeMentions(st.body, st.styles, mentions);
+    const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, quote: quote || null });
+    if (wire.mentions.length) rec.mentions = mentions;
+    const payload: SendPayload = { recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0 };
+    if (quote) {
+      payload.quote_timestamp = quote.timestamp;
+      payload.quote_author = quote.author;
+      payload.quote_message = quote.text;
+      if (quote.attachments && quote.attachments.length) payload.quote_attachments = quote.attachments;
+    }
+    return sendCore(conv, rec, payload, st.body);
+  });
 }
 
 /** `dataUri` is "data:<mime>;base64,…" (a scaled photo, a picked file, or a voice note). View-once media goes without a caption, as in Signal. */
@@ -643,11 +713,13 @@ export function sendAttachment(convId: string, dataUri: string, caption: string,
   const att: Attachment = { id: '', contentType, filename, size: meta.size || 0, voiceNote: !!meta.voiceNote };
   if (meta.viewOnce) att.viewOnce = true;
   const text = meta.viewOnce ? '' : caption || '';
-  const st = styled(text);
-  const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: [att] });
-  const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, base64_attachments: [dataUri] };
-  if (meta.viewOnce) payload.view_once = true;
-  return sendCore(conv, rec, payload, st.body || attachmentLabel([att]));
+  return withDefaultTimer(conv, () => {
+    const st = styled(text);
+    const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: [att] });
+    const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, base64_attachments: [dataUri] };
+    if (meta.viewOnce) payload.view_once = true;
+    return sendCore(conv, rec, payload, st.body || attachmentLabel([att]));
+  });
 }
 
 export function sendEdit(rec: Message, newText: string, mentions: PickedMention[] = []): Promise<Message> {
@@ -659,7 +731,9 @@ export function sendEdit(rec: Message, newText: string, mentions: PickedMention[
   }
   const st = styled(newText);
   const wire = encodeMentions(st.body, st.styles, mentions);
-  return signal.send({ recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0, edit_timestamp: rec.timestamp }).then(() => {
+  return signal.send({ recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0, edit_timestamp: rec.timestamp }).then((res) => {
+    keepVersion(rec);
+    rec.editedAt = (res && res.timestamp) || Date.now();
     rec.body = st.body;
     rec.styles = st.styles;
     rec.raw = newText;
@@ -669,6 +743,24 @@ export function sendEdit(rec: Message, newText: string, mentions: PickedMention[
     emit('message-updated', rec, undefined);
     setPreviewIfLast(conv.id, rec, st.body);
     return rec;
+  });
+}
+
+/** A copy of `m` in another chat. Text keeps its formatting but not its mentions; `dataUri` carries the attachment's bytes when it has one. */
+export function forwardMessage(convId: string, m: Message, dataUri?: string): Promise<Message> {
+  let conv: Conversation;
+  try {
+    conv = convForSend(convId);
+  } catch (e) {
+    return Promise.reject(e);
+  }
+  const src = dataUri ? m.attachments[0] : undefined;
+  const attachments: Attachment[] = src ? [{ id: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: !!src.voiceNote }] : [];
+  return withDefaultTimer(conv, () => {
+    const rec = newOutgoingRec(conv, { body: m.body, styles: m.styles || [], attachments });
+    const payload: SendPayload = { recipients: [conv.sendId!], message: m.body, styles: m.styles || [], expire_timer: conv.expireTimer || 0 };
+    if (dataUri) payload.base64_attachments = [dataUri];
+    return sendCore(conv, rec, payload, previewOf(rec));
   });
 }
 
@@ -695,10 +787,195 @@ export function setDraft(convId: string, text: string, mentions: PickedMention[]
   emit('conversations');
 }
 
-/** Delete a message from this phone only. */
+function messageRef(rec: Message): { author: string; timestamp: number } {
+  return { author: rec.author, timestamp: rec.timestamp };
+}
+
+/** Whether our other devices could have this message: not a notice, and it went out (or came in). */
+function addressable(rec: Message): boolean {
+  return !rec.notice && rec.status !== 'pending' && rec.status !== 'failed';
+}
+
+/** Delete a message from this phone and, as Signal does, from our other devices. */
 export function deleteLocal(rec: Message): Promise<void> {
   emit('message-removed', { id: rec.id, convId: rec.convId, timestamp: rec.timestamp });
+  const conv = convs[rec.convId];
+  if (conv && conv.sendId && addressable(rec)) {
+    signal.sendDeleteForMe({ messages: [{ chat: conv.sendId, items: [messageRef(rec)] }] }).catch((e) => dbg('delete sync failed: ' + (e && e.message)));
+  }
   return db.deleteMessage(rec.id);
+}
+
+/** Signal-Desktop's delete-chat sync names the chat by its newest messages, up to this many. */
+const DELETE_CHAT_REFS = 5;
+
+async function removeChat(conv: Conversation): Promise<void> {
+  delete convs[conv.id];
+  delete typingMap[conv.id];
+  await db.pruneConversation(conv.id, 0);
+  await db.deleteConversation(conv.id);
+  emit('conversations');
+}
+
+/** Delete a whole chat from this phone and from our other devices. */
+export async function deleteChat(convId: string): Promise<void> {
+  const conv = convs[convId];
+  if (!conv) return;
+  if (conv.sendId) {
+    const rows = (await db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, 50)).filter(addressable).reverse();
+    const chat = { chat: conv.sendId, mostRecent: rows.slice(0, DELETE_CHAT_REFS).map(messageRef), mostRecentNonExpiring: rows.filter((r) => !r.expiresAt).slice(0, DELETE_CHAT_REFS).map(messageRef) };
+    signal.sendDeleteForMe({ chats: [chat] }).catch((e) => dbg('delete chat sync failed: ' + (e && e.message)));
+  }
+  if (conv.pinned) syncChatState(conv, { pinned: false });
+  await removeChat(conv);
+}
+
+function chatFor(ref: ChatRef): Conversation | undefined {
+  const alt = altKeyOf(ref.key);
+  return convs[ref.key] || (alt ? convs[alt] : undefined);
+}
+
+/** The keys a message by `author` may be stored under; our own messages are stored under our number. */
+function authorKeys(author: string): Array<string | null> {
+  return [author, altKeyOf(author), author === config.aci() ? self() : null];
+}
+
+async function newestListed(convId: string, refs: SyncRef[]): Promise<number> {
+  let newest = 0;
+  for (const r of refs) {
+    const rec = await findMessage(convId, r.timestamp, authorKeys(r.sender));
+    if (rec && rec.timestamp > newest) newest = rec.timestamp;
+  }
+  return newest;
+}
+
+async function refreshPreview(conv: Conversation): Promise<void> {
+  const last = (await db.getMessagesPage(conv.id, Number.MAX_SAFE_INTEGER, 1))[0];
+  const preview = last ? messageText(last) : '';
+  if (conv.lastPreview === preview) return;
+  conv.lastPreview = preview;
+  persistConv(conv);
+  emit('conversations');
+}
+
+/** Our other device deleted messages or chats; chats lose everything up to the newest message it listed, as in Signal-Desktop. */
+function applyDeleteSync(ev: Extract<StoreEvent, { type: 'deleteSync' }>): void {
+  enqueueMutation(async () => {
+    const touched: Record<string, Conversation> = {};
+    for (const m of ev.messages) {
+      const conv = chatFor(m.chat);
+      if (!conv) continue;
+      for (const item of m.items) {
+        const rec = await findMessage(conv.id, item.timestamp, authorKeys(item.sender));
+        if (!rec) continue;
+        emit('message-removed', { id: rec.id, convId: rec.convId, timestamp: rec.timestamp });
+        await db.deleteMessage(rec.id);
+        touched[conv.id] = conv;
+      }
+    }
+    for (const c of ev.chats) {
+      const conv = chatFor(c.chat);
+      if (!conv) continue;
+      const upTo = (await newestListed(conv.id, c.mostRecent)) || (await newestListed(conv.id, c.mostRecentNonExpiring));
+      if (upTo) {
+        emitRemovals(await db.deleteMessagesUpTo(conv.id, upTo));
+        touched[conv.id] = conv;
+      }
+      if (c.isFullDelete && !(await db.getMessagesPage(conv.id, Number.MAX_SAFE_INTEGER, 50)).some((r) => !r.notice)) {
+        delete touched[conv.id];
+        await removeChat(conv);
+      }
+    }
+    for (const id of Object.keys(touched)) await refreshPreview(touched[id]);
+  });
+}
+
+function clearRequest(conv: Conversation): void {
+  if (!conv.request) return;
+  delete conv.request;
+  persistConv(conv);
+  emit('conversations');
+}
+
+/** Accept a message request: our other devices hear about it, they get our profile, and what we've read gets its read receipts. */
+export function acceptRequest(convId: string): Promise<void> {
+  const conv = convs[convId];
+  if (!conv || !conv.sendId) return Promise.reject(new Error('unknown chat'));
+  return signal.sendMessageRequestResponse(conv.sendId, 'accept').then(() => {
+    clearRequest(conv);
+    markRead(convId);
+  });
+}
+
+/** Delete a message request; the response tells our other devices to delete it too. */
+export function deleteRequest(convId: string): Promise<void> {
+  const conv = convs[convId];
+  if (!conv || !conv.sendId) return Promise.reject(new Error('unknown chat'));
+  return signal.sendMessageRequestResponse(conv.sendId, 'delete').then(() => removeChat(conv));
+}
+
+/** Block the person behind a message request. The chat stays, blocked. */
+export function blockRequest(convId: string): Promise<void> {
+  const conv = convs[convId];
+  if (!conv || !conv.sendId) return Promise.reject(new Error('unknown chat'));
+  const sendId = conv.sendId;
+  return signal
+    .sendMessageRequestResponse(sendId, 'block')
+    .then(() => signal.setContactBlocked(sendId, true))
+    .then(() => clearRequest(conv));
+}
+
+/** Another of our devices answered a message request (or deleted a chat through one). */
+function applyRequestResponse(ev: Extract<StoreEvent, { type: 'requestResponse' }>): void {
+  const conv = chatFor(ev.chat);
+  if (!conv) return;
+  if (ev.response === 'accept' || ev.response === 'block') return clearRequest(conv);
+  enqueueMutation(() => removeChat(conv));
+}
+
+/** Signal-Desktop's default `global.adminDeleteMaxAgeInSeconds` (one day); receivers allow another day of grace. */
+export const ADMIN_DELETE_MAX_AGE = 24 * 60 * 60 * 1000;
+const DELETE_RECEIVE_GRACE = 24 * 60 * 60 * 1000;
+
+function markAdminDeleted(rec: Message): void {
+  rec.deleted = true;
+  rec.deletedByAdmin = true;
+  rec.body = '';
+  setPreviewIfLast(rec.convId, rec, S.adminDeleted);
+}
+
+/** A group admin deleted someone's message for everyone; ignored unless the group lists them as an admin. */
+function applyAdminDelete(ev: Extract<StoreEvent, { type: 'adminDelete' }>): void {
+  const conv = convs[ev.convId];
+  if (!conv || conv.type !== 'group' || !conv.sendId) return;
+  const sendId = conv.sendId;
+  enqueueMutation(async () => {
+    const detail = await groupDetail(sendId);
+    if ((detail.admins || []).indexOf(ev.admin) < 0) {
+      dbg('admin delete from a non-admin ignored');
+      return;
+    }
+    const rec = await findMessage(ev.convId, ev.targetTimestamp, authorKeys(ev.targetAuthor));
+    if (!rec || rec.deleted || rec.notice) return;
+    if (ev.timestamp - rec.timestamp > ADMIN_DELETE_MAX_AGE + DELETE_RECEIVE_GRACE) {
+      dbg('admin delete too old');
+      return;
+    }
+    markAdminDeleted(rec);
+    emit('message-updated', rec, undefined);
+    await db.putMessage(rec);
+  });
+}
+
+/** As a group admin, delete someone else's message for everyone. */
+export function adminDelete(rec: Message): Promise<void> {
+  const conv = convs[rec.convId];
+  if (!conv || conv.type !== 'group' || !conv.sendId) return Promise.reject(new Error('group not ready'));
+  return signal.sendAdminDelete(conv.sendId, rec.author, rec.timestamp).then(() => {
+    markAdminDeleted(rec);
+    db.putMessage(rec);
+    emit('message-updated', rec, undefined);
+  });
 }
 
 export function reactTo(rec: Message, emoji: string | null): Promise<void> {
@@ -869,14 +1146,17 @@ export function markRead(convId: string): void {
     conv.markedUnread = false;
     syncChatState(conv, { markedUnread: false });
   }
-  db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, 25).then((rows) => {
-    const pending = rows.filter((r) => r.incoming && r.timestamp > (conv.lastReadTs || 0));
-    if (config.sendReadReceipts()) {
-      for (const r of pending.slice(-10)) signal.sendReadReceipt(r.author, r.timestamp).catch((e) => dbg('receipt failed ' + (e && e.message)));
-    }
-    if (pending.length) conv.lastReadTs = pending[pending.length - 1].timestamp;
-    persistConv(conv);
-  });
+  // A message request stays unread for the sender until it's accepted, as in Signal.
+  if (conv.request) persistConv(conv);
+  else
+    db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, 25).then((rows) => {
+      const pending = rows.filter((r) => r.incoming && r.timestamp > (conv.lastReadTs || 0));
+      if (config.sendReadReceipts()) {
+        for (const r of pending.slice(-10)) signal.sendReadReceipt(r.author, r.timestamp).catch((e) => dbg('receipt failed ' + (e && e.message)));
+      }
+      if (pending.length) conv.lastReadTs = pending[pending.length - 1].timestamp;
+      persistConv(conv);
+    });
   if (hadUnread) emit('conversations');
 }
 

@@ -2,6 +2,32 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.4.0
+
+The second round of Signal features from the roadmap. Install over v2.3.0; your chats and settings carry over.
+
+### New
+
+- **Forward.** OK on a message → **Forward** sends its text (with formatting) or its photo, video, voice message, or file to another chat, contact, or group. View-once media and files sent from this phone can't be forwarded.
+- **Message requests.** A new chat from someone who isn't in your contacts opens as a **Message request**. They don't get read receipts or typing until you **Accept** (OK), and **Options** also has **Delete** and **Block**. Accepting or deleting a request on another device does the same here.
+- **Delete chat.** **Options** on a chat in the list (and in Archived chats) has **Delete chat**, which removes it from this phone and your other linked devices.
+- **Delete for me syncs.** Deleting a message for yourself also deletes it on your other linked devices, and deletes made there show up here.
+- **Admins can delete for everyone.** In a group where you're an admin, **Delete for everyone** works on anyone's message for 24 hours, as in Signal. Messages an admin deleted read **An admin deleted this message.**
+- **Edit history.** **Message details** on an edited message lists its earlier versions. A message can be edited up to 10 times, as in Signal.
+- **Shared contacts** show as a contact card. OK on one offers **Message** them when they're in your Signal contacts, or **Copy number**.
+- **Default timer for new chats** in **Settings → Privacy** starts disappearing messages in a new one-to-one chat when you send the first message. It syncs with your other devices.
+- **Private delivery icon** in **Settings → Privacy** shows **Delivered privately** in **Message details** when Signal's servers couldn't see who sent a message. It syncs with your other devices.
+- **Emoji skin tones.** **Options → Skin tone** in the emoji picker picks one of six tones for emoji that have them, including reactions.
+- **Media.** **Chat settings → Media** lists a chat's photos, videos, voice messages, and files, newest first. OK opens one in the viewer.
+
+### Changed
+
+- **The emoji picker's right softkey** is now **Options**, with **Category** and **Skin tone**.
+
+### Not changed
+
+- **Group message requests** aren't supported yet. Being added to a group by someone you don't know still shows the group as a normal chat.
+
 ## v2.3.0
 
 A round of smaller Signal features from the roadmap. Install over v2.2.0; your chats and settings carry over.

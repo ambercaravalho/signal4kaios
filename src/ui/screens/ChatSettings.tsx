@@ -14,6 +14,7 @@ import type { Conversation } from '../data/types';
 import { friendlyError } from '../errors';
 import { plural, S } from '../strings';
 import { ChatScreen } from './Chat';
+import { MediaScreen } from './Media';
 import { QrScreen } from './QrScreen';
 import { SafetyNumberScreen } from './SafetyNumber';
 
@@ -187,7 +188,8 @@ export function ChatSettingsScreen(props: { convId: string }) {
   if (!conv) return <Screen title={S.chatSettings} />;
   const contact = conv.type === 'direct' ? store.contactByKey(conv.id) : undefined;
   const sub = conv.type === 'group' ? plural(((detail && detail.members) || []).length, S.memberOne, S.memberMany) : contact && contact.number && contact.number !== conv.name ? contact.number : '';
-  const rows = conv.type === 'group' ? groupRows(conv, detail, reload) : directRows(conv);
+  const media: Row = { key: 'media', label: S.media, icon: 'photo', end: 'chevron', onSelect: () => router.push(MediaScreen, { convId: conv.id }) };
+  const rows = [media, ...(conv.type === 'group' ? groupRows(conv, detail, reload) : directRows(conv))];
   return (
     <Screen title={S.chatSettings}>
       <div class="profile-head">

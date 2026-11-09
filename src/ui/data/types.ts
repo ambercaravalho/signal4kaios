@@ -33,6 +33,20 @@ export interface Notice {
   video?: boolean;
 }
 
+/** A shared contact (Signal's contact card), reduced to what the phone shows. */
+export interface ContactCard {
+  name: string;
+  phones: string[];
+  emails: string[];
+}
+
+/** An earlier version of an edited message, with when that version was sent. */
+export interface MessageVersion {
+  body: string;
+  styles: StyleRange[];
+  timestamp: number;
+}
+
 export interface Message {
   /** `convId|timestamp|author` */
   id: string;
@@ -52,6 +66,8 @@ export interface Message {
   reactions: Record<string, string>;
   status: MessageStatus;
   deleted: boolean;
+  /** Deleted for everyone by a group admin rather than its author. */
+  deletedByAdmin?: boolean;
   edited: boolean;
   pinned?: boolean;
   expireSecs?: number;
@@ -59,6 +75,12 @@ export interface Message {
   notice?: Notice;
   /** A received voice message, video, or view-once media was opened, here or on another device. */
   viewed?: boolean;
+  contactCard?: ContactCard;
+  /** Delivered without revealing the sender to Signal's servers (Sealed Sender); for our messages, to every recipient. */
+  sealed?: boolean;
+  /** Earlier versions, oldest first; `editedAt` is when the current text was sent. */
+  history?: MessageVersion[];
+  editedAt?: number;
 }
 
 export interface Conversation {
@@ -82,6 +104,8 @@ export interface Conversation {
   /** Unsent text in the composer, kept until it's sent or cleared. */
   draft?: string;
   draftMentions?: PickedMention[];
+  /** A message request: someone we don't share our profile with started this 1:1 chat. */
+  request?: boolean;
 }
 
 export interface Contact {
@@ -92,6 +116,8 @@ export interface Contact {
   name: string;
   blocked: boolean;
   hasAvatar?: boolean;
+  /** From Storage Service: whether their chats are accepted (profile shared or in the address book). Unknown for other contacts. */
+  whitelisted?: boolean;
 }
 
 export interface GroupRef {

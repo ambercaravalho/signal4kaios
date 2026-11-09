@@ -190,6 +190,18 @@ export function isJumboEmoji(text: string): boolean {
   return runs.length > 0 && runs.length <= 3 && runs.every((r) => r.emoji);
 }
 
+/** No modifier, then the Fitzpatrick modifiers U+1F3FB to U+1F3FF, light to dark. */
+export const SKIN_TONES = ['', '\uD83C\uDFFB', '\uD83C\uDFFC', '\uD83C\uDFFD', '\uD83C\uDFFE', '\uD83C\uDFFF'];
+
+/** The emoji with a skin tone modifier after its first code point and without a trailing VS16; ZWJ sequences are left alone. */
+export function withSkinTone(emoji: string, tone: string): string {
+  if (!tone || !emoji || emoji.indexOf('\u200D') >= 0) return emoji;
+  const first = String.fromCodePoint(emoji.codePointAt(0)!);
+  let rest = emoji.slice(first.length);
+  if (rest.charAt(rest.length - 1) === '\uFE0F') rest = rest.slice(0, -1);
+  return first + tone + rest;
+}
+
 const URL_RE = /https?:\/\/[^\s]+/g;
 
 /** Text and http(s) link runs, with trailing sentence punctuation left out of the link. */

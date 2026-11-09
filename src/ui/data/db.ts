@@ -205,6 +205,22 @@ export const db = {
     });
   },
 
+  /** Delete a chat's messages sent at or before `ts`; resolves to what was deleted. */
+  deleteMessagesUpTo(convId: string, ts: number): Promise<ExpiredRef[]> {
+    return tx('messages', 'readwrite', (s) => {
+      const out = { value: [] as ExpiredRef[] };
+      s.index('conv').openCursor(convRange(convId, ts)).onsuccess = (e) => {
+        const cur = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+        if (!cur) return;
+        const rec = cur.value as Message;
+        out.value.push({ id: rec.id, convId: rec.convId, timestamp: rec.timestamp });
+        cur.delete();
+        cur.continue();
+      };
+      return out;
+    });
+  },
+
   /** Delete every message past its disappearing deadline. A full scan, for the periodic sweep. */
   deleteExpired(now: number): Promise<ExpiredRef[]> {
     return sweep((s) => s.openCursor(), now);

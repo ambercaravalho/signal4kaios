@@ -418,6 +418,12 @@
   color: var(--on-accent);
 }
 
+.composer-request {
+  font-size: var(--fs-primary);
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
 /* Viewer */
 .viewer {
   height: 100%;
@@ -613,4 +619,25 @@
 
 .link-failed {
   color: var(--danger);
+}
+
+/* Media */
+
+.media-thumb {
+  flex: none;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 0.4rem;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-sunken);
+  color: var(--text-2);
+}
+
+.media-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
