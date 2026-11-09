@@ -2,6 +2,27 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.3.0
+
+A round of smaller Signal features from the roadmap. Install over v2.2.0; your chats and settings carry over.
+
+### New
+
+- **Drafts.** Text you leave in the message box stays with that chat, and the chat list shows it as **Draft:** until you send or clear it.
+- **Mentions reach people.** Picking someone with **Mention** in a group now sends a real Signal mention, so it shows as a mention on their phone instead of plain text.
+- **Mark as unread.** **Options** on a chat in the list has **Mark as unread** (and **Mark as read**). The chat shows a dot until you open it, and the mark syncs with your other devices.
+- **Send view-once photos and videos** with **Options → Attach view-once photo or video** in a chat. View-once media has no caption, so whatever you typed stays in the message box.
+- **Chat notices.** Missed calls, a changed safety number, and group calls now show as a line in the chat instead of a message. A missed call still counts as unread and notifies; OK on a safety number line opens the safety number.
+- **About emoji.** **Settings → Profile → About emoji** picks the emoji shown next to your About.
+- **Replies to photos and files** show what kind of attachment the reply is about, here and on the other person's phone.
+
+### Changed
+
+- **Groups where only admins can send** show **Only admins can send messages** in place of the message box when you're not an admin.
+- **Opening a voice message, video, or view-once media** tells the sender you viewed it (when read receipts are on) and tells your other devices. View-once media you open on another device can no longer be opened here.
+- **Renaming this phone** or **changing your username** on your main phone now shows up in Beacon without relinking.
+- **Link preview and sealed sender indicator settings** from your phone are kept in sync, ready for when Beacon supports them.
+
 ## v2.2.0
 
 An optional tweak for rooted phones. Install over v2.1.1; nothing changes unless you turn it on.

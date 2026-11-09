@@ -31,11 +31,11 @@ Beacon follows the KaiOS layout: the bar at the bottom names what the left softk
 
 ## Chats list
 
-Each row shows the avatar (profile photo, or initials on the person's Signal color), the name, the time, a preview or "Typing…", and an unread count. Pinned (📌) chats sort first; muted chats show a muted icon. Your own number appears as **Note to Self**. A strip under the header says **Connecting…** or **No connection** while Beacon isn't connected.
+Each row shows the avatar (profile photo, or initials on the person's Signal color), the name, the time, a preview, "Typing…", or your unsent **Draft:**, and an unread count (a plain dot for a chat you marked as unread). Pinned (📌) chats sort first; muted chats show a muted icon. Your own number appears as **Note to Self**. A strip under the header says **Connecting…** or **No connection** while Beacon isn't connected.
 
-As in Signal for Android, archived chats sit behind an **Archived chats** row at the bottom of the list, which shows how many there are and appears only when you have some. Open it to see them; **Options** there has Chat settings, Unarchive, and Mute.
+As in Signal for Android, archived chats sit behind an **Archived chats** row at the bottom of the list, which shows how many there are and appears only when you have some. Open it to see them; **Options** there has Chat settings, Unarchive, Mute, and Mark as read or unread.
 
-**Options** on a chat: Chat settings, Pin or Unpin chat (up to 4), Archive, Mute or Unmute, Mark all as read, Search, and Settings.
+**Options** on a chat: Chat settings, Pin or Unpin chat (up to 4), Archive, Mute or Unmute, Mark as read or Mark as unread, Mark all as read, Search, and Settings.
 
 ## Inside a chat
 
@@ -50,7 +50,12 @@ OK on a message opens its options:
 - **Retry** on a message that didn't send.
 - **Pin message** (for everyone in the chat), **Read full message** on a shortened message, **Message details** (the full text, when it was sent, its status, reactions, and when it disappears), and **Delete for me**.
 
-**Options** in a chat: Attach, Insert emoji, Mention (groups), Pinned messages, Mute, and Chat settings.
+**Options** in a chat: Attach, Attach view-once photo or video, Insert emoji, Mention (groups), Pinned messages, Mute, and Chat settings.
+
+- **Drafts**: text left in the message box stays with the chat until you send or clear it.
+- **Mentions**: in a group, **Mention** picks a member and sends a Signal mention.
+- **Notices**: missed calls, a changed safety number, and group calls show as a line in the chat. OK on one offers **Delete for me**, and on a safety number line **View safety number**.
+- **Groups where only admins can send** show **Only admins can send messages** in place of the message box.
 
 - **Text formatting**: type `**bold**`, `*italic*`, `~strikethrough~`, `` `monospace` ``, or `||spoiler||`. Spoilers stay hidden until you focus the message. Prefix a marker with `\` to type it literally. Turn this off in **Settings → Chats**.
 - **Disappearing messages**: set the timer in **Chat settings**. Messages you send carry the timer, and the phone deletes expired messages on its own.
@@ -64,7 +69,8 @@ OK on a message opens its options:
 - Photos show in the chat; small ones download on their own as you scroll to them.
 - Voice messages, audio, and video play in the viewer: OK plays or pauses. Video depends on the phone's codecs; H.264 MP4 is the safe choice.
 - **Save to phone** puts the file in the gallery, music, videos, or files.
-- View-once media can be viewed once, then it's gone.
+- View-once media can be viewed once, then it's gone, including when you open it on another device. **Options → Attach view-once photo or video** sends your own, without a caption.
+- Opening a voice message, video, or view-once media tells the sender you viewed it when read receipts are on.
 
 ## Starting a chat and searching
 
@@ -83,7 +89,7 @@ OK on a message opens its options:
 
 | Section | Items |
 | --- | --- |
-| **Profile** (top row) | Your name and About (Signal requires a name), Username, your **QR code or link**, and Delete username |
+| **Profile** (top row) | Your name, About, and About emoji (Signal requires a name), Username, your **QR code or link**, and Delete username |
 | **Linked device** | Which number this phone is linked as, Sync with your phone, saved accounts (OK switches), Add account, Unlink this phone, and Delete all data |
 | **Chats** | Text formatting; Keep muted chats archived |
 | **Privacy** | Read receipts; Typing indicators; Blocked |
@@ -109,7 +115,7 @@ Keep Beacon open in the background to get notifications. Nothing is lost when it
 
 Message history exists only on the phone, starting from when you linked. Each chat keeps about its **500 most recent messages**, and viewed media is kept in a small cache. **Settings → Linked device → Delete all data** removes everything.
 
-Archive, mute, and pinned chats sync with your other devices through Signal's encrypted storage; Signal allows 4 pinned chats.
+Archive, mute, mark as unread, and pinned chats sync with your other devices through Signal's encrypted storage; Signal allows 4 pinned chats.
 
 ## Known limitations
 
