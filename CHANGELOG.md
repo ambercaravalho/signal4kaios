@@ -11,6 +11,7 @@ Each `## v<version>` section becomes the notes of that GitHub Release; the relea
 - **Several attachments in one message.** **Attach** now adds photos, videos, and files above the message box instead of sending at once, so you can add more (up to 32, 25 MB in total) and a caption, then **Send** them together. **Options → Remove attachments** clears them. OK on a message with several attachments → **View attachments** opens any of them.
 - **Group and timer changes in the chat.** A line in the chat now says when someone renames a group, changes its description, members, admins, invites, group link, or permissions, or changes the disappearing message timer in a group or one-to-one chat, for example **Dave changed the group name to “Climbing”**. Changes made on your other devices show too.
 - **Approve join requests.** In a group with an admin-approved link, admins see **Requests to join** at the top of **Members**; OK on one to **Approve** or **Deny** it.
+- **Phone number privacy.** **Settings → Privacy → Phone number** sets **Who can see my number** and **Who can find me by number** (Everybody or Nobody), shared with your phone and other devices. As in Signal, a number everybody can see can also be found by everybody.
 - **Report spam.** **Options** on a message request has **Report spam**: Signal is told about their most recent messages, and they're blocked and the chat deleted here and on your other devices.
 
 ### Changed

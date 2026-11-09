@@ -15,6 +15,7 @@ export function installEngineHost(): void {
       serverUrl: () => config.serverUrl(),
       aci: () => config.aci(),
       profileName: () => config.profileName(),
+      sharePhoneNumber: () => config.sharePhoneNumber(),
       set: (patch) => config.set(patch),
     },
     dbg: (msg) => dbg(msg),

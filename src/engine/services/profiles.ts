@@ -200,12 +200,12 @@ export async function downloadAndDecryptProfileAvatar(
 }
 
 /**
- * Write our profile with `PUT /v1/profile` like Signal-Desktop: version and commitment from zkgroup, padded encrypted fields, and the existing avatar kept (`avatar: false, sameAvatar: true`). Fields not in `patch` are carried over from the current profile so a name change doesn't clear the about text.
+ * Write our profile with `PUT /v1/profile` like Signal-Desktop: version and commitment from zkgroup, padded encrypted fields, and the existing avatar kept (`avatar: false, sameAvatar: true`). Fields not in `patch` are carried over from the current profile so a name change doesn't clear the about text; with no name in either, nothing is written.
  */
 export async function uploadOwnProfile(
   store: SignalProtocolStore,
   httpJson: SignalHttpJsonFn,
-  patch: { name: string; about?: string; emoji?: string },
+  patch: { name?: string; about?: string; emoji?: string; sharePhoneNumber: boolean },
   serverUrl = DEFAULT_SIGNAL_SERVER
 ): Promise<void> {
   const acc = await store.getAccount();
@@ -219,9 +219,18 @@ export async function uploadOwnProfile(
     // no profile yet
   }
 
-  const parts = (patch.name || '').trim().split(/\s+/);
-  const givenName = parts[0] || patch.name;
-  const familyName = parts.slice(1).join(' ');
+  let givenName: string;
+  let familyName: string;
+  if (patch.name && patch.name.trim()) {
+    const parts = patch.name.trim().split(/\s+/);
+    givenName = parts[0];
+    familyName = parts.slice(1).join(' ');
+  } else if (current && current.givenName) {
+    givenName = current.givenName;
+    familyName = current.familyName;
+  } else {
+    return;
+  }
   const about = patch.about !== undefined ? patch.about : current ? current.about : '';
   const emoji = patch.emoji !== undefined ? patch.emoji : current ? current.aboutEmoji : '';
 
@@ -235,9 +244,10 @@ export async function uploadOwnProfile(
     avatar: false,
     sameAvatar: true,
     commitment: toBase64(libsignal.profileKeyGetCommitment(key, acc.aci)),
-    phoneNumberSharing: (current && current.phoneNumberSharing) || toBase64(await encryptProfile(new Uint8Array([0]), key)),
+    phoneNumberSharing: toBase64(await encryptProfile(new Uint8Array([patch.sharePhoneNumber ? 1 : 0]), key)),
   };
 
+  // SECURITY-REVIEW: device password is sent only as Basic auth to the Signal chat server.
   await httpJson('PUT', '/v1/profile', body, {
     baseUrl: serverUrl,
     basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },

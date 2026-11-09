@@ -45,6 +45,7 @@ export interface HostConfig {
   serverUrl(): string;
   aci(): string;
   profileName(): string;
+  sharePhoneNumber(): boolean;
   set(patch: Record<string, unknown>): void;
 }
 

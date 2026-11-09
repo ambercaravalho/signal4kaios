@@ -33,6 +33,7 @@ import {
   titleActions,
 } from '../src/engine/services/group-changes';
 import {
+  AccountRecord_PhoneNumberSharingMode,
   ContactRecord_NameSchema,
   ContactRecordSchema,
   ManifestRecord_Identifier_Type,
@@ -45,7 +46,7 @@ import {
 } from '../src/engine/gen/SignalStorage_pb';
 import { decodeGroupState, deriveGroupV2Keys, groupIdFromMasterKey } from '../src/engine/services/groups-v2';
 import { libsignal } from '../src/engine/protocol/libsignal';
-import { decryptProfile, decryptProfileName, encryptProfileName } from '../src/engine/services/profiles';
+import { decryptProfile, decryptProfileName, encryptProfileName, uploadOwnProfile } from '../src/engine/services/profiles';
 import { create, fromBinary, serviceIdFrom, toBinary } from '../src/engine/net/proto';
 import {
   decryptStorageValue,
@@ -54,6 +55,7 @@ import {
   deriveStorageServiceKey,
   mutateStorage,
   pullFromStorageService,
+  setPhoneNumberPrivacy,
   StorageWriteQueue,
 } from '../src/engine/services/storage-service';
 import { MemorySignalStore } from '../src/engine/protocol/store';
@@ -116,6 +118,33 @@ describe('Profiles (Signal-Desktop profile cipher)', () => {
       fullName: 'Amber Caravalho',
     });
     await assert.rejects(decryptProfileName(encName, randomBytes(32)));
+  });
+
+  it('uploads whether everybody sees our number as an encrypted byte', async () => {
+    const profileKey = randomBytes(32);
+    const store = new MemorySignalStore({
+      aci: ALICE,
+      number: '+15550001111',
+      deviceId: 2,
+      password: 'pw',
+      registrationId: 1,
+      pniRegistrationId: 2,
+      aciIdentityKeyPair: { pubKey: new Uint8Array(33), privKey: new Uint8Array(32) },
+      profileKey,
+    });
+    const puts: any[] = [];
+    const httpJson = async (method: string, path: string, body: any) => {
+      if (method === 'GET') throw Object.assign(new Error('HTTP 404'), { status: 404 });
+      assert.equal(path, '/v1/profile');
+      puts.push(body);
+      return {};
+    };
+    for (const share of [true, false]) await uploadOwnProfile(store, httpJson as any, { name: 'Amber C', sharePhoneNumber: share });
+    await uploadOwnProfile(store, httpJson as any, { sharePhoneNumber: true });
+    assert.equal(puts.length, 2, 'no profile is written without a name');
+    const bytes = await Promise.all(puts.map(async (b) => Array.from(await decryptProfile(fromBase64(b.phoneNumberSharing), profileKey))));
+    assert.deepEqual(bytes, [[1], [0]]);
+    assert.deepEqual(await decryptProfileName(puts[0].name, profileKey), { givenName: 'Amber', familyName: 'C', fullName: 'Amber C' });
   });
 
   it('derives profile key versions, commitments, and access keys with zkgroup', () => {
@@ -297,7 +326,7 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
         { type: 'contact', aci: ALICE, update: (c) => { c.blocked = false; c.nickname = create(ContactRecord_NameSchema, { given: 'Clara O.' }); } },
         { type: 'contact', aci: ALICE, update: (c) => { c.archived = true; } },
         { type: 'groupV2', masterKey: newGroup, update: (g) => { g.mutedUntilTimestamp = 99n; } },
-        { type: 'account', update: (a) => { a.username = 'clara.42'; a.universalExpireTimer = 3600; a.sealedSenderIndicators = false; } },
+        { type: 'account', update: (a) => { a.username = 'clara.42'; a.universalExpireTimer = 3600; a.sealedSenderIndicators = false; setPhoneNumberPrivacy(a, false, false); } },
         { type: 'contact', aci: ALICE, update: (c) => { c.whitelisted = true; } },
       ]);
       assert.equal(changed, true);
@@ -323,7 +352,18 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(res.account?.username, 'clara.42');
       assert.equal(res.account?.universalExpireTimer, 3600);
       assert.equal(res.account?.sealedSenderIndicators, false);
+      assert.equal(res.account?.sharePhoneNumber, false);
+      assert.equal(res.account?.findableByNumber, false);
       assert.equal(res.contacts[0].whitelisted, true);
+
+      await mutateStorage(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org', [{ type: 'account', update: (a) => setPhoneNumberPrivacy(a, true, false) }]);
+      const shared = await pullFromStorageService(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org');
+      assert.equal(shared!.account?.sharePhoneNumber, true);
+      assert.equal(shared!.account?.findableByNumber, true, 'a number everybody sees is also findable');
+      const account = fromBinary(StorageRecordSchema, await srv.readRecord(ManifestRecord_Identifier_Type.ACCOUNT)).record;
+      assert.equal(account.case, 'account');
+      assert.equal(account.value!.phoneNumberSharingMode, AccountRecord_PhoneNumberSharingMode.EVERYBODY);
+      assert.equal(account.value!.unlistedPhoneNumber, false);
     });
   }
 

@@ -52,7 +52,7 @@ import { decryptDeviceName, ProvisioningCallbacks, ProvisioningSession, startDev
 import { DeviceNameSchema } from './gen/DeviceName_pb';
 import { IndexedDbSignalStore, TrustLevel } from './protocol/store';
 import { POLL_QUESTION_MAX_SEND, validPoll } from './services/polls';
-import { mutateStorage, pullFromStorageService, StorageMutation, StorageWriteQueue } from './services/storage-service';
+import { mutateStorage, pullFromStorageService, setPhoneNumberPrivacy, StorageMutation, StorageWriteQueue } from './services/storage-service';
 import { AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema, ContactRecord_NameSchema } from './gen/SignalStorage_pb';
 import { diffGroupState, groupChangeAuthor, isDecodedGroup } from './services/group-updates';
 import { reportSpam as reportSpamMessages } from './services/report-spam';
@@ -558,7 +558,9 @@ async function syncFromStorageService(): Promise<boolean> {
     if (res.account.linkPreviews !== undefined) patch.linkPreviews = res.account.linkPreviews;
     if (res.account.sealedSenderIndicators !== undefined) patch.sealedSenderIndicators = res.account.sealedSenderIndicators;
     if (res.account.universalExpireTimer !== undefined) patch.defaultExpireTimer = res.account.universalExpireTimer;
-    if (Object.keys(patch).length > 0) host().config.set(patch);
+    patch.sharePhoneNumber = res.account.sharePhoneNumber;
+    patch.findableByNumber = res.account.findableByNumber;
+    host().config.set(patch);
     const acc = await store.getAccount();
     if (acc && res.account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!res.account.noteToSelfArchived, markedUnread: !!res.account.noteToSelfMarkedUnread });
   }
@@ -1090,7 +1092,19 @@ export const signalBridge = {
   },
 
   async updateOwnProfile(body: { name?: string; about?: string; emoji?: string }): Promise<void> {
-    await uploadOwnProfile(store, httpJson, { name: body.name || host().config.profileName() || 'Signal User', about: body.about, emoji: body.emoji }, serverUrl()).catch(() => {});
+    await uploadOwnProfile(
+      store,
+      httpJson,
+      { name: body.name || host().config.profileName() || 'Signal User', about: body.about, emoji: body.emoji, sharePhoneNumber: host().config.sharePhoneNumber() },
+      serverUrl()
+    ).catch(() => {});
+  },
+
+  /** Who sees our number (`AccountRecord.phoneNumberSharingMode`, and the profile's sharing flag) and who can find us by it (`unlistedPhoneNumber`), shared with our other devices. */
+  async setPhoneNumberPrivacy(share: boolean, findable: boolean): Promise<void> {
+    await storageQueue.enqueue([{ type: 'account', update: (a) => setPhoneNumberPrivacy(a, share, findable) }]);
+    host().config.set({ sharePhoneNumber: share, findableByNumber: share || findable });
+    await uploadOwnProfile(store, httpJson, { name: host().config.profileName(), sharePhoneNumber: share }, serverUrl());
   },
 
   /** Set or clear a contact's nickname (Storage Service `ContactRecord.nickname`, shown on all your devices). */

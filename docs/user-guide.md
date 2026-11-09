@@ -112,12 +112,14 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 | **Profile** (top row) | Your name, About, and About emoji (Signal requires a name), Username, your **QR code or link**, and Delete username |
 | **Linked device** | Which number this phone is linked as, Sync with your phone, saved accounts (OK switches), Add account, Unlink this phone, and Delete all data |
 | **Chats** | Text formatting; Keep muted chats archived |
-| **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Blocked |
+| **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Blocked |
 | **Appearance** | Theme: light or dark |
 | **Help** | Version, User guide, Source code |
 | **Debug** | Technical details for troubleshooting (see below) |
 
 **Usernames** have a name and a number, like `name.01`. Type just the name to get a number picked for you, or type the number you want.
+
+**Privacy → Phone number** has **Who can see my number** and **Who can find me by number**, each **Everybody** or **Nobody**. With **Nobody** seeing it, only people who already have your number see it; with **Nobody** finding you, people can't start a chat with you using your number. While everybody can see your number, everybody can also find you by it, as in Signal. Both settings are shared with your phone and other devices.
 
 Each account has its own history on the phone, and switching accounts restarts Beacon.
 

@@ -35,6 +35,8 @@ interface ConfigData {
   /** Seconds; the disappearing-message timer new 1:1 chats start with. */
   defaultExpireTimer?: number;
   keepMutedArchived?: boolean;
+  sharePhoneNumber?: boolean;
+  findableByNumber?: boolean;
   accounts?: SavedAccount[];
   [k: string]: unknown;
 }
@@ -132,6 +134,15 @@ export const config = {
   defaultExpireTimer(): number {
     const v = read().defaultExpireTimer;
     return typeof v === 'number' && v > 0 ? Math.floor(v) : 0;
+  },
+
+  /** Whether everybody sees our number; Signal defaults to nobody. */
+  sharePhoneNumber(): boolean {
+    return read().sharePhoneNumber === true;
+  },
+
+  findableByNumber(): boolean {
+    return config.sharePhoneNumber() || read().findableByNumber !== false;
   },
 
   /** Muted chats stay archived when new messages arrive, as in Signal. */
