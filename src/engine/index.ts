@@ -50,6 +50,7 @@ import { compareScannedSafetyNumber } from './protocol/protocol';
 import { decryptDeviceName, ProvisioningCallbacks, ProvisioningSession, startDeviceProvisioning } from './net/provisioning';
 import { DeviceNameSchema } from './gen/DeviceName_pb';
 import { IndexedDbSignalStore, TrustLevel } from './protocol/store';
+import { POLL_QUESTION_MAX_SEND, validPoll } from './services/polls';
 import { mutateStorage, pullFromStorageService, StorageMutation, StorageWriteQueue } from './services/storage-service';
 import { AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema, ContactRecord_NameSchema } from './gen/SignalStorage_pb';
 import { deleteUsername as deleteAccountUsername, setUsername as setAccountUsername, usernameLinkUrl } from './services/usernames';
@@ -796,6 +797,7 @@ export const signalBridge = {
     edit_timestamp?: number;
     mentions?: Array<{ start: number; length: number; uuid: string }>;
     view_once?: boolean;
+    poll?: { question: string; options: string[]; allow_multiple: boolean };
   }): Promise<{ timestamp: number; sealed: boolean }> {
     const ts = Date.now();
     const bodyText = payload.message || '';
@@ -803,6 +805,8 @@ export const signalBridge = {
 
     const firstTarget = (payload.recipients && payload.recipients[0]) || '';
     const target = await groupTargets(firstTarget);
+    const poll = payload.poll;
+    if (poll && (!target.isGroup || !validPoll(poll.question, poll.options, POLL_QUESTION_MAX_SEND))) throw new Error('Polls need a group, a question, and 2 to 10 options');
 
     const uploadedAttachments: AttachmentPointer[] = [];
     for (const dataUri of payload.base64_attachments || []) {
@@ -831,6 +835,7 @@ export const signalBridge = {
       bodyRanges: stylesToBodyRanges(styles, mentions),
       groupV2: target.groupV2,
       isViewOnce: payload.view_once && uploadedAttachments.length > 0 ? true : undefined,
+      pollCreate: poll ? { question: poll.question, options: poll.options, allowMultiple: poll.allow_multiple } : undefined,
     };
 
     if (payload.quote_timestamp) {
@@ -937,6 +942,38 @@ export const signalBridge = {
     };
     await deliver(target, dataContent(dm), ts);
     await client.sendSyncMessage(syncSent(target.isGroup ? '' : target.peers[0], ts, dm), ts);
+  },
+
+  /** Vote in a group poll (Signal-Desktop's PollVote); `voteCount` rises with each of our votes so the newest one wins everywhere. No options clears our vote. */
+  async sendPollVote(groupSendId: string, pollAuthor: string, pollTimestamp: number, optionIndexes: number[], voteCount: number): Promise<void> {
+    const ts = Date.now();
+    const target = await groupTargets(groupSendId);
+    if (!target.isGroup) throw new Error('Polls only work in groups');
+    const acc = await store.getAccount();
+    const authorAci = acc && (pollAuthor === acc.number || pollAuthor === acc.aci) ? acc.aci : await resolveAci(pollAuthor);
+    if (!authorAci) throw new Error('No Signal account known for ' + pollAuthor);
+    const dm: DataMessageInit = {
+      timestamp: BigInt(ts),
+      groupV2: target.groupV2,
+      pollVote: { targetAuthorAciBinary: uuidToBytes(authorAci), targetSentTimestamp: BigInt(pollTimestamp), optionIndexes, voteCount },
+    };
+    await deliver(target, dataContent(dm), ts);
+    await client.sendSyncMessage(syncSent('', ts, dm), ts);
+  },
+
+  /** End our own group poll (Signal-Desktop's PollTerminate). Resolves to when it ended. */
+  async sendPollTerminate(groupSendId: string, pollTimestamp: number): Promise<number> {
+    const ts = Date.now();
+    const target = await groupTargets(groupSendId);
+    if (!target.isGroup) throw new Error('Polls only work in groups');
+    const dm: DataMessageInit = {
+      timestamp: BigInt(ts),
+      groupV2: target.groupV2,
+      pollTerminate: { targetSentTimestamp: BigInt(pollTimestamp) },
+    };
+    await deliver(target, dataContent(dm), ts);
+    await client.sendSyncMessage(syncSent('', ts, dm), ts);
+    return ts;
   },
 
   async sendTyping(recipient: string, started: boolean): Promise<void> {

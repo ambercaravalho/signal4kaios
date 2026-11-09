@@ -8,12 +8,54 @@ import { config } from '../data/config';
 import { fmtDuration, fmtTimeFull } from '../data/format';
 import * as store from '../data/store';
 import type { Message, MessageStatus } from '../data/types';
-import { S } from '../strings';
+import { plural, S } from '../strings';
 
 const STATUS_LABEL: Record<MessageStatus, string> = { pending: S.sending, failed: S.notSent, sent: S.sent, delivered: S.delivered, read: S.read, received: '' };
 
 function nameOf(key: string): string {
   return key === store.selfNumber() || key === config.aci() ? S.you : store.displayName(key);
+}
+
+/** Who chose each option of a poll, as it updates. */
+export function PollVotesScreen(props: { msg: Message }) {
+  const [m, setM] = useState(props.msg);
+  const body = useRef<HTMLDivElement>(null);
+  useStoreEvent('message-updated', (rec, oldId) => {
+    if (rec.id === m.id || oldId === m.id) setM({ ...rec });
+  });
+  useKeys((e) => {
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && body.current) {
+      body.current.scrollTop += e.key === 'ArrowDown' ? 60 : -60;
+      return true;
+    }
+    return false;
+  });
+  const poll = m.poll;
+  if (!poll) return <Screen title={S.viewVotes} />;
+  const counts = store.pollCounts(poll);
+  const voters = Object.keys(poll.votes);
+  return (
+    <Screen title={S.viewVotes}>
+      <div class="details" ref={body}>
+        <div class="details-text">{poll.question}</div>
+        {poll.options.map((o, i) => (
+          <div class="details-row" key={i}>
+            <div class="details-label">
+              {o} · {plural(counts[i], S.voteOne, S.voteMany)}
+            </div>
+            {voters
+              .filter((who) => poll.votes[who].options.indexOf(i) >= 0)
+              .map((who) => (
+                <div class="details-value" key={who}>
+                  {nameOf(who)}
+                </div>
+              ))}
+          </div>
+        ))}
+        {poll.ended && <div class="details-row">{S.pollEnded}</div>}
+      </div>
+    </Screen>
+  );
 }
 
 /** The whole message, scrollable, with when it was sent, its status, reactions, and when it disappears. */

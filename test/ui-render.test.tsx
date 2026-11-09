@@ -150,6 +150,14 @@ describe('screens', () => {
     assert.deepEqual(mainActions({ ...base, body: 'see https://signal.org', status: 'failed', incoming: false } as Message, true), ['retry', 'readFull', 'openLink']);
     assert.deepEqual(mainActions({ ...photo, deleted: true } as Message, false), []);
     assert.deepEqual(mainActions({ ...base, body: 'hi' } as Message, false), []);
+    const poll = { ...base, poll: { question: 'Lunch?', options: ['Pizza', 'Soup'], allowMultiple: false, votes: { [ME]: { options: [1], voteCount: 1, timestamp: 1 } } } } as Message;
+    assert.deepEqual(mainActions(poll, false), ['vote']);
+    assert.deepEqual(mainActions({ ...poll, poll: { ...poll.poll!, ended: true } } as Message, false), []);
+    router.reset(() => <Bubble m={poll} focused={false} showAuthor={false} onClipped={() => {}} />, {});
+    const out = html();
+    assert.match(out, /class="poll-question">Lunch\?/);
+    assert.match(out, /class="poll-mark on"[^]*Soup/);
+    assert.match(out, /Choose one/);
   });
 
   it('opens a chat with its title and message box', () => {

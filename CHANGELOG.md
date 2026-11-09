@@ -4,6 +4,10 @@ Each `## v<version>` section becomes the notes of that GitHub Release; the relea
 
 ## v2.5.0
 
+### New
+
+- **Polls.** Polls show in the chat with their answers and vote counts. OK on one → **Vote** (pick again to change it, or **Remove my vote**), **View votes** lists who picked what, and the poll's author can **End poll**. In a group, **Options → Create poll** asks for a question and 2 to 10 answers, and whether people can pick more than one.
+
 ### Changed
 
 - **Message options lead with the main action.** OK on a photo now has **View photo** first (likewise Play video, Play voice message, and Open file), so OK twice opens it. A message that didn't send has **Retry** first, and a shortened message, a shared contact, or a link puts that action ahead of React and Reply.

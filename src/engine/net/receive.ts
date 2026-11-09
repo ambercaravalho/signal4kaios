@@ -24,6 +24,7 @@ import {
   TypingMessage_Action,
 } from '../gen/SignalService_pb';
 import { groupIdFromMasterKey } from '../services/groups-v2';
+import { POLL_OPTIONS_MAX, POLL_QUESTION_MAX_RECEIVE, validPoll } from '../services/polls';
 import { create, fromBinary, num, readDelimited, serviceIdFrom } from './proto';
 import {
   archiveSession,
@@ -233,6 +234,26 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
     if (dm.pinMessage) out.pinMessage = target;
     else out.unpinMessage = target;
   }
+
+  if (dm.pollCreate) {
+    const p = dm.pollCreate;
+    if (validPoll(p.question || '', p.options, POLL_QUESTION_MAX_RECEIVE)) out.pollCreate = { question: p.question, options: p.options.slice(), allowMultiple: !!p.allowMultiple };
+  }
+
+  if (dm.pollVote) {
+    const v = dm.pollVote;
+    const indexes = v.optionIndexes.slice();
+    if (indexes.length <= POLL_OPTIONS_MAX && indexes.every((i) => i < POLL_OPTIONS_MAX)) {
+      out.pollVote = {
+        targetAuthorUuid: serviceIdFrom(undefined, v.targetAuthorAciBinary) || undefined,
+        targetSentTimestamp: num(v.targetSentTimestamp),
+        optionIndexes: indexes,
+        voteCount: v.voteCount || 0,
+      };
+    }
+  }
+
+  if (dm.pollTerminate) out.pollTerminate = { targetSentTimestamp: num(dm.pollTerminate.targetSentTimestamp) };
 
   if ((dm.flags & DataMessage_Flags.EXPIRATION_TIMER_UPDATE) !== 0) out.expirationTimerUpdate = true;
   if (dm.groupCallUpdate) out.groupCallUpdate = true;

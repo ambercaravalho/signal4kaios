@@ -2,7 +2,7 @@
 
 import { dbg } from './log';
 import type { StyleRange } from './styled';
-import type { Attachment, ContactCard, Notice, NoticeKind, Quote } from './types';
+import type { Attachment, ContactCard, Notice, NoticeKind, Poll, Quote } from './types';
 
 export interface MessageEvent {
   type: 'message';
@@ -18,6 +18,7 @@ export interface MessageEvent {
   attachments: Attachment[];
   expiresInSeconds: number;
   contactCard?: ContactCard;
+  poll?: Pick<Poll, 'question' | 'options' | 'allowMultiple'>;
   /** Delivered without revealing the sender to Signal's servers (Sealed Sender). */
   sealed?: boolean;
 }
@@ -45,7 +46,9 @@ export type StoreEvent =
   | { type: 'viewedSync'; entries: SyncRef[]; viewOnce: boolean }
   | { type: 'adminDelete'; convId: string; admin: string; targetAuthor: string; targetTimestamp: number; timestamp: number }
   | { type: 'deleteSync'; messages: Array<{ chat: ChatRef; items: SyncRef[] }>; chats: ChatDelete[] }
-  | { type: 'requestResponse'; chat: ChatRef; response: RequestResponse };
+  | { type: 'requestResponse'; chat: ChatRef; response: RequestResponse }
+  | { type: 'pollVote'; convId: string; voter: string; targetAuthor: string; targetTimestamp: number; options: number[]; voteCount: number; timestamp: number }
+  | { type: 'pollEnd'; convId: string; author: string; targetTimestamp: number; timestamp: number };
 
 export type RequestResponse = 'accept' | 'delete' | 'block' | 'blockAndDelete' | 'spam' | 'blockAndSpam';
 const REQUEST_RESPONSES: RequestResponse[] = ['accept', 'delete', 'block', 'blockAndDelete', 'spam', 'blockAndSpam'];
@@ -222,13 +225,28 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
     ];
   }
 
+  if (dm.pollVote) {
+    const v = dm.pollVote;
+    const options: unknown[] = Array.isArray(v.optionIndexes) ? v.optionIndexes : [];
+    const targetAuthor = str(v.targetAuthorUuid);
+    const valid = options.length <= MAX_POLL_OPTIONS && options.every((i) => typeof i === 'number' && i >= 0 && i < MAX_POLL_OPTIONS);
+    if (!conv.groupInternalId || !targetAuthor || !valid) return [];
+    return [{ type: 'pollVote', convId, voter: author, targetAuthor, targetTimestamp: num(v.targetSentTimestamp), options: options as number[], voteCount: num(v.voteCount), timestamp: num(dm.timestamp) || num(env.timestamp) }];
+  }
+
+  if (dm.pollTerminate) {
+    if (!conv.groupInternalId) return [];
+    return [{ type: 'pollEnd', convId, author, targetTimestamp: num(dm.pollTerminate.targetSentTimestamp), timestamp: num(dm.timestamp) || num(env.timestamp) }];
+  }
+
   if (dm.expirationTimerUpdate) return [{ type: 'timer', convId, seconds: num(dm.expiresInSeconds) }];
   if (dm.groupCallUpdate) return noticeEvent(env, { kind: 'groupCall', timestamp: num(dm.timestamp) || num(env.timestamp) }, conv, author);
 
   const attachments: any[] = Array.isArray(dm.attachments) ? dm.attachments : [];
   const body = dm.message;
   const card = contactCardOf(dm);
-  if (body == null && attachments.length === 0 && !dm.sticker && !card) {
+  const poll = pollOf(dm);
+  if (body == null && attachments.length === 0 && !dm.sticker && !card && !poll) {
     dbg('normalize: message without text');
     return [];
   }
@@ -255,6 +273,7 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
     expiresInSeconds: num(dm.expiresInSeconds),
   };
   if (card) ev.contactCard = card;
+  if (poll) ev.poll = poll;
   if (incoming ? env.sealed === true : dm.sealed === true) ev.sealed = true;
   return [ev];
 }
@@ -268,6 +287,17 @@ function contactCardOf(dm: any): ContactCard | null {
   if (!c || typeof c !== 'object') return null;
   const card: ContactCard = { name: str(c.name).slice(0, 100), phones: strings(c.phones, 5), emails: strings(c.emails, 5) };
   return card.name || card.phones.length || card.emails.length ? card : null;
+}
+
+const MAX_POLL_OPTIONS = 10;
+
+function pollOf(dm: any): MessageEvent['poll'] | null {
+  const p = dm.pollCreate;
+  if (!p || typeof p !== 'object') return null;
+  const question = str(p.question);
+  const options = Array.isArray(p.options) ? p.options.map(str) : [];
+  if (!question || options.length < 2 || options.length > MAX_POLL_OPTIONS || options.some((o: string) => !o)) return null;
+  return { question, options, allowMultiple: !!p.allowMultiple };
 }
 
 function editEvent(env: any, edit: any, author: string, nameOf: NameOf, convOverride?: Conv): StoreEvent[] {

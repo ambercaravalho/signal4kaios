@@ -385,6 +385,47 @@ describe('store', () => {
     assert.equal(store.conversation('g:R1JQ')!.lastPreview, 'An admin deleted this message.');
   });
 
+  it('counts poll votes like Signal-Desktop and lets only the author end the poll', async () => {
+    const ts = Date.now() + 1000;
+    const inGroup = (src: string, uuid: string, at: number, dm: any) => ({ envelope: { sourceNumber: src, sourceUuid: uuid, timestamp: at, dataMessage: { timestamp: at, groupInfo: { groupId: 'R1JQ' }, ...dm } } });
+    const vote = (src: string, uuid: string, at: number, optionIndexes: number[], voteCount: number) => inGroup(src, uuid, at, { pollVote: { targetAuthorUuid: 'aci-dave', targetSentTimestamp: ts, optionIndexes, voteCount } });
+    const id = 'g:R1JQ|' + ts + '|+15550004';
+    store.ingestRaw(inGroup('+15550004', 'aci-dave', ts, { pollCreate: { question: 'Lunch?', options: ['Pizza', 'Soup', 'Salad'], allowMultiple: false } }));
+    await settle();
+    assert.equal(store.conversation('g:R1JQ')!.lastPreview, 'Poll: Lunch?');
+
+    store.ingestRaw(vote('+15550005', 'aci-admin', ts + 1, [1], 2));
+    store.ingestRaw(vote('+15550005', 'aci-admin', ts + 2, [0], 1));
+    store.ingestRaw(vote('+15550005', 'aci-admin', ts + 3, [0, 2], 3));
+    store.ingestRaw(vote('+15550005', 'aci-admin', ts + 4, [5], 4));
+    store.ingestRaw({ envelope: { sourceNumber: ME, sourceUuid: 'aci-me', timestamp: ts + 5, syncMessage: { sentMessage: { timestamp: ts + 5, groupInfo: { groupId: 'R1JQ' }, pollVote: { targetAuthorUuid: 'aci-dave', targetSentTimestamp: ts, optionIndexes: [2], voteCount: 1 } } } } });
+    await settle();
+    let rec = (await db.getMessage(id))!;
+    assert.deepEqual(rec.poll!.votes['+15550005'].options, [1]);
+    assert.deepEqual(store.pollCounts(rec.poll!), [0, 1, 1]);
+
+    const sent: any[] = [];
+    (signal as any).sendPollVote = async (...args: any[]) => {
+      sent.push(args);
+    };
+    await store.votePoll(rec, [0]);
+    assert.deepEqual(sent, [['group.R1JQ', '+15550004', ts, [0], 2]]);
+    rec = (await db.getMessage(id))!;
+    assert.deepEqual(rec.poll!.votes[ME], { options: [0], voteCount: 2, timestamp: rec.poll!.votes[ME].timestamp });
+
+    store.ingestRaw(inGroup('+15550005', 'aci-admin', ts + 6, { pollTerminate: { targetSentTimestamp: ts } }));
+    await settle();
+    assert.equal((await db.getMessage(id))!.poll!.ended, undefined);
+    store.ingestRaw(inGroup('+15550004', 'aci-dave', ts + 7, { pollTerminate: { targetSentTimestamp: ts } }));
+    store.ingestRaw(vote('+15550005', 'aci-admin', ts + 8, [2], 9));
+    await settle();
+    rec = (await db.getMessage(id))!;
+    assert.equal(rec.poll!.ended, true);
+    assert.deepEqual(rec.poll!.votes['+15550005'].options, [1]);
+    const line = (await db.getMessage('g:R1JQ|' + (ts + 7) + '|+15550004'))!;
+    assert.equal(store.noticeText(line.notice!, line.author), 'Dave ended the poll “Lunch?”');
+  });
+
   it('holds a stranger’s chat as a message request, without read receipts, until it is accepted', async () => {
     const ERIN = '+15550006';
     const receipts: any[] = [];

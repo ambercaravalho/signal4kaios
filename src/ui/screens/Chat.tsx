@@ -7,7 +7,7 @@ import { ConnectionBanner } from '../components/ConnectionBanner';
 import { pickEmoji, pickReaction } from '../components/Emoji';
 import { Icon } from '../components/Icon';
 import { Spinner } from '../components/List';
-import { confirm, DIVIDER, type MenuEntry, pick, showOptions } from '../components/Overlays';
+import { confirm, DIVIDER, type MenuEntry, pick, pickMany, prompt, showOptions } from '../components/Overlays';
 import { RichText } from '../components/RichText';
 import { Screen } from '../components/Screen';
 import { TextField } from '../components/TextField';
@@ -20,11 +20,11 @@ import { fmtBytes, fmtClock, fmtDay, fmtMsgTime } from '../data/format';
 import { openUrl } from '../data/platform';
 import * as store from '../data/store';
 import { extractUrls, isJumboEmoji, type PickedMention } from '../data/styled';
-import type { Attachment, ContactCard, Conversation, Message, MessageStatus, Notice, Quote } from '../data/types';
+import type { Attachment, ContactCard, Conversation, Message, MessageStatus, Notice, Poll, Quote } from '../data/types';
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
-import { MessageDetailsScreen } from './MessageDetails';
+import { MessageDetailsScreen, PollVotesScreen } from './MessageDetails';
 import { SafetyNumberScreen } from './SafetyNumber';
 import { ForwardScreen } from './SearchList';
 import { ViewerScreen } from './Viewer';
@@ -175,12 +175,31 @@ function ContactCardView(props: { card: ContactCard }) {
   );
 }
 
+function PollView(props: { poll: Poll }) {
+  const { poll } = props;
+  const counts = store.pollCounts(poll);
+  const mine = poll.votes[store.selfNumber()];
+  return (
+    <div class="poll">
+      <div class="poll-question">{poll.question}</div>
+      {poll.options.map((o, i) => (
+        <div class="poll-option" key={i}>
+          <span class={'poll-mark' + (poll.allowMultiple ? ' poll-mark-many' : '') + (mine && mine.options.indexOf(i) >= 0 ? ' on' : '')} />
+          <span class="poll-option-text">{o}</span>
+          <span class="poll-count">{counts[i]}</span>
+        </div>
+      ))}
+      <div class="poll-sub">{poll.ended ? S.pollEnded : poll.allowMultiple ? S.pollChooseMany : S.pollChooseOne}</div>
+    </div>
+  );
+}
+
 /** The Signal user a shared contact's number belongs to, when it's someone we already know. */
 function cardContact(card: ContactCard) {
   return store.contactsList().find((c) => !!c.uuid && !!c.number && card.phones.some((p) => p.replace(/[\s()-]/g, '') === c.number));
 }
 
-export type MainAction = 'retry' | 'attachment' | 'card' | 'readFull' | 'openLink';
+export type MainAction = 'retry' | 'attachment' | 'vote' | 'card' | 'readFull' | 'openLink';
 
 /** What someone most likely wants from a message, in the order its options menu leads with them. */
 export function mainActions(m: Message, clipped: boolean): MainAction[] {
@@ -188,6 +207,7 @@ export function mainActions(m: Message, clipped: boolean): MainAction[] {
   const out: MainAction[] = [];
   if (m.status === 'failed') out.push('retry');
   if (m.attachments[0]) out.push('attachment');
+  if (m.poll && !m.poll.ended && m.status !== 'failed' && m.status !== 'pending') out.push('vote');
   if (m.contactCard) out.push('card');
   if (clipped) out.push('readFull');
   if (extractUrls(m.body).length) out.push('openLink');
@@ -273,6 +293,7 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
           <AttachmentView key={a.id || i} att={a} meta={metaOnAttachment && i === attachments.length - 1 ? meta : null} />
         ))}
         {m.contactCard && !m.deleted && <ContactCardView card={m.contactCard} />}
+        {m.poll && !m.deleted && <PollView poll={m.poll} />}
         {text && (
           <div class={'msg-body' + (jumbo ? ' jumbo' : '') + (clipped ? ' clipped' : '')} ref={bodyRef}>
             <RichText text={text} styles={m.deleted ? [] : m.styles} revealSpoilers={props.focused} />
@@ -290,6 +311,7 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
 
 function noticeIcon(n: Notice): string {
   if (n.kind === 'safetyNumber') return 'verified';
+  if (n.kind === 'pollEnded') return 'poll';
   return 'phone';
 }
 
@@ -661,6 +683,45 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     return card.phones.length ? [{ label: S.copyNumber, onSelect: () => copyText(card.phones[0]) }] : [];
   }
 
+  async function vote(m: Message): Promise<void> {
+    const p = m.poll!;
+    const mine = p.votes[store.selfNumber()];
+    const current = mine ? mine.options : [];
+    const choices = p.options.map((o, i) => ({ value: i, label: o }));
+    let chosen: number[] | undefined;
+    if (p.allowMultiple) chosen = await pickMany(S.vote, choices, current);
+    else {
+      const i = await pick(S.vote, current.length ? choices.concat({ value: -1, label: S.removeVote }) : choices, current.length ? current[0] : -1);
+      chosen = i === undefined ? undefined : i < 0 ? [] : [i];
+    }
+    if (!chosen) return;
+    const next = chosen.slice().sort((a, b) => a - b);
+    if (next.join() === current.slice().sort((a, b) => a - b).join()) return;
+    store.votePoll(m, next).catch((e) => toast(sendError(e)));
+  }
+
+  async function endPoll(m: Message): Promise<void> {
+    if (!(await confirm({ title: S.endPoll, body: S.endPollBody, ok: S.endPoll, danger: true }))) return;
+    store.endPoll(m).catch((e) => toast(sendError(e)));
+  }
+
+  async function createPoll(): Promise<void> {
+    const question = await prompt({ title: S.pollQuestion, maxLength: 100 });
+    if (!question) return;
+    const options: string[] = [];
+    while (options.length < 10) {
+      const enough = options.length >= 2;
+      const o = await prompt({ title: fmt(S.pollOption, { n: options.length + 1 }), maxLength: 100, allowEmpty: enough, hint: enough ? S.pollOptionHint : undefined });
+      if (o === undefined) return;
+      if (!o) break;
+      options.push(o);
+    }
+    if (options.length < 2) return toast(S.pollNeedsOptions);
+    const many = await pick(S.pollAnswers, [{ value: false, label: S.pollOneAnswer }, { value: true, label: S.pollManyAnswers }], false);
+    if (many === undefined) return;
+    store.sendPoll(convId, question, options, many).catch((e) => toast(sendError(e)));
+  }
+
   function messageOptions(m: Message): void {
     if (m.notice) return noticeOptions(m);
     const urls = m.deleted ? [] : extractUrls(m.body);
@@ -669,6 +730,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     const main: Record<MainAction, MenuEntry[]> = {
       retry: [{ label: S.retry, onSelect: () => store.retryMessage(m).catch((e) => toast(sendError(e))) }],
       attachment: [att && { label: attachmentAction(att), onSelect: () => openAttachment(m, att) }],
+      vote: [!!conv && conv.type === 'group' && !request && { label: S.vote, onSelect: () => vote(m) }],
       card: contactCardOptions(m),
       readFull: [{ label: S.readFull, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) }],
       openLink: [{ label: S.openLink, onSelect: () => openLinks(urls) }],
@@ -690,7 +752,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       DIVIDER,
       !m.deleted && !!m.body && { label: S.copyText, onSelect: () => copyText(m.body) },
       settled && canForward(m) && { label: S.forward, onSelect: () => router.push(ForwardScreen, { msg: m }) },
-      canChange(m) && !m.attachments.length && (m.history || []).length < store.MAX_EDITS && {
+      canChange(m) && !m.attachments.length && !m.poll && (m.history || []).length < store.MAX_EDITS && {
         label: S.edit,
         onSelect: () => {
           saveDraft();
@@ -701,6 +763,8 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
           setFocusedId(null);
         },
       },
+      !m.deleted && !!m.poll && { label: S.viewVotes, onSelect: () => router.push(PollVotesScreen, { msg: m }) },
+      !m.deleted && settled && !m.incoming && !!m.poll && !m.poll.ended && { label: S.endPoll, onSelect: () => endPoll(m) },
       DIVIDER,
       !m.deleted && settled && { label: m.pinned ? S.unpinMessage : S.pinMessage, onSelect: () => store.setMessagePinned(m, !m.pinned).catch((e) => toast(sendError(e))) },
       { label: S.messageDetails, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) },
@@ -767,6 +831,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       canCompose && { label: S.attachViewOnce, onSelect: () => attach(true) },
       canCompose && { label: S.insertEmoji, onSelect: () => pickEmoji().then((e) => e && insertText(e)) },
       canCompose && conv && conv.type === 'group' && { label: S.mention, onSelect: mention },
+      canCompose && conv && conv.type === 'group' && { label: S.createPoll, onSelect: createPoll },
       DIVIDER,
       pinned.length > 0 && { label: S.pinnedMessages, onSelect: showPinned },
       DIVIDER,

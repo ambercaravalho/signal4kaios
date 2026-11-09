@@ -25,12 +25,30 @@ export interface Quote {
   attachments?: QuotedAttachment[];
 }
 
-export type NoticeKind = 'missedCall' | 'safetyNumber' | 'groupCall';
+export type NoticeKind = 'missedCall' | 'safetyNumber' | 'groupCall' | 'pollEnded';
 
 /** A line in the chat about the chat itself rather than a message someone wrote. */
 export interface Notice {
   kind: NoticeKind;
   video?: boolean;
+  /** The poll's question, for `pollEnded`. */
+  text?: string;
+}
+
+/** One person's current vote; `voteCount` grows with each vote they cast, and an empty `options` means they took it back. */
+export interface PollVote {
+  options: number[];
+  voteCount: number;
+  timestamp: number;
+}
+
+export interface Poll {
+  question: string;
+  options: string[];
+  allowMultiple: boolean;
+  /** Keyed like reactions: a person's number, else their ACI; ours under our number. */
+  votes: Record<string, PollVote>;
+  ended?: boolean;
 }
 
 /** A shared contact (Signal's contact card), reduced to what the phone shows. */
@@ -76,6 +94,7 @@ export interface Message {
   /** A received voice message, video, or view-once media was opened, here or on another device. */
   viewed?: boolean;
   contactCard?: ContactCard;
+  poll?: Poll;
   /** Delivered without revealing the sender to Signal's servers (Sealed Sender); for our messages, to every recipient. */
   sealed?: boolean;
   /** Earlier versions, oldest first; `editedAt` is when the current text was sent. */

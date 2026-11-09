@@ -672,6 +672,24 @@ describe('Sync and service IDs', () => {
     assert.deepEqual(quoted.quote, { id: 7, authorUuid: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }] });
   });
 
+  it('turns polls, votes, and poll ends into normalize frames within Signal-Desktop limits', () => {
+    const env = { sourceUuid: BOB, sourceDevice: 1, timestamp: 1000 } as any;
+    const frame = (dm: any) => contentToNormalizedFrame(env, create(ContentSchema, { content: { case: 'dataMessage', value: dm } })).envelope.dataMessage;
+    assert.deepEqual(frame({ timestamp: 1000n, pollCreate: { question: 'Lunch?', options: ['Pizza', 'Soup'], allowMultiple: true } }).pollCreate, { question: 'Lunch?', options: ['Pizza', 'Soup'], allowMultiple: true });
+    assert.equal(frame({ timestamp: 1000n, pollCreate: { question: 'Lunch?', options: ['Pizza'] } }).pollCreate, undefined);
+    assert.equal(frame({ timestamp: 1000n, pollCreate: { question: 'x'.repeat(201), options: ['a', 'b'] } }).pollCreate, undefined);
+    assert.ok(frame({ timestamp: 1000n, pollCreate: { question: '👋🏽'.repeat(200), options: ['a', 'b'] } }).pollCreate);
+    assert.equal(frame({ timestamp: 1000n, pollCreate: { question: 'q', options: Array.from({ length: 11 }, (_, i) => 'o' + i) } }).pollCreate, undefined);
+    assert.deepEqual(frame({ timestamp: 1000n, pollVote: { targetAuthorAciBinary: uuidToBytes(ALICE), targetSentTimestamp: 42n, optionIndexes: [1, 0], voteCount: 3 } }).pollVote, {
+      targetAuthorUuid: ALICE,
+      targetSentTimestamp: 42,
+      optionIndexes: [1, 0],
+      voteCount: 3,
+    });
+    assert.equal(frame({ timestamp: 1000n, pollVote: { targetAuthorAciBinary: uuidToBytes(ALICE), targetSentTimestamp: 42n, optionIndexes: [10], voteCount: 1 } }).pollVote, undefined);
+    assert.deepEqual(frame({ timestamp: 1000n, pollTerminate: { targetSentTimestamp: 42n } }).pollTerminate, { targetSentTimestamp: 42 });
+  });
+
   it('reduces shared contacts to a name, numbers, and emails', () => {
     const env = { sourceUuid: BOB, sourceDevice: 1, timestamp: 1000 } as any;
     const dm = contentToNormalizedFrame(
