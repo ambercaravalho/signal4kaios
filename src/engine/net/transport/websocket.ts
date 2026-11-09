@@ -1,6 +1,6 @@
 /** RFC 6455 client over a pinned TLS `ByteStream`, shaped like the browser `WebSocket` so `ws.js` and provisioning can use either. Frames from the server are untrusted: sizes are capped and protocol violations close the socket. */
 
-import { sha1 } from '@noble/hashes/sha1';
+import { sha1 } from '@noble/hashes/legacy.js';
 
 import { toBase64 } from '../../bytes';
 import { parseHttpsUrl, parseResponseHead, buildRequestHead } from './http1';

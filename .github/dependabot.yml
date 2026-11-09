@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Tracks the Node major that CI runs (setup-node in ci.yml); bump both together.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
     groups:
       app-minor-patch:
         update-types: [minor, patch]

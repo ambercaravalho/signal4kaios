@@ -8,23 +8,29 @@
     "gen:protos": "PATH=\"$PWD/node_modules/.bin:$PATH\" buf generate",
     "build": "esbuild src/engine/index.ts --bundle --format=iife --target=es2020 --log-override:empty-import-meta=silent --outfile=src/app/vendor/signal-engine.bundle.js",
     "typecheck": "tsc --noEmit",
-    "test": "esbuild test/*.test.ts --bundle --platform=node --format=cjs --target=node20 --log-override:empty-import-meta=silent --external:@signalapp/libsignal-client --external:'@signalapp/libsignal-client/*' --outdir=dist-test && node --test 'dist-test/*.test.js'",
-    "test:live": "esbuild test/live/*.live.ts --bundle --platform=node --format=cjs --target=node20 --log-override:empty-import-meta=silent --outdir=dist-test/live && node --test 'dist-test/live/*.live.js'",
+    "test": "esbuild test/*.test.ts --bundle --platform=node --format=cjs --target=node22 --log-override:empty-import-meta=silent --external:@signalapp/libsignal-client --external:'@signalapp/libsignal-client/*' --outdir=dist-test && node --test 'dist-test/*.test.js'",
+    "test:live": "esbuild test/live/*.live.ts --bundle --platform=node --format=cjs --target=node22 --log-override:empty-import-meta=silent --outdir=dist-test/live && node --test 'dist-test/live/*.live.js'",
     "package": "sh scripts/package.sh"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
+  },
+  "overrides": {
+    "@signalapp/types": {
+      "uuid": "^13.0.1",
+      "zod": "^4.6.6"
+    }
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.17.0",
-    "@noble/hashes": "^1.7.1"
+    "@noble/hashes": "^2.4.0"
   },
   "devDependencies": {
     "@bufbuild/buf": "1.75.0",
     "@bufbuild/protoc-gen-es": "2.17.0",
     "@signalapp/libsignal-client": "0.106.2",
-    "@types/node": "^22.10.0",
-    "esbuild": "^0.25.0",
-    "typescript": "^5.7.2"
+    "@types/node": "^24.19.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   }
 }
