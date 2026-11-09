@@ -223,6 +223,8 @@ export const S = {
   profile: 'Profile',
   yourName: 'Your name',
   about: 'About',
+  aboutEmoji: 'About emoji',
+  chooseEmoji: 'Choose emoji',
   usernameNone: 'Not set',
   usernameHint: 'Usernames have a name and a number, like name.01. Leave the number off to get one picked for you.',
   usernameTaken: 'That username isn’t available. Try another one.',

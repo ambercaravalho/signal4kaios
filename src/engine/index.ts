@@ -497,6 +497,8 @@ async function syncFromStorageService(): Promise<boolean> {
     }
     if (res.account.readReceipts !== undefined) patch.sendReadReceipts = res.account.readReceipts;
     if (res.account.typingIndicators !== undefined) patch.typingIndicators = res.account.typingIndicators;
+    if (res.account.linkPreviews !== undefined) patch.linkPreviews = res.account.linkPreviews;
+    if (res.account.sealedSenderIndicators !== undefined) patch.sealedSenderIndicators = res.account.sealedSenderIndicators;
     if (Object.keys(patch).length > 0) host().config.set(patch);
     const acc = await store.getAccount();
     if (acc && res.account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!res.account.noteToSelfArchived, markedUnread: !!res.account.noteToSelfMarkedUnread });
@@ -581,7 +583,12 @@ async function handleIncomingSyncMessage(env: IncomingEnvelope, content: Content
     }
     case 'configuration': {
       const cfg = c.value;
-      host().config.set({ sendReadReceipts: cfg.readReceipts, typingIndicators: cfg.typingIndicators });
+      host().config.set({
+        sendReadReceipts: cfg.readReceipts,
+        typingIndicators: cfg.typingIndicators,
+        linkPreviews: cfg.linkPreviews,
+        sealedSenderIndicators: cfg.unidentifiedDeliveryIndicators,
+      });
       break;
     }
     case 'usernameChange':
@@ -928,8 +935,8 @@ export const signalBridge = {
     return blob;
   },
 
-  async updateOwnProfile(body: { name?: string; about?: string }): Promise<void> {
-    await uploadOwnProfile(store, httpJson, { name: body.name || host().config.profileName() || 'Signal User', about: body.about }, serverUrl()).catch(() => {});
+  async updateOwnProfile(body: { name?: string; about?: string; emoji?: string }): Promise<void> {
+    await uploadOwnProfile(store, httpJson, { name: body.name || host().config.profileName() || 'Signal User', about: body.about, emoji: body.emoji }, serverUrl()).catch(() => {});
   },
 
   /** Set or clear a contact's nickname (Storage Service `ContactRecord.nickname`, shown on all your devices). */

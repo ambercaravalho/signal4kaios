@@ -2,7 +2,7 @@ import './ui-env';
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { signal } from '../src/ui/data/api';
+import { signal, updateProfile } from '../src/ui/data/api';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
@@ -232,5 +232,15 @@ describe('store', () => {
     } finally {
       (db as any).putAttachment = putAttachment;
     }
+  });
+
+  it('saves the About emoji locally and on Signal', async () => {
+    const uploaded: any[] = [];
+    (signal as any).updateOwnProfile = async (body: any) => {
+      uploaded.push(body);
+    };
+    await updateProfile({ name: 'Me', emoji: '🌻' });
+    assert.equal(config.profileAboutEmoji(), '🌻');
+    assert.deepEqual(uploaded, [{ name: 'Me', emoji: '🌻' }]);
   });
 });
