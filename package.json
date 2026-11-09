@@ -1,6 +1,6 @@
 {
   "name": "signal4kaios",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "Standalone on-device Signal client for KaiOS 3.0, 3.1, and 4.0",
   "scripts": {
