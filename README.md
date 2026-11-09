@@ -4,17 +4,11 @@
 
 # Beacon
 
-**Real Signal, on a phone with actual buttons.**
+**An unofficial, standalone [Signal](https://signal.org) client for KaiOS 3.0, 3.1, and 4.0 feature phones.**
 
-An unofficial, standalone [Signal](https://signal.org) client for KaiOS 3.0, 3.1, and 4.0 feature phones.
+[**Download**](https://github.com/ambercaravalho/signal4kaios/releases/latest) · [Quickstart](#quickstart) · [Features](#features) · [Documentation](#documentation)
 
 [![CI](https://github.com/ambercaravalho/signal4kaios/actions/workflows/ci.yml/badge.svg)](https://github.com/ambercaravalho/signal4kaios/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/ambercaravalho/signal4kaios?include_prereleases)](https://github.com/ambercaravalho/signal4kaios/releases) [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
-
-[Download](https://github.com/ambercaravalho/signal4kaios/releases/latest) · [Quickstart](#quickstart) · [Features](#features) · [Documentation](#documentation)
-
-</div>
-
-Beacon (this repository, signal4kaios) puts your Signal chats on a KaiOS phone. It links to your account as a [linked device](https://support.signal.org/hc/en-us/articles/360007320551), just like Signal Desktop, so your number, contacts, and groups come with you. All encryption runs on the phone itself with Signal's official [libsignal](https://github.com/signalapp/libsignal) compiled to WebAssembly, and the phone talks directly to Signal's servers with nothing in between. Everything is driven by the D-pad, softkeys, and number keys.
 
 <table>
   <tr>
@@ -28,6 +22,8 @@ Beacon (this repository, signal4kaios) puts your Signal chats on a KaiOS phone. 
     <td align="center"><img src="docs/images/settings.png" alt="Settings with the profile, linked device, chats, and privacy" width="200"><br><sub><b>Light and dark themes</b></sub></td>
   </tr>
 </table>
+
+</div>
 
 > [!NOTE]
 > Beacon is a work in progress. Everyday messaging, groups, and sync work, but calls, stories, link previews, polls, and some other Signal features don't yet. The [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) tracks everything that's missing.
@@ -63,13 +59,8 @@ The [setup guide](docs/setup.md) covers every install route and what to do if so
 | **Sync** | Contacts, groups, blocked list, and profiles from Signal's Storage Service and your primary device; nicknames, blocking, archive, mute, pinned chats, and your username sync back |
 | **Groups** | Rename, description, timer, members, admins, invites, permissions, group links, leave, and block, as real Groups V2 changes |
 | **Organization** | Multiple accounts, archived, muted, and pinned chats, pinned messages, a Signal username with its QR code, and local search |
-| **Design** | KaiOS-style lists, softkeys, and menus with Signal's colors, light and dark themes, and plain-language wording; technical details live in **Settings → Debug** |
 
 For what isn't supported yet, see [Known limitations](docs/user-guide.md#known-limitations) and the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap).
-
-## How it works
-
-Beacon is a [Preact](https://preactjs.com) app with a TypeScript Signal engine underneath. The engine speaks Signal's WebSocket and HTTP APIs over pinned TLS straight from the phone and hands every cryptographic operation to libsignal, built from Signal's source through a Rust-to-WebAssembly wrapper. Messages and keys are stored only on the phone, in IndexedDB. [Architecture](docs/architecture.md) walks through the whole stack.
 
 ## Documentation
 
