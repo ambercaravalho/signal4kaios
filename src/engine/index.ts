@@ -53,6 +53,7 @@ import { IndexedDbSignalStore, TrustLevel } from './protocol/store';
 import { POLL_QUESTION_MAX_SEND, validPoll } from './services/polls';
 import { mutateStorage, pullFromStorageService, StorageMutation, StorageWriteQueue } from './services/storage-service';
 import { AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema, ContactRecord_NameSchema } from './gen/SignalStorage_pb';
+import { reportSpam as reportSpamMessages } from './services/report-spam';
 import { deleteUsername as deleteAccountUsername, setUsername as setAccountUsername, usernameLinkUrl } from './services/usernames';
 import { SignalClient } from './net/client';
 import { DEFAULT_SIGNAL_SERVER } from './net/http';
@@ -1110,10 +1111,15 @@ export const signalBridge = {
   },
 
   /** Answer a 1:1 message request on our other devices. Accepting also shares our profile with them, in Storage Service and with a PROFILE_KEY_UPDATE message, as Signal-Desktop does. */
-  async sendMessageRequestResponse(sendId: string, response: 'accept' | 'delete' | 'block'): Promise<void> {
+  async sendMessageRequestResponse(sendId: string, response: 'accept' | 'delete' | 'block' | 'blockAndSpam'): Promise<void> {
     const ids = await contactIds(sendId);
     if (!ids.aci) throw new Error('No Signal account known for ' + sendId);
-    const type = response === 'accept' ? SyncMessage_MessageRequestResponse_Type.ACCEPT : response === 'delete' ? SyncMessage_MessageRequestResponse_Type.DELETE : SyncMessage_MessageRequestResponse_Type.BLOCK;
+    const type = {
+      accept: SyncMessage_MessageRequestResponse_Type.ACCEPT,
+      delete: SyncMessage_MessageRequestResponse_Type.DELETE,
+      block: SyncMessage_MessageRequestResponse_Type.BLOCK,
+      blockAndSpam: SyncMessage_MessageRequestResponse_Type.BLOCK_AND_SPAM,
+    }[response];
     await client.sendSyncMessage(create(ContentSchema, { content: { case: 'syncMessage', value: { content: { case: 'messageRequestResponse', value: { threadAci: ids.aci, type } } } } }));
     if (response !== 'accept') return;
     await updateSyncedContact(ids, (c) => {
@@ -1133,6 +1139,13 @@ export const signalBridge = {
     if (!acc || !acc.profileKey || acc.profileKey.length !== 32) return;
     const ts = Date.now();
     await client.sendContentToRecipient(ids.aci, dataContent({ timestamp: BigInt(ts), flags: DataMessage_Flags.PROFILE_KEY_UPDATE, profileKey: acc.profileKey }), ts);
+  },
+
+  /** Report someone's messages (by server GUID) as spam to Signal, as Signal-Desktop's reportSpamJobQueue does; returns how many were reported. */
+  async reportSpam(sendId: string, serverGuids: string[], token?: string): Promise<number> {
+    const ids = await contactIds(sendId);
+    if (!ids.aci) throw new Error('No Signal account known for ' + sendId);
+    return reportSpamMessages(store, httpJson, ids.aci, serverGuids, token, serverUrl());
   },
 
   /** Change a 1:1 chat's disappearing-message timer with an explicit EXPIRATION_TIMER_UPDATE message and a newer `expireTimerVersion`, as Signal-Desktop does. */

@@ -58,6 +58,14 @@ export interface ContactCard {
   emails: string[];
 }
 
+/** The card a sender's phone made for a link in the message. */
+export interface LinkPreview {
+  url: string;
+  title: string;
+  description?: string;
+  image?: Attachment;
+}
+
 /** An earlier version of an edited message, with when that version was sent. */
 export interface MessageVersion {
   body: string;
@@ -95,6 +103,9 @@ export interface Message {
   viewed?: boolean;
   contactCard?: ContactCard;
   poll?: Poll;
+  preview?: LinkPreview;
+  /** Signal's server ID for a received message, which a spam report names. */
+  serverGuid?: string;
   /** Delivered without revealing the sender to Signal's servers (Sealed Sender); for our messages, to every recipient. */
   sealed?: boolean;
   /** Earlier versions, oldest first; `editedAt` is when the current text was sent. */
@@ -125,6 +136,8 @@ export interface Conversation {
   draftMentions?: PickedMention[];
   /** A message request: someone we don't share our profile with started this 1:1 chat. */
   request?: boolean;
+  /** SECURITY-REVIEW: the server's spam reporting token for this person (base64), sent only with a spam report. */
+  reportToken?: string;
 }
 
 export interface Contact {

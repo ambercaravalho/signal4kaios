@@ -20,7 +20,7 @@ import { fmtBytes, fmtClock, fmtDay, fmtMsgTime } from '../data/format';
 import { openUrl } from '../data/platform';
 import * as store from '../data/store';
 import { extractUrls, isJumboEmoji, type PickedMention } from '../data/styled';
-import type { Attachment, ContactCard, Conversation, Message, MessageStatus, Notice, Poll, Quote } from '../data/types';
+import type { Attachment, ContactCard, Conversation, LinkPreview, Message, MessageStatus, Notice, Poll, Quote } from '../data/types';
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
@@ -106,7 +106,7 @@ function StatusIcon(props: { status: MessageStatus }) {
 }
 
 /** An inline photo once it's downloaded; anything else is a labelled row that opens in the viewer. `meta` sits over the photo's corner, or below a file row. */
-function AttachmentView(props: { att: Attachment; meta?: VNode | null }) {
+function AttachmentView(props: { att: Attachment; meta?: VNode | null; photoOnly?: boolean }) {
   const { att } = props;
   const ref = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -150,6 +150,7 @@ function AttachmentView(props: { att: Attachment; meta?: VNode | null }) {
         {props.meta}
       </div>
     );
+  if (props.photoOnly) return <div ref={ref} />;
   return (
     <>
       <div class="msg-file" ref={ref}>
@@ -190,6 +191,26 @@ function PollView(props: { poll: Poll }) {
         </div>
       ))}
       <div class="poll-sub">{poll.ended ? S.pollEnded : poll.allowMultiple ? S.pollChooseMany : S.pollChooseOne}</div>
+    </div>
+  );
+}
+
+function linkDomain(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+}
+
+/** A link preview's image only shows once it's on the phone, under the usual download rules. */
+function LinkPreviewView(props: { preview: LinkPreview }) {
+  const p = props.preview;
+  return (
+    <div class="msg-link">
+      {p.image && <AttachmentView att={p.image} photoOnly />}
+      {p.title && <div class="msg-link-title">{p.title}</div>}
+      <div class="msg-link-domain">{linkDomain(p.url)}</div>
     </div>
   );
 }
@@ -272,7 +293,8 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
   useEffect(() => props.onClipped(m.id, clipped), [clipped]);
   const attachments = m.deleted ? [] : m.attachments;
   const meta = <MessageMeta m={m} />;
-  const metaInText = !!text && !jumbo && !clipped;
+  const preview = m.deleted ? undefined : m.preview;
+  const metaInText = !!text && !jumbo && !clipped && !preview;
   const metaOnAttachment = !text && attachments.length > 0;
   const cls = 'msg ' + (m.incoming ? 'msg-in' : 'msg-out') + (props.focused ? ' focused' : '');
   const bubbleCls = 'bubble' + (jumbo ? ' bubble-jumbo' : '') + (m.deleted ? ' bubble-deleted' : '') + (m.status === 'failed' ? ' bubble-failed' : '');
@@ -301,6 +323,7 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
           </div>
         )}
         {clipped && <div class="msg-more">{S.readMore}</div>}
+        {preview && <LinkPreviewView preview={preview} />}
         {!metaInText && !metaOnAttachment && <div class="msg-meta-line">{meta}</div>}
       </div>
       {!m.deleted && <Reactions reactions={m.reactions} />}
@@ -821,11 +844,23 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     );
   }
 
+  async function reportSpam(): Promise<void> {
+    if (!(await confirm({ title: S.reportSpam + '?', body: S.reportSpamBody, ok: S.report, danger: true }))) return;
+    store.reportSpamRequest(convId).then(
+      () => {
+        toast(S.reportedSpam);
+        router.pop();
+      },
+      (e) => toast(friendlyError(e))
+    );
+  }
+
   function chatOptions(): void {
     showOptions([
       request && { label: S.accept, onSelect: acceptRequest },
       request && { label: S.delete, danger: true, onSelect: deleteRequest },
       request && { label: S.block, danger: true, onSelect: blockRequest },
+      request && { label: S.reportSpam, danger: true, onSelect: reportSpam },
       DIVIDER,
       canCompose && { label: S.attach, onSelect: () => attach(false) },
       canCompose && { label: S.attachViewOnce, onSelect: () => attach(true) },

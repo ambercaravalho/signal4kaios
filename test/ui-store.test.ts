@@ -472,6 +472,40 @@ describe('store', () => {
     assert.equal(store.conversation(FRANK), undefined);
   });
 
+  it('keeps link previews and reports a message request as spam with its newest message IDs', async () => {
+    const HANK = '+15550009';
+    const guid = (n: number) => '00000000-0000-4000-8000-00000000000' + n;
+    const calls: any[] = [];
+    (signal as any).reportSpam = async (...args: any[]) => {
+      calls.push(['report', ...args]);
+      return args[1].length;
+    };
+    (signal as any).sendMessageRequestResponse = async (to: string, response: string) => {
+      calls.push(['response', to, response]);
+    };
+    (signal as any).setContactBlocked = async (to: string, blocked: boolean) => {
+      calls.push(['block', to, blocked]);
+    };
+    const preview = { url: 'https://signal.org/', title: 'Signal', description: 'Speak freely', image: { id: 's4katt:x', contentType: 'image/jpeg', filename: '', size: 10 } };
+    for (let i = 1; i <= 4; i++) {
+      store.ingestRaw({ envelope: { sourceNumber: HANK, timestamp: 52000 + i, serverGuid: guid(i), reportSpamToken: 'dG9rZW4' + i, dataMessage: { timestamp: 52000 + i, message: 'buy https://signal.org/', preview } } });
+    }
+    await settle();
+    const rec = (await db.getMessage(HANK + '|52004|' + HANK))!;
+    assert.equal(rec.preview!.title, 'Signal');
+    assert.equal(rec.preview!.image!.id, 's4katt:x');
+    assert.equal(rec.serverGuid, guid(4));
+    assert.equal(store.conversation(HANK)!.request, true);
+
+    await store.reportSpamRequest(HANK);
+    assert.deepEqual(calls, [
+      ['report', HANK, [guid(2), guid(3), guid(4)], 'dG9rZW44'],
+      ['response', HANK, 'blockAndSpam'],
+      ['block', HANK, true],
+    ]);
+    assert.equal(store.conversation(HANK), undefined);
+  });
+
   it('saves the About emoji locally and on Signal', async () => {
     const uploaded: any[] = [];
     (signal as any).updateOwnProfile = async (body: any) => {

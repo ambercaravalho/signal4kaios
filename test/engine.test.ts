@@ -57,7 +57,8 @@ import {
 import { MemorySignalStore } from '../src/engine/protocol/store';
 import { deleteUsername, setUsername, usernameCandidates, usernameLinkUrl } from '../src/engine/services/usernames';
 import { loadWasmForTests } from './support';
-import { contentToNormalizedFrame, parseContactsSyncBlob } from '../src/engine/net/receive';
+import { contentToNormalizedFrame, decodeAttachmentDescriptor, parseContactsSyncBlob } from '../src/engine/net/receive';
+import { reportSpam } from '../src/engine/services/report-spam';
 
 const ALICE = '11111111-1111-4111-8111-111111111111';
 const BOB = '22222222-2222-4222-8222-222222222222';
@@ -688,6 +689,50 @@ describe('Sync and service IDs', () => {
     });
     assert.equal(frame({ timestamp: 1000n, pollVote: { targetAuthorAciBinary: uuidToBytes(ALICE), targetSentTimestamp: 42n, optionIndexes: [10], voteCount: 1 } }).pollVote, undefined);
     assert.deepEqual(frame({ timestamp: 1000n, pollTerminate: { targetSentTimestamp: 42n } }).pollTerminate, { targetSentTimestamp: 42 });
+  });
+
+  it('keeps a link preview only for a safe https link in the message text, as Signal-Desktop does', () => {
+    const guid = '0f6c2a1e-4b7d-4c3a-9a8e-2d1f5b6c7e8f';
+    const env = { sourceUuid: BOB, sourceDevice: 1, timestamp: 1000, serverGuid: guid.toUpperCase(), reportSpamToken: new Uint8Array([1, 2, 3]) } as any;
+    const out = (dm: any) => contentToNormalizedFrame(env, create(ContentSchema, { content: { case: 'dataMessage', value: { timestamp: 1000n, ...dm } } })).envelope;
+    const image = { attachmentIdentifier: { case: 'cdnKey' as const, value: 'k' }, cdnNumber: 2, key: new Uint8Array(64), contentType: 'image/jpeg', size: 1234 };
+    const shown = out({ body: 'look (https://signal.org/blog/a?b=1).', preview: [{ url: 'https://signal.org/blog/a?b=1', title: 'Blog', description: 'Post', image }] });
+    assert.equal(shown.serverGuid, guid);
+    assert.equal(shown.reportSpamToken, 'AQID');
+    const p = shown.dataMessage.preview;
+    assert.deepEqual([p.url, p.title, p.description, p.image.contentType, p.image.size], ['https://signal.org/blog/a?b=1', 'Blog', 'Post', 'image/jpeg', 1234]);
+    assert.ok(decodeAttachmentDescriptor(p.image.id));
+
+    const dropped = (url: string, body = 'see ' + url) => assert.equal(out({ body, preview: [{ url, title: 'T' }] }).dataMessage.preview, undefined, url);
+    dropped('https://signal.org/other', 'see https://signal.org/blog');
+    dropped('http://signal.org/');
+    dropped('https://user:pw@signal.org/');
+    dropped('https://localhost/x');
+    dropped('https://www.example.com/');
+    dropped('https://xn--sgnal-m3a.org/');
+    dropped('https://signal.org/aquí');
+    dropped('https://signal.org/', 'see \u202ehttps://signal.org/');
+    assert.equal(out({ body: 'https://signal.org/', preview: [{ url: 'https://signal.org/' }] }).dataMessage.preview, undefined);
+    assert.equal(out({ body: 'hi' }).dataMessage.preview, undefined);
+  });
+
+  it('reports spam with POST /v1/messages/report/{aci}/{guid} and the reporting token', async () => {
+    const calls: any[] = [];
+    const httpJson = (async (method: string, path: string, body: any, opts: any) => {
+      calls.push({ method, path, body, user: opts.basicAuth.username });
+    }) as any;
+    const store = new MemorySignalStore({ aci: ALICE, number: '', deviceId: 3, password: 'pw', registrationId: 1, pniRegistrationId: 2, aciIdentityKeyPair: { pubKey: new Uint8Array(33), privKey: new Uint8Array(32) } } as any);
+    const g1 = '0f6c2a1e-4b7d-4c3a-9a8e-2d1f5b6c7e8f';
+    const g2 = '1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d';
+    assert.equal(await reportSpam(store, httpJson, BOB, [g1, 'not-a-guid', g2], 'AQID'), 2);
+    assert.deepEqual(calls, [
+      { method: 'POST', path: `/v1/messages/report/${BOB}/${g1}`, body: { token: 'AQID' }, user: ALICE + '.3' },
+      { method: 'POST', path: `/v1/messages/report/${BOB}/${g2}`, body: { token: 'AQID' }, user: ALICE + '.3' },
+    ]);
+    calls.length = 0;
+    await reportSpam(store, httpJson, BOB, [g1]);
+    assert.deepEqual(calls[0].body, {});
+    await assert.rejects(reportSpam(store, httpJson, 'PNI:' + BOB, [g1]));
   });
 
   it('reduces shared contacts to a name, numbers, and emails', () => {

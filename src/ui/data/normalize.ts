@@ -2,7 +2,7 @@
 
 import { dbg } from './log';
 import type { StyleRange } from './styled';
-import type { Attachment, ContactCard, Notice, NoticeKind, Poll, Quote } from './types';
+import type { Attachment, ContactCard, LinkPreview, Notice, NoticeKind, Poll, Quote } from './types';
 
 export interface MessageEvent {
   type: 'message';
@@ -19,8 +19,11 @@ export interface MessageEvent {
   expiresInSeconds: number;
   contactCard?: ContactCard;
   poll?: Pick<Poll, 'question' | 'options' | 'allowMultiple'>;
+  preview?: LinkPreview;
   /** Delivered without revealing the sender to Signal's servers (Sealed Sender). */
   sealed?: boolean;
+  serverGuid?: string;
+  reportToken?: string;
 }
 
 export interface NoticeEvent {
@@ -262,20 +265,33 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
     body: applyMentions(str(body), dm.mentions, nameOf),
     styles: stylesOf(dm, nameOf),
     quote: quoteOf(dm),
-    attachments: attachments.map((a) => ({
-      id: str(a.id),
-      contentType: str(a.contentType),
-      filename: str(a.filename),
-      size: num(a.size),
-      voiceNote: !!a.voiceNote,
-      viewOnce: !!(a.viewOnce || dm.viewOnce),
-    })),
+    attachments: attachments.map((a) => attachmentOf(a, !!dm.viewOnce)),
     expiresInSeconds: num(dm.expiresInSeconds),
   };
   if (card) ev.contactCard = card;
   if (poll) ev.poll = poll;
+  const preview = previewOf(dm);
+  if (preview) ev.preview = preview;
   if (incoming ? env.sealed === true : dm.sealed === true) ev.sealed = true;
+  if (incoming && UUID_RE.test(str(env.serverGuid))) ev.serverGuid = str(env.serverGuid);
+  if (incoming && /^[A-Za-z0-9+/=]{1,2048}$/.test(str(env.reportSpamToken))) ev.reportToken = str(env.reportSpamToken);
   return [ev];
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function attachmentOf(a: any, viewOnce: boolean): Attachment {
+  return { id: str(a.id), contentType: str(a.contentType), filename: str(a.filename), size: num(a.size), voiceNote: !!a.voiceNote, viewOnce: !!(a.viewOnce || viewOnce) };
+}
+
+function previewOf(dm: any): LinkPreview | null {
+  const p = dm.preview;
+  if (!p || typeof p !== 'object' || !/^https:\/\//i.test(str(p.url))) return null;
+  const out: LinkPreview = { url: str(p.url), title: str(p.title).slice(0, 300) };
+  const description = str(p.description).slice(0, 300);
+  if (description) out.description = description;
+  if (p.image && typeof p.image === 'object' && str(p.image.id) && str(p.image.contentType).indexOf('image/') === 0) out.image = attachmentOf(p.image, false);
+  return out.title || out.image ? out : null;
 }
 
 function strings(list: unknown, max: number): string[] {

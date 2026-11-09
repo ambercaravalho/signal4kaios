@@ -160,6 +160,12 @@ describe('screens', () => {
     assert.match(out, /Choose one/);
   });
 
+  it('shows a link preview’s title and domain under the text', () => {
+    const m = { id: 'm3', convId: ALICE, author: ALICE, timestamp: 1000, incoming: true, status: 'received', attachments: [], reactions: {}, body: 'read https://signal.org/blog/x', preview: { url: 'https://signal.org/blog/x', title: 'Signal blog' } } as unknown as Message;
+    router.reset(() => <Bubble m={m} focused={false} showAuthor={false} onClipped={() => {}} />, {});
+    assert.match(html(), /class="msg-link-title">Signal blog<\/div><div class="msg-link-domain">signal\.org</);
+  });
+
   it('opens a chat with its title and message box', () => {
     router.reset(HomeScreen, {});
     router.push(ChatScreen, { convId: ALICE });

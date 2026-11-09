@@ -3,7 +3,7 @@
  * Bridges Signal wire messages (Envelope + Content protobufs, generated from Signal-Desktop's SignalService.proto) to the JSON envelope structure consumed by the app's normalizer and store.
  */
 
-import { fromBase64, toBase64 } from '../bytes';
+import { bytesToUuid, fromBase64, toBase64 } from '../bytes';
 import { unpadMessagePlaintext } from '../crypto/primitives';
 import {
   AddressableMessage,
@@ -24,6 +24,7 @@ import {
   TypingMessage_Action,
 } from '../gen/SignalService_pb';
 import { groupIdFromMasterKey } from '../services/groups-v2';
+import { isValidLinkPreview } from '../services/link-previews';
 import { POLL_OPTIONS_MAX, POLL_QUESTION_MAX_RECEIVE, validPoll } from '../services/polls';
 import { create, fromBinary, num, readDelimited, serviceIdFrom } from './proto';
 import {
@@ -48,6 +49,7 @@ import { isAci } from './proto';
 
 const MAX_CONTACT_CARDS = 5;
 const MAX_CARD_FIELDS = 5;
+const MAX_PREVIEW_TEXT = 300;
 
 const REQUEST_RESPONSES: Record<number, string> = {
   [SyncMessage_MessageRequestResponse_Type.ACCEPT]: 'accept',
@@ -68,7 +70,10 @@ export interface IncomingEnvelope {
   timestamp: number;
   serverTimestamp: number;
   serverGuid: string;
+  reportSpamToken?: Uint8Array;
 }
+
+const MAX_REPORT_TOKEN_BYTES = 1024;
 
 export function attachmentCdnKey(att: AttachmentPointer): string {
   const id = att.attachmentIdentifier;
@@ -196,6 +201,19 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
     });
   }
 
+  const preview = dm.preview.find((p) => (p.title || p.image) && isValidLinkPreview(p.url, dm.body || ''));
+  if (preview) {
+    const img = preview.image && attachmentCdnKey(preview.image) && (preview.image.contentType || '').indexOf('image/') === 0 ? preview.image : undefined;
+    out.preview = {
+      url: preview.url,
+      title: (preview.title || '').slice(0, MAX_PREVIEW_TEXT),
+      description: (preview.description || '').slice(0, MAX_PREVIEW_TEXT),
+      image: img
+        ? { id: encodeAttachmentDescriptor(img, img.contentType, img.fileName || ''), contentType: img.contentType, filename: img.fileName || '', size: img.size || 0 }
+        : undefined,
+    };
+  }
+
   if (dm.quote) {
     out.quote = {
       id: num(dm.quote.id),
@@ -297,6 +315,9 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
     timestamp: env.timestamp || Date.now(),
   };
   if (env.type === Envelope_Type.UNIDENTIFIED_SENDER) frameEnv.sealed = true;
+  if (isAci(env.serverGuid)) frameEnv.serverGuid = env.serverGuid.toLowerCase();
+  // SECURITY-REVIEW: the reporting token is a server credential for spam reports; it travels to the store but is never logged.
+  if (env.reportSpamToken && env.reportSpamToken.length > 0 && env.reportSpamToken.length <= MAX_REPORT_TOKEN_BYTES) frameEnv.reportSpamToken = toBase64(env.reportSpamToken);
   const c = content.content;
 
   switch (c.case) {
@@ -459,7 +480,8 @@ export async function decryptEnvelope(store: SignalProtocolStore, envelopeBytes:
     destinationServiceId: serviceIdFrom(raw.destinationServiceId, raw.destinationServiceIdBinary),
     timestamp: num(raw.clientTimestamp),
     serverTimestamp: num(raw.serverTimestamp),
-    serverGuid: raw.serverGuid,
+    serverGuid: raw.serverGuidBinary.length === 16 ? bytesToUuid(raw.serverGuidBinary) : raw.serverGuid,
+    reportSpamToken: raw.reportSpamToken.length ? raw.reportSpamToken : undefined,
   };
   const payload = raw.content;
 

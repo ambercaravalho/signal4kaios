@@ -52,6 +52,7 @@ OK on a message opens its options. The first one is what the message is most lik
 - **Pin message** (for everyone in the chat), **Message details**, and **Delete for me**, which also deletes the message on your other linked devices.
 - **Message details** shows the full text, when it was sent, its status, reactions, when it disappears, earlier versions of an edited message, and **Delivered privately** when **Private delivery icon** is on in **Settings → Privacy**.
 - **Shared contacts** show as a card; OK offers **Message** them when they're in your Signal contacts, or **Copy number**.
+- **Link previews** that someone else's phone attached show the page's title and site under the text, with its picture once it's downloaded. Beacon doesn't add previews to links you send.
 - **Polls** show their question, answers, and vote counts. OK → **Vote** picks your answer (or answers, when the poll allows several); vote again to change it, or **Remove my vote**. **View votes** lists who picked what, and the person who made the poll can **End poll**.
 
 **Options** in a chat: Attach, Attach view-once photo or video, Insert emoji, Mention (groups), Create poll (groups), Pinned messages, Mute, and Chat settings.
@@ -74,7 +75,7 @@ OK on a message opens its options. The first one is what the message is most lik
 A new one-to-one chat from someone who isn't in your contacts, and whom you haven't accepted, opens as a message request: **{name} wants to message you** sits in place of the message box. Until you accept, they don't get read receipts or see you typing.
 
 - **Accept** (OK) lets you reply and shares your profile with them.
-- **Options** has **Accept**, **Delete** (removes the chat), and **Block**.
+- **Options** has **Accept**, **Delete** (removes the chat), **Block**, and **Report spam**, which tells Signal about their most recent messages (Signal can't see what's in them), blocks them, and deletes the chat.
 - Sending them a message from another of your devices, or accepting, deleting, or blocking there, does the same here.
 
 ## Media

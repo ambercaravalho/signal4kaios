@@ -7,6 +7,8 @@ Each `## v<version>` section becomes the notes of that GitHub Release; the relea
 ### New
 
 - **Polls.** Polls show in the chat with their answers and vote counts. OK on one → **Vote** (pick again to change it, or **Remove my vote**), **View votes** lists who picked what, and the poll's author can **End poll**. In a group, **Options → Create poll** asks for a question and 2 to 10 answers, and whether people can pick more than one.
+- **Link previews you receive.** A link someone sent with a preview shows the page's title and site under the message, plus its picture once downloaded. Sending previews isn't supported yet.
+- **Report spam.** **Options** on a message request has **Report spam**: Signal is told about their most recent messages, and they're blocked and the chat deleted here and on your other devices.
 
 ### Changed
 

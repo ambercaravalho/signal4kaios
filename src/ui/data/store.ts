@@ -234,7 +234,10 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   };
   if (ev.contactCard) rec.contactCard = ev.contactCard;
   if (ev.poll) rec.poll = { question: ev.poll.question, options: ev.poll.options, allowMultiple: ev.poll.allowMultiple, votes: {} };
+  if (ev.preview) rec.preview = ev.preview;
   if (ev.sealed) rec.sealed = true;
+  if (ev.serverGuid) rec.serverGuid = ev.serverGuid;
+  if (ev.reportToken && conv.type === 'direct') conv.reportToken = ev.reportToken;
   if (ev.expiresInSeconds) {
     rec.expireSecs = ev.expiresInSeconds;
     rec.expiresAt = Date.now() + ev.expiresInSeconds * 1000;
@@ -932,6 +935,26 @@ export function blockRequest(convId: string): Promise<void> {
     .sendMessageRequestResponse(sendId, 'block')
     .then(() => signal.setContactBlocked(sendId, true))
     .then(() => clearRequest(conv));
+}
+
+/** Signal-Desktop reports a chat's 3 most recent incoming messages that carry a server GUID. */
+const REPORT_SPAM_MESSAGES = 3;
+
+/** Report a message request as spam to Signal, then block the person and delete the chat here and on our other devices. */
+export async function reportSpamRequest(convId: string): Promise<void> {
+  const conv = convs[convId];
+  if (!conv || !conv.sendId || conv.type !== 'direct') throw new Error('unknown chat');
+  const sendId = conv.sendId;
+  const recent = await db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, 100);
+  const guids = recent
+    .filter((m) => m.incoming && !!m.serverGuid)
+    .slice(-REPORT_SPAM_MESSAGES)
+    .map((m) => m.serverGuid as string);
+  // SECURITY-REVIEW: the reporting token goes only to Signal's report endpoint.
+  if (guids.length) await signal.reportSpam(sendId, guids, conv.reportToken);
+  await signal.sendMessageRequestResponse(sendId, 'blockAndSpam');
+  await signal.setContactBlocked(sendId, true);
+  await removeChat(conv);
 }
 
 /** Another of our devices answered a message request (or deleted a chat through one). */
