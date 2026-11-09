@@ -2,7 +2,7 @@
   'use strict';
 
   /* Direct Signal WebSocket manager (`wss://chat.signal.org/v1/websocket/`).
-     Connects directly to Signal servers using the linked device's credentials (`login=<aci>.<deviceId>&password=<password>`),
+     Connects directly to Signal servers with the linked device's credentials (Basic auth `<aci>.<deviceId>:<password>` on the upgrade request),
      receives binary `WebSocketMessage` protobuf frames, decrypts `PUT /api/v1/message` envelopes on-device via `App.signal`,
      and sends a 200 OK `WebSocketResponseMessage` ACK only after the message is decrypted and ingested into IndexedDB.
 
@@ -67,20 +67,24 @@
     }
 
     var loginId = (App.config.aci() || App.config.number()) + '.' + App.config.deviceId();
-    // SECURITY-REVIEW: credentials passed to Signal WSS endpoint; redacted from debug logs.
-    var url = App.config.wsUrl() + '/v1/websocket/?agent=OWD' +
-      '&login=' + encodeURIComponent(loginId) +
-      '&password=' + encodeURIComponent(App.config.deviceToken());
+    var baseUrl = App.config.wsUrl() + '/v1/websocket/?agent=OWD';
 
-    App.util.dbg('ws: connecting ' + App.config.wsUrl() + '/v1/websocket/?agent=OWD&login=' + loginId);
+    App.util.dbg('ws: connecting ' + baseUrl + ' as ' + loginId);
     App.store.setConnection('connecting');
     drainingQueue = true;
 
     try {
-      if (App.signal && App.signal.net) {
-        sock = App.signal.net.openWebSocket(url);
+      // SECURITY-REVIEW: device credentials go only to Signal's WebSocket endpoint and are never logged. Signal's chat server authenticates the upgrade by its Authorization header and treats query-string credentials as an anonymous socket, so only the pinned client (which can set headers) receives messages.
+      if (App.signal && App.signal.net && App.signal.net.isPinnedUrl(baseUrl)) {
+        sock = App.signal.net.openWebSocket(baseUrl, {
+          headers: {
+            Authorization: 'Basic ' + btoa(loginId + ':' + App.config.deviceToken()),
+            'X-Signal-Receive-Stories': 'false'
+          }
+        });
       } else {
-        sock = new WebSocket(url);
+        sock = new WebSocket(baseUrl + '&login=' + encodeURIComponent(loginId) +
+          '&password=' + encodeURIComponent(App.config.deviceToken()));
         sock.binaryType = 'arraybuffer';
       }
     } catch (e) {

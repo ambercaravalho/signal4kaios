@@ -166,6 +166,19 @@ describe('HTTP/1.1 client', () => {
     client.closeAll();
   });
 
+  it('runs at most maxPerHost requests per host at once and queues the rest onto pooled connections', async () => {
+    const { connect, conns } = fakeServer((c) => respondTo(c, () => 'HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nq'));
+    const client = new Http1Client(connect, { maxPerHost: 2 });
+    const results = await Promise.all(
+      Array.from({ length: 7 }, (_, i) => client.request({ method: 'GET', url: `https://cdn.signal.org/${i}` }))
+    );
+    assert.deepEqual(results.map((r) => dec(r.body)), Array(7).fill('q'));
+    assert.equal(conns.length, 2);
+    await client.request({ method: 'GET', url: 'https://cdn2.signal.org/other-host' });
+    assert.equal(conns.length, 3);
+    client.closeAll();
+  });
+
   it('fails a truncated body and times out a silent server', async () => {
     const truncated = fakeServer((c) => (c.onBytes = (s) => {
       s.send('HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabc');
@@ -334,6 +347,17 @@ describe('WebSocket client', () => {
     srv.conns[0].send(serverFrame(2, new Uint8Array([9, 8])));
     await until(() => s.messages.length === 1);
     assert.deepEqual([...new Uint8Array(s.messages[0] as ArrayBuffer)], [9, 8]);
+  });
+
+  it('sends caller headers such as Authorization on the upgrade request', async () => {
+    const srv = wsServer();
+    const ws = new PinnedWebSocket('wss://chat.signal.org/v1/websocket/?agent=OWD', srv.connect, { headers: { Authorization: 'Basic YTpi' } });
+    let opened = false;
+    ws.onopen = () => (opened = true);
+    await until(() => opened);
+    assert.match(srv.request(), /^GET \/v1\/websocket\/\?agent=OWD HTTP\/1\.1\r\n/);
+    assert.match(srv.request(), /\r\nAuthorization: Basic YTpi\r\n/);
+    ws.close();
   });
 
   it('reassembles fragmented messages and answers pings', async () => {

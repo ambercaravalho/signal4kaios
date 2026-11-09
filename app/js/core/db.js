@@ -23,10 +23,11 @@
   var SIGNAL_STORES = ['signal_keystore', 'signal_identities', 'signal_sessions', 'signal_prekeys', 'signal_sender_keys'];
   var opened = null;
   var signalStateReset = false;
+  var accountOverride = null;
 
   /* Each account gets its own database. */
   function dbName() {
-    var num = App.config.number();
+    var num = accountOverride !== null ? accountOverride : App.config.number();
     return num ? 'signal4kaios:' + num : 'signal4kaios';
   }
 
@@ -116,6 +117,16 @@
     /* Opens (and if needed upgrades) the active account's database. */
     ready: function () {
       return open().then(function () {});
+    },
+
+    /* Close the open database and use `number`'s instead, or the active account's again when `number` is null. Linking calls this before saving keys, because the new account isn't the active one until the reload that follows. */
+    useAccount: function (number) {
+      var prev = opened;
+      opened = null;
+      accountOverride = number === null ? null : (number || '');
+      return (prev || Promise.resolve(null)).then(function (db) {
+        if (db) db.close();
+      }, function () {}).then(open).then(function () {});
     },
 
     /* True when this launch upgraded a pre-libsignal (v3) database and discarded its protocol state; the device has to be linked again. */

@@ -80,6 +80,8 @@ export function provisionedMasterKey(prov: ProvisionMessage): Uint8Array | undef
 export interface ProvisioningCallbacks {
   onQrUrl: (sgnlUri: string) => void;
   onStatus?: (statusText: string) => void;
+  /** Runs after the ProvisionMessage is decrypted and before anything is written to the store, so the app can point the store at the linked account's database. */
+  beforeLinking?: (account: { aci: string; number: string }) => Promise<void> | void;
   onLinked: (account: AccountCredentials) => void;
   onError: (err: Error) => void;
 }
@@ -278,10 +280,20 @@ export function startDeviceProvisioning(
           const prov = fromBinary(ProvisionMessageSchema, receiver.decryptEnvelope(req.body));
           // The provisioning socket is no longer needed once the ProvisionMessage arrived.
           finish();
-          finishLinking(store, httpRequest, prov, deviceName, httpBase, callbacks.onStatus).then(
-            (creds) => callbacks.onLinked(creds),
-            (err) => callbacks.onError(err instanceof Error ? err : new Error(String(err)))
-          );
+          const account = { aci: serviceIdFrom(prov.aci, prov.aciBinary), number: prov.number || '' };
+          Promise.resolve()
+            .then(() => callbacks.beforeLinking && callbacks.beforeLinking(account))
+            .then(() => {
+              store.forgetCachedAccount();
+              return finishLinking(store, httpRequest, prov, deviceName, httpBase, callbacks.onStatus);
+            })
+            .then(
+              (creds) => callbacks.onLinked(creds),
+              (err) => {
+                store.forgetCachedAccount();
+                callbacks.onError(err instanceof Error ? err : new Error(String(err)));
+              }
+            );
         }
       } catch (e) {
         fail(e);

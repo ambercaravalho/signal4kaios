@@ -61,21 +61,30 @@
     }
   }
 
-  /* Schedule a one-shot wake alarm on KaiOS 3.0+ via navigator.b2g.alarmManager. */
+  var alarmQueue = Promise.resolve();
+
+  /* Remove this app's pending alarms whose data.type matches. */
+  function clearAlarms(am, type) {
+    if (!am.getAll || !am.remove) return Promise.resolve();
+    return fromRequest(am.getAll()).then(function (list) {
+      (list || []).forEach(function (a) {
+        if (a && a.data && a.data.type === type) am.remove(a.id);
+      });
+    });
+  }
+
+  /* Schedule a one-shot wake alarm on KaiOS 3.0+ via navigator.b2g.alarmManager, replacing any pending alarm of the same data.type: alarms outlive the page, so adding without removing piles them up. */
   function scheduleAlarm(date, data) {
     var api = b2g();
-    if (api && api.alarmManager && api.alarmManager.add) {
-      try {
-        return fromRequest(api.alarmManager.add({
-          date: date,
-          data: data,
-          ignoreTimezone: false
-        }));
-      } catch (e) {
-        return Promise.reject(e);
-      }
-    }
-    return Promise.reject(new Error('alarms unavailable'));
+    var am = api && api.alarmManager;
+    if (!am || !am.add) return Promise.reject(new Error('alarms unavailable'));
+    var run = alarmQueue.then(function () {
+      return clearAlarms(am, data && data.type)['catch'](function () {});
+    }).then(function () {
+      return fromRequest(am.add({ date: date, data: data, ignoreTimezone: false }));
+    });
+    alarmQueue = run['catch'](function () {});
+    return run;
   }
 
   function hasServiceWorker() {

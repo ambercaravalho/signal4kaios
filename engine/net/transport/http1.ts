@@ -271,12 +271,17 @@ interface PooledConn {
   idleTimer: ReturnType<typeof setTimeout> | null;
 }
 
+const DEFAULT_MAX_PER_HOST = 6;
+
 export class Http1Client {
   private readonly idle = new Map<string, PooledConn[]>();
+  private readonly active = new Map<string, number>();
+  private readonly waiting = new Map<string, Array<() => void>>();
 
+  /** At most `maxPerHost` requests run per host at once (Gecko's own limit); the rest wait, because every new connection costs a TLS handshake on the phone's CPU. */
   constructor(
     private readonly connect: Connector,
-    private readonly opts: { maxIdlePerHost?: number; idleMs?: number; userAgent?: string } = {}
+    private readonly opts: { maxPerHost?: number; maxIdlePerHost?: number; idleMs?: number; userAgent?: string } = {}
   ) {}
 
   async request(req: HttpRequest): Promise<HttpResponse> {
@@ -293,26 +298,56 @@ export class Http1Client {
     const head = buildRequestHead(method, target, host, port, headers);
     const timeoutMs = req.timeoutMs || DEFAULT_TIMEOUT_MS;
     const maxBytes = req.maxResponseBytes || DEFAULT_MAX_RESPONSE_BYTES;
-    const deadline = Date.now() + timeoutMs;
     const key = `${host}:${port}`;
 
-    const reused = this.takeIdle(key);
-    if (reused) {
-      try {
-        return await this.exchange(key, reused, method, head, body, maxBytes, deadline);
-      } catch (e) {
-        // A kept-alive socket the server already closed fails before any response byte; retry once on a fresh one.
-        if (!(e instanceof StaleConnectionError)) throw e;
-      }
-    }
-    const stream = await this.connect(host, port, Math.max(1000, deadline - Date.now()));
-    const conn: PooledConn = { stream, dead: false, idleTimer: null };
+    await this.acquire(key);
     try {
-      return await this.exchange(key, conn, method, head, body, maxBytes, deadline);
-    } catch (e) {
-      if (e instanceof StaleConnectionError) throw new TransportError('network', `connection to ${host} closed before a response`);
-      throw e;
+      const deadline = Date.now() + timeoutMs;
+      const reused = this.takeIdle(key);
+      if (reused) {
+        try {
+          return await this.exchange(key, reused, method, head, body, maxBytes, deadline);
+        } catch (e) {
+          // A kept-alive socket the server already closed fails before any response byte; retry once on a fresh one.
+          if (!(e instanceof StaleConnectionError)) throw e;
+        }
+      }
+      const stream = await this.connect(host, port, Math.max(1000, deadline - Date.now()));
+      const conn: PooledConn = { stream, dead: false, idleTimer: null };
+      try {
+        return await this.exchange(key, conn, method, head, body, maxBytes, deadline);
+      } catch (e) {
+        if (e instanceof StaleConnectionError) throw new TransportError('network', `connection to ${host} closed before a response`);
+        throw e;
+      }
+    } finally {
+      this.releaseSlot(key);
     }
+  }
+
+  private acquire(key: string): Promise<void> {
+    const running = this.active.get(key) || 0;
+    if (running < (this.opts.maxPerHost ?? DEFAULT_MAX_PER_HOST)) {
+      this.active.set(key, running + 1);
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      const queue = this.waiting.get(key) || [];
+      queue.push(resolve);
+      this.waiting.set(key, queue);
+    });
+  }
+
+  private releaseSlot(key: string): void {
+    const queue = this.waiting.get(key);
+    const next = queue && queue.shift();
+    if (next) {
+      next();
+      return;
+    }
+    const running = (this.active.get(key) || 1) - 1;
+    if (running > 0) this.active.set(key, running);
+    else this.active.delete(key);
   }
 
   closeAll(): void {
@@ -332,7 +367,7 @@ export class Http1Client {
   }
 
   private release(key: string, conn: PooledConn): void {
-    const max = this.opts.maxIdlePerHost ?? 2;
+    const max = this.opts.maxIdlePerHost ?? this.opts.maxPerHost ?? DEFAULT_MAX_PER_HOST;
     const list = this.idle.get(key) || [];
     if (conn.dead || list.length >= max) {
       this.discard(conn);
