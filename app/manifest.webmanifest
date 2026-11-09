@@ -2,7 +2,7 @@
   "id": "signal4kaios",
   "name": "Signal4KaiOS",
   "short_name": "Signal",
-  "description": "Signal messenger client, powered by signal-cli-rest-api",
+  "description": "Standalone Signal messenger client for KaiOS 3.0, 3.1, and 4.0 with on-device encryption",
   "lang": "en-US",
   "start_url": "/index.html",
   "display": "standalone",
@@ -14,7 +14,7 @@
     { "src": "/assets/icons/kaios_112.png", "type": "image/png", "sizes": "112x112" }
   ],
   "b2g_features": {
-    "version": "1.1.3",
+    "version": "2.0.0",
     "type": "privileged",
     "origin": "signal4kaios",
     "subtitle": "Signal client",
@@ -25,13 +25,10 @@
     "cursor": false,
     "permissions": {
       "systemXHR": {
-        "description": "Connect to your self-hosted Signal gateway server"
+        "description": "Connect directly to Signal servers and CDN"
       },
       "desktop-notification": {
         "description": "Show notifications for new Signal messages"
-      },
-      "push": {
-        "description": "Receive new-message notifications while the app is closed"
       },
       "alarms": {
         "description": "Periodically wake to reconnect and catch up on messages"

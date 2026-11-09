@@ -17,13 +17,31 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
 
-      - name: Package (Gecko-48 gate + version check)
+      - name: Install protoc and binaryen
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler binaryen
+
+      - name: Install the pinned Rust toolchain
+        working-directory: native/libsignal-wasm
+        run: rustup toolchain install
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version "$(sed -n 's/^wasm-bindgen = "=\([^"]*\)"/\1/p' native/libsignal-wasm/Cargo.toml)" --locked
+
+      - name: Install, test, and package
         id: pkg
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          sh app/scripts/package.sh
+          npm ci
+          npm run build:wasm
+          npm run typecheck
+          npm test
+          SKIP_WASM_BUILD=1 sh scripts/package.sh
           echo "asset=signal4kaios-${RELEASE_TAG#v}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
@@ -42,10 +60,7 @@ jobs:
 
           ### Install
 
-          - **KaiOS 3.0 / 3.1 / 4.0:** copy \`$ASSET\` (still zipped) to the phone and install it from OStore's **Manual Install** tab → **Install app from sdcard**, or sideload it (unzipped) with \`appscmd\`; see [Setup](https://github.com/$REPO/blob/main/docs/setup.md#3-install-the-app).
-          - **KaiOS 2.5:** sideload \`$ASSET\` (unzipped) with WebIDE; see [Setup](https://github.com/$REPO/blob/main/docs/setup.md#3-install-the-app).
-
-          Signal4KaiOS needs your own self-hosted backend (signal-cli-rest-api + gateway). Set it up first: [Setup](https://github.com/$REPO/blob/main/docs/setup.md).
+          - **KaiOS 3.0 / 3.1 / 4.0:** copy \`$ASSET\` (still zipped) to the phone and install it from OStore's **Manual Install** tab → **Install app from sdcard**, or sideload it (unzipped) with \`appscmd\`; see [Setup](https://github.com/$REPO/blob/main/docs/setup.md).
           EOF
           PRERELEASE=""
           case "$TAG" in *-*) PRERELEASE="--prerelease" ;; esac

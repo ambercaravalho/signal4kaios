@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* Main settings menu. The gateway connection fields live in their own screen (App.screens.serversettings); everything here is a menu action, a boolean toggle (checkbox), or a value selector. */
+  /* Main settings menu. Linking lives in its own screen (App.screens.link); everything here is a menu action, a boolean toggle (checkbox), or a value selector. */
 
   App.screens.settings = {
     create: function () {
@@ -47,10 +47,8 @@
 
       list.appendChild(App.util.sectionHeader('Account'));
       action('Edit profile', 'Set your Signal name');
+      action('Linked account', 'QR link, sync & PreKeys');
       action('Switch account', 'Change or add a number');
-
-      list.appendChild(App.util.sectionHeader('Server'));
-      action('Server & connection', 'Gateway and pairing');
 
       list.appendChild(App.util.sectionHeader('Chats'));
       var styledRow = toggle('Text formatting',
@@ -78,10 +76,10 @@
       action('Clear local data', 'Deletes cached messages on this phone');
 
       list.appendChild(App.util.sectionHeader('Help'));
-      var aboutRow = action('About & setup help', 'What the app needs to work');
+      var aboutRow = action('About & setup help', 'On-device Signal encryption');
       App.util.appVersion().then(function (v) {
         var hint = aboutRow.querySelector('.hint');
-        if (v && hint) hint.textContent = 'Version ' + v + ' \u00b7 backend setup';
+        if (v && hint) hint.textContent = 'Version ' + v + ' \u00b7 on-device E2EE';
       });
 
       var status = App.util.el('div', 'status-line', '');
@@ -120,7 +118,7 @@
         var items = accounts.map(function (a) {
           return {
             label: a.number + (a.number === active ? ' (current)' : ''),
-            hint: a.serverUrl,
+            hint: a.deviceId ? 'Device ' + a.deviceId : '',
             onSelect: function () {
               if (a.number === active) return;
               App.config.switchAccount(a.number);
@@ -132,7 +130,7 @@
           label: 'Add account',
           hint: 'Set up another number',
           onSelect: function () {
-            App.router.push(App.screens.serversettings.create({ addAccount: true }));
+            App.router.push(App.screens.link.create({ addAccount: true }));
             return 'keep';
           }
         });
@@ -141,8 +139,8 @@
 
       function onAction(id) {
         switch (id) {
-          case 'Server & connection':
-            return App.router.push(App.screens.serversettings.create());
+          case 'Linked account':
+            return App.router.push(App.screens.link.create());
           case 'Theme':
             return chooseTheme();
           case 'Blocked':

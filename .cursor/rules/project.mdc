@@ -1,0 +1,39 @@
+---
+description: What signal4kaios is, its hard constraints, security baseline, and definition of done
+alwaysApply: true
+---
+
+# signal4kaios
+
+A standalone Signal client for **KaiOS 3.0, 3.1 (Gecko 84) and 4.0 (Gecko 123)**. It links to an account as a Signal linked device and runs all cryptography on the phone. KaiOS 2.5, the self-hosted gateway, and signal-cli are gone; don't reintroduce them.
+
+## Layout
+
+- `app/`: the packaged KaiOS app (`js/core`, `js/data`, `js/ui`, `js/screens`, `sw.js`), zipped as-is.
+- `engine/`: TypeScript Signal engine bundled into `app/vendor/signal-engine.bundle.js` as `window.App.signal`.
+- `native/libsignal-wasm/`: Rust wrapper over official libsignal, built to `app/vendor/libsignal_wasm_bg.wasm`.
+- `protos/` and `engine/gen/`: vendored Signal schemas and their generated codecs.
+- `scripts/`, `test/`, `docs/` (start with `docs/architecture.md`).
+
+## Hard rules
+
+- Never reimplement Signal cryptography (sessions, PQXDH, Sealed Sender, Sender Keys, safety numbers, provisioning, zkgroup, usernames) in TypeScript; call libsignal through `engine/protocol/protocol.ts`.
+- Port Signal-specific derivations from Signal-Desktop instead of inventing them.
+- The privileged CSP forbids `eval()`, `new Function()`, inline `<script>`/`<style>`, and inline event handlers.
+- Don't hard-wrap prose, Markdown, or comments; one line per paragraph, list item, or comment sentence.
+- Write comments only for constraints the code can't show.
+
+## Security baseline
+
+- No hardcoded secrets.
+- Treat WebSocket frames, protobuf payloads, and HTTP responses as untrusted.
+- Never log private keys, passwords, provisioning codes, or credentials via `App.util.dbg` or `console`.
+- Mark code that handles credentials with a `SECURITY-REVIEW:` comment.
+
+## Definition of done
+
+```sh
+npm run build:wasm && npm run typecheck && npm test && npm run package
+```
+
+CI also requires `npm run gen:protos` to leave `engine/gen/` unchanged.

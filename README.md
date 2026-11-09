@@ -1,11 +1,13 @@
 # signal4kaios
 
-*real Signal, on a phone with actual buttons.*
+*Real Signal, on a phone with actual buttons.*
 
-signal4kaios is a full-featured [Signal](https://signal.org) messenger for **KaiOS** feature phones. Send and receive messages, react, reply, join groups, and share photos, all driven by the number pad and D-pad.
+[![CI](https://github.com/ambercaravalho/signal4kaios/actions/workflows/ci.yml/badge.svg)](https://github.com/ambercaravalho/signal4kaios/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/ambercaravalho/signal4kaios?include_prereleases)](https://github.com/ambercaravalho/signal4kaios/releases) [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
-> [!IMPORTANT]
-> **You need to run a small backend** (two Docker containers) on a computer or server you control. The app does nothing without it.
+signal4kaios is a standalone [Signal](https://signal.org) client for **KaiOS 3.0, 3.1, and 4.0** feature phones. It links to your Signal account as a [linked device](https://support.signal.org/hc/en-us/articles/360007320551), like Signal Desktop, and runs all encryption on the phone with Signal's official [libsignal](https://github.com/signalapp/libsignal) compiled to WebAssembly. Everything is driven by the D-pad and number keys.
+
+> [!NOTE]
+> signal4kaios is a work in progress. Everyday messaging, groups, and sync work, but calls, stories, link previews, polls, and some other Signal features don't yet. The [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) tracks everything that's missing.
 
 ## Screenshots
 
@@ -15,45 +17,42 @@ img2
 
 img3
 
-## How it works
-
-The phone app is only a client. Your Signal account lives on [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api), which stays on an internal network. The phone talks to the **gateway** in front of it, which proxies the API, buffers messages so none are missed while you're offline, sends background push, and only accepts phones you've paired with a one-time code.
-
 ## Quickstart
 
-1. **Start the backend** on a computer with Docker. Both containers are prebuilt images, so nothing is built locally:
+1. **Install.** Download `signal4kaios-<version>.zip` from [Releases](https://github.com/ambercaravalho/signal4kaios/releases) and install it from OStore's **Manual Install** tab, or sideload it with [`appscmd`](https://github.com/kaiostech/appscmd).
+2. **Link.** Open the app; it shows a QR code. On your main phone, go to Signal → **Settings → Linked devices → Link a new device** and scan it.
+3. **Chat.** Contacts and groups sync from your account within a minute.
 
-   ```sh
-   git clone --depth 1 https://github.com/ambercaravalho/signal4kaios.git && cd signal4kaios
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-
-2. **Link your Signal account** to it as a linked device, like Signal Desktop: run `docker compose -f docker/docker-compose.yml exec gateway npm run link` and scan the QR code it shows from Signal's **Linked devices** screen.
-3. **Install the app and pair it.** Get the ZIP from [Releases](https://github.com/ambercaravalho/signal4kaios/releases). On KaiOS 3.0+, copy it to the phone and install it from OStore's **Manual Install** tab (or sideload with `appscmd`); on 2.5, sideload it with WebIDE (see [Setup](docs/setup.md#3-install-the-app)). Open the app and enter the gateway's address plus the pairing code it prints (`docker compose -f docker/docker-compose.yml logs gateway`).
-
-The full walkthrough, including use away from home, is in **[Setup](docs/setup.md)**.
+> [!IMPORTANT]
+> KaiOS 4.0 blocks WebAssembly by default. Do the one-time [rooted WebAssembly step](docs/setup.md#kaios-40-enable-webassembly) before the first launch.
 
 ## Features
 
 | Area | What you get |
 | --- | --- |
-| **Messaging** | Real-time 1:1 and group chat, reactions, replies, edits, read receipts, and typing indicators |
-| **Disappearing messages** | Per-chat timer, live countdown on a message, and automatic deletion when it expires |
-| **Notifications** | Background push (KaiOS 3.0+) that reaches you even when the app is fully closed |
-| **Never miss a message** | The backend buffers anything that arrives while you're offline |
-| **Media** | Send/receive photos, video, voice notes, and files |
-| **Groups** | Manage members, admins, per-action permissions, invite links, and pinned messages |
-| **Finding people** | Search-as-you-type, or start a chat by number/username with a registration check |
-| **Organization** | Multiple accounts, archived/muted chats, pinned conversations, unread badges, and local search |
+| **Encryption** | libsignal on the phone: PQXDH, Double Ratchet, Sealed Sender, Sender Keys, safety numbers, and AES-256 attachment encryption |
+| **Messaging** | 1:1 and group chats, reactions, replies, edits, delete for everyone, read receipts, typing indicators, and text formatting |
+| **Disappearing messages** | Per-chat timer, a live countdown on each message, and automatic deletion |
+| **Media** | Encrypted photos, video, voice notes, and files via Signal's CDNs |
+| **Sync** | Contacts, groups, blocked list, and profiles from Signal's Storage Service and your primary device; nicknames, blocking, archive, mute, pinned chats, and your username sync back |
+| **Groups** | Rename, description, timer, members, admins, invites, permissions, group links, leave, and block, as real Groups V2 changes |
+| **Organization** | Multiple accounts, archived, muted, and pinned chats, pinned messages, a Signal username with its QR code, and local search |
+
+For what isn't supported yet, see [Known limitations](docs/user-guide.md#known-limitations) and the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap).
 
 ## Documentation
 
-- **[Setup](docs/setup.md)**: backend, install, pairing, remote access, and troubleshooting.
-- **[User guide](docs/user-guide.md)**: every feature and the keypad reference.
-- **[Development](docs/development.md)**: architecture, the gateway and its protocols, testing, and releasing.
-
-Contributing (or pointing an AI agent at this repo)? Start with **[AGENTS.md](AGENTS.md)**.
+| Guide | Covers |
+| --- | --- |
+| [Setup](docs/setup.md) | Installing, linking, KaiOS 4.0 WebAssembly, and troubleshooting |
+| [User guide](docs/user-guide.md) | Every feature and the keypad reference |
+| [Architecture](docs/architecture.md) | How the app, the engine, and libsignal fit together |
+| [Development](docs/development.md) | Building, testing, bumping pins, and releasing |
+| [Changelog](CHANGELOG.md) | Release notes |
+| [Roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) | Signal features that aren't supported yet, by area |
 
 ## License
 
-[GPL-3.0](LICENSE).
+[GPL-3.0](LICENSE). The app bundles Signal's [libsignal](https://github.com/signalapp/libsignal) (AGPL-3.0-only) compiled to WebAssembly; GPL-3.0 section 13 permits that combination. See [NOTICE](NOTICE).
+
+signal4kaios is an independent project and is not affiliated with or endorsed by Signal Messenger, LLC or KaiOS Technologies.

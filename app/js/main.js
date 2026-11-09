@@ -14,7 +14,7 @@
   /* A notification tapped while the app was closed can't postMessage a live window, so sw.js stashes the target conversation in Cache Storage. Read it once on boot (fresh entries only, so an unrelated later launch still lands on the list), clear it, and open the chat. */
   function openPendingConversation() {
     if (typeof caches === 'undefined') return;
-    caches.open('s4k-push').then(function (cache) {
+    caches.open('s4k-wake').then(function (cache) {
       return cache.match('/__s4k_pending_conv').then(function (res) {
         if (!res) return null;
         return res.json().then(function (info) {
@@ -34,7 +34,7 @@
     });
   }
 
-  /* Register the ServiceWorker that shows closed-app push notifications, relays wake alarms, and handles notification clicks. Runs on any KaiOS with a ServiceWorker (2.5 once the 'serviceworker' permission is granted, and 3.0/3.1/4.0); feature-detected via App.platform.hasServiceWorker(), so it's a clean no-op on platforms without one. */
+  /* Register the ServiceWorker that relays wake alarms, shows closed-app notifications, and handles notification clicks. Feature-detected via App.platform.hasServiceWorker(), so it's a no-op in a desktop browser without one. */
   function registerServiceWorker() {
     if (!App.platform.hasServiceWorker()) return;
     try {
@@ -61,6 +61,25 @@
     registerServiceWorker();
     App.router.init(document.getElementById('screens'));
 
+    // Every Signal operation runs in the libsignal WebAssembly module, so nothing that touches App.signal may start until it has loaded.
+    App.signal.ready().then(function (version) {
+      App.util.dbg('libsignal ' + version + ' ready');
+      return App.db.ready().then(function () {
+        // A pre-libsignal database was upgraded and its protocol state discarded: the old link can't be used any more.
+        if (App.db.signalStateWasReset() && App.config.isConfigured()) {
+          App.util.dbg('boot: protocol state reset by the libsignal upgrade, relink required');
+          App.config.forgetAccount();
+        }
+      }, function (e) {
+        App.util.dbg('boot: database open failed ' + (e && e.message));
+      }).then(start);
+    }, function (err) {
+      App.util.dbg('libsignal failed to load: ' + ((err && err.reason) || '') + ' ' + (err && err.message));
+      App.router.push(App.screens.wasmerror.create(err));
+    });
+  }
+
+  function start() {
     // Surface connection drops as a top-of-screen in-app notice (distinct from the transient toast). Only fire on an actual open -> offline transition.
     var lastConn = null;
     App.store.on('connection', function (state) {
@@ -72,19 +91,19 @@
       lastConn = state;
     });
 
-    // The gateway rejected our device token (revoked, or its data was reset): forget it and restart into pairing, which explains what happened.
-    App.http.onUnpaired = function () {
-      App.util.dbg('auth: device token rejected, returning to pairing');
+    // Signal server rejected our linked device credentials (unlinked from primary phone): forget the account and return to the Link screen.
+    App.http.onUnlinked = function () {
+      App.util.dbg('auth: linked device rejected, returning to link screen');
       App.ws.stop();
-      App.config.forgetPairing(App.config.serverUrl());
+      App.config.forgetAccount();
       location.reload();
     };
 
     if (App.config.isConfigured()) {
       App.router.push(App.screens.conversations.create());
-    } else if (App.config.serverUrl()) {
-      // Set up before, but no longer paired.
-      App.router.push(App.screens.serversettings.create({ firstRun: true, unpaired: true }));
+    } else if (App.config.number() || App.config.aci()) {
+      // Linked before, but unlinked.
+      App.router.push(App.screens.link.create({ firstRun: true, unlinked: true }));
     } else {
       App.router.push(App.screens.welcome.create({ firstRun: true }));
     }
@@ -100,8 +119,8 @@
       }, 5000);
     });
 
-    // Background push is always on: subscribe and (re-)register with the gateway (endpoints can change across reboots/updates). Best-effort, non-blocking; a clean no-op on KaiOS 2.5 / where Push is unsupported.
-    if (App.push) App.push.sync();
+    // Re-arm closed-app wake on every start (KaiOS drops alarm subscriptions across reboots). Best-effort and non-blocking.
+    if (App.wake) App.wake.sync();
   }
 
   window.addEventListener('load', boot);

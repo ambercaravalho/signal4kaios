@@ -2,33 +2,52 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, v2.0.0]
   pull_request:
 
 permissions:
   contents: read
 
+env:
+  WASM_BINDGEN_VERSION: 0.2.126
+
 jobs:
   app:
-    name: App packaging gate
+    name: Build, test & package app
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: sh app/scripts/package.sh
-
-  gateway:
-    name: Gateway build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: gateway
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 26
+          node-version: 24
           cache: npm
-          cache-dependency-path: gateway/package-lock.json
+
+      - name: Install protoc and binaryen
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler binaryen
+
+      - name: Install the pinned Rust toolchain
+        working-directory: native/libsignal-wasm
+        run: rustup toolchain install
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/wasm-bindgen
+            native/libsignal-wasm/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('native/libsignal-wasm/Cargo.lock', 'native/libsignal-wasm/rust-toolchain.toml') }}-wbg${{ env.WASM_BINDGEN_VERSION }}
+
+      - name: Install wasm-bindgen-cli
+        run: |
+          if ! wasm-bindgen --version 2>/dev/null | grep -q " $WASM_BINDGEN_VERSION$"; then
+            cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked --force
+          fi
+
       - run: npm ci
-      - run: npm run build
+      - run: npm run build:wasm
+      - name: Generated protobuf codecs are up to date
+        run: npm run gen:protos && git diff --exit-code -- engine/gen
+      - run: npm run typecheck
       - run: npm test
+      - run: SKIP_WASM_BUILD=1 sh scripts/package.sh

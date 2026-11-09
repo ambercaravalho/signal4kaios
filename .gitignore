@@ -1,16 +1,16 @@
-# Packaged app output (produced by app/scripts/package.sh)
+# Packaged app output (produced by scripts/package.sh)
 dist/
+app/vendor/signal-engine.bundle.js
+app/vendor/libsignal_wasm_bg.wasm
+
+# libsignal wasm wrapper build output (produced by npm run build:wasm)
+native/libsignal-wasm/target/
+native/libsignal-wasm/pkg/
 
 # OS cruft
 .DS_Store
 
-# Gateway build/runtime and secrets (gateway/, docker/)
+# Build/test artifacts
 node_modules/
 dist-test/
-data/
 *.log
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local

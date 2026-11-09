@@ -1,0 +1,17 @@
+---
+description: Rules for the Rust wasm-bindgen wrapper over official libsignal (pins, toolchain, API shape, license)
+globs: native/**
+alwaysApply: false
+---
+
+# libsignal wrapper (`native/libsignal-wasm/`)
+
+- Every libsignal crate in `Cargo.toml` uses the **same** official release commit (`rev`). Bump them together, with `@signalapp/libsignal-client` in `package.json` at the same version; see `docs/development.md` "Bumping the libsignal pin".
+- `wasm-bindgen` is pinned with `=` and must equal the installed CLI (`build.sh` checks). The version also lives in `WASM_BINDGEN_VERSION` in `.github/workflows/ci.yml`.
+- The toolchain comes from `rust-toolchain.toml`. `.cargo/config.toml` forces the wasm32 target, so run `cargo install` from outside this folder.
+- Building needs `protoc` on PATH.
+- The API is record-in, record-out: functions take serialized records, return results plus changed records, and never hold state between calls beyond the `ProtocolStore` the caller hydrates and drains (`put*` / `take*`).
+- Return failures as JS errors whose `name` is a stable code (e.g. `UntrustedIdentity`); TypeScript matches on it.
+- Expose thin wrappers over libsignal; don't add cryptographic logic of our own here.
+- Release profile is size-optimized (`opt-level = "z"`, LTO, `panic = "abort"`); keep it that way for the phone.
+- The crate is AGPL-3.0-only (see `NOTICE`); don't change its license field.

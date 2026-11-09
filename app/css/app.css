@@ -1,4 +1,4 @@
-/* Signal4KaiOS — 240x320 QVGA, Gecko 48: flexbox only, no grid, px only (Gecko 48's rem handling is unreliable). Values are pinned to the KaiOS design guide + KaiUI reference (their rem base is 1rem = 10px, so KaiUI 2.8rem -> 28px, 6rem -> 60px, etc.). Colors and metrics come from the token layer below; the native light theme is the default, Signal dark is opt-in via html[data-theme="dark"]. The Signal-blue accent is kept as the highlight color in both themes. */
+/* Signal4KaiOS — 240x320 QVGA: flexbox layouts and px units. Values are pinned to the KaiOS design guide + KaiUI reference (their rem base is 1rem = 10px, so KaiUI 2.8rem -> 28px, 6rem -> 60px, etc.). Colors and metrics come from the token layer below; the native light theme is the default, Signal dark is opt-in via html[data-theme="dark"]. The Signal-blue accent is kept as the highlight color in both themes. */
 
 /* ---- Design tokens (defaults = native KaiOS light theme) ---- */
 :root {
@@ -956,7 +956,7 @@ html, body {
   overflow: hidden;
 }
 
-/* Absolutely fill the viewer and letterbox via object-fit so the aspect ratio is preserved. Percentage max-height on a flex child is unreliable on Gecko 48, which stretched the image; anchoring to the positioned .viewer avoids that. */
+/* Absolutely fill the viewer and letterbox via object-fit so the aspect ratio is preserved. Percentage max-height on a flex child can stretch the image; anchoring to the positioned .viewer avoids that. */
 .viewer img,
 .viewer video {
   position: absolute;

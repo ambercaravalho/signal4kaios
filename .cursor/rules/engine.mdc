@@ -1,0 +1,39 @@
+---
+description: Invariants for the TypeScript Signal engine and its tests (libsignal calls, protobuf-es, trust, untrusted input)
+globs: engine/**,test/**
+alwaysApply: false
+---
+
+# Signal engine (`engine/`, `test/`)
+
+- Every libsignal call that reads or writes protocol records goes through `engine/protocol/protocol.ts`, which hydrates a `ProtocolStore`, makes one call, flushes changes, and holds a lock throughout. Don't call `libsignal.*` session/identity APIs elsewhere.
+- Match libsignal failures by `errorCode(err)` (`UntrustedIdentity`, `DuplicatedMessage`, ...), not by message text.
+- Incoming envelopes decrypt one at a time via `SignalClient.enqueueDecryptEnvelope` (`net/client.ts`).
+- Layout: `protocol/` (libsignal, store, PreKeys), `net/` (`http.ts` hosts and HTTP types, `proto.ts`, `provisioning.ts`, `receive.ts`, `client.ts`), `services/` (Storage Service, profiles, Groups V2), `crypto/`.
+
+## Protobuf (protobuf-es v2)
+
+- Build messages with `create(Schema, init)`, encode with `toBinary`, decode with `fromBinary`. Use `MessageInitShape<typeof XSchema>` for init types.
+- Never spread a generated message: unset proto2 fields live on the prototype and are lost.
+
+```ts
+// Bad: drops prototype defaults such as `key`
+const copy = { ...pointer, fileName };
+// Good
+const copy = create(AttachmentPointerSchema, { key: pointer.key, digest: pointer.digest, fileName });
+```
+
+- uint64 fields are `bigint` (use `num()`), oneofs are `{ case, value }`, and proto2 fields default to empty values, not `undefined`.
+- Never edit `engine/gen/`; regenerate with `npm run gen:protos`.
+
+## Trust and input
+
+- Recipients are ACIs (`isAci`); resolve phone numbers through synced contacts.
+- Accept sync messages only when the envelope source is our own ACI.
+- Treat frames, protobufs, and HTTP responses as untrusted; validate lengths and types before use.
+- Compare MACs and secrets with `constantTimeEqual`.
+
+## Tests
+
+- Interop tests in `test/interop.test.ts` must keep passing against `@signalapp/libsignal-client` at the pinned version; add a both-directions case when wrapping new libsignal functionality.
+- `test/support.ts` loads the wasm module from `app/vendor/`, so run `npm run build:wasm` first.

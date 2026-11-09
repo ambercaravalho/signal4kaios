@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* Full-screen attachment viewer. Downloads via systemXHR, caches the blob in IndexedDB (LRU, ~40 entries). Images display inline, audio and video play in-app with the center key, and anything downloaded can be saved to the phone via DeviceStorage (SoftLeft). */
+  /* Full-screen attachment viewer. Downloads and decrypts via App.api.attachment, caches the blob in IndexedDB (LRU, ~40 entries). Images display inline, audio and video play in-app with the center key, and anything downloaded can be saved to the phone via DeviceStorage (SoftLeft). */
 
   var CACHE_KEEP = 150; // shared attachment LRU; matches chat thumbnail cache
 
@@ -101,16 +101,21 @@
           }
           return App.api.attachment(att.id).then(function (blob) {
             show(blob);
+          if (att.viewOnce) {
+            // Auto-purge view-once media from local cache immediately after viewing
+            App.db.putAttachment(att.id, new Blob([]), '');
+          } else {
             App.db.putAttachment(att.id, blob, att.contentType).then(function () {
               return App.db.pruneAttachments(CACHE_KEEP);
             });
+          }
           });
         })['catch'](fail);
       }
 
       function save() {
         if (!loadedBlob) return;
-        // App.platform picks navigator.b2g.getDeviceStorage (3.0/4.0) or navigator.getDeviceStorage (2.5); null on desktop.
+        // navigator.b2g.getDeviceStorage via App.platform; null on desktop.
         var storage = App.platform.getDeviceStorage(storageFor(type()));
         if (!storage) {
           App.toast('Saving only works on the phone');

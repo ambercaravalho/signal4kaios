@@ -1,0 +1,16 @@
+---
+description: Style and structure for README, docs/, and CHANGELOG
+globs: "**/*.md"
+alwaysApply: false
+---
+
+# Docs
+
+- One line per paragraph or list item; no hard wrapping.
+- Open each doc with a one-sentence summary and a table of contents.
+- Use GitHub-flavored Markdown where it helps: alerts (`> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`), tables for enumerable facts, `<details>` for troubleshooting entries, `diff` blocks for config edits, Mermaid for flows, and task lists for checklists.
+- Link to official sources instead of restating them: Signal support, [libsignal](https://github.com/signalapp/libsignal), [Signal-Desktop](https://github.com/signalapp/Signal-Desktop), KaiOS docs, `appscmd`, `api-daemon`, protobuf-es, wasm-bindgen.
+- Describe what the code actually does. Local-only or stubbed features belong in `docs/user-guide.md` "Known limitations", not in feature lists.
+- Where things live: `README.md` (pitch, quickstart, docs index), `docs/setup.md` (install, link, troubleshooting), `docs/user-guide.md` (features and keys), `docs/architecture.md` (how it works), `docs/development.md` (build, test, pins, release).
+- Keep the `docs/setup.md#kaios-40-enable-webassembly` anchor stable: `app/js/screens/wasmerror.js` links to it.
+- `CHANGELOG.md`: each `## v<version>` section becomes that GitHub Release's notes (`release.yml` fails without one). Don't rewrite past releases.

@@ -2,6 +2,36 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.0.0
+
+signal4kaios is rebuilt as a standalone Signal app. It links to your account as a linked device, like Signal Desktop, and does all encryption on the phone with Signal's official [libsignal](https://github.com/signalapp/libsignal). You no longer need a computer, a server, Docker, or signal-cli.
+
+> [!IMPORTANT]
+> This is the first release of the rebuilt app and it's still a work in progress. Calls, stories, link previews, polls, and looking up phone numbers that aren't in your contacts aren't supported yet. The [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) lists every missing feature.
+
+### Before you upgrade
+
+- **KaiOS 3.0, 3.1, or 4.0 is required.** KaiOS 2.5 is no longer supported.
+- **Link the phone again.** The self-hosted gateway is gone, so after installing, scan the app's QR code from Signal on your main phone (**Settings → Linked devices → Link a new device**). You can then shut down your old gateway and remove its device from **Linked devices**.
+- **KaiOS 4.0 blocks WebAssembly by default.** Do the one-time [rooted WebAssembly step](https://github.com/ambercaravalho/signal4kaios/blob/main/docs/setup.md#kaios-40-enable-webassembly) before the first launch.
+
+### What you can do
+
+- **Chat**: 1:1 and group chats with reactions, replies, edits, delete for everyone, text formatting, read receipts, typing indicators, disappearing messages, and pinned messages.
+- **Share media**: photos, video, voice notes, and files. Stickers and view-once media you receive display too.
+- **Manage groups**: rename, description, timer, add and remove members, invites, admins, permissions, group links, leave, and block and leave. Changes reach everyone in the group.
+- **Manage contacts and your account**: rename contacts, block and unblock people and groups, edit your profile name and about, and set a Signal username with a QR code to share.
+- **Stay in sync**: contacts, groups, nicknames, blocking, archived, muted, and pinned chats, and your username sync with your other Signal devices. Chats you read elsewhere are marked read here.
+- **Stay secure**: post-quantum encryption, sealed sender, and safety number verification by digits or QR code.
+- **Get notified**: messages raise notifications in the background, and a periodic check shows **New Signal message** while the app is closed.
+- **Use several accounts** on one phone.
+
+See the [user guide](https://github.com/ambercaravalho/signal4kaios/blob/main/docs/user-guide.md) for the keypad reference and every feature.
+
+### License
+
+The app bundles libsignal, which is AGPL-3.0-only. The app's own code stays GPL-3.0; see [NOTICE](https://github.com/ambercaravalho/signal4kaios/blob/main/NOTICE).
+
 ## v1.1.3
 
 Push notifications on KaiOS 3.0+ recover on their own after a restart, and the gateway no longer piles up dead push subscriptions. Closed-app notifications on KaiOS 3.0+ phones still depend on KaiOS's push service, which currently accepts pushes for sideloaded apps without delivering them.
