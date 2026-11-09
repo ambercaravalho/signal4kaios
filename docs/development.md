@@ -16,7 +16,7 @@ Building, testing, and releasing signal4kaios. How the pieces fit is in [Archite
 
 | Tool | Version | Notes |
 | --- | --- | --- |
-| [Node.js](https://nodejs.org) | 20+ | |
+| [Node.js](https://nodejs.org) | 22+ | |
 | [rustup](https://rustup.rs) | any | Installs the toolchain and `wasm32-unknown-unknown` target from [`rust-toolchain.toml`](../src/native/libsignal-wasm/rust-toolchain.toml) automatically |
 | [`protoc`](https://protobuf.dev/installation/) | any recent | libsignal's build scripts need it: `brew install protobuf` or `apt install protobuf-compiler` |
 | LLVM `clang` and `llvm-ar` with the wasm32 target | any recent | `ring` (rustls's crypto) compiles C for wasm32. Apple's clang lacks the target, so on macOS run `brew install llvm`; on Linux `apt install clang llvm`. [`build.sh`](../src/native/libsignal-wasm/build.sh) finds them and fails with this hint if they're missing |

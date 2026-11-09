@@ -2,10 +2,9 @@
  * Uses @noble/hashes for synchronous HKDF/HMAC/SHA and WebCrypto (crypto.subtle) for AES.
  */
 
-import { sha256 } from '@noble/hashes/sha256';
-import { sha512 } from '@noble/hashes/sha512';
-import { hmac } from '@noble/hashes/hmac';
-import { hkdf } from '@noble/hashes/hkdf';
+import { sha256, sha512 } from '@noble/hashes/sha2.js';
+import { hmac } from '@noble/hashes/hmac.js';
+import { hkdf } from '@noble/hashes/hkdf.js';
 import { concatBytes } from '../bytes';
 
 export function hashSha256(data: Uint8Array): Uint8Array {
