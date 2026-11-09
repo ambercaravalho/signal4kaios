@@ -24,7 +24,7 @@
     "@bufbuild/protoc-gen-es": "2.17.0",
     "@signalapp/libsignal-client": "0.106.2",
     "@types/node": "^22.10.0",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.2"
   }
 }
