@@ -15,12 +15,13 @@ import * as store from '../src/ui/data/store';
 import type { Message } from '../src/ui/data/types';
 import { Bubble, ChatScreen } from '../src/ui/screens/Chat';
 import { ChatSettingsScreen } from '../src/ui/screens/ChatSettings';
+import { DebugScreen, FasterConnectionScreen } from '../src/ui/screens/Debug';
 import { ArchivedScreen, HomeScreen } from '../src/ui/screens/Home';
 import { LinkScreen, WelcomeScreen } from '../src/ui/screens/Onboarding';
 import { NewChatScreen, SearchScreen } from '../src/ui/screens/SearchList';
 import { SettingsScreen } from '../src/ui/screens/Settings';
 import { StartupErrorScreen } from '../src/ui/screens/StartupError';
-import { S } from '../src/ui/strings';
+import { DEBUG, S } from '../src/ui/strings';
 
 const ME = '+15550000';
 const ALICE = '+15550001';
@@ -181,6 +182,21 @@ describe('screens', () => {
       assert.ok(out.trim().length > 0, C.name);
       assert.ok(!JARGON.test(out), C.name + ': ' + out);
     }
+  });
+
+  it('keeps Faster connection under Debug, not in the main Settings list', () => {
+    router.reset(SettingsScreen, {});
+    assert.ok(!text(html()).includes(DEBUG.fasterConnection));
+    router.reset(DebugScreen, {});
+    const debug = text(html());
+    assert.ok(debug.includes(DEBUG.fasterConnection));
+    assert.ok(debug.includes(DEBUG.fasterChecking));
+  });
+
+  it('explains Faster connection and how to turn it on', () => {
+    router.reset(FasterConnectionScreen, {});
+    const out = text(html());
+    for (const s of [DEBUG.fasterUsedForValue, DEBUG.fasterNeedsValue, DEBUG.fasterOtherValue, DEBUG.fasterHowTo, DEBUG.fasterCheckAgain]) assert.ok(out.includes(s), s);
   });
 
   it('shows chat settings for a person', () => {

@@ -2,6 +2,19 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.2.0
+
+An optional tweak for rooted phones. Install over v2.1.1; nothing changes unless you turn it on.
+
+### New
+
+- **Lighter photo and file transfers on rooted phones.** If the phone trusts Signal's root certificate, Beacon sends and receives photos, video, voice notes, and files over the phone's built-in TLS, so the app does less work and stays more responsive while media loads. Messages, sign-in, sync, and linking keep using Beacon's own connection. A new script, `scripts/signal-cert.mjs`, installs the certificate over USB, backs up the phone's certificate database first, and can remove it again. See [Optional for rooted phones: trust Signal's certificate](https://github.com/ambercaravalho/signal4kaios/blob/main/docs/setup.md#optional-for-rooted-phones-trust-signals-certificate).
+- **Settings → Debug → Faster connection** shows whether it's on, links to the steps, and can check again after you install the certificate.
+
+### Not changed
+
+- **No notifications while Beacon is fully closed**, even with the certificate installed. Signal only delivers messages to a connection that sends a sign-in header, and a closed app can't open one.
+
 ## v2.1.1
 
 Fixes from using v2.1.0 on a phone. Install over v2.1.0 or v2.0.1; nothing else changes.
