@@ -10,5 +10,5 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["engine/**/*.ts", "test/**/*.ts"]
+  "include": ["src/engine/**/*.ts", "test/**/*.ts"]
 }

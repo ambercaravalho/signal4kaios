@@ -7,10 +7,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer, Server } from 'node:tls';
 
-import { libsignal } from '../engine/protocol/libsignal';
-import { createNet } from '../engine/net/transport';
-import { TransportError } from '../engine/net/transport/stream';
-import { connectTls } from '../engine/net/transport/tls-stream';
+import { libsignal } from '../src/engine/protocol/libsignal';
+import { createNet } from '../src/engine/net/transport';
+import { TransportError } from '../src/engine/net/transport/stream';
+import { connectTls } from '../src/engine/net/transport/tls-stream';
 import { loadWasmForTests, nodeConnector } from './support';
 
 before(() => {

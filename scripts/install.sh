@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the app onto a KaiOS 3.0/3.1/4.0 device with debugging enabled.
 #
-# KaiOS 3.0+ dropped the old WebIDE flow. Packaged apps are installed with the `appscmd` tool over an adb-forwarded debugger socket. This helper wires up the forward and runs the install against the app/ folder.
+# KaiOS 3.0+ dropped the old WebIDE flow. Packaged apps are installed with the `appscmd` tool over an adb-forwarded debugger socket. This helper wires up the forward and runs the install against the src/app/ folder.
 #
 # Prerequisites:
 #   - adb on your PATH, device connected, "ADB and DevTools" enabled on-device.
@@ -41,8 +41,8 @@ echo "adb forward tcp:$PORT -> $SOCKET"
 adb forward "tcp:$PORT" "localfilesystem:$SOCKET"
 
 # appscmd talks to the device over adb on its own; just point it at the app folder. (Older docs used a --host flag, but appscmd 0.3.x doesn't accept it.)
-echo "Installing app/ via appscmd"
-"$APPSCMD" install app/
+echo "Installing src/app/ via appscmd"
+"$APPSCMD" install src/app/
 
 echo
 echo "OK: installed. Reboot the phone for it to take effect."

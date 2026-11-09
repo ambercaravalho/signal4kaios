@@ -1,13 +1,13 @@
 ---
-description: Conventions for the KaiOS app UI in app/ (IIFE modules, DOM, logging, B2G APIs, CSP)
-globs: app/**
+description: Conventions for the KaiOS app UI in src/app/ (IIFE modules, DOM, logging, B2G APIs, CSP)
+globs: src/app/**
 alwaysApply: false
 ---
 
-# KaiOS app (`app/`)
+# KaiOS app (`src/app/`)
 
-- Every file in `app/js/` is an IIFE that attaches its public surface to `window.App` (`App.store`, `App.screens.chat`, ...). `js/core/bootstrap.js` creates `window.App`.
-- Scripts load in the order listed in `app/index.html`; a new module needs a `<script>` tag there, after the modules it uses at load time.
+- Every file in `src/app/js/` is an IIFE that attaches its public surface to `window.App` (`App.store`, `App.screens.chat`, ...). `js/core/bootstrap.js` creates `window.App`.
+- Scripts load in the order listed in `src/app/index.html`; a new module needs a `<script>` tag there, after the modules it uses at load time.
 - Folders: `core/` (platform, util, config, http, db), `data/` (api, normalize, ws, store, wake), `ui/` (widgets), `screens/` (one screen per file, `App.screens.<name>.create(...)`).
 - Target Gecko 84 and 123 (ES2020). Match the surrounding ES5 style (`var`, `function`, `['catch']`).
 - Build DOM with `App.util.el(tag, className, text)`; never use `innerHTML` with untrusted content.
@@ -24,4 +24,4 @@ row.innerHTML = '<span class="hint">' + contact.name + '</span>';
 ```
 
 - The privileged CSP forbids inline handlers, inline `<script>`/`<style>`, `eval`, and `new Function`; `scripts/package.sh` fails the build on `eval(`.
-- `app/vendor/*.bundle.js` and `*.wasm` are build output; edit `engine/` or `native/` instead.
+- `src/app/vendor/*.bundle.js` and `*.wasm` are build output; edit `src/engine/` or `src/native/` instead.

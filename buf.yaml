@@ -1,8 +1,8 @@
 # Signal wire-format schemas, vendored unmodified so the generated codecs match the official clients exactly:
-#   protos/signal-desktop/  from signalapp/Signal-Desktop v8.34.0 (9173731aaaccec8444066aec0e0c78725d7e457b), protos/
-#   protos/libsignal/       from signalapp/libsignal v0.106.2 (850942581c06fa65c0323fd52029afa02fa1a1ba), rust/net/src/proto/
+#   src/protos/signal-desktop/  from signalapp/Signal-Desktop v8.34.0 (9173731aaaccec8444066aec0e0c78725d7e457b), protos/
+#   src/protos/libsignal/       from signalapp/libsignal v0.106.2 (850942581c06fa65c0323fd52029afa02fa1a1ba), rust/net/src/proto/
 # To update, copy the same files from the new tags, update the tags above and in docs/development.md, then run npm run gen:protos.
 version: v2
 modules:
-  - path: protos/signal-desktop
-  - path: protos/libsignal
+  - path: src/protos/signal-desktop
+  - path: src/protos/libsignal

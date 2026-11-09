@@ -26,11 +26,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler binaryen clang llvm
 
       - name: Install the pinned Rust toolchain
-        working-directory: native/libsignal-wasm
+        working-directory: src/native/libsignal-wasm
         run: rustup toolchain install
 
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --version "$(sed -n 's/^wasm-bindgen = "=\([^"]*\)"/\1/p' native/libsignal-wasm/Cargo.toml)" --locked
+        run: cargo install wasm-bindgen-cli --version "$(sed -n 's/^wasm-bindgen = "=\([^"]*\)"/\1/p' src/native/libsignal-wasm/Cargo.toml)" --locked
 
       - name: Install, test, and package
         id: pkg

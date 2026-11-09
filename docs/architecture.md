@@ -22,7 +22,7 @@ The app has three layers, and the phone talks only to Signal's servers.
 ```mermaid
 flowchart LR
   subgraph phone [KaiOS phone]
-    ui["app/js: screens, store, ws"]
+    ui["src/app/js: screens, store, ws"]
     engine["engine: App.signal bundle"]
     wasm["libsignal_wasm_bg.wasm"]
     idb[(IndexedDB)]
@@ -42,11 +42,11 @@ flowchart LR
 
 | Layer | Where | Role |
 | --- | --- | --- |
-| **UI** | [`app/js/`](../app/js) | Plain ES5-style IIFE modules on `window.App`, loaded in [`index.html`](../app/index.html) order |
-| **Engine** | [`engine/`](../engine) | TypeScript bundled by esbuild into `app/vendor/signal-engine.bundle.js`, exposed as `App.signal` |
-| **libsignal** | [`native/libsignal-wasm/`](../native/libsignal-wasm) | A wasm-bindgen wrapper over Signal's official [libsignal](https://github.com/signalapp/libsignal) crates, shipped as `app/vendor/libsignal_wasm_bg.wasm` |
+| **UI** | [`src/app/js/`](../src/app/js) | Plain ES5-style IIFE modules on `window.App`, loaded in [`index.html`](../src/app/index.html) order |
+| **Engine** | [`src/engine/`](../src/engine) | TypeScript bundled by esbuild into `src/app/vendor/signal-engine.bundle.js`, exposed as `App.signal` |
+| **libsignal** | [`src/native/libsignal-wasm/`](../src/native/libsignal-wasm) | A wasm-bindgen wrapper over Signal's official [libsignal](https://github.com/signalapp/libsignal) crates, shipped as `src/app/vendor/libsignal_wasm_bg.wasm` |
 
-Wire formats come from Signal-Desktop's and libsignal's own `.proto` files in [`protos/`](../protos), compiled to TypeScript with [protobuf-es](https://github.com/bufbuild/protobuf-es).
+Wire formats come from Signal-Desktop's and libsignal's own `.proto` files in [`src/protos/`](../src/protos), compiled to TypeScript with [protobuf-es](https://github.com/bufbuild/protobuf-es).
 
 ## Network
 
@@ -54,7 +54,7 @@ Every Signal service (`chat`, `storage`, `cdn`, `cdn2`, `cdn3`) presents a certi
 
 ```mermaid
 flowchart LR
-  callers["http.js, ws.js, provisioning.ts"] --> net["App.signal.net (engine/net/transport)"]
+  callers["http.js, ws.js, provisioning.ts"] --> net["App.signal.net (src/engine/net/transport)"]
   net --> h1["http1.ts / websocket.ts"]
   h1 --> tls["tls-stream.ts"]
   tls --> conn["TlsConn in wasm (rustls, pinned roots)"]
@@ -63,11 +63,11 @@ flowchart LR
 
 | Piece | Role |
 | --- | --- |
-| [`native/libsignal-wasm/src/tls.rs`](../native/libsignal-wasm/src/tls.rs) | A sans-I/O [rustls](https://github.com/rustls/rustls) client that trusts only libsignal's pinned roots (`signal.cer`, `signal-ed25519.cer` in `res/`) and refuses any host outside `signal.org` |
-| [`transport/tcp.ts`](../engine/net/transport/tcp.ts) | The raw socket, from the `tcp-socket` manifest permission (`TCPSocket`, or `navigator.mozTCPSocket` on older builds) |
-| [`transport/tls-stream.ts`](../engine/net/transport/tls-stream.ts) | Pumps bytes between the socket and `TlsConn`, and resolves once the handshake is done |
-| [`transport/http1.ts`](../engine/net/transport/http1.ts) | HTTP/1.1 with keep-alive, at most 6 requests per host at once, capped response sizes, and timeouts |
-| [`transport/websocket.ts`](../engine/net/transport/websocket.ts) | An RFC 6455 client shaped like the browser `WebSocket`, so callers use either one |
+| [`src/native/libsignal-wasm/src/tls.rs`](../src/native/libsignal-wasm/src/tls.rs) | A sans-I/O [rustls](https://github.com/rustls/rustls) client that trusts only libsignal's pinned roots (`signal.cer`, `signal-ed25519.cer` in `res/`) and refuses any host outside `signal.org` |
+| [`transport/tcp.ts`](../src/engine/net/transport/tcp.ts) | The raw socket, from the `tcp-socket` manifest permission (`TCPSocket`, or `navigator.mozTCPSocket` on older builds) |
+| [`transport/tls-stream.ts`](../src/engine/net/transport/tls-stream.ts) | Pumps bytes between the socket and `TlsConn`, and resolves once the handshake is done |
+| [`transport/http1.ts`](../src/engine/net/transport/http1.ts) | HTTP/1.1 with keep-alive, at most 6 requests per host at once, capped response sizes, and timeouts |
+| [`transport/websocket.ts`](../src/engine/net/transport/websocket.ts) | An RFC 6455 client shaped like the browser `WebSocket`, so callers use either one |
 
 Only `*.signal.org` goes through this path. Other hosts, and environments without `TCPSocket` (desktop browsers, the tests' fallbacks), use mozSystem XHR and the platform `WebSocket`. A redirect off Signal's hosts drops the `Authorization` header and continues over XHR.
 
@@ -78,23 +78,25 @@ The ServiceWorker's closed-app check can't use any of this, because workers have
 ## Repository layout
 
 ```text
-app/                    the packaged KaiOS app (zipped as-is)
-  js/core/              bootstrap, platform (B2G APIs), util, config, theme, toast, http, db
-  js/data/              api (App.api), normalize, ws (Signal WebSocket), store, wake (closed-app alarms)
-  js/ui/                nav, softkeys, router, dialogs, menus, avatars
-  js/screens/           one module per screen
-  sw.js                 ServiceWorker: wake alarms and notification clicks
-engine/                 on-device Signal engine (App.signal)
-  protocol/             libsignal loader, protocol operations, PreKeys, protocol store
-  net/                  HTTP shapes, protobuf helpers, provisioning, receive, send client
-  net/transport/        pinned TLS over TCPSocket: HTTP/1.1 and WebSocket clients
-  services/             Storage Service, profiles, Groups V2
-  crypto/               attachment and profile cipher primitives
-  gen/                  generated protobuf codecs (never hand-edited)
-native/libsignal-wasm/  Rust wrapper crate (AGPL-3.0-only)
-protos/                 vendored Signal .proto files
-scripts/                package.sh, install.sh
-test/                   unit, interop, and known-answer tests
+src/
+  app/                    the packaged KaiOS app (zipped as-is)
+    js/core/              bootstrap, platform (B2G APIs), util, config, theme, toast, http, db
+    js/data/              api (App.api), normalize, ws (Signal WebSocket), store, wake (closed-app alarms)
+    js/ui/                nav, softkeys, router, dialogs, menus, avatars
+    js/screens/           one module per screen
+    sw.js                 ServiceWorker: wake alarms and notification clicks
+  engine/                 on-device Signal engine (App.signal)
+    protocol/             libsignal loader, protocol operations, PreKeys, protocol store
+    net/                  HTTP shapes, protobuf helpers, provisioning, receive, send client
+    net/transport/        pinned TLS over TCPSocket: HTTP/1.1 and WebSocket clients
+    services/             Storage Service, profiles, Groups V2
+    crypto/               attachment and profile cipher primitives
+    gen/                  generated protobuf codecs (never hand-edited)
+  native/libsignal-wasm/  Rust wrapper crate (AGPL-3.0-only)
+  protos/                 vendored Signal .proto files
+scripts/                  package.sh, install.sh
+test/                     unit, interop, and known-answer tests
+docs/                     these guides
 ```
 
 ## Receiving
@@ -116,11 +118,11 @@ sequenceDiagram
   WS->>S: 200 ACK
 ```
 
-A frame is acknowledged only after it has been decrypted and stored, so a crash never loses a message. Envelopes are decrypted one at a time ([`net/client.ts`](../engine/net/client.ts) `enqueueDecryptEnvelope`). A message that fails to decrypt triggers a `DecryptionErrorMessage` retry receipt to the sender. After the initial offline queue drains (`/api/v1/queue/empty`), queued messages don't each raise a notification.
+A frame is acknowledged only after it has been decrypted and stored, so a crash never loses a message. Envelopes are decrypted one at a time ([`net/client.ts`](../src/engine/net/client.ts) `enqueueDecryptEnvelope`). A message that fails to decrypt triggers a `DecryptionErrorMessage` retry receipt to the sender. After the initial offline queue drains (`/api/v1/queue/empty`), queued messages don't each raise a notification.
 
 ## Sending
 
-`App.store.send*` writes an optimistic `pending` message, then calls [`App.api`](../app/js/data/api.js) → `App.signal.send`. The engine:
+`App.store.send*` writes an optimistic `pending` message, then calls [`App.api`](../src/app/js/data/api.js) → `App.signal.send`. The engine:
 
 1. Resolves the recipient to an ACI (phone numbers via synced contacts).
 2. Builds the `Content` protobuf and pads it.
@@ -134,7 +136,7 @@ Pins (`DataMessage.pinMessage` / `unpinMessage`), disappearing-timer updates in 
 
 ## Storage Service writes
 
-Contact nicknames, blocking, archive, mute, pinned chats, and the username are account state that Signal keeps in the encrypted [Storage Service](https://github.com/signalapp/Signal-Desktop/blob/main/protos/SignalStorage.proto). Edits go through `mutateStorage` in [`services/storage-service.ts`](../engine/services/storage-service.ts), following Signal-Desktop's `storage.ts`:
+Contact nicknames, blocking, archive, mute, pinned chats, and the username are account state that Signal keeps in the encrypted [Storage Service](https://github.com/signalapp/Signal-Desktop/blob/main/protos/SignalStorage.proto). Edits go through `mutateStorage` in [`services/storage-service.ts`](../src/engine/services/storage-service.ts), following Signal-Desktop's `storage.ts`:
 
 ```mermaid
 sequenceDiagram
@@ -154,11 +156,11 @@ sequenceDiagram
 
 The new manifest keeps every identifier it doesn't touch, including record types this app doesn't read, and unknown protobuf fields survive the re-encode. Each pull marks the records another device wrote since the previous pull as `changed`. Archive, mute, and pinned-chat state is applied only from those records, and `App.store.applyChatState` applies it without writing it back, so local and remote changes don't overwrite each other in a loop.
 
-The username itself is claimed on the chat server first: [`services/usernames.ts`](../engine/services/usernames.ts) reserves one of libsignal's candidates (`PUT /v1/accounts/username_hash/reserve`) and confirms it with a zero-knowledge proof and an encrypted username link (`PUT /v1/accounts/username_hash/confirm`). Only then are the username and link written to the account record. The QR code is `https://signal.me/#eu/` followed by the link's entropy and server ID.
+The username itself is claimed on the chat server first: [`services/usernames.ts`](../src/engine/services/usernames.ts) reserves one of libsignal's candidates (`PUT /v1/accounts/username_hash/reserve`) and confirms it with a zero-knowledge proof and an encrypted username link (`PUT /v1/accounts/username_hash/confirm`). Only then are the username and link written to the account record. The QR code is `https://signal.me/#eu/` followed by the link's entropy and server ID.
 
 ## Group changes
 
-Group edits are Groups V2 changes, built and signed as in Signal-Desktop's `groups.ts`. [`services/group-changes.ts`](../engine/services/group-changes.ts) fetches the group, builds `GroupChange.Actions` from a snapshot of the decrypted state (title, description, timer, access control, invite link, members, roles, invites, leave), and sends `PATCH /v2/groups/` at revision + 1 with a zkgroup auth credential presentation. A `409` rebuilds the change once against the new state; a `403` becomes "you don't have permission".
+Group edits are Groups V2 changes, built and signed as in Signal-Desktop's `groups.ts`. [`services/group-changes.ts`](../src/engine/services/group-changes.ts) fetches the group, builds `GroupChange.Actions` from a snapshot of the decrypted state (title, description, timer, access control, invite link, members, roles, invites, leave), and sends `PATCH /v2/groups/` at revision + 1 with a zkgroup auth credential presentation. A `409` rebuilds the change once against the new state; a `403` becomes "you don't have permission".
 
 The server returns the signed `GroupChange`, which the bridge sends as `DataMessage.groupV2 { masterKey, revision, groupChange }` to everyone in the group before and after the change, plus a sync copy to your other devices. Adding someone joins them directly when their profile key credential can be fetched (`GET /v1/profile/{aci}/{version}/{request}?credentialType=expiringProfileKey`), and invites them otherwise.
 
@@ -197,7 +199,7 @@ flowchart LR
   F --> G["release the lock"]
 ```
 
-Every libsignal call that touches protocol state goes through [`engine/protocol/protocol.ts`](../engine/protocol/protocol.ts), which serializes these cycles. Failures come back as JS errors whose `name` is a stable code such as `UntrustedIdentity` or `DuplicatedMessage`.
+Every libsignal call that touches protocol state goes through [`src/engine/protocol/protocol.ts`](../src/engine/protocol/protocol.ts), which serializes these cycles. Failures come back as JS errors whose `name` is a stable code such as `UntrustedIdentity` or `DuplicatedMessage`.
 
 | Rust module | Provides |
 | --- | --- |
@@ -217,23 +219,23 @@ Every libsignal call that touches protocol state goes through [`engine/protocol/
 
 | File | Responsibility |
 | --- | --- |
-| [`index.ts`](../engine/index.ts) | The `App.signal` bridge: recipients, sync messages, sends, blocking, group changes, pins, usernames, chat-list state, Storage Service refresh |
-| [`protocol/libsignal.ts`](../engine/protocol/libsignal.ts) | Loads the wasm module (`ready()`) |
-| [`protocol/protocol.ts`](../engine/protocol/protocol.ts) | Hydrate, call, and flush around each libsignal operation; trust policy; Sealed Sender trust roots |
-| [`protocol/prekeys.ts`](../engine/protocol/prekeys.ts) | Signed, last-resort Kyber, and one-time PreKeys |
-| [`protocol/store.ts`](../engine/protocol/store.ts) | `SignalProtocolStore` over IndexedDB (and in memory for tests) |
-| [`net/http.ts`](../engine/net/http.ts) | Signal hosts and the HTTP function shapes passed in from `app/js/core/http.js` |
-| [`net/proto.ts`](../engine/net/proto.ts) | WebSocket framing, service IDs, and delimited streams over the generated codecs |
-| [`net/provisioning.ts`](../engine/net/provisioning.ts) | Linking, device name cipher, and the initial PreKey upload |
-| [`net/receive.ts`](../engine/net/receive.ts) | Envelope decryption and `Content` → JSON frames; contact sync blobs |
-| [`net/client.ts`](../engine/net/client.ts) | `SignalClient`: device fanout, Sealed Sender, retry receipts, attachment upload and download |
-| [`net/transport/`](../engine/net/transport) | `App.signal.net`: pinned TLS, HTTP/1.1, and WebSocket for Signal's hosts |
-| [`services/storage-service.ts`](../engine/services/storage-service.ts) | Storage Service pull and writes (`mutateStorage`, `StorageWriteQueue`), with Signal-Desktop's key derivation |
-| [`services/profiles.ts`](../engine/services/profiles.ts) | Versioned profile fetch and decrypt, profile upload, avatars, username lookup, expiring profile key credentials |
-| [`services/groups-v2.ts`](../engine/services/groups-v2.ts) | zkgroup group IDs, `GroupContextV2`, group state fetch and decode, invite links |
-| [`services/group-changes.ts`](../engine/services/group-changes.ts) | Groups V2 change builders and `applyGroupChange` |
-| [`services/usernames.ts`](../engine/services/usernames.ts) | Username reserve, confirm, delete, and link URLs |
-| [`crypto/`](../engine/crypto) | WebCrypto AES and [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) HMAC/HKDF for attachments, profiles, and storage |
+| [`index.ts`](../src/engine/index.ts) | The `App.signal` bridge: recipients, sync messages, sends, blocking, group changes, pins, usernames, chat-list state, Storage Service refresh |
+| [`protocol/libsignal.ts`](../src/engine/protocol/libsignal.ts) | Loads the wasm module (`ready()`) |
+| [`protocol/protocol.ts`](../src/engine/protocol/protocol.ts) | Hydrate, call, and flush around each libsignal operation; trust policy; Sealed Sender trust roots |
+| [`protocol/prekeys.ts`](../src/engine/protocol/prekeys.ts) | Signed, last-resort Kyber, and one-time PreKeys |
+| [`protocol/store.ts`](../src/engine/protocol/store.ts) | `SignalProtocolStore` over IndexedDB (and in memory for tests) |
+| [`net/http.ts`](../src/engine/net/http.ts) | Signal hosts and the HTTP function shapes passed in from `src/app/js/core/http.js` |
+| [`net/proto.ts`](../src/engine/net/proto.ts) | WebSocket framing, service IDs, and delimited streams over the generated codecs |
+| [`net/provisioning.ts`](../src/engine/net/provisioning.ts) | Linking, device name cipher, and the initial PreKey upload |
+| [`net/receive.ts`](../src/engine/net/receive.ts) | Envelope decryption and `Content` → JSON frames; contact sync blobs |
+| [`net/client.ts`](../src/engine/net/client.ts) | `SignalClient`: device fanout, Sealed Sender, retry receipts, attachment upload and download |
+| [`net/transport/`](../src/engine/net/transport) | `App.signal.net`: pinned TLS, HTTP/1.1, and WebSocket for Signal's hosts |
+| [`services/storage-service.ts`](../src/engine/services/storage-service.ts) | Storage Service pull and writes (`mutateStorage`, `StorageWriteQueue`), with Signal-Desktop's key derivation |
+| [`services/profiles.ts`](../src/engine/services/profiles.ts) | Versioned profile fetch and decrypt, profile upload, avatars, username lookup, expiring profile key credentials |
+| [`services/groups-v2.ts`](../src/engine/services/groups-v2.ts) | zkgroup group IDs, `GroupContextV2`, group state fetch and decode, invite links |
+| [`services/group-changes.ts`](../src/engine/services/group-changes.ts) | Groups V2 change builders and `applyGroupChange` |
+| [`services/usernames.ts`](../src/engine/services/usernames.ts) | Username reserve, confirm, delete, and link URLs |
+| [`crypto/`](../src/engine/crypto) | WebCrypto AES and [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) HMAC/HKDF for attachments, profiles, and storage |
 
 ## Storage
 

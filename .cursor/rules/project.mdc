@@ -9,15 +9,15 @@ A standalone Signal client for **KaiOS 3.0, 3.1 (Gecko 84) and 4.0 (Gecko 123)**
 
 ## Layout
 
-- `app/`: the packaged KaiOS app (`js/core`, `js/data`, `js/ui`, `js/screens`, `sw.js`), zipped as-is.
-- `engine/`: TypeScript Signal engine bundled into `app/vendor/signal-engine.bundle.js` as `window.App.signal`.
-- `native/libsignal-wasm/`: Rust wrapper over official libsignal, built to `app/vendor/libsignal_wasm_bg.wasm`.
-- `protos/` and `engine/gen/`: vendored Signal schemas and their generated codecs.
+- `src/app/`: the packaged KaiOS app (`js/core`, `js/data`, `js/ui`, `js/screens`, `sw.js`), zipped as-is.
+- `src/engine/`: TypeScript Signal engine bundled into `src/app/vendor/signal-engine.bundle.js` as `window.App.signal`.
+- `src/native/libsignal-wasm/`: Rust wrapper over official libsignal, built to `src/app/vendor/libsignal_wasm_bg.wasm`.
+- `src/protos/` and `src/engine/gen/`: vendored Signal schemas and their generated codecs.
 - `scripts/`, `test/`, `docs/` (start with `docs/architecture.md`).
 
 ## Hard rules
 
-- Never reimplement Signal cryptography (sessions, PQXDH, Sealed Sender, Sender Keys, safety numbers, provisioning, zkgroup, usernames) in TypeScript; call libsignal through `engine/protocol/protocol.ts`.
+- Never reimplement Signal cryptography (sessions, PQXDH, Sealed Sender, Sender Keys, safety numbers, provisioning, zkgroup, usernames) in TypeScript; call libsignal through `src/engine/protocol/protocol.ts`.
 - Port Signal-specific derivations from Signal-Desktop instead of inventing them.
 - The privileged CSP forbids `eval()`, `new Function()`, inline `<script>`/`<style>`, and inline event handlers.
 - Don't hard-wrap prose, Markdown, or comments; one line per paragraph, list item, or comment sentence.
@@ -36,4 +36,4 @@ A standalone Signal client for **KaiOS 3.0, 3.1 (Gecko 84) and 4.0 (Gecko 123)**
 npm run build:wasm && npm run typecheck && npm test && npm run package
 ```
 
-CI also requires `npm run gen:protos` to leave `engine/gen/` unchanged.
+CI also requires `npm run gen:protos` to leave `src/engine/gen/` unchanged.
