@@ -42,6 +42,8 @@ export interface GroupV2Metadata {
   admins: string[];
   /** Invited users who haven't accepted yet (service IDs). */
   pending: string[];
+  /** People who asked to join through the group link and wait for an admin (service IDs). */
+  requesting?: string[];
   expireTimer: number;
   blocked: boolean;
   archived?: boolean;
@@ -227,6 +229,10 @@ export function decodeGroupState(keys: DerivedGroupV2Keys, group: Group): GroupV
     keys,
     group.membersPendingProfileKey.map((p) => (p.member ? p.member.userId : new Uint8Array(0)))
   );
+  const requesting = decryptMemberIds(
+    keys,
+    group.membersPendingAdminApproval.map((p) => p.userId)
+  );
 
   const access = group.accessControl;
   const adminOnly = (v: AccessControl_AccessRequired | undefined) =>
@@ -246,6 +252,7 @@ export function decodeGroupState(keys: DerivedGroupV2Keys, group: Group): GroupV
     members,
     admins,
     pending,
+    requesting,
     expireTimer: timer && timer.case === 'disappearingMessagesDuration' ? timer.value : 0,
     blocked: false,
     permissions: {

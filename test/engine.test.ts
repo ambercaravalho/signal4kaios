@@ -18,10 +18,12 @@ import {
   GroupResponseSchema,
   GroupSchema,
   Member_Role,
+  MemberPendingAdminApprovalSchema,
 } from '../src/engine/gen/Groups_pb';
 import {
   addMembersActions,
   applyGroupChange,
+  approveRequestsActions,
   inviteLinkActions,
   leaveActions,
   permissionActions,
@@ -31,6 +33,7 @@ import {
   titleActions,
 } from '../src/engine/services/group-changes';
 import {
+  AccountRecord_PhoneNumberSharingMode,
   ContactRecord_NameSchema,
   ContactRecordSchema,
   ManifestRecord_Identifier_Type,
@@ -43,7 +46,7 @@ import {
 } from '../src/engine/gen/SignalStorage_pb';
 import { decodeGroupState, deriveGroupV2Keys, groupIdFromMasterKey } from '../src/engine/services/groups-v2';
 import { libsignal } from '../src/engine/protocol/libsignal';
-import { decryptProfile, decryptProfileName, encryptProfileName } from '../src/engine/services/profiles';
+import { decryptProfile, decryptProfileName, encryptProfileName, uploadOwnProfile } from '../src/engine/services/profiles';
 import { create, fromBinary, serviceIdFrom, toBinary } from '../src/engine/net/proto';
 import {
   decryptStorageValue,
@@ -52,12 +55,15 @@ import {
   deriveStorageServiceKey,
   mutateStorage,
   pullFromStorageService,
+  setPhoneNumberPrivacy,
   StorageWriteQueue,
 } from '../src/engine/services/storage-service';
 import { MemorySignalStore } from '../src/engine/protocol/store';
 import { deleteUsername, setUsername, usernameCandidates, usernameLinkUrl } from '../src/engine/services/usernames';
 import { loadWasmForTests } from './support';
-import { contentToNormalizedFrame, parseContactsSyncBlob } from '../src/engine/net/receive';
+import { contentToNormalizedFrame, decodeAttachmentDescriptor, parseContactsSyncBlob } from '../src/engine/net/receive';
+import { reportSpam } from '../src/engine/services/report-spam';
+import { diffGroupState, groupChangeAuthor, isDecodedGroup } from '../src/engine/services/group-updates';
 
 const ALICE = '11111111-1111-4111-8111-111111111111';
 const BOB = '22222222-2222-4222-8222-222222222222';
@@ -112,6 +118,33 @@ describe('Profiles (Signal-Desktop profile cipher)', () => {
       fullName: 'Amber Caravalho',
     });
     await assert.rejects(decryptProfileName(encName, randomBytes(32)));
+  });
+
+  it('uploads whether everybody sees our number as an encrypted byte', async () => {
+    const profileKey = randomBytes(32);
+    const store = new MemorySignalStore({
+      aci: ALICE,
+      number: '+15550001111',
+      deviceId: 2,
+      password: 'pw',
+      registrationId: 1,
+      pniRegistrationId: 2,
+      aciIdentityKeyPair: { pubKey: new Uint8Array(33), privKey: new Uint8Array(32) },
+      profileKey,
+    });
+    const puts: any[] = [];
+    const httpJson = async (method: string, path: string, body: any) => {
+      if (method === 'GET') throw Object.assign(new Error('HTTP 404'), { status: 404 });
+      assert.equal(path, '/v1/profile');
+      puts.push(body);
+      return {};
+    };
+    for (const share of [true, false]) await uploadOwnProfile(store, httpJson as any, { name: 'Amber C', sharePhoneNumber: share });
+    await uploadOwnProfile(store, httpJson as any, { sharePhoneNumber: true });
+    assert.equal(puts.length, 2, 'no profile is written without a name');
+    const bytes = await Promise.all(puts.map(async (b) => Array.from(await decryptProfile(fromBase64(b.phoneNumberSharing), profileKey))));
+    assert.deepEqual(bytes, [[1], [0]]);
+    assert.deepEqual(await decryptProfileName(puts[0].name, profileKey), { givenName: 'Amber', familyName: 'C', fullName: 'Amber C' });
   });
 
   it('derives profile key versions, commitments, and access keys with zkgroup', () => {
@@ -293,7 +326,7 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
         { type: 'contact', aci: ALICE, update: (c) => { c.blocked = false; c.nickname = create(ContactRecord_NameSchema, { given: 'Clara O.' }); } },
         { type: 'contact', aci: ALICE, update: (c) => { c.archived = true; } },
         { type: 'groupV2', masterKey: newGroup, update: (g) => { g.mutedUntilTimestamp = 99n; } },
-        { type: 'account', update: (a) => { a.username = 'clara.42'; a.universalExpireTimer = 3600; a.sealedSenderIndicators = false; } },
+        { type: 'account', update: (a) => { a.username = 'clara.42'; a.universalExpireTimer = 3600; a.sealedSenderIndicators = false; setPhoneNumberPrivacy(a, false, false); } },
         { type: 'contact', aci: ALICE, update: (c) => { c.whitelisted = true; } },
       ]);
       assert.equal(changed, true);
@@ -319,7 +352,18 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(res.account?.username, 'clara.42');
       assert.equal(res.account?.universalExpireTimer, 3600);
       assert.equal(res.account?.sealedSenderIndicators, false);
+      assert.equal(res.account?.sharePhoneNumber, false);
+      assert.equal(res.account?.findableByNumber, false);
       assert.equal(res.contacts[0].whitelisted, true);
+
+      await mutateStorage(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org', [{ type: 'account', update: (a) => setPhoneNumberPrivacy(a, true, false) }]);
+      const shared = await pullFromStorageService(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org');
+      assert.equal(shared!.account?.sharePhoneNumber, true);
+      assert.equal(shared!.account?.findableByNumber, true, 'a number everybody sees is also findable');
+      const account = fromBinary(StorageRecordSchema, await srv.readRecord(ManifestRecord_Identifier_Type.ACCOUNT)).record;
+      assert.equal(account.case, 'account');
+      assert.equal(account.value!.phoneNumberSharingMode, AccountRecord_PhoneNumberSharingMode.EVERYBODY);
+      assert.equal(account.value!.unlistedPhoneNumber, false);
     });
   }
 
@@ -553,6 +597,84 @@ describe('Groups V2 changes (PATCH /v2/groups/)', () => {
     assert.equal(inv.contents.case, 'contentsV1');
     assert.deepEqual(inv.contents.value!.groupMasterKey, srv.masterKey);
   });
+
+  it('approves join requests like Signal-Desktop and denies them by deleting the request', () => {
+    const srv = serveGroup();
+    const requested = libsignal.groupEncryptServiceId(srv.keys.secretParams, DAVE);
+    srv.group.membersPendingAdminApproval = [create(MemberPendingAdminApprovalSchema, { userId: requested })];
+    assert.deepEqual(decodeGroupState(srv.keys, srv.group).requesting, [DAVE]);
+    const snap = snapshotGroup(srv.keys, srv.group, ALICE);
+    assert.deepEqual(approveRequestsActions(snap, [DAVE, BOB]), { promoteMembersPendingAdminApproval: [{ userId: requested, role: Member_Role.DEFAULT }] });
+    assert.equal(approveRequestsActions(snap, [BOB]), null);
+    assert.deepEqual(removeMembersActions(snap, [DAVE])!.deleteMembersPendingAdminApproval, [{ deletedUserId: requested }]);
+  });
+
+  it('reads who made a signed group change only for the revision it claims', () => {
+    const srv = serveGroup();
+    const actions = toBinary(GroupChange_ActionsSchema, create(GroupChange_ActionsSchema, { sourceUserId: libsignal.groupEncryptServiceId(srv.keys.secretParams, BOB), version: 5 }));
+    const signed = toBinary(GroupChangeSchema, create(GroupChangeSchema, { actions, serverSignature: randomBytes(64) }));
+    assert.equal(groupChangeAuthor(srv.keys, signed, 5), BOB);
+    assert.equal(groupChangeAuthor(srv.keys, signed, 6), '');
+    assert.equal(groupChangeAuthor(srv.keys, new Uint8Array(0), 5), '');
+    assert.equal(groupChangeAuthor(srv.keys, new Uint8Array([1, 2, 3]), 5), '');
+  });
+});
+
+describe('Group update lines', () => {
+  const base = {
+    id: 'group.X',
+    internal_id: 'X',
+    masterKey: '',
+    revision: 4,
+    name: 'Before',
+    description: '',
+    members: [ALICE, BOB],
+    admins: [ALICE],
+    pending: [CAROL],
+    requesting: [DAVE],
+    expireTimer: 0,
+    blocked: false,
+    permissions: { add_members: 'every-member' as const, edit_group: 'only-admins' as const, send_messages: 'every-member' as const },
+    link_mode: 'enabled-with-approval' as const,
+    invite_link: 'https://signal.group/#a',
+  };
+
+  it('describes each change, crediting the author only when it is known', () => {
+    const next = {
+      ...base,
+      revision: 5,
+      name: 'After',
+      expireTimer: 86400,
+      members: [ALICE, BOB, DAVE, ERIN],
+      admins: [ALICE, BOB],
+      pending: [],
+      requesting: [],
+      permissions: { ...base.permissions, send_messages: 'only-admins' as const },
+      invite_link: 'https://signal.group/#b',
+    };
+    assert.deepEqual(diffGroupState(base, next, ALICE, ALICE), [
+      { change: 'title', text: 'After' },
+      { change: 'timer', seconds: 86400 },
+      { change: 'permSend', value: 'only-admins' },
+      { change: 'linkReset' },
+      { change: 'requestApproved', target: DAVE },
+      { change: 'memberAdded', target: ERIN },
+      { change: 'adminAdded', target: BOB },
+      { change: 'inviteRemoved', count: 1 },
+    ]);
+    const left = diffGroupState(base, { ...base, revision: 5, members: [ALICE], pending: [], requesting: [] }, CAROL, ALICE);
+    assert.deepEqual(left, [{ change: 'memberRemoved', target: BOB }, { change: 'inviteDeclined', target: CAROL }, { change: 'requestDenied', target: DAVE }]);
+    assert.deepEqual(diffGroupState(base, { ...base, revision: 5, members: [ALICE] }, BOB, ALICE), [{ change: 'left', target: BOB }]);
+    assert.deepEqual(diffGroupState(base, { ...base, revision: 5, members: [ALICE, BOB, ERIN] }, ERIN, ALICE), [{ change: 'joinedViaLink', target: ERIN }]);
+    assert.deepEqual(diffGroupState(base, { ...base, revision: 5, pending: [CAROL, ALICE, ERIN] }, '', ALICE), [
+      { change: 'invited', target: ALICE, count: 1 },
+      { change: 'invited', count: 1 },
+    ]);
+    assert.deepEqual(diffGroupState(base, { ...base, revision: 5, link_mode: 'disabled', invite_link: '' }, '', ALICE), [{ change: 'link', value: 'disabled', from: 'enabled-with-approval' }]);
+    assert.deepEqual(diffGroupState(base, { ...base, revision: 5 }, ALICE, ALICE), []);
+    assert.equal(isDecodedGroup({ id: 'group.X', name: 'Group', members: [BOB], admins: [] }), false);
+    assert.equal(isDecodedGroup(base), true);
+  });
 });
 
 describe('Usernames (reserve, confirm, link)', () => {
@@ -670,6 +792,68 @@ describe('Sync and service IDs', () => {
     assert.equal(timer.expiresInSeconds, 3600);
     const quoted = frame({ timestamp: 1000n, body: 'nice', quote: { id: 7n, authorAci: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', fileName: 'a.jpg' }] } });
     assert.deepEqual(quoted.quote, { id: 7, authorUuid: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }] });
+  });
+
+  it('turns polls, votes, and poll ends into normalize frames within Signal-Desktop limits', () => {
+    const env = { sourceUuid: BOB, sourceDevice: 1, timestamp: 1000 } as any;
+    const frame = (dm: any) => contentToNormalizedFrame(env, create(ContentSchema, { content: { case: 'dataMessage', value: dm } })).envelope.dataMessage;
+    assert.deepEqual(frame({ timestamp: 1000n, pollCreate: { question: 'Lunch?', options: ['Pizza', 'Soup'], allowMultiple: true } }).pollCreate, { question: 'Lunch?', options: ['Pizza', 'Soup'], allowMultiple: true });
+    assert.equal(frame({ timestamp: 1000n, pollCreate: { question: 'Lunch?', options: ['Pizza'] } }).pollCreate, undefined);
+    assert.equal(frame({ timestamp: 1000n, pollCreate: { question: 'x'.repeat(201), options: ['a', 'b'] } }).pollCreate, undefined);
+    assert.ok(frame({ timestamp: 1000n, pollCreate: { question: '👋🏽'.repeat(200), options: ['a', 'b'] } }).pollCreate);
+    assert.equal(frame({ timestamp: 1000n, pollCreate: { question: 'q', options: Array.from({ length: 11 }, (_, i) => 'o' + i) } }).pollCreate, undefined);
+    assert.deepEqual(frame({ timestamp: 1000n, pollVote: { targetAuthorAciBinary: uuidToBytes(ALICE), targetSentTimestamp: 42n, optionIndexes: [1, 0], voteCount: 3 } }).pollVote, {
+      targetAuthorUuid: ALICE,
+      targetSentTimestamp: 42,
+      optionIndexes: [1, 0],
+      voteCount: 3,
+    });
+    assert.equal(frame({ timestamp: 1000n, pollVote: { targetAuthorAciBinary: uuidToBytes(ALICE), targetSentTimestamp: 42n, optionIndexes: [10], voteCount: 1 } }).pollVote, undefined);
+    assert.deepEqual(frame({ timestamp: 1000n, pollTerminate: { targetSentTimestamp: 42n } }).pollTerminate, { targetSentTimestamp: 42 });
+  });
+
+  it('keeps a link preview only for a safe https link in the message text, as Signal-Desktop does', () => {
+    const guid = '0f6c2a1e-4b7d-4c3a-9a8e-2d1f5b6c7e8f';
+    const env = { sourceUuid: BOB, sourceDevice: 1, timestamp: 1000, serverGuid: guid.toUpperCase(), reportSpamToken: new Uint8Array([1, 2, 3]) } as any;
+    const out = (dm: any) => contentToNormalizedFrame(env, create(ContentSchema, { content: { case: 'dataMessage', value: { timestamp: 1000n, ...dm } } })).envelope;
+    const image = { attachmentIdentifier: { case: 'cdnKey' as const, value: 'k' }, cdnNumber: 2, key: new Uint8Array(64), contentType: 'image/jpeg', size: 1234 };
+    const shown = out({ body: 'look (https://signal.org/blog/a?b=1).', preview: [{ url: 'https://signal.org/blog/a?b=1', title: 'Blog', description: 'Post', image }] });
+    assert.equal(shown.serverGuid, guid);
+    assert.equal(shown.reportSpamToken, 'AQID');
+    const p = shown.dataMessage.preview;
+    assert.deepEqual([p.url, p.title, p.description, p.image.contentType, p.image.size], ['https://signal.org/blog/a?b=1', 'Blog', 'Post', 'image/jpeg', 1234]);
+    assert.ok(decodeAttachmentDescriptor(p.image.id));
+
+    const dropped = (url: string, body = 'see ' + url) => assert.equal(out({ body, preview: [{ url, title: 'T' }] }).dataMessage.preview, undefined, url);
+    dropped('https://signal.org/other', 'see https://signal.org/blog');
+    dropped('http://signal.org/');
+    dropped('https://user:pw@signal.org/');
+    dropped('https://localhost/x');
+    dropped('https://www.example.com/');
+    dropped('https://xn--sgnal-m3a.org/');
+    dropped('https://signal.org/aquí');
+    dropped('https://signal.org/', 'see \u202ehttps://signal.org/');
+    assert.equal(out({ body: 'https://signal.org/', preview: [{ url: 'https://signal.org/' }] }).dataMessage.preview, undefined);
+    assert.equal(out({ body: 'hi' }).dataMessage.preview, undefined);
+  });
+
+  it('reports spam with POST /v1/messages/report/{aci}/{guid} and the reporting token', async () => {
+    const calls: any[] = [];
+    const httpJson = (async (method: string, path: string, body: any, opts: any) => {
+      calls.push({ method, path, body, user: opts.basicAuth.username });
+    }) as any;
+    const store = new MemorySignalStore({ aci: ALICE, number: '', deviceId: 3, password: 'pw', registrationId: 1, pniRegistrationId: 2, aciIdentityKeyPair: { pubKey: new Uint8Array(33), privKey: new Uint8Array(32) } } as any);
+    const g1 = '0f6c2a1e-4b7d-4c3a-9a8e-2d1f5b6c7e8f';
+    const g2 = '1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d';
+    assert.equal(await reportSpam(store, httpJson, BOB, [g1, 'not-a-guid', g2], 'AQID'), 2);
+    assert.deepEqual(calls, [
+      { method: 'POST', path: `/v1/messages/report/${BOB}/${g1}`, body: { token: 'AQID' }, user: ALICE + '.3' },
+      { method: 'POST', path: `/v1/messages/report/${BOB}/${g2}`, body: { token: 'AQID' }, user: ALICE + '.3' },
+    ]);
+    calls.length = 0;
+    await reportSpam(store, httpJson, BOB, [g1]);
+    assert.deepEqual(calls[0].body, {});
+    await assert.rejects(reportSpam(store, httpJson, 'PNI:' + BOB, [g1]));
   });
 
   it('reduces shared contacts to a name, numbers, and emails', () => {

@@ -213,6 +213,7 @@ export function MembersScreen(props: { convId: string }) {
   const byName = (a: string, b: string) => store.displayName(a).localeCompare(store.displayName(b));
   const members = ((d && d.members) || []).slice().sort(byName);
   const invited = ((d && d.pending) || []).filter((id) => id.indexOf('PNI:') !== 0).sort(byName);
+  const requesting = admin ? ((d && d.requesting) || []).slice().sort(byName) : [];
   const canAdd = allowed(d, 'add_members');
 
   function memberOptions(id: string, pending: boolean): void {
@@ -261,6 +262,23 @@ export function MembersScreen(props: { convId: string }) {
     );
   }
 
+  function requestOptions(id: string): void {
+    const name = store.displayName(id);
+    showOptions(
+      [
+        { label: S.approve, onSelect: () => run(signal.approveGroupRequests(sendId!, [id]), S.saved, reload) },
+        {
+          label: S.deny,
+          danger: true,
+          onSelect: async () => {
+            if (await confirm({ title: S.denyRequest, body: name, ok: S.deny, danger: true })) run(signal.removeGroupMembers(sendId!, [id]), S.saved, reload);
+          },
+        },
+      ],
+      name
+    );
+  }
+
   const row = (id: string, pending: boolean) => ({
     key: (pending ? 'i:' : 'm:') + id,
     label: isMe(id) ? S.you : store.displayName(id),
@@ -268,8 +286,22 @@ export function MembersScreen(props: { convId: string }) {
     leading: <Avatar conv={{ id, type: 'direct', name: store.displayName(id) }} />,
     onSelect: () => memberOptions(id, pending),
   });
+  const requestRow = (id: string): Row => ({
+    key: 'r:' + id,
+    label: store.displayName(id),
+    sub: S.wantsToJoin,
+    leading: <Avatar conv={{ id, type: 'direct', name: store.displayName(id) }} />,
+    onSelect: () => requestOptions(id),
+  });
 
-  const rows: Row[] = [...members.map((id) => row(id, false)), invited.length > 0 && { section: S.pendingInvites }, ...invited.map((id) => row(id, true))];
+  const rows: Row[] = [
+    requesting.length > 0 && { section: S.joinRequests },
+    ...requesting.map(requestRow),
+    requesting.length > 0 && { section: S.members },
+    ...members.map((id) => row(id, false)),
+    invited.length > 0 && { section: S.pendingInvites },
+    ...invited.map((id) => row(id, true)),
+  ];
   return (
     <Screen title={S.members + ' (' + members.length + ')'}>
       <RowList

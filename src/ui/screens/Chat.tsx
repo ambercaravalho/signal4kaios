@@ -7,7 +7,7 @@ import { ConnectionBanner } from '../components/ConnectionBanner';
 import { pickEmoji, pickReaction } from '../components/Emoji';
 import { Icon } from '../components/Icon';
 import { Spinner } from '../components/List';
-import { confirm, DIVIDER, pick, showOptions } from '../components/Overlays';
+import { confirm, DIVIDER, type MenuEntry, pick, pickMany, prompt, showOptions } from '../components/Overlays';
 import { RichText } from '../components/RichText';
 import { Screen } from '../components/Screen';
 import { TextField } from '../components/TextField';
@@ -20,11 +20,11 @@ import { fmtBytes, fmtClock, fmtDay, fmtMsgTime } from '../data/format';
 import { openUrl } from '../data/platform';
 import * as store from '../data/store';
 import { extractUrls, isJumboEmoji, type PickedMention } from '../data/styled';
-import type { Attachment, ContactCard, Conversation, Message, MessageStatus, Notice, Quote } from '../data/types';
+import type { Attachment, ContactCard, Conversation, LinkPreview, Message, MessageStatus, Notice, Poll, Quote } from '../data/types';
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
-import { MessageDetailsScreen } from './MessageDetails';
+import { MessageDetailsScreen, PollVotesScreen } from './MessageDetails';
 import { SafetyNumberScreen } from './SafetyNumber';
 import { ForwardScreen } from './SearchList';
 import { ViewerScreen } from './Viewer';
@@ -106,7 +106,7 @@ function StatusIcon(props: { status: MessageStatus }) {
 }
 
 /** An inline photo once it's downloaded; anything else is a labelled row that opens in the viewer. `meta` sits over the photo's corner, or below a file row. */
-function AttachmentView(props: { att: Attachment; meta?: VNode | null }) {
+function AttachmentView(props: { att: Attachment; meta?: VNode | null; photoOnly?: boolean }) {
   const { att } = props;
   const ref = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -150,6 +150,7 @@ function AttachmentView(props: { att: Attachment; meta?: VNode | null }) {
         {props.meta}
       </div>
     );
+  if (props.photoOnly) return <div ref={ref} />;
   return (
     <>
       <div class="msg-file" ref={ref}>
@@ -175,14 +176,68 @@ function ContactCardView(props: { card: ContactCard }) {
   );
 }
 
+function PollView(props: { poll: Poll }) {
+  const { poll } = props;
+  const counts = store.pollCounts(poll);
+  const mine = poll.votes[store.selfNumber()];
+  return (
+    <div class="poll">
+      <div class="poll-question">{poll.question}</div>
+      {poll.options.map((o, i) => (
+        <div class="poll-option" key={i}>
+          <span class={'poll-mark' + (poll.allowMultiple ? ' poll-mark-many' : '') + (mine && mine.options.indexOf(i) >= 0 ? ' on' : '')} />
+          <span class="poll-option-text">{o}</span>
+          <span class="poll-count">{counts[i]}</span>
+        </div>
+      ))}
+      <div class="poll-sub">{poll.ended ? S.pollEnded : poll.allowMultiple ? S.pollChooseMany : S.pollChooseOne}</div>
+    </div>
+  );
+}
+
+function linkDomain(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+}
+
+/** A link preview's image only shows once it's on the phone, under the usual download rules. */
+function LinkPreviewView(props: { preview: LinkPreview }) {
+  const p = props.preview;
+  return (
+    <div class="msg-link">
+      {p.image && <AttachmentView att={p.image} photoOnly />}
+      {p.title && <div class="msg-link-title">{p.title}</div>}
+      <div class="msg-link-domain">{linkDomain(p.url)}</div>
+    </div>
+  );
+}
+
 /** The Signal user a shared contact's number belongs to, when it's someone we already know. */
 function cardContact(card: ContactCard) {
   return store.contactsList().find((c) => !!c.uuid && !!c.number && card.phones.some((p) => p.replace(/[\s()-]/g, '') === c.number));
 }
 
+export type MainAction = 'retry' | 'attachment' | 'vote' | 'card' | 'readFull' | 'openLink';
+
+/** What someone most likely wants from a message, in the order its options menu leads with them. */
+export function mainActions(m: Message, clipped: boolean): MainAction[] {
+  if (m.deleted) return m.status === 'failed' ? ['retry'] : [];
+  const out: MainAction[] = [];
+  if (m.status === 'failed') out.push('retry');
+  if (m.attachments[0]) out.push('attachment');
+  if (m.poll && !m.poll.ended && m.status !== 'failed' && m.status !== 'pending') out.push('vote');
+  if (m.contactCard) out.push('card');
+  if (clipped) out.push('readFull');
+  if (extractUrls(m.body).length) out.push('openLink');
+  return out;
+}
+
 function canForward(m: Message): boolean {
   const att = m.attachments[0];
-  return !m.deleted && !m.notice && !m.contactCard && (!!m.body || !!att) && (!att || (!!att.id && !att.viewOnce));
+  return !m.deleted && !m.notice && !m.contactCard && m.attachments.length <= 1 && (!!m.body || !!att) && (!att || (!!att.id && !att.viewOnce));
 }
 
 function Reactions(props: { reactions: Record<string, string> }) {
@@ -238,7 +293,8 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
   useEffect(() => props.onClipped(m.id, clipped), [clipped]);
   const attachments = m.deleted ? [] : m.attachments;
   const meta = <MessageMeta m={m} />;
-  const metaInText = !!text && !jumbo && !clipped;
+  const preview = m.deleted ? undefined : m.preview;
+  const metaInText = !!text && !jumbo && !clipped && !preview;
   const metaOnAttachment = !text && attachments.length > 0;
   const cls = 'msg ' + (m.incoming ? 'msg-in' : 'msg-out') + (props.focused ? ' focused' : '');
   const bubbleCls = 'bubble' + (jumbo ? ' bubble-jumbo' : '') + (m.deleted ? ' bubble-deleted' : '') + (m.status === 'failed' ? ' bubble-failed' : '');
@@ -259,6 +315,7 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
           <AttachmentView key={a.id || i} att={a} meta={metaOnAttachment && i === attachments.length - 1 ? meta : null} />
         ))}
         {m.contactCard && !m.deleted && <ContactCardView card={m.contactCard} />}
+        {m.poll && !m.deleted && <PollView poll={m.poll} />}
         {text && (
           <div class={'msg-body' + (jumbo ? ' jumbo' : '') + (clipped ? ' clipped' : '')} ref={bodyRef}>
             <RichText text={text} styles={m.deleted ? [] : m.styles} revealSpoilers={props.focused} />
@@ -266,6 +323,7 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
           </div>
         )}
         {clipped && <div class="msg-more">{S.readMore}</div>}
+        {preview && <LinkPreviewView preview={preview} />}
         {!metaInText && !metaOnAttachment && <div class="msg-meta-line">{meta}</div>}
       </div>
       {!m.deleted && <Reactions reactions={m.reactions} />}
@@ -276,6 +334,9 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
 
 function noticeIcon(n: Notice): string {
   if (n.kind === 'safetyNumber') return 'verified';
+  if (n.kind === 'pollEnded') return 'poll';
+  if (n.kind === 'timer' || (n.kind === 'groupUpdate' && n.change === 'timer')) return 'timer';
+  if (n.kind === 'groupUpdate') return 'group';
   return 'phone';
 }
 
@@ -329,6 +390,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   const [draft, setDraft] = useState(() => (conv && conv.draft) || '');
   const [quote, setQuote] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
+  const [tray, setTray] = useState<store.OutgoingFile[]>([]);
   const [pinned, setPinned] = useState<Message[]>([]);
   const [group, setGroup] = useState<GroupDetail | null>(null);
   const mentionsRef = useRef<PickedMention[]>((conv && conv.draftMentions) || []);
@@ -538,7 +600,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   function submit(): void {
     const text = draft.trim();
-    if (!text || !canCompose) return;
+    if ((!text && !tray.length) || !canCompose) return;
     stopTyping();
     const mentions = mentionsRef.current;
     if (editing) {
@@ -559,28 +621,51 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     clearComposer();
     setQuote(null);
     store.setDraft(convId, '', []);
+    if (tray.length) {
+      const files = tray;
+      setTray([]);
+      store.sendAttachments(convId, files, text, { quote: q }).catch((e) => toast(sendError(e)));
+      return;
+    }
     store.sendText(convId, text, q, mentions).catch((e) => toast(sendError(e)));
   }
 
-  /** View-once media goes without a caption, so the draft stays in the composer. */
+  /** Photos, videos, and files wait above the message box until Send; view-once media and voice messages go alone right away. View-once media goes without a caption, so the draft stays in the composer. */
   async function attach(viewOnce: boolean): Promise<void> {
     const file = await chooseFile(viewOnce ? 'image/*,video/*' : undefined);
     if (!file) return;
     const type = file.type || 'application/octet-stream';
     if (viewOnce && type.indexOf('image/') !== 0 && type.indexOf('video/') !== 0) return toast(S.viewOnceOnlyMedia);
     if (file.size > MAX_FILE_BYTES) return toast(S.fileTooLarge);
+    const alone = viewOnce || type.indexOf('audio/') === 0;
+    if (!alone && tray.length >= store.MAX_ATTACHMENTS) return toast(fmt(S.tooManyAttachments, { n: store.MAX_ATTACHMENTS }));
+    if (!alone && tray.reduce((sum, f) => sum + (f.size || 0), 0) + file.size > MAX_FILE_BYTES) return toast(S.attachmentsTooLarge);
     toast(S.preparingFile);
     try {
-      const uri = await readDataUri(file, file.name);
+      const out: store.OutgoingFile = { dataUri: await readDataUri(file, file.name), contentType: type, filename: file.name, size: file.size };
+      if (!alone) {
+        setTray((cur) => cur.concat(out));
+        setFocusedId(null);
+        return;
+      }
       const caption = viewOnce ? '' : draft.trim();
       if (!viewOnce) {
         clearComposer();
         store.setDraft(convId, '', []);
       }
-      await store.sendAttachment(convId, uri, caption, { contentType: type, filename: file.name, size: file.size, viewOnce });
+      await store.sendAttachments(convId, [out], caption, { viewOnce });
     } catch (e) {
       toast(sendError(e));
     }
+  }
+
+  async function pickAttachment(m: Message): Promise<void> {
+    const i = await pick(
+      S.viewAttachments,
+      m.attachments.map((a, n) => ({ value: n, label: a.filename || store.attachmentLabel([a]), sub: a.size ? fmtBytes(a.size) : undefined })),
+      -1
+    );
+    if (i !== undefined && i >= 0) openAttachment(m, m.attachments[i]);
   }
 
   function openAttachment(m: Message, att: Attachment): void {
@@ -647,12 +732,62 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     return card.phones.length ? [{ label: S.copyNumber, onSelect: () => copyText(card.phones[0]) }] : [];
   }
 
+  async function vote(m: Message): Promise<void> {
+    const p = m.poll!;
+    const mine = p.votes[store.selfNumber()];
+    const current = mine ? mine.options : [];
+    const choices = p.options.map((o, i) => ({ value: i, label: o }));
+    let chosen: number[] | undefined;
+    if (p.allowMultiple) chosen = await pickMany(S.vote, choices, current);
+    else {
+      const i = await pick(S.vote, current.length ? choices.concat({ value: -1, label: S.removeVote }) : choices, current.length ? current[0] : -1);
+      chosen = i === undefined ? undefined : i < 0 ? [] : [i];
+    }
+    if (!chosen) return;
+    const next = chosen.slice().sort((a, b) => a - b);
+    if (next.join() === current.slice().sort((a, b) => a - b).join()) return;
+    store.votePoll(m, next).catch((e) => toast(sendError(e)));
+  }
+
+  async function endPoll(m: Message): Promise<void> {
+    if (!(await confirm({ title: S.endPoll, body: S.endPollBody, ok: S.endPoll, danger: true }))) return;
+    store.endPoll(m).catch((e) => toast(sendError(e)));
+  }
+
+  async function createPoll(): Promise<void> {
+    const question = await prompt({ title: S.pollQuestion, maxLength: 100 });
+    if (!question) return;
+    const options: string[] = [];
+    while (options.length < 10) {
+      const enough = options.length >= 2;
+      const o = await prompt({ title: fmt(S.pollOption, { n: options.length + 1 }), maxLength: 100, allowEmpty: enough, hint: enough ? S.pollOptionHint : undefined });
+      if (o === undefined) return;
+      if (!o) break;
+      options.push(o);
+    }
+    if (options.length < 2) return toast(S.pollNeedsOptions);
+    const many = await pick(S.pollAnswers, [{ value: false, label: S.pollOneAnswer }, { value: true, label: S.pollManyAnswers }], false);
+    if (many === undefined) return;
+    store.sendPoll(convId, question, options, many).catch((e) => toast(sendError(e)));
+  }
+
   function messageOptions(m: Message): void {
     if (m.notice) return noticeOptions(m);
     const urls = m.deleted ? [] : extractUrls(m.body);
     const att = m.attachments[0];
     const settled = m.status !== 'failed' && m.status !== 'pending' && !request;
+    const main: Record<MainAction, MenuEntry[]> = {
+      retry: [{ label: S.retry, onSelect: () => store.retryMessage(m).catch((e) => toast(sendError(e))) }],
+      attachment: m.attachments.length > 1 ? [{ label: S.viewAttachments, onSelect: () => pickAttachment(m) }] : [att && { label: attachmentAction(att), onSelect: () => openAttachment(m, att) }],
+      vote: [!!conv && conv.type === 'group' && !request && { label: S.vote, onSelect: () => vote(m) }],
+      card: contactCardOptions(m),
+      readFull: [{ label: S.readFull, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) }],
+      openLink: [{ label: S.openLink, onSelect: () => openLinks(urls) }],
+    };
+    const lead = mainActions(m, clippedIds.current.has(m.id));
     showOptions([
+      ...lead.reduce<MenuEntry[]>((acc, k) => acc.concat(main[k]), []),
+      DIVIDER,
       !m.deleted && settled && { label: S.react, onSelect: () => react(m) },
       !m.deleted && settled && {
         label: S.reply,
@@ -664,12 +799,9 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
         },
       },
       DIVIDER,
-      !m.deleted && att && { label: attachmentAction(att), onSelect: () => openAttachment(m, att) },
-      ...contactCardOptions(m),
-      urls.length > 0 && { label: S.openLink, onSelect: () => openLinks(urls) },
       !m.deleted && !!m.body && { label: S.copyText, onSelect: () => copyText(m.body) },
       settled && canForward(m) && { label: S.forward, onSelect: () => router.push(ForwardScreen, { msg: m }) },
-      canChange(m) && !m.attachments.length && (m.history || []).length < store.MAX_EDITS && {
+      canChange(m) && !m.attachments.length && !m.poll && (m.history || []).length < store.MAX_EDITS && {
         label: S.edit,
         onSelect: () => {
           saveDraft();
@@ -680,10 +812,10 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
           setFocusedId(null);
         },
       },
-      m.status === 'failed' && { label: S.retry, onSelect: () => store.retryMessage(m).catch((e) => toast(sendError(e))) },
+      !m.deleted && !!m.poll && { label: S.viewVotes, onSelect: () => router.push(PollVotesScreen, { msg: m }) },
+      !m.deleted && settled && !m.incoming && !!m.poll && !m.poll.ended && { label: S.endPoll, onSelect: () => endPoll(m) },
       DIVIDER,
       !m.deleted && settled && { label: m.pinned ? S.unpinMessage : S.pinMessage, onSelect: () => store.setMessagePinned(m, !m.pinned).catch((e) => toast(sendError(e))) },
-      clippedIds.current.has(m.id) && { label: S.readFull, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) },
       { label: S.messageDetails, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) },
       DIVIDER,
       deleteForMeItem(m),
@@ -738,16 +870,30 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     );
   }
 
+  async function reportSpam(): Promise<void> {
+    if (!(await confirm({ title: S.reportSpam + '?', body: S.reportSpamBody, ok: S.report, danger: true }))) return;
+    store.reportSpamRequest(convId).then(
+      () => {
+        toast(S.reportedSpam);
+        router.pop();
+      },
+      (e) => toast(friendlyError(e))
+    );
+  }
+
   function chatOptions(): void {
     showOptions([
       request && { label: S.accept, onSelect: acceptRequest },
       request && { label: S.delete, danger: true, onSelect: deleteRequest },
       request && { label: S.block, danger: true, onSelect: blockRequest },
+      request && { label: S.reportSpam, danger: true, onSelect: reportSpam },
       DIVIDER,
-      canCompose && { label: S.attach, onSelect: () => attach(false) },
-      canCompose && { label: S.attachViewOnce, onSelect: () => attach(true) },
+      canCompose && !editing && { label: S.attach, onSelect: () => attach(false) },
+      canCompose && !editing && { label: S.attachViewOnce, onSelect: () => attach(true) },
+      tray.length > 0 && { label: S.removeAttachments, danger: true, onSelect: () => setTray([]) },
       canCompose && { label: S.insertEmoji, onSelect: () => pickEmoji().then((e) => e && insertText(e)) },
       canCompose && conv && conv.type === 'group' && { label: S.mention, onSelect: mention },
+      canCompose && conv && conv.type === 'group' && { label: S.createPoll, onSelect: createPoll },
       DIVIDER,
       pinned.length > 0 && { label: S.pinnedMessages, onSelect: showPinned },
       DIVIDER,
@@ -830,7 +976,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   useSoftkeys({
     left: quote || editing ? S.cancel : undefined,
-    center: onComposer ? (blocked ? S.unblock : request ? S.accept : canCompose && draft.trim() ? (editing ? S.save : S.send) : null) : S.select,
+    center: onComposer ? (blocked ? S.unblock : request ? S.accept : canCompose && (draft.trim() || tray.length) ? (editing ? S.save : S.send) : null) : S.select,
     right: S.options,
   });
 
@@ -882,6 +1028,12 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
           <div class="composer-ctx">
             <div class="composer-ctx-title">{editing ? S.editing : S.replyingTo + ' ' + authorName(quote!)}</div>
             <div class="composer-ctx-text">{(editing || quote)!.body || store.attachmentLabel((editing || quote)!.attachments)}</div>
+          </div>
+        )}
+        {tray.length > 0 && canCompose && (
+          <div class="composer-ctx">
+            <div class="composer-ctx-title">{store.attachmentLabel(tray)}</div>
+            <div class="composer-ctx-text">{tray.map((f) => f.filename).join(', ')}</div>
           </div>
         )}
         {blocked ? (

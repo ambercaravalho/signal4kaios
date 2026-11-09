@@ -43,24 +43,26 @@ A new chat from someone who isn't in your contacts shows **Message request** und
 
 Messages run oldest to newest with the message box at the bottom; moving up past the top loads older messages. The time, the disappearing-message timer, and the ticks sit at the end of the last line of text. A long message is shortened to fit the screen and ends with **Read more**; a message still too tall to fit scrolls a step at a time as you press Up or Down. Sent messages show a clock while sending, one tick when sent, two when delivered, and two blue ticks when read. A message that didn't send says **Not sent**.
 
-OK on a message opens its options:
+OK on a message opens its options. The first one is what the message is most likely for, so OK twice opens a photo: **Retry** on a message that didn't send, then **View photo**, **Play video**, **Play voice message**, or **Open file**, the shared contact's action, **Read full message** on a shortened message, and **Open link**. After those:
 
 - **React**: pick from six quick reactions or any emoji; pick your current reaction again to remove it.
-- **Reply**, **Copy text**, and **Open link** when the message has links.
-- **View photo**, **Play video**, **Play voice message**, or **Open file** for attachments.
+- **Reply** and **Copy text**.
 - **Forward** sends the text (with its formatting) or the attachment to another chat, contact, or group after you confirm. View-once media and files sent from this phone can't be forwarded.
 - **Edit** (up to 10 times) and **Delete for everyone** on your own messages for 24 hours, as in Signal. Group admins also get **Delete for everyone** on other people's messages for 24 hours; those read **An admin deleted this message.**
-- **Retry** on a message that didn't send.
-- **Pin message** (for everyone in the chat), **Read full message** on a shortened message, **Message details**, and **Delete for me**, which also deletes the message on your other linked devices.
+- **Pin message** (for everyone in the chat), **Message details**, and **Delete for me**, which also deletes the message on your other linked devices.
 - **Message details** shows the full text, when it was sent, its status, reactions, when it disappears, earlier versions of an edited message, and **Delivered privately** when **Private delivery icon** is on in **Settings → Privacy**.
 - **Shared contacts** show as a card; OK offers **Message** them when they're in your Signal contacts, or **Copy number**.
+- **Link previews** that someone else's phone attached show the page's title and site under the text, with its picture once it's downloaded. Beacon doesn't add previews to links you send.
+- **Polls** show their question, answers, and vote counts. OK → **Vote** picks your answer (or answers, when the poll allows several); vote again to change it, or **Remove my vote**. **View votes** lists who picked what, and the person who made the poll can **End poll**.
 
-**Options** in a chat: Attach, Attach view-once photo or video, Insert emoji, Mention (groups), Pinned messages, Mute, and Chat settings.
+**Options** in a chat: Attach, Attach view-once photo or video, Insert emoji, Mention (groups), Create poll (groups), Pinned messages, Mute, and Chat settings.
+
+- **Create poll** asks for a question and 2 to 10 answers; leave an answer empty to finish. Then pick whether people can choose one answer or several.
 
 - **Drafts**: text left in the message box stays with the chat until you send or clear it.
 - **Mentions**: in a group, **Mention** picks a member and sends a Signal mention.
 - **Emoji**: **Insert emoji** opens the picker; its **Options** has **Category** and **Skin tone**, which picks one of six tones for emoji that have them, reactions included.
-- **Notices**: missed calls, a changed safety number, and group calls show as a line in the chat. OK on one offers **Delete for me**, and on a safety number line **View safety number**.
+- **Notices**: missed calls, a changed safety number, group calls, disappearing message timer changes, and group changes (name, description, members, admins, invites, join requests, group link, and permissions) show as a line in the chat, for example **Dave added you**; when Signal doesn't say who made a group change, the line just says what changed. OK on one offers **Delete for me**, and on a safety number line **View safety number**.
 - **Groups where only admins can send** show **Only admins can send messages** in place of the message box.
 
 - **Text formatting**: type `**bold**`, `*italic*`, `~strikethrough~`, `` `monospace` ``, or `||spoiler||`. Spoilers stay hidden until you focus the message. Prefix a marker with `\` to type it literally. Turn this off in **Settings → Chats**.
@@ -73,12 +75,14 @@ OK on a message opens its options:
 A new one-to-one chat from someone who isn't in your contacts, and whom you haven't accepted, opens as a message request: **{name} wants to message you** sits in place of the message box. Until you accept, they don't get read receipts or see you typing.
 
 - **Accept** (OK) lets you reply and shares your profile with them.
-- **Options** has **Accept**, **Delete** (removes the chat), and **Block**.
+- **Options** has **Accept**, **Delete** (removes the chat), **Block**, and **Report spam**, which tells Signal about their most recent messages (Signal can't see what's in them), blocks them, and deletes the chat.
 - Sending them a message from another of your devices, or accepting, deleting, or blocking there, does the same here.
 
 ## Media
 
-**Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file); the file is sent with its name. Files up to 25 MB can be sent.
+**Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file). Photos, videos, and files wait above the message box (for example **2 photos**) so you can attach more and type a caption; **Send** sends them together as one message, and **Options → Remove attachments** clears them. Voice recordings send right away on their own. A message can carry up to 32 attachments and 25 MB in total, and each file is sent with its name.
+
+- A message with several attachments has **View attachments** first in its options, which lists them to open one.
 
 - Photos show in the chat; small ones download on their own as you scroll to them.
 - Voice messages, audio, and video play in the viewer: OK plays or pauses. Video depends on the phone's codecs; H.264 MP4 is the safe choice.
@@ -98,7 +102,7 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 - **For everyone**: **Media** is the first row; see [Media](#media).
 - **For a person**: Nickname (saved as a Signal nickname on all your devices), Disappearing messages, Mute, View safety number, and Block or Unblock.
 - **For a group**: the description, **Members**, and, as the group's permissions allow, the group name, description, and disappearing messages. Admins also get **Permissions** (who can add members, edit group info, and send messages) and **Group link** (off, on, or on with admin approval; show its QR code or reset it). **Block and leave group** and **Leave group** are at the bottom.
-- **Members**: OK on a member to message them or view their safety number; admins can make or remove admins, remove members, and cancel invites. The right softkey adds people from your contacts, or by username if you have none. People Signal can't add directly are invited.
+- **Members**: OK on a member to message them or view their safety number; admins can make or remove admins, remove members, and cancel invites. Admins also see **Requests to join** at the top when people asked to join through the group link; OK on one to **Approve** or **Deny** it. The right softkey adds people from your contacts, or by username if you have none. People Signal can't add directly are invited.
 - **Safety number**: compare the 60 digits with the other phone, **Show code** for them to scan, or **Scan code** to scan theirs. OK marks the contact as verified or clears it. [About safety numbers](https://support.signal.org/hc/en-us/articles/360007060632).
 
 ## Settings
@@ -108,12 +112,14 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 | **Profile** (top row) | Your name, About, and About emoji (Signal requires a name), Username, your **QR code or link**, and Delete username |
 | **Linked device** | Which number this phone is linked as, Sync with your phone, saved accounts (OK switches), Add account, Unlink this phone, and Delete all data |
 | **Chats** | Text formatting; Keep muted chats archived |
-| **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Blocked |
+| **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Blocked |
 | **Appearance** | Theme: light or dark |
 | **Help** | Version, User guide, Source code |
 | **Debug** | Technical details for troubleshooting (see below) |
 
 **Usernames** have a name and a number, like `name.01`. Type just the name to get a number picked for you, or type the number you want.
+
+**Privacy → Phone number** has **Who can see my number** and **Who can find me by number**, each **Everybody** or **Nobody**. With **Nobody** seeing it, only people who already have your number see it; with **Nobody** finding you, people can't start a chat with you using your number. While everybody can see your number, everybody can also find you by it, as in Signal. Both settings are shared with your phone and other devices.
 
 Each account has its own history on the phone, and switching accounts restarts Beacon.
 
@@ -131,16 +137,18 @@ Keep Beacon open in the background to get notifications. Nothing is lost when it
 
 Message history exists only on the phone, starting from when you linked. Each chat keeps about its **500 most recent messages**, and viewed media is kept in a small cache. **Settings → Linked device → Delete all data** removes everything.
 
-Archive, mute, mark as unread, pinned chats, the default timer for new chats, and the private delivery icon setting sync with your other devices through Signal's encrypted storage; Signal allows 4 pinned chats.
+Archive, mute, mark as unread, pinned chats, the default timer for new chats, the private delivery icon setting, and phone number privacy sync with your other devices through Signal's encrypted storage; Signal allows 4 pinned chats.
 
 ## Known limitations
 
-Beacon doesn't yet support every Signal feature. Calls, stories, link previews, polls, and more are tracked on the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap). These work only partly:
+Beacon doesn't yet support every Signal feature. Calls, stories, and more are tracked on the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap). These work only partly:
 
 | Action | What happens now |
 | --- | --- |
 | Starting a chat by phone number | Works for numbers in your synced contacts and for Signal usernames. Other numbers can't be looked up, because the phone can't run Signal's contact discovery yet ([details](development.md#phone-number-lookup-cdsi-spike-findings)). |
 | Scanning a username QR code | Not supported yet; ask for the username instead. Codes with a phone number work. |
+| Sending link previews | Not supported yet. Links you send arrive as plain links; previews other people send do show. |
+| Polls in one-to-one chats | Not supported yet. You can vote in and end polls anywhere, but **Create poll** is only in groups. |
 | Group message requests | Not supported yet. A group someone you don't know adds you to shows as a normal chat; leave or block it in **Chat settings**. |
 | Forwarding files you sent from this phone | Not possible, because the phone doesn't keep a copy it can resend. They're also left out of **Media**. |
 | Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open, and trusting Signal's certificate on a rooted phone doesn't change that. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |

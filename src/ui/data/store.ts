@@ -4,12 +4,13 @@ import type { ChatStateEntry, PinnedChat } from '../../engine/host';
 import { groupDetail, signal, syncedContacts, syncedGroups, type SyncedContact } from './api';
 import { config } from './config';
 import { db, type ExpiredRef } from './db';
+import { groupUpdateText, timerText, type LineNames } from './group-lines';
 import { dbg } from './log';
-import { fmt, S } from '../strings';
+import { fmt, plural, S } from '../strings';
 import { parseFrame, type ChatRef, type MessageEvent, type NoticeEvent, type StoreEvent, type SyncRef } from './normalize';
 import { hasServiceWorker } from './platform';
 import { encodeMentions, parseStyledMarkdown, type PickedMention, type StyleRange } from './styled';
-import type { Attachment, Connection, Contact, Conversation, GroupRef, Message, Notice, Quote } from './types';
+import type { Attachment, Connection, Contact, Conversation, GroupRef, Message, Notice, Poll, PollVote, Quote } from './types';
 
 export interface StoreEvents {
   conversations: [];
@@ -135,6 +136,10 @@ export function attachmentLabel(attachments: Array<Partial<Attachment>> | undefi
   if (!attachments || !attachments.length) return '';
   const a = attachments[0];
   const type = a.contentType || '';
+  if (attachments.length > 1) {
+    const photos = attachments.every((x) => (x.contentType || '').indexOf('image/') === 0);
+    return photos ? plural(attachments.length, S.photoOne, S.photoMany) : plural(attachments.length, S.attachmentOne, S.attachmentMany);
+  }
   if (a.viewOnce) return 'View-once media';
   if (a.voiceNote || type.indexOf('audio/') === 0) return 'Voice message';
   if (type.indexOf('image/') === 0) return 'Photo';
@@ -164,7 +169,8 @@ export async function chatMedia(convId: string, limit: number = 300): Promise<Ar
   }
 }
 
-function previewOf(rec: Pick<Message, 'body' | 'attachments' | 'contactCard'>): string {
+function previewOf(rec: Pick<Message, 'body' | 'attachments' | 'contactCard' | 'poll'>): string {
+  if (rec.poll) return fmt(S.pollPreview, { question: rec.poll.question });
   return rec.body || attachmentLabel(rec.attachments) || (rec.contactCard ? S.sharedContact : '');
 }
 
@@ -177,8 +183,19 @@ export function noticeText(notice: Notice, author: string): string {
       return fmt(S.safetyNumberChanged, { name: displayName(author) });
     case 'groupCall':
       return author && !isSelfKey(author) ? fmt(S.startedGroupCall, { name: displayName(author) }) : S.groupCall;
+    case 'pollEnded':
+      return isSelfKey(author) || author === config.aci() ? fmt(S.youEndedPoll, { question: notice.text || '' }) : fmt(S.endedPoll, { name: displayName(author), question: notice.text || '' });
+    case 'timer':
+      return timerText(notice.seconds || 0, author, lineNames);
+    case 'groupUpdate':
+      return groupUpdateText(notice, author, lineNames);
   }
 }
+
+const lineNames: LineNames = {
+  name: (key) => displayName(key),
+  isMe: (key) => isSelfKey(key) || (!!config.aci() && key === config.aci()),
+};
 
 function messageText(rec: Message): string {
   return rec.notice ? noticeText(rec.notice, rec.author) : previewOf(rec);
@@ -230,7 +247,11 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
     edited: false,
   };
   if (ev.contactCard) rec.contactCard = ev.contactCard;
+  if (ev.poll) rec.poll = { question: ev.poll.question, options: ev.poll.options, allowMultiple: ev.poll.allowMultiple, votes: {} };
+  if (ev.preview) rec.preview = ev.preview;
   if (ev.sealed) rec.sealed = true;
+  if (ev.serverGuid) rec.serverGuid = ev.serverGuid;
+  if (ev.reportToken && conv.type === 'direct') conv.reportToken = ev.reportToken;
   if (ev.expiresInSeconds) {
     rec.expireSecs = ev.expiresInSeconds;
     rec.expiresAt = Date.now() + ev.expiresInSeconds * 1000;
@@ -258,7 +279,7 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
 
 /** Missed calls count as unread and notify, as in Signal; other notices only show in the chat. */
 function applyNotice(ev: NoticeEvent, silent: boolean): void {
-  if (ev.notice.kind === 'safetyNumber' && !convs[ev.convId]) return;
+  if ((ev.notice.kind === 'safetyNumber' || ev.notice.kind === 'groupUpdate') && !convs[ev.convId]) return;
   const conv = ensureConv({ convId: ev.convId, groupInternalId: ev.groupInternalId, incoming: true, authorName: '' });
   const rec: Message = {
     id: msgId(ev.convId, ev.timestamp, ev.author),
@@ -490,12 +511,17 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
       return applyAdminDelete(ev);
     case 'requestResponse':
       return applyRequestResponse(ev);
+    case 'pollVote':
+      return applyPollVote(ev);
+    case 'pollEnd':
+      return applyPollEnd(ev);
     case 'timer': {
       const conv = convs[ev.convId];
       if (!conv || (conv.expireTimer || 0) === ev.seconds) return;
       conv.expireTimer = ev.seconds;
       persistConv(conv);
       emit('conversations');
+      if (conv.type === 'direct') timerLine(conv, ev.author, ev.seconds, ev.timestamp);
       return;
     }
   }
@@ -690,35 +716,53 @@ export function sendText(convId: string, text: string, quote?: Quote | null, men
     const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, quote: quote || null });
     if (wire.mentions.length) rec.mentions = mentions;
     const payload: SendPayload = { recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0 };
-    if (quote) {
-      payload.quote_timestamp = quote.timestamp;
-      payload.quote_author = quote.author;
-      payload.quote_message = quote.text;
-      if (quote.attachments && quote.attachments.length) payload.quote_attachments = quote.attachments;
-    }
+    addQuote(payload, quote);
     return sendCore(conv, rec, payload, st.body);
   });
 }
 
-/** `dataUri` is "data:<mime>;base64,…" (a scaled photo, a picked file, or a voice note). View-once media goes without a caption, as in Signal. */
-export function sendAttachment(convId: string, dataUri: string, caption: string, meta: { contentType?: string; filename?: string; size?: number; voiceNote?: boolean; viewOnce?: boolean } = {}): Promise<Message> {
+function addQuote(payload: SendPayload, quote: Quote | null | undefined): void {
+  if (!quote) return;
+  payload.quote_timestamp = quote.timestamp;
+  payload.quote_author = quote.author;
+  payload.quote_message = quote.text;
+  if (quote.attachments && quote.attachments.length) payload.quote_attachments = quote.attachments;
+}
+
+/** Signal-Desktop's composer takes up to 32 attachments per message. */
+export const MAX_ATTACHMENTS = 32;
+
+/** A file to send; `dataUri` is "data:<mime>;base64,…" (a scaled photo, a picked file, or a voice note). */
+export interface OutgoingFile {
+  dataUri: string;
+  contentType?: string;
+  filename?: string;
+  size?: number;
+  voiceNote?: boolean;
+}
+
+/** One message carrying `files` in order, with `caption` as its text. View-once media goes alone and without a caption, as in Signal. */
+export function sendAttachments(convId: string, files: OutgoingFile[], caption: string, opts: { viewOnce?: boolean; quote?: Quote | null } = {}): Promise<Message> {
   let conv: Conversation;
   try {
     conv = convForSend(convId);
+    if (!files.length || files.length > MAX_ATTACHMENTS || (opts.viewOnce && files.length > 1)) throw new Error('Too many attachments');
   } catch (e) {
     return Promise.reject(e);
   }
-  const contentType = meta.contentType || 'image/jpeg';
-  const filename = meta.filename || 'photo.jpg';
-  const att: Attachment = { id: '', contentType, filename, size: meta.size || 0, voiceNote: !!meta.voiceNote };
-  if (meta.viewOnce) att.viewOnce = true;
-  const text = meta.viewOnce ? '' : caption || '';
+  const atts: Attachment[] = files.map((f) => {
+    const att: Attachment = { id: '', contentType: f.contentType || 'image/jpeg', filename: f.filename || 'photo.jpg', size: f.size || 0, voiceNote: !!f.voiceNote };
+    if (opts.viewOnce) att.viewOnce = true;
+    return att;
+  });
+  const text = opts.viewOnce ? '' : caption || '';
   return withDefaultTimer(conv, () => {
     const st = styled(text);
-    const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: [att] });
-    const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, base64_attachments: [dataUri] };
-    if (meta.viewOnce) payload.view_once = true;
-    return sendCore(conv, rec, payload, st.body || attachmentLabel([att]));
+    const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: atts, quote: opts.quote || null });
+    const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, base64_attachments: files.map((f) => f.dataUri) };
+    if (opts.viewOnce) payload.view_once = true;
+    addQuote(payload, opts.quote);
+    return sendCore(conv, rec, payload, st.body || attachmentLabel(atts));
   });
 }
 
@@ -767,6 +811,7 @@ export function forwardMessage(convId: string, m: Message, dataUri?: string): Pr
 export function retryMessage(rec: Message): Promise<Message> {
   db.deleteMessage(rec.id);
   emit('message-removed', { id: rec.id, convId: rec.convId, timestamp: rec.timestamp });
+  if (rec.poll) return sendPoll(rec.convId, rec.poll.question, rec.poll.options, rec.poll.allowMultiple);
   return sendText(rec.convId, rec.raw != null ? rec.raw : rec.body, rec.quote, rec.mentions || []);
 }
 
@@ -925,12 +970,125 @@ export function blockRequest(convId: string): Promise<void> {
     .then(() => clearRequest(conv));
 }
 
+/** Signal-Desktop reports a chat's 3 most recent incoming messages that carry a server GUID. */
+const REPORT_SPAM_MESSAGES = 3;
+
+/** Report a message request as spam to Signal, then block the person and delete the chat here and on our other devices. */
+export async function reportSpamRequest(convId: string): Promise<void> {
+  const conv = convs[convId];
+  if (!conv || !conv.sendId || conv.type !== 'direct') throw new Error('unknown chat');
+  const sendId = conv.sendId;
+  const recent = await db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, 100);
+  const guids = recent
+    .filter((m) => m.incoming && !!m.serverGuid)
+    .slice(-REPORT_SPAM_MESSAGES)
+    .map((m) => m.serverGuid as string);
+  // SECURITY-REVIEW: the reporting token goes only to Signal's report endpoint.
+  if (guids.length) await signal.reportSpam(sendId, guids, conv.reportToken);
+  await signal.sendMessageRequestResponse(sendId, 'blockAndSpam');
+  await signal.setContactBlocked(sendId, true);
+  await removeChat(conv);
+}
+
 /** Another of our devices answered a message request (or deleted a chat through one). */
 function applyRequestResponse(ev: Extract<StoreEvent, { type: 'requestResponse' }>): void {
   const conv = chatFor(ev.chat);
   if (!conv) return;
   if (ev.response === 'accept' || ev.response === 'block') return clearRequest(conv);
   enqueueMutation(() => removeChat(conv));
+}
+
+/** One key per person for votes: ours is our number, others their number when we know it, else their ACI. */
+function personKey(key: string): string {
+  if (key === config.aci() || isSelfKey(key)) return self();
+  const c = contactByKey(key);
+  return (c && (c.number || c.uuid)) || key;
+}
+
+/** How many people chose each option. */
+export function pollCounts(poll: Poll): number[] {
+  const counts = poll.options.map(() => 0);
+  for (const v of Object.values(poll.votes || {})) for (const i of v.options) if (i < counts.length) counts[i] += 1;
+  return counts;
+}
+
+/** Signal-Desktop's handlePollVote: a person's vote with a higher voteCount replaces their last one; our own other devices also win ties when newer. */
+function applyPollVote(ev: Extract<StoreEvent, { type: 'pollVote' }>): void {
+  const voter = personKey(ev.voter);
+  updateTarget(ev.convId, ev.targetTimestamp, authorKeys(ev.targetAuthor), 'poll vote', (rec) => {
+    const p = rec.poll;
+    if (!p || p.ended || rec.deleted) return;
+    const opts = ev.options;
+    if (opts.some((i) => i >= p.options.length) || opts.some((i, n) => opts.indexOf(i) !== n) || (!p.allowMultiple && opts.length > 1)) return;
+    const cur = p.votes[voter];
+    if (cur && !(ev.voteCount > cur.voteCount || (voter === self() && ev.voteCount === cur.voteCount && ev.timestamp > cur.timestamp))) return;
+    p.votes[voter] = { options: opts.slice(), voteCount: ev.voteCount, timestamp: ev.timestamp };
+  });
+}
+
+/** Only the poll's author can end it, so the poll is looked up under the sender as its author. */
+function applyPollEnd(ev: Extract<StoreEvent, { type: 'pollEnd' }>): void {
+  updateTarget(ev.convId, ev.targetTimestamp, authorKeys(ev.author), 'poll end', (rec) => {
+    const p = rec.poll;
+    if (!p || p.ended || rec.deleted) return;
+    p.ended = true;
+    const conv = convs[rec.convId];
+    applyNotice({ type: 'notice', convId: rec.convId, groupInternalId: (conv && conv.groupInternalId) || null, author: ev.author, timestamp: ev.timestamp, notice: { kind: 'pollEnded', text: p.question } }, true);
+  });
+}
+
+/** Start a poll in a group; Signal-Desktop doesn't send polls in 1:1 chats yet. */
+export function sendPoll(convId: string, question: string, options: string[], allowMultiple: boolean): Promise<Message> {
+  let conv: Conversation;
+  try {
+    conv = convForSend(convId);
+  } catch (e) {
+    return Promise.reject(e);
+  }
+  if (conv.type !== 'group') return Promise.reject(new Error('Polls only work in groups'));
+  const rec = newOutgoingRec(conv, { poll: { question, options, allowMultiple, votes: {} } });
+  const payload: SendPayload = { recipients: [conv.sendId!], message: '', expire_timer: conv.expireTimer || 0, poll: { question, options, allow_multiple: allowMultiple } };
+  return sendCore(conv, rec, payload, previewOf(rec));
+}
+
+/** Vote (or, with no options, take our vote back); the vote shows at once and is undone if it can't be sent. */
+export async function votePoll(rec: Message, options: number[]): Promise<void> {
+  const conv = convs[rec.convId];
+  if (!conv || !conv.sendId || !rec.poll) throw new Error('group not ready');
+  const me = self();
+  let prev: PollVote | undefined;
+  let vote: PollVote | undefined;
+  await enqueueMutation(async () => {
+    const fresh = await db.getMessage(rec.id);
+    if (!fresh || !fresh.poll || fresh.poll.ended) return;
+    prev = fresh.poll.votes[me];
+    vote = { options: options.slice(), voteCount: (prev ? prev.voteCount : 0) + 1, timestamp: Date.now() };
+    fresh.poll.votes[me] = vote;
+    await db.putMessage(fresh);
+    emit('message-updated', fresh, undefined);
+  });
+  if (!vote) throw new Error(S.pollEnded);
+  const sent = vote;
+  await signal.sendPollVote(conv.sendId, rec.incoming ? rec.author : me, rec.timestamp, options, sent.voteCount).catch((err) => {
+    enqueueMutation(async () => {
+      const fresh = await db.getMessage(rec.id);
+      const now = fresh && fresh.poll && fresh.poll.votes[me];
+      if (!fresh || !fresh.poll || !now || now.timestamp !== sent.timestamp) return;
+      if (prev) fresh.poll.votes[me] = prev;
+      else delete fresh.poll.votes[me];
+      await db.putMessage(fresh);
+      emit('message-updated', fresh, undefined);
+    });
+    throw err;
+  });
+}
+
+/** End our own poll for everyone. */
+export async function endPoll(rec: Message): Promise<void> {
+  const conv = convs[rec.convId];
+  if (!conv || !conv.sendId || !rec.poll || rec.incoming) throw new Error('group not ready');
+  const ts = await signal.sendPollTerminate(conv.sendId, rec.timestamp);
+  applyPollEnd({ type: 'pollEnd', convId: rec.convId, author: self(), targetTimestamp: rec.timestamp, timestamp: ts });
 }
 
 /** Signal-Desktop's default `global.adminDeleteMaxAgeInSeconds` (one day); receivers allow another day of grace. */
@@ -1123,9 +1281,16 @@ export function setConvPinned(convId: string, val: boolean): boolean {
 export function setConvExpire(convId: string, secs: number): void {
   const conv = convs[convId];
   if (!conv) return;
+  const changed = (conv.expireTimer || 0) !== (secs || 0);
   conv.expireTimer = secs || 0;
   persistConv(conv);
   emit('conversations');
+  if (changed && conv.type === 'direct') timerLine(conv, self(), secs || 0, Date.now());
+}
+
+/** A 1:1 chat's timer line; a group's comes with its other changes. */
+function timerLine(conv: Conversation, author: string, seconds: number, timestamp: number): void {
+  applyNotice({ type: 'notice', convId: conv.id, groupInternalId: null, author, timestamp, notice: { kind: 'timer', seconds } }, true);
 }
 
 export function setConversationName(convId: string, name: string): void {

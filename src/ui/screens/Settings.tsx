@@ -257,10 +257,49 @@ export function PrivacyScreen() {
     toggle('typing', S.typingIndicators, config.typingIndicators(), (v) => (config.set({ typingIndicators: v }), refresh()), S.typingIndicatorsHint),
     { key: 'timer', label: S.defaultTimer, sub: expireLabel(defaultTimer), onSelect: chooseDefaultTimer },
     toggle('private', S.privateDeliveryIcon, config.sealedSenderIndicators(), setPrivateIcon, S.privateDeliveryHint),
+    { key: 'phone', label: S.phoneNumber, end: 'chevron', onSelect: () => router.push(PhoneNumberScreen, {}) },
     { key: 'blocked', label: S.blockedPeople, end: 'chevron', onSelect: () => router.push(BlockedScreen, {}) },
   ];
   return (
     <Screen title={S.privacy}>
+      <RowList rows={rows} />
+    </Screen>
+  );
+}
+
+/** Who sees and who can find you by your number, as in Signal: a number everybody sees can always be found. */
+export function PhoneNumberScreen() {
+  const refresh = useRefresh();
+  const share = config.sharePhoneNumber();
+  const findable = config.findableByNumber();
+  const label = (on: boolean) => (on ? S.everybody : S.nobody);
+
+  function save(nextShare: boolean, nextFindable: boolean): void {
+    config.set({ sharePhoneNumber: nextShare, findableByNumber: nextShare || nextFindable });
+    refresh();
+    signal.setPhoneNumberPrivacy(nextShare, nextFindable).catch((e) => {
+      config.set({ sharePhoneNumber: share, findableByNumber: findable });
+      refresh();
+      toast(friendlyError(e));
+    });
+  }
+
+  async function choose(title: string, nobodyHint: string, current: boolean, apply: (v: boolean) => void): Promise<void> {
+    const v = await pick(title, [{ value: true, label: S.everybody }, { value: false, label: S.nobody, sub: nobodyHint }], current);
+    if (v !== undefined && v !== current) apply(v);
+  }
+
+  const rows: Row[] = [
+    { key: 'see', label: S.whoCanSeeNumber, sub: label(share), onSelect: () => choose(S.whoCanSeeNumber, S.seeNumberHint, share, (v) => save(v, v || findable)) },
+    {
+      key: 'find',
+      label: S.whoCanFindNumber,
+      sub: label(findable),
+      onSelect: () => (share ? toast(S.findLocked) : choose(S.whoCanFindNumber, S.findNumberHint, findable, (v) => save(false, v))),
+    },
+  ];
+  return (
+    <Screen title={S.phoneNumber}>
       <RowList rows={rows} />
     </Screen>
   );

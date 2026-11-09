@@ -1,5 +1,6 @@
 /* Records the app keeps in IndexedDB. Field names match what 2.0.x stored, so history carries over on upgrade. */
 
+import type { GroupUpdateKind } from '../../engine/services/group-updates';
 import type { PickedMention, StyleRange } from './styled';
 
 export type MessageStatus = 'pending' | 'failed' | 'sent' | 'delivered' | 'read' | 'received';
@@ -25,12 +26,40 @@ export interface Quote {
   attachments?: QuotedAttachment[];
 }
 
-export type NoticeKind = 'missedCall' | 'safetyNumber' | 'groupCall';
+export type NoticeKind = 'missedCall' | 'safetyNumber' | 'groupCall' | 'pollEnded' | 'timer' | 'groupUpdate';
 
-/** A line in the chat about the chat itself rather than a message someone wrote. */
+/** A line in the chat about the chat itself rather than a message someone wrote. The message's author is who made the change, or '' when that isn't known. */
 export interface Notice {
   kind: NoticeKind;
   video?: boolean;
+  /** The poll's question for `pollEnded`; the new group name for a `title` change. */
+  text?: string;
+  /** The disappearing-message time, for `timer` and a group's `timer` change. */
+  seconds?: number;
+  /** What changed in the group, and who it's about (a service ID). */
+  change?: GroupUpdateKind;
+  target?: string;
+  /** A permission ('only-admins' or 'every-member') or group link mode; `from` is the link mode before. */
+  value?: string;
+  from?: string;
+  /** How many people were invited or had an invitation revoked. */
+  count?: number;
+}
+
+/** One person's current vote; `voteCount` grows with each vote they cast, and an empty `options` means they took it back. */
+export interface PollVote {
+  options: number[];
+  voteCount: number;
+  timestamp: number;
+}
+
+export interface Poll {
+  question: string;
+  options: string[];
+  allowMultiple: boolean;
+  /** Keyed like reactions: a person's number, else their ACI; ours under our number. */
+  votes: Record<string, PollVote>;
+  ended?: boolean;
 }
 
 /** A shared contact (Signal's contact card), reduced to what the phone shows. */
@@ -38,6 +67,14 @@ export interface ContactCard {
   name: string;
   phones: string[];
   emails: string[];
+}
+
+/** The card a sender's phone made for a link in the message. */
+export interface LinkPreview {
+  url: string;
+  title: string;
+  description?: string;
+  image?: Attachment;
 }
 
 /** An earlier version of an edited message, with when that version was sent. */
@@ -76,6 +113,10 @@ export interface Message {
   /** A received voice message, video, or view-once media was opened, here or on another device. */
   viewed?: boolean;
   contactCard?: ContactCard;
+  poll?: Poll;
+  preview?: LinkPreview;
+  /** Signal's server ID for a received message, which a spam report names. */
+  serverGuid?: string;
   /** Delivered without revealing the sender to Signal's servers (Sealed Sender); for our messages, to every recipient. */
   sealed?: boolean;
   /** Earlier versions, oldest first; `editedAt` is when the current text was sent. */
@@ -106,6 +147,8 @@ export interface Conversation {
   draftMentions?: PickedMention[];
   /** A message request: someone we don't share our profile with started this 1:1 chat. */
   request?: boolean;
+  /** SECURITY-REVIEW: the server's spam reporting token for this person (base64), sent only with a spam report. */
+  reportToken?: string;
 }
 
 export interface Contact {

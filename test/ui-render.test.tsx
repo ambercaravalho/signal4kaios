@@ -13,7 +13,7 @@ import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
 import type { Message } from '../src/ui/data/types';
-import { Bubble, ChatScreen } from '../src/ui/screens/Chat';
+import { Bubble, ChatScreen, mainActions } from '../src/ui/screens/Chat';
 import { ChatSettingsScreen } from '../src/ui/screens/ChatSettings';
 import { DebugScreen, FasterConnectionScreen } from '../src/ui/screens/Debug';
 import { ArchivedScreen, HomeScreen } from '../src/ui/screens/Home';
@@ -141,6 +141,29 @@ describe('screens', () => {
     const file = { ...base, body: '', attachments: [{ id: 'a1', contentType: 'application/pdf', size: 10 }] } as unknown as Message;
     router.reset(() => <Bubble m={file} focused={false} showAuthor={false} onClipped={() => {}} />, {});
     assert.match(html(), /class="msg-file"[^]*class="msg-meta"/);
+  });
+
+  it('leads message options with what the message is for', () => {
+    const base = { id: 'm2', convId: ALICE, author: ALICE, timestamp: 1000, body: '', incoming: true, status: 'received', attachments: [], reactions: {} } as unknown as Message;
+    const photo = { ...base, attachments: [{ id: 'a1', contentType: 'image/jpeg', size: 10 }] } as Message;
+    assert.deepEqual(mainActions(photo, false), ['attachment']);
+    assert.deepEqual(mainActions({ ...base, body: 'see https://signal.org', status: 'failed', incoming: false } as Message, true), ['retry', 'readFull', 'openLink']);
+    assert.deepEqual(mainActions({ ...photo, deleted: true } as Message, false), []);
+    assert.deepEqual(mainActions({ ...base, body: 'hi' } as Message, false), []);
+    const poll = { ...base, poll: { question: 'Lunch?', options: ['Pizza', 'Soup'], allowMultiple: false, votes: { [ME]: { options: [1], voteCount: 1, timestamp: 1 } } } } as Message;
+    assert.deepEqual(mainActions(poll, false), ['vote']);
+    assert.deepEqual(mainActions({ ...poll, poll: { ...poll.poll!, ended: true } } as Message, false), []);
+    router.reset(() => <Bubble m={poll} focused={false} showAuthor={false} onClipped={() => {}} />, {});
+    const out = html();
+    assert.match(out, /class="poll-question">Lunch\?/);
+    assert.match(out, /class="poll-mark on"[^]*Soup/);
+    assert.match(out, /Choose one/);
+  });
+
+  it('shows a link preview’s title and domain under the text', () => {
+    const m = { id: 'm3', convId: ALICE, author: ALICE, timestamp: 1000, incoming: true, status: 'received', attachments: [], reactions: {}, body: 'read https://signal.org/blog/x', preview: { url: 'https://signal.org/blog/x', title: 'Signal blog' } } as unknown as Message;
+    router.reset(() => <Bubble m={m} focused={false} showAuthor={false} onClipped={() => {}} />, {});
+    assert.match(html(), /class="msg-link-title">Signal blog<\/div><div class="msg-link-domain">signal\.org</);
   });
 
   it('opens a chat with its title and message box', () => {

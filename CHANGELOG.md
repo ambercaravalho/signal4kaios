@@ -2,6 +2,24 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.5.0
+
+The third round of Signal features from the roadmap. Install over v2.4.0; your chats and settings carry over.
+
+### New
+
+- **Polls.** Polls show in the chat with their answers and vote counts. OK on one → **Vote** (pick again to change it, or **Remove my vote**), **View votes** lists who picked what, and the poll's author can **End poll**. In a group, **Options → Create poll** asks for a question and 2 to 10 answers, and whether people can pick more than one.
+- **Link previews you receive.** A link someone sent with a preview shows the page's title and site under the message, plus its picture once downloaded. Sending previews isn't supported yet.
+- **Several attachments in one message.** **Attach** now adds photos, videos, and files above the message box instead of sending at once, so you can add more (up to 32, 25 MB in total) and a caption, then **Send** them together. **Options → Remove attachments** clears them. OK on a message with several attachments → **View attachments** opens any of them.
+- **Group and timer changes in the chat.** A line in the chat now says when someone renames a group, changes its description, members, admins, invites, group link, or permissions, or changes the disappearing message timer in a group or one-to-one chat, for example **Dave changed the group name to “Climbing”**. Changes made on your other devices show too.
+- **Approve join requests.** In a group with an admin-approved link, admins see **Requests to join** at the top of **Members**; OK on one to **Approve** or **Deny** it.
+- **Phone number privacy.** **Settings → Privacy → Phone number** sets **Who can see my number** and **Who can find me by number** (Everybody or Nobody), shared with your phone and other devices. As in Signal, a number everybody can see can also be found by everybody.
+- **Report spam.** **Options** on a message request has **Report spam**: Signal is told about their most recent messages, and they're blocked and the chat deleted here and on your other devices.
+
+### Changed
+
+- **Message options lead with the main action.** OK on a photo now has **View photo** first (likewise Play video, Play voice message, and Open file), so OK twice opens it. A message that didn't send has **Retry** first, and a shortened message, a shared contact, or a link puts that action ahead of React and Reply.
+
 ## v2.4.0
 
 The second round of Signal features from the roadmap. Install over v2.3.0; your chats and settings carry over.

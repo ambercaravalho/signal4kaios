@@ -260,11 +260,34 @@ describe('store', () => {
       sent.push(payload);
       return { timestamp: 8000 };
     };
-    const rec = await store.sendAttachment(ALICE, 'data:image/jpeg;base64,AAAA', 'a caption', { contentType: 'image/jpeg', viewOnce: true });
+    const rec = await store.sendAttachments(ALICE, [{ dataUri: 'data:image/jpeg;base64,AAAA', contentType: 'image/jpeg' }], 'a caption', { viewOnce: true });
     assert.equal(sent[0].view_once, true);
     assert.equal(sent[0].message, '');
     assert.equal(rec.body, '');
     assert.equal(rec.attachments[0].viewOnce, true);
+    await assert.rejects(store.sendAttachments(ALICE, [{ dataUri: 'data:image/jpeg;base64,AAAA' }, { dataUri: 'data:image/jpeg;base64,BBBB' }], '', { viewOnce: true }));
+  });
+
+  it('sends several attachments in one message, in order, with the caption and quote', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 8100 };
+    };
+    const files = [
+      { dataUri: 'data:image/jpeg;base64,AAAA', contentType: 'image/jpeg', filename: 'a.jpg', size: 3 },
+      { dataUri: 'data:image/png;base64,BBBB', contentType: 'image/png', filename: 'b.png', size: 3 },
+      { dataUri: 'data:application/pdf;base64,CCCC', contentType: 'application/pdf', filename: 'c.pdf', size: 3 },
+    ];
+    const rec = await store.sendAttachments(ALICE, files, 'trip', { quote: { author: ALICE, timestamp: 1000, text: 'pics?' } });
+    assert.deepEqual(sent[0].base64_attachments, files.map((f) => f.dataUri));
+    assert.equal(sent[0].message, 'trip');
+    assert.equal(sent[0].quote_timestamp, 1000);
+    assert.deepEqual(rec.attachments.map((a) => a.filename), ['a.jpg', 'b.png', 'c.pdf']);
+    assert.equal((await db.getMessage(rec.id))!.attachments.length, 3);
+    assert.equal(store.attachmentLabel(rec.attachments), '3 attachments');
+    assert.equal(store.attachmentLabel(rec.attachments.slice(0, 2)), '2 photos');
+    await assert.rejects(store.sendAttachments(ALICE, Array.from({ length: store.MAX_ATTACHMENTS + 1 }, () => files[0]), ''));
   });
 
   it('reports opened media once and drops view-once copies opened on another device', async () => {
@@ -385,6 +408,105 @@ describe('store', () => {
     assert.equal(store.conversation('g:R1JQ')!.lastPreview, 'An admin deleted this message.');
   });
 
+  it('counts poll votes like Signal-Desktop and lets only the author end the poll', async () => {
+    const ts = Date.now() + 1000;
+    const inGroup = (src: string, uuid: string, at: number, dm: any) => ({ envelope: { sourceNumber: src, sourceUuid: uuid, timestamp: at, dataMessage: { timestamp: at, groupInfo: { groupId: 'R1JQ' }, ...dm } } });
+    const vote = (src: string, uuid: string, at: number, optionIndexes: number[], voteCount: number) => inGroup(src, uuid, at, { pollVote: { targetAuthorUuid: 'aci-dave', targetSentTimestamp: ts, optionIndexes, voteCount } });
+    const id = 'g:R1JQ|' + ts + '|+15550004';
+    store.ingestRaw(inGroup('+15550004', 'aci-dave', ts, { pollCreate: { question: 'Lunch?', options: ['Pizza', 'Soup', 'Salad'], allowMultiple: false } }));
+    await settle();
+    assert.equal(store.conversation('g:R1JQ')!.lastPreview, 'Poll: Lunch?');
+
+    store.ingestRaw(vote('+15550005', 'aci-admin', ts + 1, [1], 2));
+    store.ingestRaw(vote('+15550005', 'aci-admin', ts + 2, [0], 1));
+    store.ingestRaw(vote('+15550005', 'aci-admin', ts + 3, [0, 2], 3));
+    store.ingestRaw(vote('+15550005', 'aci-admin', ts + 4, [5], 4));
+    store.ingestRaw({ envelope: { sourceNumber: ME, sourceUuid: 'aci-me', timestamp: ts + 5, syncMessage: { sentMessage: { timestamp: ts + 5, groupInfo: { groupId: 'R1JQ' }, pollVote: { targetAuthorUuid: 'aci-dave', targetSentTimestamp: ts, optionIndexes: [2], voteCount: 1 } } } } });
+    await settle();
+    let rec = (await db.getMessage(id))!;
+    assert.deepEqual(rec.poll!.votes['+15550005'].options, [1]);
+    assert.deepEqual(store.pollCounts(rec.poll!), [0, 1, 1]);
+
+    const sent: any[] = [];
+    (signal as any).sendPollVote = async (...args: any[]) => {
+      sent.push(args);
+    };
+    await store.votePoll(rec, [0]);
+    assert.deepEqual(sent, [['group.R1JQ', '+15550004', ts, [0], 2]]);
+    rec = (await db.getMessage(id))!;
+    assert.deepEqual(rec.poll!.votes[ME], { options: [0], voteCount: 2, timestamp: rec.poll!.votes[ME].timestamp });
+
+    store.ingestRaw(inGroup('+15550005', 'aci-admin', ts + 6, { pollTerminate: { targetSentTimestamp: ts } }));
+    await settle();
+    assert.equal((await db.getMessage(id))!.poll!.ended, undefined);
+    store.ingestRaw(inGroup('+15550004', 'aci-dave', ts + 7, { pollTerminate: { targetSentTimestamp: ts } }));
+    store.ingestRaw(vote('+15550005', 'aci-admin', ts + 8, [2], 9));
+    await settle();
+    rec = (await db.getMessage(id))!;
+    assert.equal(rec.poll!.ended, true);
+    assert.deepEqual(rec.poll!.votes['+15550005'].options, [1]);
+    const line = (await db.getMessage('g:R1JQ|' + (ts + 7) + '|+15550004'))!;
+    assert.equal(store.noticeText(line.notice!, line.author), 'Dave ended the poll “Lunch?”');
+  });
+
+  it('shows group changes and timer changes as lines that don’t count as unread', async () => {
+    const ts = Date.now() + 5000;
+    const before = store.conversation('g:R1JQ')!.unread;
+    store.ingestRaw({
+      envelope: {
+        groupUpdate: {
+          groupId: 'R1JQ',
+          author: 'aci-dave',
+          timestamp: ts,
+          changes: [
+            { change: 'title', text: 'Team 2' },
+            { change: 'memberAdded', target: 'aci-me' },
+            { change: 'adminAdded', target: 'aci-admin' },
+            { change: 'invited', count: 3 },
+            { change: 'link', value: 'enabled-with-approval', from: 'enabled' },
+            { change: 'bogus' },
+          ],
+        },
+      },
+    });
+    store.ingestRaw({ envelope: { groupUpdate: { groupId: 'R1JQ', author: '', timestamp: ts + 10, changes: [{ change: 'timer', seconds: 3600 }, { change: 'requested', target: 'aci-dave' }] } } });
+    await settle();
+    const lines: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const m = (await db.getMessage('g:R1JQ|' + (ts + i) + '|aci-dave'))!;
+      lines.push(store.noticeText(m.notice!, m.author));
+    }
+    for (let i = 0; i < 2; i++) {
+      const m = (await db.getMessage('g:R1JQ|' + (ts + 10 + i) + '|'))!;
+      lines.push(store.noticeText(m.notice!, m.author));
+    }
+    assert.deepEqual(lines, [
+      'Dave changed the group name to “Team 2”',
+      'Dave added you',
+      'Dave made aci-admin an admin',
+      'Dave invited 3 people to the group',
+      'Dave turned on admin approval for the group link',
+      'The disappearing message time was set to 1 hour',
+      'Dave asked to join via the group link',
+    ]);
+    assert.equal(store.conversation('g:R1JQ')!.unread, before);
+    assert.equal(store.conversation('g:R1JQ')!.lastPreview, 'Dave asked to join via the group link');
+    assert.equal(await db.getMessage('g:R1JQ|' + (ts + 5) + '|aci-dave'), undefined);
+
+    store.ingestRaw(incoming(ts + 20, '', { expirationTimerUpdate: true, expiresInSeconds: 604800 }));
+    await settle();
+    const timer = (await db.getMessage(ALICE + '|' + (ts + 20) + '|' + ALICE))!;
+    assert.equal(store.noticeText(timer.notice!, timer.author), 'Alice set the disappearing message time to 1 week');
+    assert.equal(store.conversation(ALICE)!.expireTimer, 604800);
+    const t0 = Date.now();
+    store.setConvExpire(ALICE, 0);
+    store.setConvExpire(ALICE, 0);
+    await settle();
+    const page = await db.getMessagesPage(ALICE, Number.MAX_SAFE_INTEGER, 50);
+    const mine = page.filter((m) => m.notice && m.notice.kind === 'timer' && m.author !== ALICE && m.timestamp >= t0);
+    assert.deepEqual(mine.map((m) => store.noticeText(m.notice!, m.author)), ['You turned off disappearing messages']);
+  });
+
   it('holds a stranger’s chat as a message request, without read receipts, until it is accepted', async () => {
     const ERIN = '+15550006';
     const receipts: any[] = [];
@@ -429,6 +551,40 @@ describe('store', () => {
     await settle();
     assert.equal(store.conversation(GINA)!.request, undefined);
     assert.equal(store.conversation(FRANK), undefined);
+  });
+
+  it('keeps link previews and reports a message request as spam with its newest message IDs', async () => {
+    const HANK = '+15550009';
+    const guid = (n: number) => '00000000-0000-4000-8000-00000000000' + n;
+    const calls: any[] = [];
+    (signal as any).reportSpam = async (...args: any[]) => {
+      calls.push(['report', ...args]);
+      return args[1].length;
+    };
+    (signal as any).sendMessageRequestResponse = async (to: string, response: string) => {
+      calls.push(['response', to, response]);
+    };
+    (signal as any).setContactBlocked = async (to: string, blocked: boolean) => {
+      calls.push(['block', to, blocked]);
+    };
+    const preview = { url: 'https://signal.org/', title: 'Signal', description: 'Speak freely', image: { id: 's4katt:x', contentType: 'image/jpeg', filename: '', size: 10 } };
+    for (let i = 1; i <= 4; i++) {
+      store.ingestRaw({ envelope: { sourceNumber: HANK, timestamp: 52000 + i, serverGuid: guid(i), reportSpamToken: 'dG9rZW4' + i, dataMessage: { timestamp: 52000 + i, message: 'buy https://signal.org/', preview } } });
+    }
+    await settle();
+    const rec = (await db.getMessage(HANK + '|52004|' + HANK))!;
+    assert.equal(rec.preview!.title, 'Signal');
+    assert.equal(rec.preview!.image!.id, 's4katt:x');
+    assert.equal(rec.serverGuid, guid(4));
+    assert.equal(store.conversation(HANK)!.request, true);
+
+    await store.reportSpamRequest(HANK);
+    assert.deepEqual(calls, [
+      ['report', HANK, [guid(2), guid(3), guid(4)], 'dG9rZW44'],
+      ['response', HANK, 'blockAndSpam'],
+      ['block', HANK, true],
+    ]);
+    assert.equal(store.conversation(HANK), undefined);
   });
 
   it('saves the About emoji locally and on Signal', async () => {

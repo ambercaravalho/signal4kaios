@@ -4,6 +4,7 @@ import { concatBytes, constantTimeEqual, randomBytes, toBase64, uuidToBytes } fr
 import { aesGcmDecrypt, aesGcmEncrypt, hkdfSha256, hmacSha256 } from '../crypto/primitives';
 import {
   AccountRecord,
+  AccountRecord_PhoneNumberSharingMode,
   ContactRecord,
   ContactRecord_IdentityState,
   GroupV2Record,
@@ -87,6 +88,10 @@ export interface StorageAccountRecord {
   pinnedConversations: StoragePinnedConversation[];
   noteToSelfArchived?: boolean;
   noteToSelfMarkedUnread?: boolean;
+  /** Whether everybody sees our number on our profile; Signal-Desktop reads an unknown mode as nobody. */
+  sharePhoneNumber: boolean;
+  /** Whether people who have our number can find us by it. */
+  findableByNumber: boolean;
 }
 
 export interface StorageSyncResult {
@@ -101,6 +106,12 @@ export type StorageMutation =
   | { type: 'contact'; aci?: string; e164?: string; update: (c: ContactRecord) => void }
   | { type: 'groupV2'; masterKey: Uint8Array; update: (g: GroupV2Record) => void }
   | { type: 'account'; update: (a: AccountRecord) => void };
+
+/** Who sees and who can find us by our number, written like Signal-Desktop: sharing with everybody also makes the number findable. */
+export function setPhoneNumberPrivacy(a: AccountRecord, share: boolean, findable: boolean): void {
+  a.phoneNumberSharingMode = share ? AccountRecord_PhoneNumberSharingMode.EVERYBODY : AccountRecord_PhoneNumberSharingMode.NOBODY;
+  a.unlistedPhoneNumber = !(share || findable);
+}
 
 export function deriveStorageServiceKey(masterKey: Uint8Array): Uint8Array {
   if (masterKey.length !== 32) throw new Error(`Invalid masterKey length: ${masterKey.length}`);
@@ -310,6 +321,8 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
         pinnedConversations: pinned,
         noteToSelfArchived: a.noteToSelfArchived,
         noteToSelfMarkedUnread: a.noteToSelfMarkedUnread,
+        sharePhoneNumber: a.phoneNumberSharingMode === AccountRecord_PhoneNumberSharingMode.EVERYBODY,
+        findableByNumber: !a.unlistedPhoneNumber,
       };
     }
   }

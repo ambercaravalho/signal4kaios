@@ -25,6 +25,7 @@ import { buildGroupContextV2, deriveGroupV2Keys, fetchGroupState, GroupLinkMode,
 import {
   addMembersActions,
   applyGroupChange,
+  approveRequestsActions,
   descriptionActions,
   GroupActionsInit,
   GroupSnapshot,
@@ -50,8 +51,11 @@ import { compareScannedSafetyNumber } from './protocol/protocol';
 import { decryptDeviceName, ProvisioningCallbacks, ProvisioningSession, startDeviceProvisioning } from './net/provisioning';
 import { DeviceNameSchema } from './gen/DeviceName_pb';
 import { IndexedDbSignalStore, TrustLevel } from './protocol/store';
-import { mutateStorage, pullFromStorageService, StorageMutation, StorageWriteQueue } from './services/storage-service';
+import { POLL_QUESTION_MAX_SEND, validPoll } from './services/polls';
+import { mutateStorage, pullFromStorageService, setPhoneNumberPrivacy, StorageMutation, StorageWriteQueue } from './services/storage-service';
 import { AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema, ContactRecord_NameSchema } from './gen/SignalStorage_pb';
+import { diffGroupState, groupChangeAuthor, isDecodedGroup } from './services/group-updates';
+import { reportSpam as reportSpamMessages } from './services/report-spam';
 import { deleteUsername as deleteAccountUsername, setUsername as setAccountUsername, usernameLinkUrl } from './services/usernames';
 import { SignalClient } from './net/client';
 import { DEFAULT_SIGNAL_SERVER } from './net/http';
@@ -72,6 +76,8 @@ export interface MessageRef {
 }
 
 const MAX_DEVICE_NAME = 64;
+/** Signal-Desktop's composer limit. */
+const MAX_ATTACHMENTS = 32;
 
 function parseDataUri(dataUri: string): { contentType: string; filename?: string; bytes: Uint8Array } {
   const comma = dataUri.indexOf(',');
@@ -379,7 +385,15 @@ async function recordPeerProfileKey(senderUuid: string, senderE164: string | und
   if (changed) await host().db.kvSet('syncedContacts', list);
 }
 
-async function mergeGroupState(state: GroupV2Metadata): Promise<void> {
+/** Who made the change that brought a group to `revision`, and when it arrived. */
+interface GroupChangeHint {
+  author: string;
+  revision: number;
+  timestamp: number;
+}
+
+/** Save a group's new state, and tell the app what changed since the state we had; the change is attributed only when it's the very next revision. */
+async function mergeGroupState(state: GroupV2Metadata, hint?: GroupChangeHint): Promise<void> {
   const list: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
   const idx = list.findIndex((g) => g.internal_id === state.internal_id);
   const prev = idx >= 0 ? list[idx] : {};
@@ -388,11 +402,15 @@ async function mergeGroupState(state: GroupV2Metadata): Promise<void> {
   else list.push(merged);
   await host().db.kvSet('syncedGroups', list);
   host().directoryChanged().catch(() => {});
+  if (!isDecodedGroup(prev) || state.revision <= (prev.revision || 0)) return;
+  const author = hint && hint.revision === state.revision && (prev.revision || 0) + 1 === state.revision ? hint.author : '';
+  const changes = diffGroupState(prev, state, author, host().config.aci() || '');
+  if (changes.length) host().ingest({ envelope: { groupUpdate: { groupId: state.internal_id, author, timestamp: (hint && hint.timestamp) || Date.now(), changes } } });
 }
 
 /** Fetch a group's current title, members, and settings from the storage server and merge them into `syncedGroups`. */
-async function refreshGroup(masterKey: Uint8Array): Promise<void> {
-  await mergeGroupState(await fetchGroupState(store, httpJson, httpBinary, masterKey, serverUrl()));
+async function refreshGroup(masterKey: Uint8Array, hint?: GroupChangeHint): Promise<void> {
+  await mergeGroupState(await fetchGroupState(store, httpJson, httpBinary, masterKey, serverUrl()), hint);
 }
 
 async function groupMasterKey(groupSendId: string): Promise<Uint8Array> {
@@ -409,9 +427,9 @@ async function changeGroup(groupSendId: string, build: (snap: GroupSnapshot) => 
   const masterKey = await groupMasterKey(groupSendId);
   const res = await applyGroupChange({ store, httpJson, httpBinary, serverUrl: serverUrl() }, masterKey, build);
   if (!res) return null;
-  await mergeGroupState(res.state);
   const acc = await store.getAccount();
   const ts = Date.now();
+  await mergeGroupState(res.state, { author: acc ? acc.aci : '', revision: res.revision, timestamp: ts });
   const dm: DataMessageInit = {
     timestamp: BigInt(ts),
     profileKey: acc ? acc.profileKey : undefined,
@@ -423,7 +441,7 @@ async function changeGroup(groupSendId: string, build: (snap: GroupSnapshot) => 
 }
 
 /** Record a group seen in an incoming message; fetch its state when it is new or its revision moved on. */
-async function noteIncomingGroup(masterKey: Uint8Array, revision: number, sender: string, expireTimer: number): Promise<void> {
+async function noteIncomingGroup(masterKey: Uint8Array, revision: number, sender: string, expireTimer: number, groupChange: Uint8Array, timestamp: number): Promise<void> {
   const keys = deriveGroupV2Keys(masterKey);
   const list: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
   const existing = list.find((g) => g.internal_id === keys.internalId);
@@ -443,7 +461,9 @@ async function noteIncomingGroup(masterKey: Uint8Array, revision: number, sender
     await host().db.kvSet('syncedGroups', list);
   }
   if (stale) {
-    refreshGroup(masterKey).catch((e: any) => host().dbg('group refresh failed: ' + (e && e.message)));
+    const author = groupChangeAuthor(keys, groupChange, revision);
+    const hint = author && author === sender ? { author, revision, timestamp } : undefined;
+    refreshGroup(masterKey, hint).catch((e: any) => host().dbg('group refresh failed: ' + (e && e.message)));
   }
 }
 
@@ -538,7 +558,9 @@ async function syncFromStorageService(): Promise<boolean> {
     if (res.account.linkPreviews !== undefined) patch.linkPreviews = res.account.linkPreviews;
     if (res.account.sealedSenderIndicators !== undefined) patch.sealedSenderIndicators = res.account.sealedSenderIndicators;
     if (res.account.universalExpireTimer !== undefined) patch.defaultExpireTimer = res.account.universalExpireTimer;
-    if (Object.keys(patch).length > 0) host().config.set(patch);
+    patch.sharePhoneNumber = res.account.sharePhoneNumber;
+    patch.findableByNumber = res.account.findableByNumber;
+    host().config.set(patch);
     const acc = await store.getAccount();
     if (acc && res.account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!res.account.noteToSelfArchived, markedUnread: !!res.account.noteToSelfMarkedUnread });
   }
@@ -760,7 +782,7 @@ export const signalBridge = {
       const dm = c.value;
       if (dm.profileKey.length === 32) recordPeerProfileKey(sender, res.envelope.sourceE164, dm.profileKey).catch(() => {});
       if (dm.groupV2 && dm.groupV2.masterKey.length === 32) {
-        noteIncomingGroup(dm.groupV2.masterKey, dm.groupV2.revision, sender, dm.expireTimer).catch(() => {});
+        noteIncomingGroup(dm.groupV2.masterKey, dm.groupV2.revision, sender, dm.expireTimer, dm.groupV2.groupChange, res.envelope.timestamp).catch(() => {});
       } else if (dm.expireTimerVersion && isAci(sender)) {
         updateSyncedContact({ aci: sender, e164: res.envelope.sourceE164 || '' }, (ct) => {
           if (dm.expireTimerVersion >= (ct.expireTimerVersion || 0)) {
@@ -776,7 +798,13 @@ export const signalBridge = {
       client.sendContentToRecipient(sender, busy, Date.now(), true).catch(() => {});
     }
 
-    if (c.case === 'syncMessage') handleIncomingSyncMessage(res.envelope, res.content).catch(() => {});
+    if (c.case === 'syncMessage') {
+      const sent = c.value.content.case === 'sent' ? c.value.content.value.message : undefined;
+      if (sent && sent.groupV2 && sent.groupV2.masterKey.length === 32) {
+        noteIncomingGroup(sent.groupV2.masterKey, sent.groupV2.revision, sender, sent.expireTimer, sent.groupV2.groupChange, res.envelope.timestamp).catch(() => {});
+      }
+      handleIncomingSyncMessage(res.envelope, res.content).catch(() => {});
+    }
     return res.normalizedFrame;
   },
 
@@ -796,6 +824,7 @@ export const signalBridge = {
     edit_timestamp?: number;
     mentions?: Array<{ start: number; length: number; uuid: string }>;
     view_once?: boolean;
+    poll?: { question: string; options: string[]; allow_multiple: boolean };
   }): Promise<{ timestamp: number; sealed: boolean }> {
     const ts = Date.now();
     const bodyText = payload.message || '';
@@ -803,13 +832,17 @@ export const signalBridge = {
 
     const firstTarget = (payload.recipients && payload.recipients[0]) || '';
     const target = await groupTargets(firstTarget);
+    const poll = payload.poll;
+    if (poll && (!target.isGroup || !validPoll(poll.question, poll.options, POLL_QUESTION_MAX_SEND))) throw new Error('Polls need a group, a question, and 2 to 10 options');
 
+    const files = payload.base64_attachments || [];
+    if (files.length > MAX_ATTACHMENTS) throw new Error(`At most ${MAX_ATTACHMENTS} attachments per message`);
     const uploadedAttachments: AttachmentPointer[] = [];
-    for (const dataUri of payload.base64_attachments || []) {
+    for (const dataUri of files) {
       const { contentType, filename, bytes } = parseDataUri(dataUri);
       const ext = contentType.split('/')[1] || 'bin';
       const ptr = await client.uploadAttachment(bytes, contentType, filename || `attachment.${ext}`);
-      if (contentType.startsWith('audio/')) ptr.flags |= AttachmentPointer_Flags.VOICE_MESSAGE;
+      if (contentType.startsWith('audio/') && files.length === 1) ptr.flags |= AttachmentPointer_Flags.VOICE_MESSAGE;
       uploadedAttachments.push(ptr);
     }
 
@@ -831,6 +864,7 @@ export const signalBridge = {
       bodyRanges: stylesToBodyRanges(styles, mentions),
       groupV2: target.groupV2,
       isViewOnce: payload.view_once && uploadedAttachments.length > 0 ? true : undefined,
+      pollCreate: poll ? { question: poll.question, options: poll.options, allowMultiple: poll.allow_multiple } : undefined,
     };
 
     if (payload.quote_timestamp) {
@@ -939,6 +973,38 @@ export const signalBridge = {
     await client.sendSyncMessage(syncSent(target.isGroup ? '' : target.peers[0], ts, dm), ts);
   },
 
+  /** Vote in a group poll (Signal-Desktop's PollVote); `voteCount` rises with each of our votes so the newest one wins everywhere. No options clears our vote. */
+  async sendPollVote(groupSendId: string, pollAuthor: string, pollTimestamp: number, optionIndexes: number[], voteCount: number): Promise<void> {
+    const ts = Date.now();
+    const target = await groupTargets(groupSendId);
+    if (!target.isGroup) throw new Error('Polls only work in groups');
+    const acc = await store.getAccount();
+    const authorAci = acc && (pollAuthor === acc.number || pollAuthor === acc.aci) ? acc.aci : await resolveAci(pollAuthor);
+    if (!authorAci) throw new Error('No Signal account known for ' + pollAuthor);
+    const dm: DataMessageInit = {
+      timestamp: BigInt(ts),
+      groupV2: target.groupV2,
+      pollVote: { targetAuthorAciBinary: uuidToBytes(authorAci), targetSentTimestamp: BigInt(pollTimestamp), optionIndexes, voteCount },
+    };
+    await deliver(target, dataContent(dm), ts);
+    await client.sendSyncMessage(syncSent('', ts, dm), ts);
+  },
+
+  /** End our own group poll (Signal-Desktop's PollTerminate). Resolves to when it ended. */
+  async sendPollTerminate(groupSendId: string, pollTimestamp: number): Promise<number> {
+    const ts = Date.now();
+    const target = await groupTargets(groupSendId);
+    if (!target.isGroup) throw new Error('Polls only work in groups');
+    const dm: DataMessageInit = {
+      timestamp: BigInt(ts),
+      groupV2: target.groupV2,
+      pollTerminate: { targetSentTimestamp: BigInt(pollTimestamp) },
+    };
+    await deliver(target, dataContent(dm), ts);
+    await client.sendSyncMessage(syncSent('', ts, dm), ts);
+    return ts;
+  },
+
   async sendTyping(recipient: string, started: boolean): Promise<void> {
     if (await isBlockedRecipient(recipient)) return;
     const ts = Date.now();
@@ -1026,7 +1092,19 @@ export const signalBridge = {
   },
 
   async updateOwnProfile(body: { name?: string; about?: string; emoji?: string }): Promise<void> {
-    await uploadOwnProfile(store, httpJson, { name: body.name || host().config.profileName() || 'Signal User', about: body.about, emoji: body.emoji }, serverUrl()).catch(() => {});
+    await uploadOwnProfile(
+      store,
+      httpJson,
+      { name: body.name || host().config.profileName() || 'Signal User', about: body.about, emoji: body.emoji, sharePhoneNumber: host().config.sharePhoneNumber() },
+      serverUrl()
+    ).catch(() => {});
+  },
+
+  /** Who sees our number (`AccountRecord.phoneNumberSharingMode`, and the profile's sharing flag) and who can find us by it (`unlistedPhoneNumber`), shared with our other devices. */
+  async setPhoneNumberPrivacy(share: boolean, findable: boolean): Promise<void> {
+    await storageQueue.enqueue([{ type: 'account', update: (a) => setPhoneNumberPrivacy(a, share, findable) }]);
+    host().config.set({ sharePhoneNumber: share, findableByNumber: share || findable });
+    await uploadOwnProfile(store, httpJson, { name: host().config.profileName(), sharePhoneNumber: share }, serverUrl());
   },
 
   /** Set or clear a contact's nickname (Storage Service `ContactRecord.nickname`, shown on all your devices). */
@@ -1073,10 +1151,15 @@ export const signalBridge = {
   },
 
   /** Answer a 1:1 message request on our other devices. Accepting also shares our profile with them, in Storage Service and with a PROFILE_KEY_UPDATE message, as Signal-Desktop does. */
-  async sendMessageRequestResponse(sendId: string, response: 'accept' | 'delete' | 'block'): Promise<void> {
+  async sendMessageRequestResponse(sendId: string, response: 'accept' | 'delete' | 'block' | 'blockAndSpam'): Promise<void> {
     const ids = await contactIds(sendId);
     if (!ids.aci) throw new Error('No Signal account known for ' + sendId);
-    const type = response === 'accept' ? SyncMessage_MessageRequestResponse_Type.ACCEPT : response === 'delete' ? SyncMessage_MessageRequestResponse_Type.DELETE : SyncMessage_MessageRequestResponse_Type.BLOCK;
+    const type = {
+      accept: SyncMessage_MessageRequestResponse_Type.ACCEPT,
+      delete: SyncMessage_MessageRequestResponse_Type.DELETE,
+      block: SyncMessage_MessageRequestResponse_Type.BLOCK,
+      blockAndSpam: SyncMessage_MessageRequestResponse_Type.BLOCK_AND_SPAM,
+    }[response];
     await client.sendSyncMessage(create(ContentSchema, { content: { case: 'syncMessage', value: { content: { case: 'messageRequestResponse', value: { threadAci: ids.aci, type } } } } }));
     if (response !== 'accept') return;
     await updateSyncedContact(ids, (c) => {
@@ -1096,6 +1179,13 @@ export const signalBridge = {
     if (!acc || !acc.profileKey || acc.profileKey.length !== 32) return;
     const ts = Date.now();
     await client.sendContentToRecipient(ids.aci, dataContent({ timestamp: BigInt(ts), flags: DataMessage_Flags.PROFILE_KEY_UPDATE, profileKey: acc.profileKey }), ts);
+  },
+
+  /** Report someone's messages (by server GUID) as spam to Signal, as Signal-Desktop's reportSpamJobQueue does; returns how many were reported. */
+  async reportSpam(sendId: string, serverGuids: string[], token?: string): Promise<number> {
+    const ids = await contactIds(sendId);
+    if (!ids.aci) throw new Error('No Signal account known for ' + sendId);
+    return reportSpamMessages(store, httpJson, ids.aci, serverGuids, token, serverUrl());
   },
 
   /** Change a 1:1 chat's disappearing-message timer with an explicit EXPIRATION_TIMER_UPDATE message and a newer `expireTimerVersion`, as Signal-Desktop does. */
@@ -1185,6 +1275,11 @@ export const signalBridge = {
   async removeGroupMembers(groupSendId: string, ids: string[]): Promise<GroupV2Metadata | null> {
     const resolved = await Promise.all(ids.map(async (id) => (await resolveAci(id)) || id));
     return changeGroup(groupSendId, (snap) => removeMembersActions(snap, resolved));
+  },
+
+  /** Let people who asked to join through the group link in; deny a request with `removeGroupMembers`. */
+  async approveGroupRequests(groupSendId: string, ids: string[]): Promise<GroupV2Metadata | null> {
+    return changeGroup(groupSendId, (snap) => approveRequestsActions(snap, ids));
   },
 
   async setGroupAdmins(groupSendId: string, ids: string[], admin: boolean): Promise<GroupV2Metadata | null> {
