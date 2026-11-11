@@ -26,7 +26,7 @@
 </div>
 
 > [!NOTE]
-> Beacon is a work in progress. Everyday messaging, groups, and sync work, but calls, stories, sending link previews, and some other Signal features don't yet. The [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) tracks everything that's missing.
+> Beacon is a work in progress. Everyday messaging, groups, and sync work, but calls, stories, and some other Signal features don't yet. The [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) tracks everything that's missing.
 
 ## Why Beacon
 

@@ -4,7 +4,9 @@ import type { ChatStateEntry, PinnedChat } from '../../engine/host';
 import { groupDetail, signal, syncedContacts, syncedGroups, type SyncedContact } from './api';
 import { config } from './config';
 import { db, type ExpiredRef } from './db';
+import { isValidLinkPreview } from '../../engine/services/link-previews';
 import { groupUpdateText, timerText, type LineNames } from './group-lines';
+import { imageDataUri, type FetchedPreview } from './link-preview-fetch';
 import { dbg } from './log';
 import { fmt, plural, S } from '../strings';
 import { parseFrame, type ChatRef, type MessageEvent, type NoticeEvent, type StoreEvent, type SyncRef } from './normalize';
@@ -703,7 +705,7 @@ function styled(text: string): { body: string; styles: StyleRange[] } {
   return { body: text || '', styles: [] };
 }
 
-export function sendText(convId: string, text: string, quote?: Quote | null, mentions: PickedMention[] = []): Promise<Message> {
+export function sendText(convId: string, text: string, quote?: Quote | null, mentions: PickedMention[] = [], preview?: FetchedPreview | null): Promise<Message> {
   let conv: Conversation;
   try {
     conv = convForSend(convId);
@@ -717,6 +719,10 @@ export function sendText(convId: string, text: string, quote?: Quote | null, men
     if (wire.mentions.length) rec.mentions = mentions;
     const payload: SendPayload = { recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0 };
     addQuote(payload, quote);
+    if (preview && isValidLinkPreview(preview.url, wire.body)) {
+      payload.preview = { url: preview.url, title: preview.title, description: preview.description, date: preview.date, image: preview.image ? imageDataUri(preview.image) : undefined };
+      rec.preview = { url: preview.url, title: preview.title, description: preview.description };
+    }
     return sendCore(conv, rec, payload, st.body);
   });
 }

@@ -29,7 +29,6 @@ interface ConfigData {
   sendReadReceipts?: boolean;
   styledText?: boolean;
   typingIndicators?: boolean;
-  /** Synced from the phone; Beacon doesn't make link previews yet. */
   linkPreviews?: boolean;
   sealedSenderIndicators?: boolean;
   /** Seconds; the disappearing-message timer new 1:1 chats start with. */

@@ -226,7 +226,14 @@ export function ChatsSettingsScreen() {
   const rows: Row[] = [
     toggle('fmt', S.textFormatting, config.styledText(), (v) => (config.set({ styledText: v }), refresh()), S.textFormattingHint),
     toggle('muted', S.keepMutedArchived, config.keepMutedArchived(), (v) => (config.set({ keepMutedArchived: v }), refresh())),
+    toggle('previews', S.generateLinkPreviews, config.linkPreviews(), setLinkPreviews, S.generateLinkPreviewsHint),
   ];
+
+  function setLinkPreviews(on: boolean): void {
+    config.set({ linkPreviews: on });
+    refresh();
+    signal.setLinkPreviews(on).catch((e) => toast(friendlyError(e)));
+  }
   return (
     <Screen title={S.chatsSection}>
       <RowList rows={rows} />

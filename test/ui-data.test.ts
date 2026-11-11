@@ -3,11 +3,106 @@ import assert from 'node:assert/strict';
 
 import { expireLabel, fmtDuration, formatSafetyNumber, initials } from '../src/ui/data/format';
 import { dbg, redactedLog } from '../src/ui/data/log';
+import { fetchLinkPreview, previewCandidate } from '../src/ui/data/link-preview-fetch';
+import { previewFieldsForSend } from '../src/engine/services/link-previews';
 import { applyMentions, parseFrame } from '../src/ui/data/normalize';
 import { attachmentLabel, contactName } from '../src/ui/data/store';
 import { emojiRuns, encodeMentions, isJumboEmoji, linkRuns, parseStyledMarkdown, SKIN_TONES, styleSegments, withSkinTone } from '../src/ui/data/styled';
 
 const nameOf = (k: string) => (k === 'aci-bob' ? 'Bob' : k);
+
+describe('link previews we send', () => {
+  type Page = { status?: number; url?: string; headers?: Record<string, string>; text?: string; bytes?: Uint8Array };
+  function deps(pages: Record<string, Page>, docs: Record<string, { title?: string; meta?: Record<string, string>; link?: Record<string, string> }>) {
+    const fetched: string[] = [];
+    const scaled: string[] = [];
+    return {
+      fetched,
+      scaled,
+      deps: {
+        fetch: async (url: string, as: 'text' | 'bytes', maxBytes: number) => {
+          fetched.push(as + ' ' + url);
+          const p = pages[url];
+          if (!p) throw new Error('network');
+          if (as === 'bytes' && p.bytes && p.bytes.length > maxBytes) throw new Error('too large');
+          const headers = p.headers || {};
+          return { status: p.status || 200, url: p.url || url, header: (n: string) => headers[n] ?? null, text: p.text, bytes: p.bytes };
+        },
+        parse: (html: string) => {
+          const d = docs[html] || {};
+          return { title: d.title || '', meta: (a: string, k: string) => (d.meta || {})[a + ':' + k] ?? null, link: (rel: string) => (d.link || {})[rel] ?? null };
+        },
+        scale: async (img: { data: Uint8Array; contentType: string }) => {
+          scaled.push(img.contentType);
+          return { data: img.data.slice(0, 2), contentType: 'image/jpeg' };
+        },
+      },
+    };
+  }
+  const html = { 'Content-Type': 'text/html; charset=utf-8' };
+  const png = new Uint8Array(20).fill(9);
+
+  it('reads Open Graph tags, resolves and scales the image, and keeps sane dates', async () => {
+    const t = deps(
+      {
+        'https://news.site/a': { url: 'https://news.site/a?x=1', headers: html, text: 'A' },
+        'https://news.site/img/a.png': { headers: { 'Content-Type': 'image/png' }, bytes: png },
+      },
+      { A: { title: 'Page title', meta: { 'property:og:title': ' Story ', 'property:og:description': 'About it', 'property:og:image': '/img/a.png#top', 'property:article:published_time': '2026-01-02T00:00:00Z' } } }
+    );
+    const p = await fetchLinkPreview('https://news.site/a', t.deps);
+    assert.deepEqual(p, { url: 'https://news.site/a', title: 'Story', description: 'About it', date: Date.parse('2026-01-02T00:00:00Z'), image: { data: png.slice(0, 2), contentType: 'image/jpeg' } });
+    assert.deepEqual(t.fetched, ['text https://news.site/a', 'bytes https://news.site/img/a.png']);
+    assert.deepEqual(t.scaled, ['image/png']);
+  });
+
+  it('falls back to the page title and icons, and drops bad dates, big images, and pages without a title', async () => {
+    const t = deps(
+      {
+        'https://a.site/': { headers: html, text: 'B' },
+        'https://a.site/icon.png': { headers: { 'Content-Type': 'image/png' }, bytes: new Uint8Array(2 * 1024 * 1024) },
+        'https://b.site/': { headers: html, text: 'C' },
+      },
+      { B: { title: 'Plain', meta: { 'name:description': 'Desc', 'property:og:published_time': '3100-01-01' }, link: { icon: '/icon.png' } }, C: {} }
+    );
+    assert.deepEqual(await fetchLinkPreview('https://a.site/', t.deps), { url: 'https://a.site/', title: 'Plain', description: 'Desc' });
+    assert.equal(await fetchLinkPreview('https://b.site/', t.deps), null);
+  });
+
+  it('refuses unsafe links, redirects, downloads, and non-HTML pages', async () => {
+    const t = deps(
+      {
+        'https://r.site/': { url: 'http://r.site/', headers: html, text: 'A' },
+        'https://d.site/': { headers: { ...html, 'Content-Disposition': 'attachment; filename=x' }, text: 'A' },
+        'https://j.site/': { headers: { 'Content-Type': 'application/json' }, text: '{}' },
+        'https://e.site/': { status: 404, headers: html, text: 'A' },
+      },
+      { A: { title: 'T' } }
+    );
+    for (const u of ['http://plain.site/', 'https://localhost/', 'https://xn--80ak6aa92e.com/', 'https://r.site/', 'https://d.site/', 'https://j.site/', 'https://e.site/']) {
+      assert.equal(await fetchLinkPreview(u, t.deps), null, u);
+    }
+    assert.ok(!t.fetched.some((f) => f.indexOf('plain.site') >= 0 || f.indexOf('localhost') >= 0));
+  });
+
+  it('only looks for a link to preview when the setting is on and the draft is plain text', () => {
+    const draft = 'see http://insecure.site and https://signal.org/blog, ok';
+    assert.equal(previewCandidate(draft, { enabled: true, plainText: true }), 'https://signal.org/blog');
+    assert.equal(previewCandidate(draft, { enabled: false, plainText: true }), '');
+    assert.equal(previewCandidate(draft, { enabled: true, plainText: false }), '');
+    assert.equal(previewCandidate('no links', { enabled: true, plainText: true }), '');
+  });
+
+  it('checks what goes into the preview we send', () => {
+    const body = 'look https://signal.org/blog';
+    const p = { url: 'https://signal.org/blog', title: '  T  ', description: 'x'.repeat(400), date: 1700000000000.5 };
+    assert.deepEqual(previewFieldsForSend(p, body, false), { url: 'https://signal.org/blog', title: 'T', description: 'x'.repeat(300), date: 1700000000000n });
+    assert.equal(previewFieldsForSend(p, body, true), null, 'not with attachments');
+    assert.equal(previewFieldsForSend(p, 'no link', false), null);
+    assert.equal(previewFieldsForSend({ ...p, title: ' ' }, body, false), null);
+    assert.equal(previewFieldsForSend(undefined, body, false), null);
+  });
+});
 
 describe('parseFrame', () => {
   it('turns an incoming data message into a message event', () => {

@@ -52,7 +52,7 @@ OK on a message opens its options. The first one is what the message is most lik
 - **Pin message** (for everyone in the chat), **Message details**, and **Delete for me**, which also deletes the message on your other linked devices.
 - **Message details** shows the full text, when it was sent, its status, reactions, when it disappears, earlier versions of an edited message, and **Delivered privately** when **Private delivery icon** is on in **Settings → Privacy**.
 - **Shared contacts** show as a card; OK offers **Message** them when they're in your Signal contacts, or **Copy number**.
-- **Link previews** that someone else's phone attached show the page's title and site under the text, with its picture once it's downloaded. Beacon doesn't add previews to links you send.
+- **Link previews** show the page's title and site under the text, with its picture once it's downloaded. When you type a link, **Link preview** and the page's title appear above the message box after a moment, and the preview goes with the message; **Options → Remove link preview** sends just the link. Messages with attachments don't get previews. The phone fetches the page itself, as Signal does, so the website sees that it was opened; turn this off in **Settings → Chats → Generate link previews**.
 - **Polls** show their question, answers, and vote counts. OK → **Vote** picks your answer (or answers, when the poll allows several); vote again to change it, or **Remove my vote**. **View votes** lists who picked what, and the person who made the poll can **End poll**.
 
 **Options** in a chat: Attach, Attach view-once photo or video, Insert emoji, Mention (groups), Create poll (groups), Pinned messages, Mute, and Chat settings.
@@ -111,7 +111,7 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 | --- | --- |
 | **Profile** (top row) | Your name, About, and About emoji (Signal requires a name), Username, your **QR code or link**, and Delete username |
 | **Linked device** | Which number this phone is linked as, Sync with your phone, saved accounts (OK switches), Add account, Unlink this phone, and Delete all data |
-| **Chats** | Text formatting; Keep muted chats archived |
+| **Chats** | Text formatting; Keep muted chats archived; Generate link previews |
 | **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Blocked |
 | **Appearance** | Theme: light or dark |
 | **Help** | Version, User guide, Source code |
@@ -147,7 +147,6 @@ Beacon doesn't yet support every Signal feature. Calls, stories, and more are tr
 | --- | --- |
 | Starting a chat by phone number | Works for numbers in your synced contacts and for Signal usernames. Other numbers can't be looked up, because the phone can't run Signal's contact discovery yet ([details](development.md#phone-number-lookup-cdsi-spike-findings)). |
 | Scanning a username QR code | Not supported yet; ask for the username instead. Codes with a phone number work. |
-| Sending link previews | Not supported yet. Links you send arrive as plain links; previews other people send do show. |
 | Polls in one-to-one chats | Not supported yet. You can vote in and end polls anywhere, but **Create poll** is only in groups. |
 | Group message requests | Not supported yet. A group someone you don't know adds you to shows as a normal chat; leave or block it in **Chat settings**. |
 | Forwarding files you sent from this phone | Not possible, because the phone doesn't keep a copy it can resend. They're also left out of **Media**. |

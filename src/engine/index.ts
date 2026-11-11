@@ -15,6 +15,7 @@ import {
   DataMessage,
   DataMessage_Flags,
   DataMessageSchema,
+  PreviewSchema,
   ReceiptMessage_Type,
   SyncMessage_FetchLatest_Type,
   SyncMessage_MessageRequestResponse_Type,
@@ -56,6 +57,7 @@ import { mutateStorage, pullFromStorageService, setPhoneNumberPrivacy, StorageMu
 import { AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema, ContactRecord_NameSchema } from './gen/SignalStorage_pb';
 import { diffGroupState, groupChangeAuthor, isDecodedGroup } from './services/group-updates';
 import { reportSpam as reportSpamMessages } from './services/report-spam';
+import { previewFieldsForSend } from './services/link-previews';
 import { deleteUsername as deleteAccountUsername, setUsername as setAccountUsername, usernameLinkUrl } from './services/usernames';
 import { SignalClient } from './net/client';
 import { DEFAULT_SIGNAL_SERVER } from './net/http';
@@ -68,6 +70,7 @@ type BodyRangeInit = MessageInitShape<typeof BodyRangeSchema>;
 type PinnedConversationInit = MessageInitShape<typeof AccountRecord_PinnedConversationSchema>;
 type AddressableMessageInit = MessageInitShape<typeof AddressableMessageSchema>;
 type ConversationIdentifierInit = MessageInitShape<typeof ConversationIdentifierSchema>;
+type PreviewInit = MessageInitShape<typeof PreviewSchema>;
 
 /** A message as the app names it: its author (number or ACI) and sent time. */
 export interface MessageRef {
@@ -93,6 +96,25 @@ function parseDataUri(dataUri: string): { contentType: string; filename?: string
     filename: fnMatch ? fnMatch[1] : undefined,
     bytes: fromBase64(b64),
   };
+}
+
+const MAX_PREVIEW_IMAGE_BYTES = 1024 * 1024;
+
+async function outgoingPreview(
+  p: { url: string; title: string; description?: string; date?: number; image?: string } | undefined,
+  body: string,
+  hasAttachments: boolean
+): Promise<PreviewInit | null> {
+  const fields = previewFieldsForSend(p, body, hasAttachments);
+  if (!fields || !p) return null;
+  const out: PreviewInit = { ...fields };
+  if (p.image) {
+    const { contentType, bytes } = parseDataUri(p.image);
+    if (contentType.indexOf('image/') === 0 && bytes.length > 0 && bytes.length <= MAX_PREVIEW_IMAGE_BYTES) {
+      out.image = await client.uploadAttachment(bytes, contentType, 'preview.' + (contentType.split('/')[1] || 'jpg'));
+    }
+  }
+  return out;
 }
 
 function stylesToBodyRanges(
@@ -825,6 +847,7 @@ export const signalBridge = {
     mentions?: Array<{ start: number; length: number; uuid: string }>;
     view_once?: boolean;
     poll?: { question: string; options: string[]; allow_multiple: boolean };
+    preview?: { url: string; title: string; description?: string; date?: number; image?: string };
   }): Promise<{ timestamp: number; sealed: boolean }> {
     const ts = Date.now();
     const bodyText = payload.message || '';
@@ -847,6 +870,7 @@ export const signalBridge = {
     }
 
     const expireTimer = payload.expire_timer || 0;
+    const preview = await outgoingPreview(payload.preview, bodyText, files.length > 0);
 
     const mentions: Array<{ start: number; length: number; uuid: string }> = [];
     for (const m of payload.mentions || []) {
@@ -865,6 +889,7 @@ export const signalBridge = {
       groupV2: target.groupV2,
       isViewOnce: payload.view_once && uploadedAttachments.length > 0 ? true : undefined,
       pollCreate: poll ? { question: poll.question, options: poll.options, allowMultiple: poll.allow_multiple } : undefined,
+      preview: preview ? [preview] : [],
     };
 
     if (payload.quote_timestamp) {
@@ -1355,6 +1380,18 @@ export const signalBridge = {
         type: 'account',
         update: (a) => {
           a.universalExpireTimer = secs;
+        },
+      },
+    ]);
+  },
+
+  /** Whether links we send get previews (`AccountRecord.linkPreviews`), shared with our other devices. */
+  async setLinkPreviews(on: boolean): Promise<void> {
+    await storageQueue.enqueue([
+      {
+        type: 'account',
+        update: (a) => {
+          a.linkPreviews = on;
         },
       },
     ]);

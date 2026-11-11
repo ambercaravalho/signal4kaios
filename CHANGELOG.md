@@ -2,6 +2,12 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.6.0
+
+### New
+
+- **Link previews you send.** Type a link and, after a moment, **Link preview** with the page's title shows above the message box; it's sent with the message, picture included. **Options → Remove link preview** sends the link without it. Turn previews off in **Settings → Chats → Generate link previews**, which is shared with your other devices. As in Signal, the phone fetches the page itself, so the website sees that it was opened.
+
 ## v2.5.0
 
 The third round of Signal features from the roadmap. Install over v2.4.0; your chats and settings carry over.

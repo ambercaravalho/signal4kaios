@@ -1,4 +1,4 @@
-/* Incoming link preview checks, ported from Signal-Desktop's LinkPreview.shouldPreviewHref, isLinkSneaky, and getValidLinkPreviews. */
+/* Link preview checks, ported from Signal-Desktop's LinkPreview.shouldPreviewHref, isLinkSneaky, and getValidLinkPreviews. */
 
 const EXCLUDED_DOMAINS = ['debuglogs.org', 'example', 'example.com', 'example.net', 'example.org', 'invalid', 'localhost', 'onion', 'test'];
 const DIRECTIONAL_OVERRIDES = /[\u202c\u202d\u202e]/;
@@ -6,6 +6,7 @@ const UNICODE_DRAWING = /[\u2500-\u25FF]/;
 const VALID_URI_CHARACTERS = /^[%:/?#[\]@!$&'()*+,;=A-Za-z0-9\-._~]*$/;
 const MAX_HREF_LENGTH = 2 ** 12;
 const TRAILING_PUNCTUATION = /[.,;:!?)]+$/;
+const MAX_PREVIEW_TEXT = 300;
 
 function parseUrl(href: string): URL | null {
   try {
@@ -43,4 +44,23 @@ export function linksIn(body: string): string[] {
 /** A preview is shown only for a safe https link that appears in the message's own text. */
 export function isValidLinkPreview(url: string, body: string): boolean {
   return !!url && shouldPreviewHref(url) && linksIn(body).indexOf(url) >= 0;
+}
+
+export interface OutgoingPreviewFields {
+  url: string;
+  title: string;
+  description?: string;
+  date?: bigint;
+}
+
+/** The text of a preview we send, like Signal-Desktop's getLinkPreviewForSend: only for a safe link in the text, never alongside attachments, and never without a title. */
+export function previewFieldsForSend(p: { url: string; title: string; description?: string; date?: number } | undefined, body: string, hasAttachments: boolean): OutgoingPreviewFields | null {
+  if (!p || hasAttachments || !isValidLinkPreview(p.url, body)) return null;
+  const title = (p.title || '').trim().slice(0, MAX_PREVIEW_TEXT);
+  if (!title) return null;
+  const out: OutgoingPreviewFields = { url: p.url, title };
+  const description = (p.description || '').trim().slice(0, MAX_PREVIEW_TEXT);
+  if (description) out.description = description;
+  if (typeof p.date === 'number' && p.date > 0 && isFinite(p.date)) out.date = BigInt(Math.floor(p.date));
+  return out;
 }
