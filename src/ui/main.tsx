@@ -11,6 +11,7 @@ import * as http from './data/http';
 import { dbg } from './data/log';
 import * as nativeTls from './data/nativeTls';
 import { hasServiceWorker } from './data/platform';
+import { applyProxy } from './data/proxy';
 import * as screenLock from './data/screen-lock';
 import * as store from './data/store';
 import { setupWake } from './data/wake';
@@ -112,6 +113,7 @@ function start(): void {
 function boot(): void {
   dbg('boot');
   applyTheme();
+  applyProxy();
   installEngineHost();
   registerServiceWorker();
   screenLock.install();

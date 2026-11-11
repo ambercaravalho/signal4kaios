@@ -16,6 +16,8 @@ import { db } from '../data/db';
 import { EXPIRE_OPTIONS, expireLabel } from '../data/format';
 import { appVersion, openUrl } from '../data/platform';
 import * as screenLock from '../data/screen-lock';
+import { activeProxy } from '../data/proxy';
+import { ProxyScreen } from './Proxy';
 import * as store from '../data/store';
 import * as ws from '../data/ws';
 import { friendlyError } from '../errors';
@@ -274,6 +276,7 @@ export function PrivacyScreen() {
     { key: 'phone', label: S.phoneNumber, end: 'chevron', onSelect: () => router.push(PhoneNumberScreen, {}) },
     { key: 'lock', label: S.screenLock, sub: screenLock.enabled() ? lockAfterLabel(screenLock.lockAfter()) : undefined, end: 'chevron', onSelect: () => router.push(ScreenLockScreen, {}) },
     { key: 'blocked', label: S.blockedPeople, end: 'chevron', onSelect: () => router.push(BlockedScreen, {}) },
+    { key: 'proxy', label: S.proxy, sub: activeProxy() || undefined, end: 'chevron', onSelect: () => router.push(ProxyScreen, {}) },
   ];
   useOnResume(refresh);
   return (

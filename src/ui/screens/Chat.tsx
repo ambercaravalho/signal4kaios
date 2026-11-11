@@ -27,6 +27,7 @@ import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
 import { isGroupLink, JoinGroupScreen } from './JoinGroup';
 import { MessageDetailsScreen, PollVotesScreen } from './MessageDetails';
+import { askUseProxy, isProxyLink } from './Proxy';
 import { SafetyNumberScreen } from './SafetyNumber';
 import { ForwardScreen } from './SearchList';
 import { ViewerScreen } from './Viewer';
@@ -717,6 +718,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   async function openLinks(urls: string[]): Promise<void> {
     const url = urls.length === 1 ? urls[0] : await pick(S.openLink, urls.map((u) => ({ value: u, label: u })), '');
     if (url && isGroupLink(url)) router.push(JoinGroupScreen, { url });
+    else if (url && isProxyLink(url)) void askUseProxy(url);
     else if (url) openUrl(url).catch(() => toast(S.errGeneric));
   }
 

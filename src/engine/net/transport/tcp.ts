@@ -13,7 +13,7 @@ interface GeckoTcpSocket {
   onclose: ((evt: unknown) => void) | null;
 }
 
-type OpenFn = (host: string, port: number, options: { binaryType: 'arraybuffer'; useSecureTransport: false }) => GeckoTcpSocket;
+type OpenFn = (host: string, port: number, options: { binaryType: 'arraybuffer'; useSecureTransport: boolean }) => GeckoTcpSocket;
 
 /** Gecko 123 exposes the `TCPSocket` constructor; KaiOS 3.x builds may only have the older `navigator.mozTCPSocket.open`. */
 function socketOpener(): OpenFn | null {
@@ -32,7 +32,8 @@ export function tcpSocketAvailable(): boolean {
   return socketOpener() !== null;
 }
 
-export function connectTcp(host: string, port: number, timeoutMs: number): Promise<ByteStream> {
+/** A raw TCP stream, or with `secure` a TLS stream whose certificate Gecko checks against the phone's CA store (used only for the outer hop to a Signal proxy). */
+export function connectTcp(host: string, port: number, timeoutMs: number, secure = false): Promise<ByteStream> {
   const open = socketOpener();
   if (!open) return Promise.reject(new TransportError('network', 'TCPSocket is not available'));
 
@@ -41,7 +42,7 @@ export function connectTcp(host: string, port: number, timeoutMs: number): Promi
     let closed = false;
     let sock: GeckoTcpSocket;
     try {
-      sock = open(host, port, { binaryType: 'arraybuffer', useSecureTransport: false });
+      sock = open(host, port, { binaryType: 'arraybuffer', useSecureTransport: secure });
     } catch (e) {
       reject(new TransportError('network', `could not open a socket: ${(e as Error).message}`));
       return;

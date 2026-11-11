@@ -7,7 +7,7 @@
 import { isLibsignalLoaded, libsignal } from '../../protocol/libsignal';
 import { SIGNAL_USER_AGENT } from '../http';
 import { Http1Client, HttpRequest, HttpResponse, parseHttpsUrl } from './http1';
-import { Connector } from './stream';
+import { Connector, TransportError } from './stream';
 import { connectTcp, tcpSocketAvailable } from './tcp';
 import { connectTls, TlsSession } from './tls-stream';
 import { PinnedWebSocket } from './websocket';
@@ -29,15 +29,34 @@ export interface SocketLike {
 
 export const SOCKET_OPEN = 1;
 
+export const PROXY_PORT = 443;
+
 export interface NetDeps {
   connectRaw: Connector;
+  /** A platform-TLS stream to a Signal proxy, whose certificate is an ordinary public one. */
+  connectSecure?: Connector;
   newSession: (host: string) => TlsSession;
   isPinnedHost: (host: string) => boolean;
   available: () => boolean;
 }
 
+/**
+ * With a Signal proxy set, each connection opens TLS to the proxy and runs the pinned TLS to the Signal host inside it; the proxy forwards by the inner SNI, as Signal-TLS-Proxy does. The proxy sees only that a Signal host was reached, never the traffic.
+ */
 export function createNet(deps: NetDeps) {
-  const connectPinned: Connector = (host, port, timeoutMs) => connectTls(host, port, timeoutMs, deps.connectRaw, deps.newSession);
+  let proxyHost: string | null = null;
+
+  const connectPinned: Connector = (host, port, timeoutMs) => {
+    const proxy = proxyHost;
+    if (!proxy) return connectTls(host, port, timeoutMs, deps.connectRaw, deps.newSession);
+    const viaProxy: Connector = (_host, _port, t) => {
+      if (!deps.connectSecure) return Promise.reject(new TransportError('network', 'proxy connections are not available'));
+      return deps.connectSecure(proxy, PROXY_PORT, t).catch((e: any) => {
+        throw new TransportError(e && e.kind === 'timeout' ? 'timeout' : 'network', `proxy ${proxy} did not answer: ${e && e.message}`);
+      });
+    };
+    return connectTls(host, port, timeoutMs, viaProxy, deps.newSession);
+  };
   const http = new Http1Client(connectPinned, { userAgent: SIGNAL_USER_AGENT });
 
   function isPinnedUrl(url: string): boolean {
@@ -58,9 +77,23 @@ export function createNet(deps: NetDeps) {
 
     isPinnedUrl,
 
-    /** A `WebSocket`-shaped socket: pinned TLS for Signal hosts, the platform `WebSocket` otherwise. */
+    /** The Signal proxy every pinned connection goes through, or null for direct connections. */
+    proxy(): string | null {
+      return proxyHost;
+    },
+
+    /** Use a Signal proxy (or none) from the next connection on; open keep-alive connections are dropped. */
+    setProxy(host: string | null): void {
+      const next = host || null;
+      if (next === proxyHost) return;
+      proxyHost = next;
+      http.closeAll();
+    },
+
+    /** A `WebSocket`-shaped socket: pinned TLS for Signal hosts, the platform `WebSocket` otherwise. With a proxy set, a socket that would bypass it is refused. */
     openWebSocket(url: string, opts?: { timeoutMs?: number; headers?: Record<string, string> }): SocketLike {
       if (isPinnedUrl(url)) return new PinnedWebSocket(url, connectPinned, opts);
+      if (proxyHost) throw new TransportError('network', 'a proxy is set but this socket would connect directly');
       const sock = new WebSocket(url);
       sock.binaryType = 'arraybuffer';
       return sock as unknown as SocketLike;
@@ -81,7 +114,8 @@ export function createNet(deps: NetDeps) {
 export type SignalNet = ReturnType<typeof createNet>;
 
 export const net: SignalNet = createNet({
-  connectRaw: connectTcp,
+  connectRaw: (host, port, timeoutMs) => connectTcp(host, port, timeoutMs),
+  connectSecure: (host, port, timeoutMs) => connectTcp(host, port, timeoutMs, true),
   newSession: (host) => new libsignal.TlsConn(host),
   isPinnedHost: (host) => libsignal.isPinnedTlsHost(host),
   available: () => isLibsignalLoaded() && tcpSocketAvailable(),

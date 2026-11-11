@@ -22,6 +22,7 @@ import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatScreen, openChat } from './Chat';
 import { isGroupLink, JoinGroupScreen } from './JoinGroup';
+import { askUseProxy, isProxyLink } from './Proxy';
 
 /** A search field above a list of results. Up and Down move between them; OK on the field jumps into the results. */
 export function SearchList(props: { title: string; placeholder: string; query: string; onQuery(q: string): void; rows: Row[]; empty?: ComponentChildren; right?: string | null; onRight?(): void }) {
@@ -120,6 +121,10 @@ export function NewChatScreen() {
     if (!text) return;
     if (isGroupLink(text)) {
       router.push(JoinGroupScreen, { url: text.trim() });
+      return;
+    }
+    if (isProxyLink(text)) {
+      void askUseProxy(text);
       return;
     }
     const m = /signal\.me\/#p\/(\+?\d+)/.exec(text) || /^(\+?\d[\d\s()-]{5,})$/.exec(text.trim());

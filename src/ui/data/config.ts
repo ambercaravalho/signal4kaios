@@ -47,6 +47,8 @@ interface ConfigData {
   sharePhoneNumber?: boolean;
   findableByNumber?: boolean;
   screenLock?: ScreenLockConfig;
+  proxyAddress?: string;
+  proxyEnabled?: boolean;
   accounts?: SavedAccount[];
   [k: string]: unknown;
 }
@@ -158,6 +160,16 @@ export const config = {
   /** Muted chats stay archived when new messages arrive, as in Signal. */
   keepMutedArchived(): boolean {
     return read().keepMutedArchived !== false;
+  },
+
+  /** The Signal proxy's hostname, kept while the proxy is turned off. */
+  proxyAddress(): string {
+    const v = read().proxyAddress;
+    return typeof v === 'string' ? v : '';
+  },
+
+  proxyEnabled(): boolean {
+    return read().proxyEnabled === true;
   },
 
   screenLock(): ScreenLockConfig | null {

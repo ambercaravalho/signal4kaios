@@ -142,6 +142,10 @@ export function connect(): void {
     const auth = 'Basic ' + btoa(config.login() + ':' + config.deviceToken());
     if (signal.net.isPinnedUrl(baseUrl)) {
       sock = signal.net.openWebSocket(baseUrl, { headers: { Authorization: auth, 'X-Signal-Receive-Stories': 'false' } });
+    } else if (signal.net.proxy()) {
+      dbg('ws: a proxy is set but the pinned client is unavailable, not connecting directly');
+      setConnection('closed');
+      return;
     } else {
       const ws = new WebSocket(baseUrl + '&login=' + encodeURIComponent(config.login()) + '&password=' + encodeURIComponent(config.deviceToken()));
       ws.binaryType = 'arraybuffer';

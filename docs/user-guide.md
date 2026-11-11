@@ -114,7 +114,7 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 | **Profile** (top row) | Your name, About, and About emoji (Signal requires a name), Username, your **QR code or link**, and Delete username |
 | **Linked device** | Which number this phone is linked as, Sync with your phone, saved accounts (OK switches), Add account, Unlink this phone, and Delete all data |
 | **Chats** | Text formatting; Keep muted chats archived; Generate link previews |
-| **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Screen lock; Blocked |
+| **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Screen lock; Blocked; Proxy |
 | **Appearance** | Theme: light or dark |
 | **Help** | Version, User guide, Source code |
 | **Debug** | Technical details for troubleshooting (see below) |
@@ -124,6 +124,12 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 **Privacy → Phone number** has **Who can see my number** and **Who can find me by number**, each **Everybody** or **Nobody**. With **Nobody** seeing it, only people who already have your number see it; with **Nobody** finding you, people can't start a chat with you using your number. While everybody can see your number, everybody can also find you by it, as in Signal. Both settings are shared with your phone and other devices.
 
 **Privacy → Screen lock** asks for a PIN whenever Beacon opens. Choose 4 to 8 digits and enter them twice. **Lock after** sets how long Beacon can be in the background before it asks again: immediately, 1, 5, 15, or 30 minutes, or 1 hour (1 minute to start with). Type the PIN on the keypad and press **Unlock**. After 3 wrong PINs in a row you wait 30 seconds before the next try, and the wait doubles with each wrong PIN, up to 15 minutes. Turning the lock off asks for the PIN. Screen lock only hides Beacon: your messages aren't encrypted with the PIN, and notifications still show. If you forget the PIN, **Forgot PIN** on the lock screen → **Delete all data** is the only way back in, and then you link the phone again.
+
+### Proxy
+
+Where Signal is blocked, a [Signal proxy](https://support.signal.org/hc/en-us/articles/360056052052) run by someone you trust can get you connected. Open **Settings → Privacy → Proxy**, choose **Proxy address**, and type the address (like `proxy.example.com`), or open a `signal.tube` proxy link from a chat or scan one with **New chat → Scan**, and Beacon asks whether to use it. **Use proxy** turns it on and off and keeps the address. The setting applies to every account on the phone.
+
+The proxy can see that you use Signal, but not your messages or who you talk to: everything inside stays encrypted to Signal's servers. While it's on, the bar under the header says when Beacon is connecting through the proxy or can't reach it, and Debug shows which proxy is used. Faster connection is turned off so nothing bypasses the proxy. Link previews still fetch the website directly, so turn off **Settings → Chats → Generate link previews** if that matters to you.
 
 When your main phone gives your profile a new key, which Signal does after you block someone, Beacon picks up the new key too.
 
