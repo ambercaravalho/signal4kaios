@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useStoreEvents } from '../app/hooks';
-import { router } from '../app/router';
+import { router, useOnResume } from '../app/router';
 import { setTheme } from '../app/theme';
 import { Avatar } from '../components/Avatar';
 import { Spinner } from '../components/List';
 import { pickEmoji } from '../components/Emoji';
 import { confirm, pick, prompt, showOptions } from '../components/Overlays';
+import { promptPin } from '../components/PinEntry';
 import { Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
 import { toast } from '../components/Toast';
@@ -14,10 +15,11 @@ import { config, type ThemeName } from '../data/config';
 import { db } from '../data/db';
 import { EXPIRE_OPTIONS, expireLabel } from '../data/format';
 import { appVersion, openUrl } from '../data/platform';
+import * as screenLock from '../data/screen-lock';
 import * as store from '../data/store';
 import * as ws from '../data/ws';
 import { friendlyError } from '../errors';
-import { APP_NAME, S } from '../strings';
+import { APP_NAME, fmt, S } from '../strings';
 import { DebugScreen } from './Debug';
 import { LinkScreen } from './Onboarding';
 import { QrScreen } from './QrScreen';
@@ -162,6 +164,15 @@ export function ProfileScreen() {
   );
 }
 
+/** Every account's database and all settings, then a fresh start at the welcome screen. */
+export async function deleteAllData(): Promise<void> {
+  ws.stop();
+  for (const a of config.accounts()) await db.useAccount(a.number).then(() => db.wipe()).catch(() => {});
+  await db.useAccount(null).then(() => db.wipe()).catch(() => {});
+  config.clear();
+  location.reload();
+}
+
 export function LinkedDeviceScreen() {
   const active = config.number();
   const accounts = config.accounts();
@@ -176,11 +187,7 @@ export function LinkedDeviceScreen() {
 
   async function deleteAll(): Promise<void> {
     if (!(await confirm({ title: S.deleteAllData + '?', body: S.deleteAllDataBody, ok: S.delete, danger: true }))) return;
-    ws.stop();
-    for (const a of config.accounts()) await db.useAccount(a.number).then(() => db.wipe()).catch(() => {});
-    await db.useAccount(null).then(() => db.wipe()).catch(() => {});
-    config.clear();
-    location.reload();
+    await deleteAllData();
   }
 
   function sync(): void {
@@ -265,10 +272,79 @@ export function PrivacyScreen() {
     { key: 'timer', label: S.defaultTimer, sub: expireLabel(defaultTimer), onSelect: chooseDefaultTimer },
     toggle('private', S.privateDeliveryIcon, config.sealedSenderIndicators(), setPrivateIcon, S.privateDeliveryHint),
     { key: 'phone', label: S.phoneNumber, end: 'chevron', onSelect: () => router.push(PhoneNumberScreen, {}) },
+    { key: 'lock', label: S.screenLock, sub: screenLock.enabled() ? lockAfterLabel(screenLock.lockAfter()) : undefined, end: 'chevron', onSelect: () => router.push(ScreenLockScreen, {}) },
     { key: 'blocked', label: S.blockedPeople, end: 'chevron', onSelect: () => router.push(BlockedScreen, {}) },
   ];
+  useOnResume(refresh);
   return (
     <Screen title={S.privacy}>
+      <RowList rows={rows} />
+    </Screen>
+  );
+}
+
+export function lockAfterLabel(secs: number): string {
+  if (secs === 0) return S.lockImmediately;
+  if (secs === 60) return S.oneMinute;
+  if (secs === 3600) return S.oneHour;
+  return fmt(S.nMinutes, { n: Math.round(secs / 60) });
+}
+
+export function pinWaitMessage(retryAt: number): string {
+  return fmt(S.pinWait, { time: screenLock.waitLabel(retryAt - Date.now()) });
+}
+
+/** A PIN to open the app, and how long it may sit in the background first. Turning it off needs the PIN. */
+export function ScreenLockScreen() {
+  const refresh = useRefresh();
+  const on = screenLock.enabled();
+
+  async function turnOn(): Promise<void> {
+    const pin = await promptPin(S.choosePin);
+    if (!pin) return;
+    const again = await promptPin(S.confirmPin);
+    if (again === undefined) return;
+    if (again !== pin) {
+      toast(S.pinMismatch);
+      return;
+    }
+    await screenLock.enable(pin);
+    toast(S.screenLockOn);
+    refresh();
+  }
+
+  async function turnOff(): Promise<void> {
+    const waiting = screenLock.retryAt();
+    if (waiting) {
+      toast(pinWaitMessage(waiting));
+      return;
+    }
+    const pin = await promptPin(S.enterPin);
+    if (!pin) return;
+    const res = await screenLock.check(pin);
+    if (!res.ok) {
+      toast(res.retryAt ? pinWaitMessage(res.retryAt) : S.wrongPin);
+      return;
+    }
+    screenLock.disable();
+    toast(S.screenLockOff);
+    refresh();
+  }
+
+  async function chooseLockAfter(): Promise<void> {
+    const current = screenLock.lockAfter();
+    const secs = await pick(S.lockAfter, screenLock.LOCK_AFTER_OPTIONS.map((s) => ({ value: s, label: lockAfterLabel(s) })), current);
+    if (secs === undefined || secs === current) return;
+    screenLock.setLockAfter(secs);
+    refresh();
+  }
+
+  const rows: Row[] = [
+    toggle('lock', S.screenLock, on, (v) => void (v ? turnOn() : turnOff()), S.screenLockHint),
+    on && { key: 'after', label: S.lockAfter, sub: lockAfterLabel(screenLock.lockAfter()), onSelect: chooseLockAfter },
+  ];
+  return (
+    <Screen title={S.screenLock}>
       <RowList rows={rows} />
     </Screen>
   );

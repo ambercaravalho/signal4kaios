@@ -52,7 +52,7 @@ import {
 } from '../src/engine/gen/SignalStorage_pb';
 import { decodeGroupState, deriveGroupV2Keys, groupIdFromMasterKey, groupInviteLink, parseGroupLink } from '../src/engine/services/groups-v2';
 import { libsignal } from '../src/engine/protocol/libsignal';
-import { decryptProfile, decryptProfileName, encryptProfileName, uploadOwnProfile } from '../src/engine/services/profiles';
+import { adoptOwnProfileKey, decryptProfile, decryptProfileName, encryptProfileName, uploadOwnProfile } from '../src/engine/services/profiles';
 import { create, fromBinary, serviceIdFrom, toBinary } from '../src/engine/net/proto';
 import {
   decryptStorageValue,
@@ -372,6 +372,30 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(account.value!.unlistedPhoneNumber, false);
     });
   }
+
+  it('takes on a profile key the phone rotated in the account record', async () => {
+    const masterKey = randomBytes(32);
+    const store = storageStore(masterKey);
+    const oldKey = randomBytes(32);
+    await store.saveAccount({ ...(await store.getAccount())!, profileKey: oldKey });
+    await store.storeValue('profileKeyCredentials', {
+      [ALICE]: { profileKey: toBase64(oldKey), credential: 'AA==', expiresAtSeconds: 2e9 },
+      [BOB]: { profileKey: toBase64(randomBytes(32)), credential: 'AA==', expiresAtSeconds: 2e9 },
+    });
+    const srv = await serveStorage(masterKey);
+    const first = await pullFromStorageService(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org');
+    assert.equal(await adoptOwnProfileKey(store, first!.account?.profileKey), false, 'an account record without a key changes nothing');
+
+    const newKey = randomBytes(32);
+    await mutateStorage(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org', [{ type: 'account', update: (a) => { a.profileKey = newKey; } }]);
+    const res = await pullFromStorageService(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org');
+    assert.equal(await adoptOwnProfileKey(store, res!.account?.profileKey), true);
+    assert.deepEqual((await store.getAccount())!.profileKey, newKey);
+    assert.equal((await store.getAccount())!.password, 'pw', 'the rest of the account is kept');
+    const cache = (await store.loadValue('profileKeyCredentials')) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(cache), [BOB], 'our credential for the old key is dropped');
+    assert.equal(await adoptOwnProfileKey(store, res!.account?.profileKey), false);
+  });
 
   it('re-reads and retries after a 409, and skips no-op writes', async () => {
     const masterKey = randomBytes(32);

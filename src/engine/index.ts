@@ -46,6 +46,7 @@ import {
 } from './services/group-changes';
 import { libsignal, loadLibsignal } from './protocol/libsignal';
 import {
+  adoptOwnProfileKey,
   downloadAndDecryptProfileAvatar,
   fetchAndDecryptProfile,
   fetchExpiringProfileKeyCredential,
@@ -599,6 +600,7 @@ async function syncFromStorageService(): Promise<boolean> {
   }
 
   if (res.account) {
+    if (await adoptOwnProfileKey(store, res.account.profileKey)) host().dbg('storage: adopted the profile key from the account record');
     const patch: Record<string, any> = {};
     const fullName = [res.account.givenName, res.account.familyName].filter(Boolean).join(' ');
     if (fullName) patch.profileName = fullName;

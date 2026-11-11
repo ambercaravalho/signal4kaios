@@ -570,3 +570,18 @@
   background: var(--accent);
   color: #ffffff;
 }
+
+.pin-dots {
+  display: flex;
+  justify-content: center;
+  min-height: 1.6rem;
+  margin: 1.2rem var(--pad);
+}
+
+.pin-dot {
+  width: 1.2rem;
+  height: 1.2rem;
+  margin: 0 0.4rem;
+  border-radius: 50%;
+  background: var(--text);
+}
