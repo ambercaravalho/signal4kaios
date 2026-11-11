@@ -168,5 +168,7 @@ Beacon doesn't yet support every Signal feature. Calls, stories, and more are tr
 | Scanning a username QR code | Not supported yet; ask for the username instead. Codes with a phone number or a group link work. |
 | Polls in one-to-one chats | Not supported yet. You can vote in and end polls anywhere, but **Create poll** is only in groups. |
 | Group message requests | Not supported yet. A group someone you don't know adds you to shows as a normal chat; leave or block it in **Chat settings**. |
+| Holding the Call key to record a voice message | Works only on phones that pass a held Call key to apps. **Options → Record voice message** works everywhere. |
+| Notifications while a chat is muted | Only mentions of you come through. Replies to your messages and calls stay silent, unlike Signal's newer apps. |
 | Forwarding files you sent from this phone | Not possible, because the phone doesn't keep a copy it can resend. They're also left out of **Media**. |
 | Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open, and trusting Signal's certificate on a rooted phone doesn't change that. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |
