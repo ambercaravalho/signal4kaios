@@ -5,7 +5,7 @@ alwaysApply: true
 
 # signal4kaios (Beacon)
 
-Beacon is an unofficial, standalone Signal client for **KaiOS 3.0, 3.1 (Gecko 84) and 4.0 (Gecko 123)**. It links to an account as a Signal linked device and runs all cryptography on the phone. KaiOS 2.5, the self-hosted gateway, and signal-cli are gone; don't reintroduce them. Only the app-facing name is Beacon; the repo, package, and manifest `id`/`origin` stay `signal4kaios`.
+Beacon is an unofficial, standalone Signal client for **KaiOS 3.0, 3.1 (Gecko 84) and 4.0 (Gecko 123)**. It links to an account as a Signal linked device and runs all cryptography on the phone. KaiOS 2.5, the self-hosted gateway, and signal-cli are gone; don't reintroduce them. Video calls, stories, and payments are out of scope; don't add them, and show a line pointing to the phone instead. Voice calls are a roadmap item (#7) that needs its own media stack, because RingRTC disables DTLS; until then, never answer call signaling. Only the app-facing name is Beacon; the repo, package, and manifest `id`/`origin` stay `signal4kaios`.
 
 ## Layout
 

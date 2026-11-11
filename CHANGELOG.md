@@ -2,6 +2,25 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.7.2
+
+Calls to you now ring on your phone with Beacon linked, and Beacon tells you when something in a chat needs your phone. Install over v2.7.1; your chats and settings carry over.
+
+### Fixed
+
+- **Calls to you.** Beacon made calls stop ringing on your phone, because it told the caller you were busy. Your phone now rings as usual.
+
+### Changed
+
+- **Call lines.** A call now shows **Voice call. Answer it on your phone.** instead of **Missed voice call**, and a group call says to join it from your phone.
+
+### New
+
+- **Payments.** A payment someone sends you shows as a line asking you to check your phone.
+- **Story replies and reactions.** A reply to your story shows in the chat quoting **Story**, and a reaction shows as a line, for example **Alice reacted ❤️ to your story**.
+
+Video calls, stories, and payments won't come to Beacon; voice calls are still on the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues/7).
+
 ## v2.7.1
 
 A behind-the-scenes cleanup release with no feature changes. Install over v2.7.0; your chats and settings carry over.

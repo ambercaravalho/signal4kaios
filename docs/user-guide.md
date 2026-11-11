@@ -62,7 +62,7 @@ OK on a message opens its options. The first one is what the message is most lik
 - **Drafts**: text left in the message box stays with the chat until you send or clear it.
 - **Mentions**: in a group, **Mention** picks a member and sends a Signal mention.
 - **Emoji**: **Insert emoji** opens the picker; its **Options** has **Category** and **Skin tone**, which picks one of six tones for emoji that have them, reactions included.
-- **Notices**: missed calls, a changed safety number, group calls, disappearing message timer changes, and group changes (name, description, members, admins, invites, join requests, group link, and permissions) show as a line in the chat, for example **Dave added you**; when Signal doesn't say who made a group change, the line just says what changed. OK on one offers **Delete for me**, and on a safety number line **View safety number**.
+- **Notices**: calls, payments, reactions to your story, a changed safety number, group calls, disappearing message timer changes, and group changes (name, description, members, admins, invites, join requests, group link, and permissions) show as a line in the chat, for example **Dave added you**; when Signal doesn't say who made a group change, the line just says what changed. OK on one offers **Delete for me**, and on a safety number line **View safety number**. Calls, payments, and stories happen on your phone, so their lines say so, for example **Voice call. Answer it on your phone.** A reply to your story shows as a message quoting **Story**.
 - **Groups where only admins can send** show **Only admins can send messages** in place of the message box.
 
 - **Text formatting**: type `**bold**`, `*italic*`, `~strikethrough~`, `` `monospace` ``, or `||spoiler||`. Spoilers stay hidden until you focus the message. Prefix a marker with `\` to type it literally. Turn this off in **Settings → Chats**.
@@ -160,7 +160,15 @@ Archive, mute, mark as unread, pinned chats, the default timer for new chats, th
 
 ## Known limitations
 
-Beacon doesn't yet support every Signal feature. Calls, stories, and more are tracked on the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap). These work only partly:
+Beacon doesn't yet support every Signal feature. Voice calls and more are tracked on the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap); until voice calls work, Beacon shows each call as a line in the chat and your phone rings as usual.
+
+These won't be added, and Beacon points you to your phone for them instead:
+
+- **Video calls**, which don't suit the phone's power or its single rear camera.
+- **Stories**. Stories your contacts post don't show at all; replies and reactions to yours show in the chat.
+- **Payments**. A payment shows as a line asking you to check your phone.
+
+These work only partly:
 
 | Action | What happens now |
 | --- | --- |

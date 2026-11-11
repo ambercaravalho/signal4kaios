@@ -11,7 +11,7 @@ Install Beacon on a KaiOS 3.0, 3.1, or 4.0 phone and link it to your Signal acco
 - [Troubleshooting](#troubleshooting)
 
 > [!NOTE]
-> Some Signal features, such as calls and stories, aren't supported yet. See [Known limitations](user-guide.md#known-limitations) and the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) before you rely on the app.
+> Some Signal features, such as voice calls, aren't supported yet, and video calls, stories, and payments won't be. See [Known limitations](user-guide.md#known-limitations) and the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) before you rely on the app.
 
 ## Requirements
 
