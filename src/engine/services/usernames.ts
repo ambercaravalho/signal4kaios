@@ -5,14 +5,14 @@ import { libsignal } from '../protocol/libsignal';
 import type { SignalProtocolStore } from '../protocol/store';
 import { DEFAULT_SIGNAL_SERVER, SignalHttpJsonFn } from '../net/http';
 
-export type UsernameErrorCode =
+type UsernameErrorCode =
   | 'UsernameInvalid'
   | 'UsernameUnavailable'
   | 'UsernameReservationLost'
   | 'UsernameRateLimited'
   | 'UsernameLinkFailed';
 
-export class UsernameServiceError extends Error {
+class UsernameServiceError extends Error {
   readonly code: UsernameErrorCode;
 
   constructor(code: UsernameErrorCode, message: string) {

@@ -32,7 +32,7 @@ const STATE_KEY = 'storageServiceRecords';
 /** Keys of records read from the server (written by another device) that no pull has reported yet. A write also reads new records, so this outlives one call. Unset until the first pull. */
 const UNREPORTED_KEY = 'storageServiceUnreported';
 
-export interface StorageContactRecord {
+interface StorageContactRecord {
   /** Another device wrote this record since the last pull. Chat-list state (archive, mute, pins) is only applied from changed records, so a local change made since then isn't undone. */
   changed: boolean;
   aci?: string;
@@ -56,7 +56,7 @@ export interface StorageContactRecord {
   nicknameFamilyName?: string;
 }
 
-export interface StorageGroupV2Record {
+interface StorageGroupV2Record {
   changed: boolean;
   masterKey: Uint8Array;
   blocked?: boolean;
@@ -68,13 +68,13 @@ export interface StorageGroupV2Record {
   notifyForMentionsIfMuted?: boolean;
 }
 
-export interface StoragePinnedConversation {
+interface StoragePinnedConversation {
   aci?: string;
   e164?: string;
   groupMasterKey?: Uint8Array;
 }
 
-export interface StorageAccountRecord {
+interface StorageAccountRecord {
   changed: boolean;
   profileKey?: Uint8Array;
   givenName?: string;
@@ -103,7 +103,7 @@ function fromOptionalBool(v: OptionalBool): boolean | undefined {
   return v === OptionalBool.ENABLED ? true : v === OptionalBool.DISABLED ? false : undefined;
 }
 
-export function toOptionalBool(v: boolean | undefined): OptionalBool {
+function toOptionalBool(v: boolean | undefined): OptionalBool {
   return v === true ? OptionalBool.ENABLED : v === false ? OptionalBool.DISABLED : OptionalBool.UNSET;
 }
 
@@ -120,7 +120,7 @@ export function setNotifyForMentionsIfMuted(g: GroupV2Record, notify: boolean | 
   g.dontNotifyForMentionsIfMuted = notify === false;
 }
 
-export interface StorageSyncResult {
+interface StorageSyncResult {
   version: number;
   contacts: StorageContactRecord[];
   groupsV2: StorageGroupV2Record[];
@@ -161,7 +161,7 @@ export async function decryptStorageValue(key: Uint8Array, data: Uint8Array): Pr
   return aesGcmDecrypt(key, data.subarray(0, 12), data.subarray(12));
 }
 
-export async function encryptStorageValue(key: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
+async function encryptStorageValue(key: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
   const iv = randomBytes(12);
   return concatBytes(iv, await aesGcmEncrypt(key, iv, plaintext));
 }

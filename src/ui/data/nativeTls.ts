@@ -29,7 +29,7 @@ export function onNativeTlsChange(fn: (s: NativeTlsState) => void): () => void {
   return () => listeners.delete(fn);
 }
 
-export function isCdnUrl(url: string): boolean {
+function isCdnUrl(url: string): boolean {
   try {
     const u = new URL(url);
     return u.protocol === 'https:' && !u.port && CDN_HOSTS.includes(u.host);

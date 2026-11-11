@@ -4,8 +4,8 @@ import { Mp3Encoder } from '@breezystack/lamejs';
 import { readDataUri } from './attachments';
 import type { OutgoingFile } from './store';
 
-export const VOICE_RATE = 16000;
-export const MAX_VOICE_MS = 15 * 60 * 1000;
+const VOICE_RATE = 16000;
+const MAX_VOICE_MS = 15 * 60 * 1000;
 const MP3_KBPS = 32;
 const MP3_FRAME = 1152;
 const FRAMES_PER_YIELD = 50;

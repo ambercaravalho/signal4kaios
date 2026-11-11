@@ -7,7 +7,7 @@ import type { SignalProtocolStore } from '../protocol/store';
 const TWO_HOURS = 2 * 3600;
 const TWO_DAYS = 2 * 86400;
 /** Signal-Desktop's MAX_SENDER_KEY_EXPIRE_DURATION: a sender key older than this is replaced. */
-export const SENDER_KEY_MAX_AGE_MS = 90 * 86400 * 1000;
+const SENDER_KEY_MAX_AGE_MS = 90 * 86400 * 1000;
 
 /** Endorsements for one group's members, valid until `expiration` (epoch seconds). */
 export interface GroupSendEndorsements {

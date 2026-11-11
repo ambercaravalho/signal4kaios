@@ -3,7 +3,7 @@
 import { type AttachmentPointer, AttachmentPointer_Flags } from '../gen/SignalService_pb';
 
 /** `audioWaveform` in SignalService.proto: at most 100 bars, each 0 to 255. */
-export const MAX_WAVEFORM_LENGTH = 100;
+const MAX_WAVEFORM_LENGTH = 100;
 const MAX_AUDIO_SECONDS = 24 * 3600;
 const MAX_EDGE = 20000;
 /** Blurhash's base 83 alphabet; Signal's hashes are a few dozen characters. */

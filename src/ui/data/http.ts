@@ -128,7 +128,7 @@ function send(method: string, url: string, headers: Record<string, string>, body
 }
 
 /** A JSON request to a Signal service path. Resolves to the parsed body (or a Blob with `binary`); rejects with an `HttpError`. */
-export function request(method: string, path: string, body: unknown, opts: HostHttpOptions & { binary?: boolean } = {}): Promise<any> {
+function request(method: string, path: string, body: unknown, opts: HostHttpOptions & { binary?: boolean } = {}): Promise<any> {
   const base = (opts.baseUrl || config.serverUrl()).replace(/\/+$/, '');
   const headers: Record<string, string> = {};
   let isActiveToken = false;
@@ -185,7 +185,7 @@ export function request(method: string, path: string, body: unknown, opts: HostH
 }
 
 /** A raw binary request (CDN attachments, Storage Service protobufs). Rejects on non-2xx with `status` set. */
-export function rawRequest(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<HostRawResponse> {
+function rawRequest(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<HostRawResponse> {
   return send(method, url, headers || {}, body || null, timeout || 60000).then((res) => {
     if (res.status >= 200 && res.status < 300) return { status: res.status, body: res.body, location: res.header('Location') };
     const err: HttpError = new Error('HTTP ' + res.status);
@@ -195,7 +195,7 @@ export function rawRequest(method: string, url: string, body?: Uint8Array | null
   });
 }
 
-export function rawBinary(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<Uint8Array> {
+function rawBinary(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<Uint8Array> {
   return rawRequest(method, url, body, headers, timeout).then((res) => res.body);
 }
 

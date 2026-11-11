@@ -1,7 +1,7 @@
 /* Account and app settings in localStorage (`s4k.config`). The active account's credentials sit at the top level; `accounts` holds every saved account so the user can switch, and each account has its own IndexedDB. */
 
 const KEY = 's4k.config';
-export const DEFAULT_SIGNAL_SERVER = 'https://chat.signal.org';
+const DEFAULT_SIGNAL_SERVER = 'https://chat.signal.org';
 
 export interface SavedAccount {
   number: string;
@@ -16,7 +16,7 @@ export interface SavedAccount {
 export type ThemeName = 'light' | 'dark';
 
 export type TextSize = 'small' | 'normal' | 'large' | 'xlarge';
-export const TEXT_SIZES: TextSize[] = ['small', 'normal', 'large', 'xlarge'];
+const TEXT_SIZES: TextSize[] = ['small', 'normal', 'large', 'xlarge'];
 
 /** The screen lock PIN's salted hash, how long the app may sit in the background before locking, and the wrong-PIN count. */
 export interface ScreenLockConfig {

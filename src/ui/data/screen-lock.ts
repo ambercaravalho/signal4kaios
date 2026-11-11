@@ -7,7 +7,7 @@ export const PIN_MIN = 4;
 export const PIN_MAX = 8;
 /** Seconds in the background before the app locks; 0 locks as soon as it's hidden. */
 export const LOCK_AFTER_OPTIONS = [0, 60, 300, 900, 1800, 3600];
-export const DEFAULT_LOCK_AFTER = 60;
+const DEFAULT_LOCK_AFTER = 60;
 const PBKDF2_ITERATIONS = 100000;
 const FREE_ATTEMPTS = 3;
 const FIRST_DELAY_MS = 30000;

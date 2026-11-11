@@ -27,7 +27,7 @@ export interface DecryptedProfile {
   unrestrictedUnidentifiedAccess?: boolean;
 }
 
-export async function encryptProfile(data: Uint8Array, profileKey: Uint8Array): Promise<Uint8Array> {
+async function encryptProfile(data: Uint8Array, profileKey: Uint8Array): Promise<Uint8Array> {
   if (profileKey.length !== 32) throw new Error('Got invalid length profile key');
   const iv = randomBytes(12);
   const ct = await aesGcmEncrypt(profileKey, iv, data);
@@ -230,7 +230,7 @@ export interface ProfileAvatarForm {
 const FORM_FIELDS = ['key', 'credential', 'acl', 'algorithm', 'date', 'policy', 'signature'] as const;
 
 /** The server's upload form, or an error: every field must be present, and since each lands inside the multipart body, only printable ASCII without spaces is accepted. */
-export function parseAvatarForm(res: unknown): ProfileAvatarForm {
+function parseAvatarForm(res: unknown): ProfileAvatarForm {
   if (!res || typeof res !== 'object') throw new Error('Signal server returned no avatar upload form');
   const raw = res as Record<string, unknown>;
   const out = {} as ProfileAvatarForm;
@@ -271,7 +271,7 @@ export function avatarUploadBody(form: ProfileAvatarForm, encrypted: Uint8Array,
 }
 
 /** POST an encrypted avatar to CDN 0 with the server's form; resolves to the avatar's path. */
-export async function uploadProfileAvatar(httpBinary: SignalHttpBinaryFn, form: ProfileAvatarForm, encrypted: Uint8Array, cdnUrl = DEFAULT_SIGNAL_CDN): Promise<string> {
+async function uploadProfileAvatar(httpBinary: SignalHttpBinaryFn, form: ProfileAvatarForm, encrypted: Uint8Array, cdnUrl = DEFAULT_SIGNAL_CDN): Promise<string> {
   const { body, contentType } = avatarUploadBody(form, encrypted);
   await httpBinary('POST', `${cdnUrl}/`, body, { 'Content-Type': contentType }, 60000);
   return form.key;

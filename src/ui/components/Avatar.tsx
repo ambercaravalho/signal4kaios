@@ -48,7 +48,7 @@ export function avatarColorIndex(id: { aci?: string; e164?: string; groupId?: st
   return idx;
 }
 
-export function avatarColorFor(conv: Pick<Conversation, 'id' | 'type' | 'groupInternalId'>): number {
+function avatarColorFor(conv: Pick<Conversation, 'id' | 'type' | 'groupInternalId'>): number {
   if (conv.type === 'group') return avatarColorIndex({ groupId: conv.groupInternalId });
   const c = contactByKey(conv.id);
   const aci = (c && c.uuid) || (UUID_RE.test(conv.id) ? conv.id : '');

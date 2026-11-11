@@ -6,7 +6,7 @@ import { isAci } from '../net/proto';
 import type { SignalProtocolStore } from '../protocol/store';
 
 /** Signal-Desktop's ReportSpamJobData caps one report at 1000 messages. */
-export const REPORT_SPAM_MAX_GUIDS = 1000;
+const REPORT_SPAM_MAX_GUIDS = 1000;
 
 /** Reports each message (by its server GUID) from `aci`; `token` is the base64 reporting token the server last sent with their messages. */
 export async function reportSpam(

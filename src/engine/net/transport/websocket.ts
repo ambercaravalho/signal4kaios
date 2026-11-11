@@ -17,7 +17,7 @@ const OP_CLOSE = 0x8;
 const OP_PING = 0x9;
 const OP_PONG = 0xa;
 
-export interface CloseEventLike {
+interface CloseEventLike {
   code: number;
   reason: string;
   wasClean: boolean;

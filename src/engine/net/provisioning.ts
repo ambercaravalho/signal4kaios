@@ -20,7 +20,7 @@ import { DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SIGNAL_USER_AGENT, SignalHttp
 import { net, SOCKET_OPEN, SocketLike } from './transport';
 
 /** Signal-Desktop `getCapabilities` for a linked device without a PIN. */
-export function linkedDeviceCapabilities(hasE164: boolean): Record<string, boolean> {
+function linkedDeviceCapabilities(hasE164: boolean): Record<string, boolean> {
   return {
     attachmentBackfill: false,
     spqr: true,
@@ -30,7 +30,7 @@ export function linkedDeviceCapabilities(hasE164: boolean): Record<string, boole
 }
 
 /** Signal-Desktop `encryptDeviceName`: SIV-style AES-256-CTR under an ECDH secret with our ACI identity key, serialized as a DeviceName proto. */
-export async function encryptDeviceName(deviceName: string, identityPublic: Uint8Array): Promise<Uint8Array> {
+async function encryptDeviceName(deviceName: string, identityPublic: Uint8Array): Promise<Uint8Array> {
   const plaintext = new TextEncoder().encode(deviceName);
   const ephemeral = libsignal.keyPairGenerate() as { publicKey: Uint8Array; privateKey: Uint8Array };
   const masterSecret = libsignal.calculateAgreement(identityPublic, ephemeral.privateKey);
@@ -66,7 +66,7 @@ function identityKeyPair(pub?: Uint8Array, priv?: Uint8Array): KeyPair | undefin
 }
 
 /** The account master key: derived from the Account Entropy Pool when the primary sends one, else the deprecated raw `masterKey` field. */
-export function provisionedMasterKey(prov: ProvisionMessage): Uint8Array | undefined {
+function provisionedMasterKey(prov: ProvisionMessage): Uint8Array | undefined {
   if (prov.accountEntropyPool) {
     try {
       return libsignal.accountEntropyPoolDeriveMasterKey(prov.accountEntropyPool);
@@ -91,7 +91,7 @@ export interface ProvisioningSession {
 }
 
 /** Completes linking once the ProvisionMessage has been decrypted: registers this device and uploads its PreKeys. */
-export async function finishLinking(
+async function finishLinking(
   store: SignalProtocolStore,
   httpRequest: SignalHttpJsonFn,
   prov: ProvisionMessage,

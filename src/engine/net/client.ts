@@ -45,7 +45,7 @@ import { AttachmentDescriptor, attachmentCdnKey, decodeAttachmentDescriptor, dec
 import type { TrustLevel } from '../protocol/store';
 
 /** Thrown when a recipient's identity key changed after the user marked it verified: sending waits until the user reviews the new safety number. */
-export class IdentityChangedError extends Error {
+class IdentityChangedError extends Error {
   constructor(readonly recipient: string) {
     super(`Safety number with ${recipient} changed; verify it before sending`);
     this.name = 'UntrustedIdentity';

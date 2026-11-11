@@ -47,7 +47,7 @@ function drawScaled(src: CanvasImageSource, w: number, h: number, canvas: HTMLCa
   ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
 }
 
-export function decodeQrBlob(blob: Blob): Promise<string | null> {
+function decodeQrBlob(blob: Blob): Promise<string | null> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
@@ -72,7 +72,7 @@ export function decodeQrBlob(blob: Blob): Promise<string | null> {
 }
 
 /** Ask the system for a photo (camera or gallery) and decode a QR code from it. */
-export function pickQrPhoto(): Promise<string | null | undefined> {
+function pickQrPhoto(): Promise<string | null | undefined> {
   return openActivity('pick', { type: ['image/*'] }).then(
     (res) => (res && res.blob ? decodeQrBlob(res.blob) : undefined),
     () => undefined

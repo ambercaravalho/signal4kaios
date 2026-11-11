@@ -1,18 +1,13 @@
-/* Symmetric primitives: HKDF-SHA256, HMAC-SHA256, SHA-256, SHA-512, AES-CBC, AES-GCM, AES-CTR.
+/* Symmetric primitives: HKDF-SHA256, HMAC-SHA256, SHA-256, AES-CBC, AES-GCM, AES-CTR.
  * Uses @noble/hashes for synchronous HKDF/HMAC/SHA and WebCrypto (crypto.subtle) for AES.
  */
 
-import { sha256, sha512 } from '@noble/hashes/sha2.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
-import { concatBytes } from '../bytes';
 
 export function hashSha256(data: Uint8Array): Uint8Array {
   return sha256(data);
-}
-
-export function hashSha512(data: Uint8Array): Uint8Array {
-  return sha512(data);
 }
 
 export function hmacSha256(key: Uint8Array, data: Uint8Array): Uint8Array {

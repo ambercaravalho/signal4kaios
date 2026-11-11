@@ -38,7 +38,7 @@ export function lastMessageAt(): number {
   return lastMessage;
 }
 
-export function state(): 'open' | 'connecting' | 'closed' {
+function state(): 'open' | 'connecting' | 'closed' {
   if (sock && sock.readyState === SOCK_OPEN) return 'open';
   if (sock && sock.readyState === SOCK_CONNECTING) return 'connecting';
   return 'closed';

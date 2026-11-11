@@ -96,7 +96,7 @@ function lastPathComponent(url: string): string {
 }
 
 /** Desktop's parseMetadata: Open Graph first, then the page's own title, description, and icons. */
-export function parseMetadata(doc: PreviewDocument, href: string): { title: string; description: string; imageHref: string | null; date?: number } | null {
+function parseMetadata(doc: PreviewDocument, href: string): { title: string; description: string; imageHref: string | null; date?: number } | null {
   const og = (keys: string[]) => {
     for (const k of keys) {
       const v = (doc.meta('property', k) || '').trim();

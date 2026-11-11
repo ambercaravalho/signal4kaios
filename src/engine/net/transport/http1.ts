@@ -234,7 +234,7 @@ export class ResponseParser {
   }
 }
 
-export function assertSafeHeader(name: string, value: string): void {
+function assertSafeHeader(name: string, value: string): void {
   if (!TOKEN.test(name)) throw new TransportError('protocol', `invalid header name ${JSON.stringify(name)}`);
   if (/[\r\n\0]/.test(value)) throw new TransportError('protocol', `invalid value for header ${name}`);
 }

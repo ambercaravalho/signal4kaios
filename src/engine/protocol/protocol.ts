@@ -8,7 +8,7 @@ import { libsignal } from './libsignal';
 import type { KeyPair, SignalProtocolStore } from './store';
 
 /** Signal production sealed-sender trust roots (public keys, from Signal-Desktop config/production.json). */
-export const SEALED_SENDER_TRUST_ROOTS = [
+const SEALED_SENDER_TRUST_ROOTS = [
   'BXu6QIKVz5MA8gstzfOgRQGqyLqOwNKHL6INkv3IHWMF',
   'BUkY0I+9+oPgDCn4+Ac6Iu813yvqkDr/ga8DzLxFxuk6',
 ];
@@ -18,15 +18,15 @@ export const CIPHERTEXT_PREKEY = 3;
 export const CIPHERTEXT_SENDERKEY = 7;
 export const CIPHERTEXT_PLAINTEXT = 8;
 
-export const FINGERPRINT_VERSION = 2;
-export const FINGERPRINT_ITERATIONS = 5200;
+const FINGERPRINT_VERSION = 2;
+const FINGERPRINT_ITERATIONS = 5200;
 
 /** Stable error code of a libsignal failure (`UntrustedIdentity`, `SessionNotFound`, `DuplicatedMessage`, ...), or '' for other errors. */
 export function errorCode(e: unknown): string {
   return e && typeof (e as Error).name === 'string' && (e as Error).name !== 'Error' ? (e as Error).name : '';
 }
 
-export function protocolError(code: string, message: string): Error {
+function protocolError(code: string, message: string): Error {
   const err = new Error(message);
   err.name = code;
   return err;

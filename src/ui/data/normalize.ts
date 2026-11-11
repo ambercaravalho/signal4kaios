@@ -149,7 +149,7 @@ function parseStyleEntry(e: any): StyleRange | null {
   return null;
 }
 
-export function stylesOf(dm: any, nameOf: NameOf): StyleRange[] {
+function stylesOf(dm: any, nameOf: NameOf): StyleRange[] {
   const raw = dm.textStyles || dm.textStyle;
   if (!raw) return [];
   const out: StyleRange[] = [];
