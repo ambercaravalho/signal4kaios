@@ -2,12 +2,66 @@
 //! SenderCertificate validation against Signal's published trust roots.
 
 use libsignal_protocol::{
-    PublicKey, SenderCertificate, Timestamp, sealed_sender_decrypt_to_usmc, sealed_sender_encrypt,
+    CiphertextMessageType, ContentHint, ProtocolAddress, PublicKey, SenderCertificate, ServiceId, SessionRecord,
+    Timestamp, UnidentifiedSenderMessageContent, sealed_sender_decrypt_to_usmc, sealed_sender_encrypt,
+    sealed_sender_multi_recipient_encrypt,
 };
 use wasm_bindgen::prelude::*;
 
 use crate::store::{ProtocolStore, address, device_u32};
 use crate::{Obj, invalid, js_error, protocol_error, ready, rng, system_time};
+
+/// Seals one SenderKeyMessage for many devices at once, for `PUT /v1/messages/multi_recipient`. `names[i]`/`devices[i]`
+/// is each recipient device; every one needs a session in the store. `group_id` (empty for none) and `content_hint` go
+/// into the sealed content as in Signal-Desktop's sendToGroup.
+#[wasm_bindgen(js_name = sealedSenderMultiRecipientEncrypt)]
+pub fn sealed_sender_multi_recipient_encrypt_js(
+    store: &mut ProtocolStore,
+    names: js_sys::Array,
+    devices: &[u32],
+    sender_certificate: &[u8],
+    sender_key_message: &[u8],
+    content_hint: u32,
+    group_id: &[u8],
+) -> Result<Vec<u8>, JsValue> {
+    if names.length() as usize != devices.len() || devices.is_empty() {
+        return Err(invalid("names and devices must be the same non-empty length"));
+    }
+    let certificate = SenderCertificate::deserialize(sender_certificate).map_err(protocol_error)?;
+    let usmc = UnidentifiedSenderMessageContent::new(
+        CiphertextMessageType::SenderKey,
+        certificate,
+        sender_key_message.to_vec(),
+        ContentHint::from(content_hint),
+        if group_id.is_empty() { None } else { Some(group_id.to_vec()) },
+    )
+    .map_err(protocol_error)?;
+    let mut addresses: Vec<ProtocolAddress> = Vec::with_capacity(devices.len());
+    for (name, device) in names.iter().zip(devices) {
+        let name = name.as_string().ok_or_else(|| invalid("names must be strings"))?;
+        addresses.push(address(&name, *device)?);
+    }
+    let mut sessions: Vec<SessionRecord> = Vec::with_capacity(addresses.len());
+    for a in &addresses {
+        let record = store
+            .sessions
+            .records
+            .get(&(a.name().to_owned(), device_u32(a.device_id())))
+            .ok_or_else(|| js_error("SessionNotFound", format!("no session for {a}")))?;
+        sessions.push(record.clone());
+    }
+    let address_refs: Vec<&ProtocolAddress> = addresses.iter().collect();
+    let session_refs: Vec<&SessionRecord> = sessions.iter().collect();
+    ready(sealed_sender_multi_recipient_encrypt(
+        &address_refs,
+        &session_refs,
+        Vec::<ServiceId>::new(),
+        &usmc,
+        &store.identities,
+        &mut rng(),
+    ))
+    .map_err(protocol_error)
+}
 
 /// Seals an already padded `Content` for `name.device` using the existing session. The inner message type (PreKey or
 /// Whisper) is chosen by libsignal from the session state.

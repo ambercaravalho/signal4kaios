@@ -13,6 +13,16 @@ export interface SavedAccount {
 
 export type ThemeName = 'light' | 'dark';
 
+/** The screen lock PIN's salted hash, how long the app may sit in the background before locking, and the wrong-PIN count. */
+export interface ScreenLockConfig {
+  salt: string;
+  hash: string;
+  iterations: number;
+  lockAfter: number;
+  failures: number;
+  retryAt: number;
+}
+
 interface ConfigData {
   serverUrl?: string;
   number?: string;
@@ -29,7 +39,6 @@ interface ConfigData {
   sendReadReceipts?: boolean;
   styledText?: boolean;
   typingIndicators?: boolean;
-  /** Synced from the phone; Beacon doesn't make link previews yet. */
   linkPreviews?: boolean;
   sealedSenderIndicators?: boolean;
   /** Seconds; the disappearing-message timer new 1:1 chats start with. */
@@ -37,6 +46,7 @@ interface ConfigData {
   keepMutedArchived?: boolean;
   sharePhoneNumber?: boolean;
   findableByNumber?: boolean;
+  screenLock?: ScreenLockConfig;
   accounts?: SavedAccount[];
   [k: string]: unknown;
 }
@@ -148,6 +158,19 @@ export const config = {
   /** Muted chats stay archived when new messages arrive, as in Signal. */
   keepMutedArchived(): boolean {
     return read().keepMutedArchived !== false;
+  },
+
+  screenLock(): ScreenLockConfig | null {
+    const s = read().screenLock;
+    if (!s || typeof s.salt !== 'string' || typeof s.hash !== 'string' || !(s.iterations > 0)) return null;
+    return {
+      salt: s.salt,
+      hash: s.hash,
+      iterations: s.iterations,
+      lockAfter: typeof s.lockAfter === 'number' && s.lockAfter >= 0 ? s.lockAfter : 60,
+      failures: typeof s.failures === 'number' && s.failures > 0 ? s.failures : 0,
+      retryAt: typeof s.retryAt === 'number' && s.retryAt > 0 ? s.retryAt : 0,
+    };
   },
 
   isConfigured(): boolean {

@@ -167,6 +167,20 @@ describe('store', () => {
     assert.deepEqual(rec.mentions, [{ name: 'Bob', uuid: 'aci-bob' }]);
   });
 
+  it('sends a link preview only for a link that is in the message', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 5200 };
+    };
+    const preview = { url: 'https://signal.org/blog', title: 'Signal Blog', description: 'News', date: 1700000000000, image: { data: new Uint8Array([1, 2, 3]), contentType: 'image/jpeg' } };
+    const rec = await store.sendText(ALICE, 'read https://signal.org/blog.', null, [], preview);
+    assert.deepEqual(sent[0].preview, { url: 'https://signal.org/blog', title: 'Signal Blog', description: 'News', date: 1700000000000, image: 'data:image/jpeg;base64,AQID' });
+    assert.deepEqual(rec.preview, { url: 'https://signal.org/blog', title: 'Signal Blog', description: 'News' });
+    await store.sendText(ALICE, 'no link here', null, [], preview);
+    assert.equal(sent[1].preview, undefined);
+  });
+
   it('keeps a chat draft until it is cleared', () => {
     store.setDraft(ALICE, 'half a thought', [{ name: 'Bob', uuid: 'aci-bob' }]);
     assert.equal(store.conversation(ALICE)!.draft, 'half a thought');

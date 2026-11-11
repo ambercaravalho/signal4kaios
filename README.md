@@ -26,7 +26,7 @@
 </div>
 
 > [!NOTE]
-> Beacon is a work in progress. Everyday messaging, groups, and sync work, but calls, stories, sending link previews, and some other Signal features don't yet. The [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) tracks everything that's missing.
+> Beacon is a work in progress. Everyday messaging, groups, and sync work, but calls, stories, and some other Signal features don't yet. The [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) tracks everything that's missing.
 
 ## Why Beacon
 
@@ -53,11 +53,12 @@ The [setup guide](docs/setup.md) covers every install route and what to do if so
 | Area | What you get |
 | --- | --- |
 | **Encryption** | libsignal on the phone: PQXDH, Double Ratchet, Sealed Sender, Sender Keys, safety numbers, and AES-256 attachment encryption |
-| **Messaging** | 1:1 and group chats, reactions, replies, edits, delete for everyone, read receipts, typing indicators, and text formatting |
+| **Messaging** | 1:1 and group chats, reactions, replies, edits, delete for everyone, read receipts, typing indicators, text formatting, polls, and link previews |
+| **Privacy** | A screen lock PIN, who can see and find your number, read receipt and typing controls, and blocking |
 | **Disappearing messages** | Per-chat timer, a live countdown on each message, and automatic deletion |
 | **Media** | Encrypted photos, video, voice notes, and files via Signal's CDNs |
 | **Sync** | Contacts, groups, blocked list, and profiles from Signal's Storage Service and your primary device; nicknames, blocking, archive, mute, pinned chats, and your username sync back |
-| **Groups** | Rename, description, timer, members, admins, invites, permissions, group links, leave, and block, as real Groups V2 changes |
+| **Groups** | Rename, description, timer, members, admins, invites, permissions, group links, joining by link, leave, and block, as real Groups V2 changes |
 | **Organization** | Multiple accounts, archived, muted, and pinned chats, pinned messages, a Signal username with its QR code, and local search |
 
 For what isn't supported yet, see [Known limitations](docs/user-guide.md#known-limitations) and the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap).

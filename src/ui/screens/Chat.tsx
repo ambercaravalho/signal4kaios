@@ -17,6 +17,7 @@ import { ATTACHMENT_CACHE_KEEP, autoDownloads, cachedAttachment, isImage, loadAt
 import { config } from '../data/config';
 import { db } from '../data/db';
 import { fmtBytes, fmtClock, fmtDay, fmtMsgTime } from '../data/format';
+import { fetchLinkPreview, previewCandidate, type FetchedPreview } from '../data/link-preview-fetch';
 import { openUrl } from '../data/platform';
 import * as store from '../data/store';
 import { extractUrls, isJumboEmoji, type PickedMention } from '../data/styled';
@@ -24,6 +25,7 @@ import type { Attachment, ContactCard, Conversation, LinkPreview, Message, Messa
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
+import { isGroupLink, JoinGroupScreen } from './JoinGroup';
 import { MessageDetailsScreen, PollVotesScreen } from './MessageDetails';
 import { SafetyNumberScreen } from './SafetyNumber';
 import { ForwardScreen } from './SearchList';
@@ -38,6 +40,7 @@ const TYPING_IDLE_MS = 5000;
 /** Signal allows edits and delete-for-everyone for 24 hours. */
 const CHANGE_WINDOW_MS = 24 * 3600 * 1000;
 const DRAFT_SAVE_MS = 800;
+const PREVIEW_DEBOUNCE_MS = 1000;
 const LATEST = Number.MAX_SAFE_INTEGER;
 /** How far Up and Down scroll through a message taller than the screen before focus moves on. */
 const STEP_PX = 60;
@@ -417,6 +420,22 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   const readOnly = !blocked && !request && !canSendIn(group);
   const canCompose = !blocked && !request && !readOnly;
 
+  const [linkPreview, setLinkPreview] = useState<FetchedPreview | null>(null);
+  const dismissedPreview = useRef('');
+  const previewUrl = previewCandidate(draft, { enabled: config.linkPreviews(), plainText: canCompose && !editing && !tray.length });
+  const shownPreview = linkPreview && linkPreview.url === previewUrl ? linkPreview : null;
+  useEffect(() => {
+    if (!previewUrl || previewUrl === dismissedPreview.current) return;
+    let live = true;
+    const t = setTimeout(() => {
+      fetchLinkPreview(previewUrl).then((p) => live && setLinkPreview(p), () => {});
+    }, PREVIEW_DEBOUNCE_MS);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [previewUrl]);
+
   const reloadPinned = () => db.getPinned(convId).then(setPinned, () => {});
   const groupSendId = conv && conv.type === 'group' ? conv.sendId : null;
   const reloadGroup = () => {
@@ -627,7 +646,10 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       store.sendAttachments(convId, files, text, { quote: q }).catch((e) => toast(sendError(e)));
       return;
     }
-    store.sendText(convId, text, q, mentions).catch((e) => toast(sendError(e)));
+    const preview = shownPreview;
+    setLinkPreview(null);
+    dismissedPreview.current = '';
+    store.sendText(convId, text, q, mentions, preview).catch((e) => toast(sendError(e)));
   }
 
   /** Photos, videos, and files wait above the message box until Send; view-once media and voice messages go alone right away. View-once media goes without a caption, so the draft stays in the composer. */
@@ -694,7 +716,8 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   async function openLinks(urls: string[]): Promise<void> {
     const url = urls.length === 1 ? urls[0] : await pick(S.openLink, urls.map((u) => ({ value: u, label: u })), '');
-    if (url) openUrl(url).catch(() => toast(S.errGeneric));
+    if (url && isGroupLink(url)) router.push(JoinGroupScreen, { url });
+    else if (url) openUrl(url).catch(() => toast(S.errGeneric));
   }
 
   function copyText(text: string): void {
@@ -891,6 +914,13 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       canCompose && !editing && { label: S.attach, onSelect: () => attach(false) },
       canCompose && !editing && { label: S.attachViewOnce, onSelect: () => attach(true) },
       tray.length > 0 && { label: S.removeAttachments, danger: true, onSelect: () => setTray([]) },
+      shownPreview && {
+        label: S.removeLinkPreview,
+        onSelect: () => {
+          dismissedPreview.current = shownPreview.url;
+          setLinkPreview(null);
+        },
+      },
       canCompose && { label: S.insertEmoji, onSelect: () => pickEmoji().then((e) => e && insertText(e)) },
       canCompose && conv && conv.type === 'group' && { label: S.mention, onSelect: mention },
       canCompose && conv && conv.type === 'group' && { label: S.createPoll, onSelect: createPoll },
@@ -1034,6 +1064,12 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
           <div class="composer-ctx">
             <div class="composer-ctx-title">{store.attachmentLabel(tray)}</div>
             <div class="composer-ctx-text">{tray.map((f) => f.filename).join(', ')}</div>
+          </div>
+        )}
+        {shownPreview && (
+          <div class="composer-ctx">
+            <div class="composer-ctx-title">{S.linkPreview}</div>
+            <div class="composer-ctx-text">{shownPreview.title}</div>
           </div>
         )}
         {blocked ? (

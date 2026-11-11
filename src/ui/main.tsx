@@ -11,12 +11,14 @@ import * as http from './data/http';
 import { dbg } from './data/log';
 import * as nativeTls from './data/nativeTls';
 import { hasServiceWorker } from './data/platform';
+import * as screenLock from './data/screen-lock';
 import * as store from './data/store';
 import { setupWake } from './data/wake';
 import * as ws from './data/ws';
 import { S } from './strings';
 import { openChat } from './screens/Chat';
 import { HomeScreen } from './screens/Home';
+import { LockGate } from './screens/Lock';
 import { LinkScreen, WelcomeScreen } from './screens/Onboarding';
 import { StartupErrorScreen } from './screens/StartupError';
 import './theme/index.css';
@@ -112,11 +114,13 @@ function boot(): void {
   applyTheme();
   installEngineHost();
   registerServiceWorker();
+  screenLock.install();
   render(
     <>
       <RouterView />
       <SoftkeyBar />
       <ToastHost />
+      <LockGate />
     </>,
     document.getElementById('app')!
   );

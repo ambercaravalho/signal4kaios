@@ -2,11 +2,12 @@
 
 import type { MessageInitShape } from '@bufbuild/protobuf';
 
-import { randomBytes } from '../bytes';
+import { randomBytes, toWebSafeBase64 } from '../bytes';
 import {
   AccessControl_AccessRequired,
   Group,
   GroupAttributeBlobSchema,
+  GroupJoinInfoSchema,
   GroupChange_Actions_AddMemberActionSchema,
   GroupChange_Actions_AddMemberPendingProfileKeyActionSchema,
   GroupChange_Actions_ModifyMemberRoleActionSchema,
@@ -19,11 +20,15 @@ import { libsignal } from '../protocol/libsignal';
 import { create, fromBinary, isAci, toBinary } from '../net/proto';
 import { DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
 import type { SignalProtocolStore } from '../protocol/store';
+import type { StorageMutation } from './storage-service';
 import {
   decodeGroupState,
+  decryptAttribute,
   decryptMemberIds,
+  deriveGroupV2Keys,
   DerivedGroupV2Keys,
   fetchGroup,
+  groupAuthHeaders,
   GroupLinkMode,
   GroupV2Metadata,
   SERVER_PUBLIC_PARAMS,
@@ -38,7 +43,7 @@ type DeleteInit = { deletedUserId: Uint8Array };
 
 /** A failed group change; `name` is the code the UI branches on. */
 export class GroupChangeError extends Error {
-  constructor(code: 'GroupChangeForbidden' | 'GroupChangeConflict' | 'LastAdmin' | 'NotAMember', message: string) {
+  constructor(code: 'GroupChangeForbidden' | 'GroupChangeConflict' | 'LastAdmin' | 'NotAMember' | 'GroupLinkInvalid', message: string) {
     super(message);
     this.name = code;
   }
@@ -266,6 +271,119 @@ export function roleActions(snap: GroupSnapshot, ids: string[], admin: boolean):
     modifyMemberRoles.push({ userId, role: admin ? Member_Role.ADMINISTRATOR : Member_Role.DEFAULT });
   }
   return modifyMemberRoles.length ? { modifyMemberRoles } : null;
+}
+
+/** What a group link shows before joining, from `GET /v2/groups/join/{password}` (Signal-Desktop's getGroupFromLink). */
+export interface GroupJoinInfoView {
+  title: string;
+  description: string;
+  memberCount: number;
+  revision: number;
+  /** An admin has to approve the request. */
+  approvalRequired: boolean;
+  /** We already asked to join and wait for an admin. */
+  pending: boolean;
+}
+
+function linkQuery(password?: Uint8Array): string {
+  return password && password.length ? '?inviteLinkPassword=' + toWebSafeBase64(password) : '';
+}
+
+function linkError(err: any): never {
+  const status = err && err.status;
+  if (status === 403 || status === 404 || status === 423) throw new GroupChangeError('GroupLinkInvalid', 'This group link is no longer valid');
+  throw err;
+}
+
+/** Join info for a link. Without a password it only works while our own join request is pending. */
+export async function fetchGroupJoinInfo(deps: GroupChangeDeps, masterKey: Uint8Array, password?: Uint8Array): Promise<GroupJoinInfoView> {
+  const storageUrl = deps.storageUrl || DEFAULT_STORAGE_SERVER;
+  const keys = deriveGroupV2Keys(masterKey);
+  const headers = await groupAuthHeaders(deps.store, deps.httpJson, keys, deps.serverUrl, deps.serverPublicParams || SERVER_PUBLIC_PARAMS);
+  const path = `${storageUrl}/v2/groups/join/${password && password.length ? toWebSafeBase64(password) : ''}`;
+  const bytes = await deps.httpBinary('GET', path, null, headers, 20000).catch(linkError);
+  const info = fromBinary(GroupJoinInfoSchema, bytes);
+  const access = info.addFromInviteLink;
+  if (!info.pendingAdminApproval && access !== AccessControl_AccessRequired.ANY && access !== AccessControl_AccessRequired.ADMINISTRATOR) {
+    throw new GroupChangeError('GroupLinkInvalid', 'This group link is no longer valid');
+  }
+  const title = decryptAttribute(keys.secretParams, info.title);
+  const description = decryptAttribute(keys.secretParams, info.description);
+  return {
+    title: title && title.case === 'title' ? title.value : '',
+    description: description && description.case === 'descriptionText' ? description.value : '',
+    memberCount: info.memberCount,
+    revision: info.version,
+    approvalRequired: access === AccessControl_AccessRequired.ADMINISTRATOR,
+    pending: info.pendingAdminApproval,
+  };
+}
+
+export interface GroupLinkJoinResult {
+  /** Serialized server-signed GroupChange, or empty when our request was already pending. */
+  groupChange: Uint8Array;
+  revision: number;
+  /** True when we are now a member; false when we wait for an admin. */
+  joined: boolean;
+}
+
+async function patchViaLink(deps: GroupChangeDeps, masterKey: Uint8Array, password: Uint8Array | undefined, init: GroupActionsInit, revision: number): Promise<Uint8Array> {
+  const storageUrl = deps.storageUrl || DEFAULT_STORAGE_SERVER;
+  const keys = deriveGroupV2Keys(masterKey);
+  const headers = await groupAuthHeaders(deps.store, deps.httpJson, keys, deps.serverUrl, deps.serverPublicParams || SERVER_PUBLIC_PARAMS);
+  const actions = create(GroupChange_ActionsSchema, { ...init, version: revision + 1 });
+  const bytes = await deps.httpBinary('PATCH', `${storageUrl}/v2/groups/${linkQuery(password)}`, toBinary(GroupChange_ActionsSchema, actions), headers, 20000);
+  const signed = fromBinary(GroupChangeResponseSchema, bytes).groupChange;
+  if (!signed || signed.actions.length === 0) throw new Error('Storage server returned no group change');
+  const applied = fromBinary(GroupChange_ActionsSchema, signed.actions);
+  if (applied.version !== revision + 1) throw new Error('Storage server returned a group change for the wrong revision');
+  return toBinary(GroupChangeSchema, signed);
+}
+
+/**
+ * Join through a group link with our own profile key credential presentation, as Signal-Desktop's joinViaLink: straight in (addMembers) when the link needs no approval, otherwise a request an admin approves (addMembersPendingAdminApproval). A 409 re-reads the join info and retries once.
+ */
+export async function joinGroupViaLink(deps: GroupChangeDeps, masterKey: Uint8Array, password: Uint8Array, presentation: Uint8Array): Promise<GroupLinkJoinResult> {
+  for (let attempt = 0; ; attempt++) {
+    const info = await fetchGroupJoinInfo(deps, masterKey, password);
+    if (info.pending) return { groupChange: new Uint8Array(0), revision: info.revision, joined: false };
+    const init: GroupActionsInit = info.approvalRequired
+      ? { addMembersPendingAdminApproval: [{ added: { presentation } }] }
+      : { addMembers: [{ added: { presentation, role: Member_Role.DEFAULT } }] };
+    try {
+      const groupChange = await patchViaLink(deps, masterKey, password, init, info.revision);
+      return { groupChange, revision: info.revision + 1, joined: !info.approvalRequired };
+    } catch (err: any) {
+      const status = err && err.status;
+      if ((status === 409 || status === 400) && attempt === 0) continue;
+      if (status === 409) throw new GroupChangeError('GroupChangeConflict', 'The group changed while joining; try again');
+      linkError(err);
+    }
+  }
+}
+
+/** The Storage Service record for a group we joined, so our other devices list it; the record is created when missing. */
+export function joinedGroupMutation(masterKey: Uint8Array): StorageMutation {
+  return { type: 'groupV2', masterKey, update: (g) => { g.whitelisted = true; } };
+}
+
+/** Withdraw our pending join request (deleteMembersPendingAdminApproval for ourselves). */
+export async function cancelGroupJoinRequest(deps: GroupChangeDeps, masterKey: Uint8Array, password?: Uint8Array): Promise<number> {
+  const acc = await deps.store.getAccount();
+  if (!acc) throw new Error('This phone is not linked to a Signal account');
+  const keys = deriveGroupV2Keys(masterKey);
+  for (let attempt = 0; ; attempt++) {
+    const info = await fetchGroupJoinInfo(deps, masterKey, password);
+    if (!info.pending) return info.revision;
+    const init: GroupActionsInit = { deleteMembersPendingAdminApproval: [{ deletedUserId: libsignal.groupEncryptServiceId(keys.secretParams, acc.aci) }] };
+    try {
+      await patchViaLink(deps, masterKey, password, init, info.revision);
+      return info.revision + 1;
+    } catch (err: any) {
+      if (err && err.status === 409 && attempt === 0) continue;
+      linkError(err);
+    }
+  }
 }
 
 /** Leave the group, decline an invite, or cancel a join request. The last admin has to promote someone first, as in Signal-Desktop. */

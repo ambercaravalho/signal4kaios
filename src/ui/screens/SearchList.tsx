@@ -21,6 +21,7 @@ import type { Contact, GroupRef, Message } from '../data/types';
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatScreen, openChat } from './Chat';
+import { isGroupLink, JoinGroupScreen } from './JoinGroup';
 
 /** A search field above a list of results. Up and Down move between them; OK on the field jumps into the results. */
 export function SearchList(props: { title: string; placeholder: string; query: string; onQuery(q: string): void; rows: Row[]; empty?: ComponentChildren; right?: string | null; onRight?(): void }) {
@@ -117,6 +118,10 @@ export function NewChatScreen() {
   async function scan(): Promise<void> {
     const text = await scanQr(S.scanCode);
     if (!text) return;
+    if (isGroupLink(text)) {
+      router.push(JoinGroupScreen, { url: text.trim() });
+      return;
+    }
     const m = /signal\.me\/#p\/(\+?\d+)/.exec(text) || /^(\+?\d[\d\s()-]{5,})$/.exec(text.trim());
     if (m) setQuery(m[1]);
     else toast(S.scanUnsupported, 4000);

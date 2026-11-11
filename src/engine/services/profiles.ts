@@ -187,6 +187,23 @@ export async function fetchExpiringProfileKeyCredential(
   return received.credential;
 }
 
+/**
+ * Take on the profile key the primary phone wrote to `AccountRecord.profileKey`, as Signal-Desktop's `mergeAccountRecord` does: the phone rotates it (after a block, for instance) and linked devices follow. Our cached credential for the old key is dropped. Returns whether the key changed.
+ */
+export async function adoptOwnProfileKey(store: SignalProtocolStore, profileKey: Uint8Array | undefined): Promise<boolean> {
+  if (!profileKey || profileKey.length !== 32) return false;
+  const acc = await store.getAccount();
+  if (!acc || (acc.profileKey && toBase64(acc.profileKey) === toBase64(profileKey))) return false;
+  // SECURITY-REVIEW: the profile key is account key material; it's saved only in the protocol store and never logged.
+  await store.saveAccount({ ...acc, profileKey: new Uint8Array(profileKey) });
+  const cache = (await store.loadValue('profileKeyCredentials')) as Record<string, StoredProfileKeyCredential> | undefined;
+  if (cache && cache[acc.aci]) {
+    delete cache[acc.aci];
+    await store.storeValue('profileKeyCredentials', cache);
+  }
+  return true;
+}
+
 /** Download a profile avatar from CDN 0 and decrypt it with the owner's profile key. */
 export async function downloadAndDecryptProfileAvatar(
   httpBinary: SignalHttpBinaryFn,

@@ -52,7 +52,7 @@ OK on a message opens its options. The first one is what the message is most lik
 - **Pin message** (for everyone in the chat), **Message details**, and **Delete for me**, which also deletes the message on your other linked devices.
 - **Message details** shows the full text, when it was sent, its status, reactions, when it disappears, earlier versions of an edited message, and **Delivered privately** when **Private delivery icon** is on in **Settings → Privacy**.
 - **Shared contacts** show as a card; OK offers **Message** them when they're in your Signal contacts, or **Copy number**.
-- **Link previews** that someone else's phone attached show the page's title and site under the text, with its picture once it's downloaded. Beacon doesn't add previews to links you send.
+- **Link previews** show the page's title and site under the text, with its picture once it's downloaded. When you type a link, **Link preview** and the page's title appear above the message box after a moment, and the preview goes with the message; **Options → Remove link preview** sends just the link. Messages with attachments don't get previews. The phone fetches the page itself, as Signal does, so the website sees that it was opened; turn this off in **Settings → Chats → Generate link previews**.
 - **Polls** show their question, answers, and vote counts. OK → **Vote** picks your answer (or answers, when the poll allows several); vote again to change it, or **Remove my vote**. **View votes** lists who picked what, and the person who made the poll can **End poll**.
 
 **Options** in a chat: Attach, Attach view-once photo or video, Insert emoji, Mention (groups), Create poll (groups), Pinned messages, Mute, and Chat settings.
@@ -93,7 +93,9 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 
 ## Starting a chat and searching
 
-**New chat** lists your contacts and groups and filters them as you type a name. Type a username to get **Find by username**, or a number to get **Find by phone number**. **Scan** (right softkey) reads a QR code with a phone number in it.
+**New chat** lists your contacts and groups and filters them as you type a name. Type a username to get **Find by username**, or a number to get **Find by phone number**. **Scan** (right softkey) reads a QR code with a phone number or a group link in it.
+
+**Joining a group by its link**: **Open link** on a `signal.group` link in a chat, or scanning a group's QR code, shows the group's name, how many members it has, and its description. **Join** adds you right away; when the group needs an admin's approval it's **Request to join** instead, and the same screen then offers **Cancel request** until an admin decides. Once you're in, the group opens with a **You joined the group via the group link** line.
 
 **Search** (in the chats list's Options) finds chats by name and messages by text. Messages are searched on this phone only, because Signal doesn't keep your history on its servers.
 
@@ -111,8 +113,8 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 | --- | --- |
 | **Profile** (top row) | Your name, About, and About emoji (Signal requires a name), Username, your **QR code or link**, and Delete username |
 | **Linked device** | Which number this phone is linked as, Sync with your phone, saved accounts (OK switches), Add account, Unlink this phone, and Delete all data |
-| **Chats** | Text formatting; Keep muted chats archived |
-| **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Blocked |
+| **Chats** | Text formatting; Keep muted chats archived; Generate link previews |
+| **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Screen lock; Blocked |
 | **Appearance** | Theme: light or dark |
 | **Help** | Version, User guide, Source code |
 | **Debug** | Technical details for troubleshooting (see below) |
@@ -120,6 +122,10 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 **Usernames** have a name and a number, like `name.01`. Type just the name to get a number picked for you, or type the number you want.
 
 **Privacy → Phone number** has **Who can see my number** and **Who can find me by number**, each **Everybody** or **Nobody**. With **Nobody** seeing it, only people who already have your number see it; with **Nobody** finding you, people can't start a chat with you using your number. While everybody can see your number, everybody can also find you by it, as in Signal. Both settings are shared with your phone and other devices.
+
+**Privacy → Screen lock** asks for a PIN whenever Beacon opens. Choose 4 to 8 digits and enter them twice. **Lock after** sets how long Beacon can be in the background before it asks again: immediately, 1, 5, 15, or 30 minutes, or 1 hour (1 minute to start with). Type the PIN on the keypad and press **Unlock**. After 3 wrong PINs in a row you wait 30 seconds before the next try, and the wait doubles with each wrong PIN, up to 15 minutes. Turning the lock off asks for the PIN. Screen lock only hides Beacon: your messages aren't encrypted with the PIN, and notifications still show. If you forget the PIN, **Forgot PIN** on the lock screen → **Delete all data** is the only way back in, and then you link the phone again.
+
+When your main phone gives your profile a new key, which Signal does after you block someone, Beacon picks up the new key too.
 
 Each account has its own history on the phone, and switching accounts restarts Beacon.
 
@@ -146,8 +152,7 @@ Beacon doesn't yet support every Signal feature. Calls, stories, and more are tr
 | Action | What happens now |
 | --- | --- |
 | Starting a chat by phone number | Works for numbers in your synced contacts and for Signal usernames. Other numbers can't be looked up, because the phone can't run Signal's contact discovery yet ([details](development.md#phone-number-lookup-cdsi-spike-findings)). |
-| Scanning a username QR code | Not supported yet; ask for the username instead. Codes with a phone number work. |
-| Sending link previews | Not supported yet. Links you send arrive as plain links; previews other people send do show. |
+| Scanning a username QR code | Not supported yet; ask for the username instead. Codes with a phone number or a group link work. |
 | Polls in one-to-one chats | Not supported yet. You can vote in and end polls anywhere, but **Create poll** is only in groups. |
 | Group message requests | Not supported yet. A group someone you don't know adds you to shows as a normal chat; leave or block it in **Chat settings**. |
 | Forwarding files you sent from this phone | Not possible, because the phone doesn't keep a copy it can resend. They're also left out of **Media**. |

@@ -15,21 +15,28 @@ import {
   DataMessage,
   DataMessage_Flags,
   DataMessageSchema,
+  PreviewSchema,
   ReceiptMessage_Type,
   SyncMessage_FetchLatest_Type,
   SyncMessage_MessageRequestResponse_Type,
   TypingMessage_Action,
   Verified_State,
 } from './gen/SignalService_pb';
-import { buildGroupContextV2, deriveGroupV2Keys, fetchGroupState, GroupLinkMode, GroupV2Metadata, SERVER_PUBLIC_PARAMS } from './services/groups-v2';
+import { buildGroupContextV2, deriveGroupV2Keys, fetchGroupState, GroupLinkMode, GroupV2Metadata, parseGroupLink, SERVER_PUBLIC_PARAMS } from './services/groups-v2';
 import {
   addMembersActions,
   applyGroupChange,
   approveRequestsActions,
+  cancelGroupJoinRequest,
   descriptionActions,
+  fetchGroupJoinInfo,
   GroupActionsInit,
+  GroupChangeError,
+  GroupJoinInfoView,
   GroupSnapshot,
   inviteLinkActions,
+  joinedGroupMutation,
+  joinGroupViaLink,
   leaveActions,
   permissionActions,
   removeMembersActions,
@@ -39,6 +46,7 @@ import {
 } from './services/group-changes';
 import { libsignal, loadLibsignal } from './protocol/libsignal';
 import {
+  adoptOwnProfileKey,
   downloadAndDecryptProfileAvatar,
   fetchAndDecryptProfile,
   fetchExpiringProfileKeyCredential,
@@ -56,8 +64,10 @@ import { mutateStorage, pullFromStorageService, setPhoneNumberPrivacy, StorageMu
 import { AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema, ContactRecord_NameSchema } from './gen/SignalStorage_pb';
 import { diffGroupState, groupChangeAuthor, isDecodedGroup } from './services/group-updates';
 import { reportSpam as reportSpamMessages } from './services/report-spam';
+import { previewFieldsForSend } from './services/link-previews';
 import { deleteUsername as deleteAccountUsername, setUsername as setAccountUsername, usernameLinkUrl } from './services/usernames';
-import { SignalClient } from './net/client';
+import { SenderKeyGroup, SignalClient } from './net/client';
+import { endorsesAll, loadGroupSendEndorsements } from './services/group-send';
 import { DEFAULT_SIGNAL_SERVER } from './net/http';
 import { net } from './net/transport';
 import { IncomingEnvelope, parseContactsSyncBlob } from './net/receive';
@@ -68,6 +78,7 @@ type BodyRangeInit = MessageInitShape<typeof BodyRangeSchema>;
 type PinnedConversationInit = MessageInitShape<typeof AccountRecord_PinnedConversationSchema>;
 type AddressableMessageInit = MessageInitShape<typeof AddressableMessageSchema>;
 type ConversationIdentifierInit = MessageInitShape<typeof ConversationIdentifierSchema>;
+type PreviewInit = MessageInitShape<typeof PreviewSchema>;
 
 /** A message as the app names it: its author (number or ACI) and sent time. */
 export interface MessageRef {
@@ -93,6 +104,25 @@ function parseDataUri(dataUri: string): { contentType: string; filename?: string
     filename: fnMatch ? fnMatch[1] : undefined,
     bytes: fromBase64(b64),
   };
+}
+
+const MAX_PREVIEW_IMAGE_BYTES = 1024 * 1024;
+
+async function outgoingPreview(
+  p: { url: string; title: string; description?: string; date?: number; image?: string } | undefined,
+  body: string,
+  hasAttachments: boolean
+): Promise<PreviewInit | null> {
+  const fields = previewFieldsForSend(p, body, hasAttachments);
+  if (!fields || !p) return null;
+  const out: PreviewInit = { ...fields };
+  if (p.image) {
+    const { contentType, bytes } = parseDataUri(p.image);
+    if (contentType.indexOf('image/') === 0 && bytes.length > 0 && bytes.length <= MAX_PREVIEW_IMAGE_BYTES) {
+      out.image = await client.uploadAttachment(bytes, contentType, 'preview.' + (contentType.split('/')[1] || 'jpg'));
+    }
+  }
+  return out;
 }
 
 function stylesToBodyRanges(
@@ -152,6 +182,7 @@ function httpRaw(method: string, url: string, body?: Uint8Array | null, headers?
 }
 
 const client = new SignalClient(store, httpJson, httpBinary, httpRaw);
+client.log = (message) => host().dbg(message);
 
 function serverUrl(): string {
   return host().config.serverUrl() || DEFAULT_SIGNAL_SERVER;
@@ -351,9 +382,30 @@ async function addressableMessages(refs: MessageRef[]): Promise<AddressableMessa
   return out;
 }
 
+const ENDORSEMENT_REFRESH_MS = 10 * 60 * 1000;
+const endorsementRefreshedAt = new Map<string, number>();
+
+/** A group's Sender Key send details. Endorsements that are missing, expiring, or don't cover every member are refetched with the group, at most every 10 minutes. */
+async function senderKeyGroup(internalId: string, masterKey: Uint8Array, members: string[]): Promise<SenderKeyGroup> {
+  let endorsements = await loadGroupSendEndorsements(store, internalId);
+  if (!endorsesAll(endorsements, members) && Date.now() - (endorsementRefreshedAt.get(internalId) || 0) > ENDORSEMENT_REFRESH_MS) {
+    endorsementRefreshedAt.set(internalId, Date.now());
+    try {
+      await refreshGroup(masterKey);
+      endorsements = await loadGroupSendEndorsements(store, internalId);
+    } catch (e: any) {
+      host().dbg('group refresh for endorsements failed: ' + (e && e.message));
+    }
+  }
+  return { internalId, secretParams: deriveGroupV2Keys(masterKey).secretParams, endorsements };
+}
+
 /** Resolves to whether every recipient got it sealed. */
-async function deliver(target: { isGroup: boolean; peers: string[] }, content: Content, ts: number, online = false): Promise<boolean> {
-  if (target.isGroup) return client.sendGroupContent(target.peers, content, ts, online);
+async function deliver(target: { isGroup: boolean; peers: string[]; groupV2?: DataMessage['groupV2']; internalId?: string }, content: Content, ts: number, online = false): Promise<boolean> {
+  if (target.isGroup) {
+    const group = target.groupV2 && target.internalId ? await senderKeyGroup(target.internalId, target.groupV2.masterKey, target.peers) : undefined;
+    return client.sendGroupContent(target.peers, content, ts, online, group);
+  }
   let sealed = target.peers.length > 0;
   for (const peer of target.peers) if (!(await client.sendContentToRecipient(peer, content, ts, online))) sealed = false;
   return sealed;
@@ -423,9 +475,15 @@ async function groupMasterKey(groupSendId: string): Promise<Uint8Array> {
 /**
  * Apply a Groups V2 change on the storage server, then send the signed change to everyone affected (GroupContextV2 with `groupChange`, as Signal-Desktop's sendGroupUpdate does) and to our other devices. Resolves to the new group state, or null when nothing changed.
  */
+function groupDeps() {
+  return { store, httpJson, httpBinary, serverUrl: serverUrl() };
+}
+
+export type GroupLinkPreview = GroupJoinInfoView & { internalId: string; member: boolean };
+
 async function changeGroup(groupSendId: string, build: (snap: GroupSnapshot) => GroupActionsInit | null | Promise<GroupActionsInit | null>): Promise<GroupV2Metadata | null> {
   const masterKey = await groupMasterKey(groupSendId);
-  const res = await applyGroupChange({ store, httpJson, httpBinary, serverUrl: serverUrl() }, masterKey, build);
+  const res = await applyGroupChange(groupDeps(), masterKey, build);
   if (!res) return null;
   const acc = await store.getAccount();
   const ts = Date.now();
@@ -542,6 +600,7 @@ async function syncFromStorageService(): Promise<boolean> {
   }
 
   if (res.account) {
+    if (await adoptOwnProfileKey(store, res.account.profileKey)) host().dbg('storage: adopted the profile key from the account record');
     const patch: Record<string, any> = {};
     const fullName = [res.account.givenName, res.account.familyName].filter(Boolean).join(' ');
     if (fullName) patch.profileName = fullName;
@@ -825,6 +884,7 @@ export const signalBridge = {
     mentions?: Array<{ start: number; length: number; uuid: string }>;
     view_once?: boolean;
     poll?: { question: string; options: string[]; allow_multiple: boolean };
+    preview?: { url: string; title: string; description?: string; date?: number; image?: string };
   }): Promise<{ timestamp: number; sealed: boolean }> {
     const ts = Date.now();
     const bodyText = payload.message || '';
@@ -847,6 +907,7 @@ export const signalBridge = {
     }
 
     const expireTimer = payload.expire_timer || 0;
+    const preview = await outgoingPreview(payload.preview, bodyText, files.length > 0);
 
     const mentions: Array<{ start: number; length: number; uuid: string }> = [];
     for (const m of payload.mentions || []) {
@@ -865,6 +926,7 @@ export const signalBridge = {
       groupV2: target.groupV2,
       isViewOnce: payload.view_once && uploadedAttachments.length > 0 ? true : undefined,
       pollCreate: poll ? { question: poll.question, options: poll.options, allowMultiple: poll.allow_multiple } : undefined,
+      preview: preview ? [preview] : [],
     };
 
     if (payload.quote_timestamp) {
@@ -1282,6 +1344,57 @@ export const signalBridge = {
     return changeGroup(groupSendId, (snap) => approveRequestsActions(snap, ids));
   },
 
+  /** What a signal.group link leads to: the group's name, size, and whether joining needs an admin, or `member` when we are already in it. */
+  async groupLinkInfo(url: string): Promise<GroupLinkPreview> {
+    const link = parseGroupLink(url);
+    if (!link) throw new GroupChangeError('GroupLinkInvalid', 'This is not a group link');
+    const keys = deriveGroupV2Keys(link.masterKey);
+    const list: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
+    const known = list.find((g) => g.internal_id === keys.internalId);
+    const self = host().config.aci() || '';
+    if (known && Array.isArray(known.members) && known.members.includes(self)) {
+      return { internalId: keys.internalId, title: known.name || '', description: known.description || '', memberCount: known.members.length, revision: known.revision || 0, approvalRequired: false, pending: false, member: true };
+    }
+    const info = await fetchGroupJoinInfo(groupDeps(), link.masterKey, link.password);
+    return { ...info, internalId: keys.internalId, member: false };
+  },
+
+  /** Join through a signal.group link, or ask to join when the group needs an admin's approval. */
+  async joinGroupLink(url: string): Promise<{ joined: boolean; internalId: string; name: string }> {
+    const link = parseGroupLink(url);
+    if (!link) throw new GroupChangeError('GroupLinkInvalid', 'This is not a group link');
+    const acc = await store.getAccount();
+    if (!acc || !acc.profileKey) throw new Error('This phone is not linked to a Signal account');
+    const keys = deriveGroupV2Keys(link.masterKey);
+    const cred = await fetchExpiringProfileKeyCredential(store, httpJson, SERVER_PUBLIC_PARAMS, acc.aci, acc.profileKey, serverUrl());
+    const presentation = libsignal.groupProfileKeyCredentialPresentation(SERVER_PUBLIC_PARAMS, keys.secretParams, cred);
+    const res = await joinGroupViaLink(groupDeps(), link.masterKey, link.password, presentation);
+    if (!res.joined) return { joined: false, internalId: keys.internalId, name: '' };
+
+    const state = await fetchGroupState(store, httpJson, httpBinary, link.masterKey, serverUrl());
+    await mergeGroupState(state);
+    await storageQueue
+      .enqueue([joinedGroupMutation(link.masterKey)])
+      .catch((e: any) => host().dbg('group storage record failed: ' + (e && e.message)));
+    const ts = Date.now();
+    const dm: DataMessageInit = {
+      timestamp: BigInt(ts),
+      profileKey: acc.profileKey,
+      groupV2: { masterKey: link.masterKey, revision: res.revision, groupChange: res.groupChange },
+    };
+    const notify = state.members.concat(state.pending).filter((id) => isAci(id) && id !== acc.aci);
+    await client.sendGroupContent(notify, dataContent(dm), ts).catch((e: any) => host().dbg('group update send failed: ' + (e && e.message)));
+    await client.sendSyncMessage(syncSent('', ts, dm), ts);
+    return { joined: true, internalId: keys.internalId, name: state.name };
+  },
+
+  /** Withdraw a request to join made through a group link. */
+  async cancelGroupLinkRequest(url: string): Promise<void> {
+    const link = parseGroupLink(url);
+    if (!link) throw new GroupChangeError('GroupLinkInvalid', 'This is not a group link');
+    await cancelGroupJoinRequest(groupDeps(), link.masterKey, link.password);
+  },
+
   async setGroupAdmins(groupSendId: string, ids: string[], admin: boolean): Promise<GroupV2Metadata | null> {
     const resolved = await Promise.all(ids.map(async (id) => (await resolveAci(id)) || id));
     return changeGroup(groupSendId, (snap) => roleActions(snap, resolved, admin));
@@ -1355,6 +1468,18 @@ export const signalBridge = {
         type: 'account',
         update: (a) => {
           a.universalExpireTimer = secs;
+        },
+      },
+    ]);
+  },
+
+  /** Whether links we send get previews (`AccountRecord.linkPreviews`), shared with our other devices. */
+  async setLinkPreviews(on: boolean): Promise<void> {
+    await storageQueue.enqueue([
+      {
+        type: 'account',
+        update: (a) => {
+          a.linkPreviews = on;
         },
       },
     ]);

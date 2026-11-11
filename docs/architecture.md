@@ -156,7 +156,7 @@ A frame is acknowledged only after it has been decrypted and stored, so a crash 
 4. Sends `PUT /v1/messages/<aci>`, and on `409`/`410` updates the device list and retries.
 5. Sends a sync copy to your other devices.
 
-Group messages go to each member individually.
+Group messages use Sender Keys, following Signal-Desktop's `sendToGroup`. [`services/group-send.ts`](../src/engine/services/group-send.ts) keeps the group send endorsements that come with each `GroupResponse` (refetched when they're missing, don't cover every member, or are about to expire) and a distribution ID per group, along with the member devices that already have our `SenderKeyDistributionMessage`. A send gives that message to devices that lack it (1:1, as above), then encrypts the content once with the sender key, wraps it in multi-recipient Sealed Sender, and sends one `PUT /v1/messages/multi_recipient` with a `Group-Send-Token` built from the endorsements. A `409`/`410` fixes the device lists and retries once, members in `uuids404` are dropped, and a member who left gets a new distribution ID so they can't read later messages. Groups without endorsements, groups with fewer than two other members, and any other failure fall back to sending to each member individually; so do group-change notifications.
 
 Pins (`DataMessage.pinMessage` / `unpinMessage`), disappearing-timer updates in 1:1 chats, and the full blocked list (`SyncMessage.Blocked`) use the same send path. Typing indicators and read receipts are not sent to blocked people, and content from blocked people and groups is dropped on receipt but still acknowledged.
 
@@ -232,13 +232,13 @@ Every libsignal call that touches protocol state goes through [`src/engine/proto
 | `store.rs` | In-memory libsignal stores, filled with `put*` and drained with `take*` |
 | `keys.rs` | Identity keys, XEdDSA, registration IDs, and PreKey, signed PreKey, and Kyber PreKey records |
 | `session.rs` | PreKey bundles, encrypt and decrypt (PQXDH, SPQR), `DecryptionErrorMessage`, `PlaintextContent` |
-| `sealed.rs` | Sealed Sender with SenderCertificate validation against Signal's trust roots |
+| `sealed.rs` | Sealed Sender with SenderCertificate validation against Signal's trust roots, and multi-recipient Sealed Sender for group sends |
 | `group.rs` | Sender Key distribution and group encrypt and decrypt |
 | `fingerprint.rs` | Safety numbers and scannable fingerprints |
 | `provisioning.rs` | The linking cipher |
 | `account.rs` | Account Entropy Pool to master key, and username hashes |
 | `username.rs` | Username candidates, zero-knowledge proofs, and encrypted username links |
-| `zk.rs` | Profile key version, commitment, and access key; Groups V2 params, blob and member decryption, profile key encryption, auth and expiring profile key credential presentations |
+| `zk.rs` | Profile key version, commitment, and access key; Groups V2 params, blob and member decryption, profile key encryption, auth and expiring profile key credential presentations; group send endorsements and tokens |
 | `tls.rs` | TLS client for Signal's hosts with libsignal's pinned roots (see [Network](#network)) |
 
 ## Engine modules
@@ -260,6 +260,7 @@ Every libsignal call that touches protocol state goes through [`src/engine/proto
 | [`services/profiles.ts`](../src/engine/services/profiles.ts) | Versioned profile fetch and decrypt, profile upload, avatars, username lookup, expiring profile key credentials |
 | [`services/groups-v2.ts`](../src/engine/services/groups-v2.ts) | zkgroup group IDs, `GroupContextV2`, group state fetch and decode, invite links |
 | [`services/group-changes.ts`](../src/engine/services/group-changes.ts) | Groups V2 change builders and `applyGroupChange` |
+| [`services/group-send.ts`](../src/engine/services/group-send.ts) | Group send endorsements and tokens, per-group sender key distribution IDs, and which member devices have our sender key |
 | [`services/usernames.ts`](../src/engine/services/usernames.ts) | Username reserve, confirm, delete, and link URLs |
 | [`crypto/`](../src/engine/crypto) | WebCrypto AES and [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) HMAC/HKDF for attachments, profiles, and storage |
 
@@ -285,4 +286,6 @@ Upgrading from a database older than version 4 discards the protocol state and a
 - **Sealed Sender** certificates are checked against Signal's production trust roots.
 - **TLS.** Connections to Signal's hosts trust only the two roots libsignal pins, not the phone's certificate store, so a CA added to the phone can't intercept them. The one exception is opt-in: once the phone trusts Signal's root, attachment CDN transfers use the platform's TLS, whose contents are end-to-end encrypted and MAC-checked ([Network](#network)).
 - **CSP.** The privileged-app CSP forbids `eval`, `new Function`, and inline scripts, and `scripts/package.sh` fails the build if any shipped script contains them.
+- **Screen lock** ([`src/ui/data/screen-lock.ts`](../src/ui/data/screen-lock.ts)) keeps only a salted PBKDF2-SHA-256 hash of the PIN in `s4k.config`, and the wrong-PIN count, so a restart doesn't reset the wait. It covers the UI and nothing else: the databases aren't encrypted with the PIN. The PIN is read from the keypad's digit keys with no text field focused, so the keyboard never sees it.
+- **Profile key.** Only the primary phone rotates the profile key; Signal-Desktop as a linked device doesn't either. A Storage Service pull whose `AccountRecord.profileKey` differs from ours replaces the account's key and drops our cached credential for the old one.
 - **Logs.** The debug log never records keys, passwords, or provisioning codes. Everyday screens show plain-language errors (`friendlyError` in [`src/ui/errors.ts`](../src/ui/errors.ts)); the technical detail goes only to the log, which Settings > Debug shows.

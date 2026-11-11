@@ -5,7 +5,7 @@ export const DEFAULT_SIGNAL_WS = 'wss://chat.signal.org';
 export const DEFAULT_SIGNAL_CDN = 'https://cdn.signal.org';
 export const DEFAULT_STORAGE_SERVER = 'https://storage.signal.org';
 
-export const SIGNAL_USER_AGENT = 'Signal4KaiOS/2.5.0';
+export const SIGNAL_USER_AGENT = 'Signal4KaiOS/2.6.0';
 
 /** Signal-Desktop config/production.json `cdn` map. */
 export const SIGNAL_CDNS: Record<number, string> = {
@@ -17,6 +17,7 @@ export const SIGNAL_CDNS: Record<number, string> = {
 export type SignalHttpJsonFn = (
   method: string,
   path: string,
+  /** Sent as JSON, except bytes, which go as-is with the `Content-Type` from `headers`. */
   body: unknown,
   opts?: {
     baseUrl?: string;

@@ -5,13 +5,16 @@ use libsignal_protocol::{Aci, Pni, ServiceId};
 use uuid::Uuid;
 use wasm_bindgen::prelude::*;
 use zkgroup::auth::AuthCredentialWithPniResponse;
-use zkgroup::groups::{GroupMasterKey, GroupSecretParams, ProfileKeyCiphertext, UuidCiphertext};
+use zkgroup::groups::{
+    GroupMasterKey, GroupSecretParams, GroupSendEndorsement, GroupSendEndorsementsResponse, ProfileKeyCiphertext,
+    UuidCiphertext,
+};
 use zkgroup::profiles::{
     ExpiringProfileKeyCredential, ExpiringProfileKeyCredentialResponse, ProfileKey, ProfileKeyCredentialRequestContext,
 };
 use zkgroup::{ServerPublicParams, Timestamp};
 
-use crate::{Obj, invalid, js_error, random_32};
+use crate::{Obj, array, invalid, js_error, random_32};
 
 fn verification_failed() -> JsValue {
     js_error("ZkGroupVerificationFailure", "zkgroup verification failed")
@@ -183,6 +186,63 @@ pub fn group_profile_key_credential_presentation(
         credential,
     );
     Ok(zkgroup::serialize(&presentation))
+}
+
+/// Verifies a group's `GroupSendEndorsementsResponse` against its members (`member_service_ids`, ours included) and
+/// returns `{ expiration, endorsements }`: the expiration in epoch seconds and one serialized endorsement per member, in
+/// the order given.
+#[wasm_bindgen(js_name = groupSendEndorsementsReceive)]
+pub fn group_send_endorsements_receive(
+    server_public_params: &[u8],
+    secret_params_bytes: &[u8],
+    response: &[u8],
+    member_service_ids: js_sys::Array,
+    now_seconds: f64,
+) -> Result<JsValue, JsValue> {
+    let response: GroupSendEndorsementsResponse = zkgroup::deserialize(response).map_err(|e| invalid(e))?;
+    let expiration = response.expiration();
+    let mut members: Vec<ServiceId> = Vec::with_capacity(member_service_ids.length() as usize);
+    for id in member_service_ids.iter() {
+        let id = id.as_string().ok_or_else(|| invalid("service ids must be strings"))?;
+        members.push(ServiceId::parse_from_service_id_string(&id).ok_or_else(|| invalid("invalid service id"))?);
+    }
+    let received = response
+        .receive_with_service_ids(
+            members,
+            Timestamp::from_epoch_seconds(now_seconds.max(0.0) as u64),
+            &secret_params(secret_params_bytes)?,
+            &server_params(server_public_params)?,
+        )
+        .map_err(|_| verification_failed())?;
+    Ok(Obj::new()
+        .set("expiration", expiration.epoch_seconds() as f64)
+        .set(
+            "endorsements",
+            array(received.iter().map(|r| js_sys::Uint8Array::from(&zkgroup::serialize(&r.compressed)[..]).into())),
+        )
+        .build())
+}
+
+/// The `Group-Send-Token` for sending to the members whose endorsements are given (leave ours out): the endorsements
+/// combined, turned into a token for this group, and bound to their expiration.
+#[wasm_bindgen(js_name = groupSendToken)]
+pub fn group_send_token(
+    secret_params_bytes: &[u8],
+    endorsements: js_sys::Array,
+    expiration_seconds: f64,
+) -> Result<Vec<u8>, JsValue> {
+    let mut parsed: Vec<GroupSendEndorsement> = Vec::with_capacity(endorsements.length() as usize);
+    for e in endorsements.iter() {
+        let bytes = js_sys::Uint8Array::new(&e).to_vec();
+        parsed.push(zkgroup::deserialize(&bytes).map_err(|e| invalid(e))?);
+    }
+    if parsed.is_empty() {
+        return Err(invalid("a token needs at least one endorsement"));
+    }
+    let token = GroupSendEndorsement::combine(parsed).to_token(&secret_params(secret_params_bytes)?);
+    Ok(zkgroup::serialize(
+        &token.into_full_token(Timestamp::from_epoch_seconds(expiration_seconds.max(0.0) as u64)),
+    ))
 }
 
 /// Receives an `AuthCredentialWithPniResponse` from `GET /v1/certificate/auth/group` and presents it for one group.

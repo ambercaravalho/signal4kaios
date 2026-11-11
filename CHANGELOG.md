@@ -2,6 +2,24 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.6.0
+
+The fourth round of Signal features from the roadmap. Install over v2.5.0; your chats and settings carry over.
+
+### New
+
+- **Link previews you send.** Type a link and, after a moment, **Link preview** with the page's title shows above the message box; it's sent with the message, picture included. **Options → Remove link preview** sends the link without it. Turn previews off in **Settings → Chats → Generate link previews**, which is shared with your other devices. As in Signal, the phone fetches the page itself, so the website sees that it was opened.
+- **Join a group by its link.** **Open link** on a `signal.group` link, or **New chat → Scan** on a group's QR code, shows the group's name, size, and description. **Join** adds you, or **Request to join** asks the group's admins when they approve new members; you can **Cancel request** from the same link while you wait.
+- **Screen lock.** **Settings → Privacy → Screen lock** asks for a PIN of 4 to 8 digits when Beacon opens, and again after it has been in the background for the time you choose in **Lock after**. Wrong PINs make you wait longer before trying again. It hides your chats but doesn't encrypt them, and a forgotten PIN means **Delete all data** and linking again.
+
+### Changed
+
+- **Faster group messages.** A message to a group is now encrypted once and sent to Signal in a single upload, as Signal's own apps do, instead of once per member. Large groups send much faster and use less data and battery. If that fails, Beacon sends to each member as before.
+
+### Fixed
+
+- **Your profile after a block.** When your main phone gives your profile a new key, which Signal does after you block someone, Beacon now picks it up. Before, Beacon kept the old key.
+
 ## v2.5.0
 
 The third round of Signal features from the roadmap. Install over v2.4.0; your chats and settings carry over.

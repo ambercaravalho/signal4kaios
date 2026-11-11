@@ -129,8 +129,10 @@ export function request(method: string, path: string, body: unknown, opts: HostH
   }
   if (opts.headers) for (const k of Object.keys(opts.headers)) headers[k] = opts.headers[k];
   headers['X-Signal-Agent'] = 'OWD';
-  let payload: string | null = null;
-  if (body != null) {
+  let payload: string | Uint8Array | null = null;
+  if (body instanceof Uint8Array) {
+    payload = body;
+  } else if (body != null) {
     headers['Content-Type'] = 'application/json';
     payload = JSON.stringify(body);
   }

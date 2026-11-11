@@ -719,3 +719,37 @@
   height: 100%;
   object-fit: cover;
 }
+
+.lock {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.lock-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--pad);
+  text-align: center;
+}
+
+.lock-title {
+  margin-bottom: 0.8rem;
+  font-size: var(--fs-primary);
+  font-weight: 600;
+}
+
+.lock-hint {
+  font-size: var(--fs-secondary);
+  color: var(--text-2);
+}
+
+.lock-error {
+  color: var(--danger);
+}
