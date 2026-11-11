@@ -10,13 +10,28 @@ function clock(d: Date): string {
   return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
 }
 
+type DayBucket = 'today' | 'yesterday' | 'thisYear' | 'older';
+
+/** Where `d` falls relative to the phone's current local date. */
+function dayBucket(d: Date): DayBucket {
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return 'today';
+  const yest = new Date(now.getTime());
+  yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === yest.toDateString()) return 'yesterday';
+  return d.getFullYear() === now.getFullYear() ? 'thisYear' : 'older';
+}
+
+function dayMonth(d: Date): string {
+  return d.getDate() + ' ' + MONTHS[d.getMonth()];
+}
+
 /** Chat list time: "14:32" today, "10 Jul" this year, "07/24" before. */
 export function fmtTime(ts: number): string {
   if (!ts) return '';
   const d = new Date(ts);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) return clock(d);
-  if (d.getFullYear() === now.getFullYear()) return d.getDate() + ' ' + MONTHS[d.getMonth()];
+  if (dayBucket(d) === 'today') return clock(d);
+  if (d.getFullYear() === new Date().getFullYear()) return dayMonth(d);
   return pad2(d.getMonth() + 1) + '/' + String(d.getFullYear()).slice(-2);
 }
 
@@ -29,32 +44,26 @@ export function fmtClock(ts: number): string {
 export function fmtMsgTime(ts: number): string {
   if (!ts) return '';
   const d = new Date(ts);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) return clock(d);
-  const yest = new Date(now.getTime());
-  yest.setDate(now.getDate() - 1);
-  if (d.toDateString() === yest.toDateString()) return 'Yesterday ' + clock(d);
-  let date = d.getDate() + ' ' + MONTHS[d.getMonth()];
-  if (d.getFullYear() !== now.getFullYear()) date += ' ' + d.getFullYear();
-  return date + ', ' + clock(d);
+  const b = dayBucket(d);
+  if (b === 'today') return clock(d);
+  if (b === 'yesterday') return 'Yesterday ' + clock(d);
+  return dayMonth(d) + (b === 'older' ? ' ' + d.getFullYear() : '') + ', ' + clock(d);
 }
 
 /** Day divider in a chat: "Today", "Yesterday", "10 Jul", or "10 Jul 2024". */
 export function fmtDay(ts: number): string {
   const d = new Date(ts);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) return 'Today';
-  const yest = new Date(now.getTime());
-  yest.setDate(now.getDate() - 1);
-  if (d.toDateString() === yest.toDateString()) return 'Yesterday';
-  return d.getDate() + ' ' + MONTHS[d.getMonth()] + (d.getFullYear() !== now.getFullYear() ? ' ' + d.getFullYear() : '');
+  const b = dayBucket(d);
+  if (b === 'today') return 'Today';
+  if (b === 'yesterday') return 'Yesterday';
+  return dayMonth(d) + (b === 'older' ? ' ' + d.getFullYear() : '');
 }
 
 /** Full date and time with seconds, for message details. */
 export function fmtTimeFull(ts: number): string {
   if (!ts) return '';
   const d = new Date(ts);
-  return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ', ' + clock(d) + ':' + pad2(d.getSeconds());
+  return dayMonth(d) + ' ' + d.getFullYear() + ', ' + clock(d) + ':' + pad2(d.getSeconds());
 }
 
 /** Compact countdown: "45s", "5m", "1h", "2d", "1w". */

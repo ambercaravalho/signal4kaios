@@ -3,6 +3,7 @@
 import { toBase64 } from '../../engine/bytes';
 import { linksIn, shouldPreviewHref } from '../../engine/services/link-previews';
 import { fitGeometry, scaleToJpeg } from './image-scale';
+import { mozSystemXhr } from './platform';
 
 const MAX_HTML_BYTES = 1000 * 1024;
 const MAX_IMAGE_BYTES = 1024 * 1024;
@@ -96,7 +97,7 @@ function lastPathComponent(url: string): string {
 }
 
 /** Desktop's parseMetadata: Open Graph first, then the page's own title, description, and icons. */
-export function parseMetadata(doc: PreviewDocument, href: string): { title: string; description: string; imageHref: string | null; date?: number } | null {
+function parseMetadata(doc: PreviewDocument, href: string): { title: string; description: string; imageHref: string | null; date?: number } | null {
   const og = (keys: string[]) => {
     for (const k of keys) {
       const v = (doc.meta('property', k) || '').trim();
@@ -173,12 +174,7 @@ export async function fetchLinkPreview(href: string, deps: PreviewDeps = appDeps
 /* Gecko's XHR follows redirects itself, so only where it ends up can be checked (`responseURL`). */
 const xhrFetch: PreviewFetch = (url, as, maxBytes, timeoutMs) =>
   new Promise((resolvePromise, reject) => {
-    let xhr: XMLHttpRequest;
-    try {
-      xhr = new (XMLHttpRequest as any)({ mozSystem: true });
-    } catch {
-      xhr = new XMLHttpRequest();
-    }
+    const xhr = mozSystemXhr() || new XMLHttpRequest();
     xhr.open('GET', url, true);
     xhr.timeout = timeoutMs;
     xhr.responseType = as === 'text' ? 'text' : 'arraybuffer';

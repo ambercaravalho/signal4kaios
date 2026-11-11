@@ -74,10 +74,6 @@ button {
   scrollbar-width: none;
 }
 
-.body-pad {
-  padding: var(--pad);
-}
-
 .hdr {
   flex: none;
   height: var(--header-h);

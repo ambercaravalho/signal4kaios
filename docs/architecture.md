@@ -98,15 +98,20 @@ src/
     main.tsx              startup: theme, engine host, ServiceWorker, first screen
     app/                  router, focus and key handling, hooks, theme
     components/           shared building blocks (lists, dialogs, softkeys, QR, emoji)
+    components/chat/      chat bubbles, message options, and the chat screen's session, composer, and key hooks
     screens/              one module per screen or group of related screens
-    data/                 store, ws, db, config, http, nativeTls, normalize, attachments, platform (B2G APIs)
+    screens/settings/     the Settings sub-screens
+    data/                 ws, db, config, http, nativeTls, attachments, platform (B2G APIs)
+    data/store/           conversations, messages, sends, and the event hub, behind the data/store.ts barrel
+    data/normalize/       JSON frames to store events, behind the data/normalize.ts barrel
     theme/                CSS tokens and styles
     strings.ts            every user-facing string, plus the Debug screen's wording
-  engine/                 on-device Signal engine (signalBridge)
+  engine/                 on-device Signal engine (signalBridge, assembled in index.ts)
+    bridge/               signalBridge methods by area: account, incoming, outgoing, contacts, groups, sync
     protocol/             libsignal loader, protocol operations, PreKeys, protocol store
     net/                  HTTP shapes, protobuf helpers, provisioning, receive, send client
     net/transport/        pinned TLS over TCPSocket: HTTP/1.1 and WebSocket clients
-    services/             Storage Service, profiles, Groups V2
+    services/             Storage Service (storage/), profiles, Groups V2
     crypto/               attachment and profile cipher primitives
     gen/                  generated protobuf codecs (never hand-edited)
   native/libsignal-wasm/  Rust wrapper crate (AGPL-3.0-only)
@@ -125,7 +130,7 @@ The app is a single Preact tree built for Gecko 84, the oldest engine it support
 | [`app/router.tsx`](../src/ui/app/router.tsx) | A screen stack. `router.push` opens a screen, `router.overlay` opens a menu or dialog above it and resolves a promise with the choice, `pop`/`replace`/`reset` move back. Screens below the top stay mounted, so going back keeps their state and scroll position |
 | `useKeys`, `useSoftkeys` | Keys go to the top entry, innermost handler first. Each entry declares its softkey labels, and the left one defaults to **Back** on pushed screens |
 | [`components/RowList.tsx`](../src/ui/components/RowList.tsx) | The KaiOS list most screens are built from: rows with optional section headers, toggles, and per-row center labels |
-| [`data/store.ts`](../src/ui/data/store.ts) | Conversations and messages in IndexedDB, plus an event hub. Screens subscribe with `useStoreEvents` and re-render on the events they care about |
+| [`data/store.ts`](../src/ui/data/store.ts) | Conversations and messages in IndexedDB, plus an event hub, implemented in [`data/store/`](../src/ui/data/store). Screens subscribe with `useStoreEvents` and re-render on the events they care about |
 | [`strings.ts`](../src/ui/strings.ts) | Every user-facing string. `S` must stay free of protocol jargon (a test enforces this); `DEBUG` holds the Settings > Debug wording |
 | [`theme/`](../src/ui/theme) | KaiOS metrics (header, softkey bar, list rows) with Signal's light and dark colors, switched by `data-theme` on `<html>` |
 
@@ -156,7 +161,7 @@ When the main phone changes the account's number, it sends each linked device a 
 
 ## Sending
 
-`store.send*` in [`src/ui/data/store.ts`](../src/ui/data/store.ts) writes an optimistic `pending` message, then calls the engine's `signalBridge.send`. The engine:
+`store.send*` in [`src/ui/data/store/send.ts`](../src/ui/data/store/send.ts) writes an optimistic `pending` message, then calls the engine's `signalBridge.send`. The engine:
 
 1. Resolves the recipient to an ACI (phone numbers via synced contacts).
 2. Builds the `Content` protobuf and pads it.
@@ -172,7 +177,7 @@ Pins (`DataMessage.pinMessage` / `unpinMessage`), disappearing-timer updates in 
 
 ## Storage Service writes
 
-Contact nicknames, blocking, archive, mute, pinned chats, and the username are account state that Signal keeps in the encrypted [Storage Service](https://github.com/signalapp/Signal-Desktop/blob/main/protos/SignalStorage.proto). Edits go through `mutateStorage` in [`services/storage-service.ts`](../src/engine/services/storage-service.ts), following Signal-Desktop's `storage.ts`:
+Contact nicknames, blocking, archive, mute, pinned chats, and the username are account state that Signal keeps in the encrypted [Storage Service](https://github.com/signalapp/Signal-Desktop/blob/main/protos/SignalStorage.proto). Edits go through `mutateStorage` in [`services/storage/mutate.ts`](../src/engine/services/storage/mutate.ts), following Signal-Desktop's `storage.ts`:
 
 ```mermaid
 sequenceDiagram
@@ -255,19 +260,20 @@ Every libsignal call that touches protocol state goes through [`src/engine/proto
 
 | File | Responsibility |
 | --- | --- |
-| [`index.ts`](../src/engine/index.ts) | `signalBridge`: recipients, sync messages, sends, blocking, group changes, pins, usernames, chat-list state, Storage Service refresh |
+| [`index.ts`](../src/engine/index.ts) | `signalBridge`, assembled from [`bridge/`](../src/engine/bridge): recipients, sync messages, sends, blocking, group changes, pins, usernames, chat-list state, Storage Service refresh |
 | [`protocol/libsignal.ts`](../src/engine/protocol/libsignal.ts) | Loads the wasm module (`ready()`) |
 | [`protocol/protocol.ts`](../src/engine/protocol/protocol.ts) | Hydrate, call, and flush around each libsignal operation; trust policy; Sealed Sender trust roots |
 | [`protocol/prekeys.ts`](../src/engine/protocol/prekeys.ts) | Signed, last-resort Kyber, and one-time PreKeys |
 | [`protocol/store.ts`](../src/engine/protocol/store.ts) | `SignalProtocolStore` over IndexedDB (and in memory for tests) |
-| [`net/http.ts`](../src/engine/net/http.ts) | Signal hosts and the HTTP function shapes passed in from [`src/ui/data/http.ts`](../src/ui/data/http.ts) |
+| [`net/http.ts`](../src/engine/net/http.ts) | Signal hosts, the HTTP function shapes passed in from [`src/ui/data/http.ts`](../src/ui/data/http.ts), and `asObject` for untrusted JSON |
 | [`net/proto.ts`](../src/engine/net/proto.ts) | WebSocket framing, service IDs, and delimited streams over the generated codecs |
 | [`net/provisioning.ts`](../src/engine/net/provisioning.ts) | Linking, device name cipher, and the initial PreKey upload |
 | [`net/receive.ts`](../src/engine/net/receive.ts) | Envelope decryption and `Content` → JSON frames; contact sync blobs |
+| [`net/incoming-json.ts`](../src/engine/net/incoming-json.ts) | Decoded `Content` → the JSON frames the app normalizes; attachment descriptors |
 | [`net/client.ts`](../src/engine/net/client.ts) | `SignalClient`: device fanout, Sealed Sender, retry receipts, attachment upload and download |
 | [`net/transport/`](../src/engine/net/transport) | `signalBridge.net`: pinned TLS, HTTP/1.1, and WebSocket for Signal's hosts |
-| [`services/storage-service.ts`](../src/engine/services/storage-service.ts) | Storage Service pull and writes (`mutateStorage`, `StorageWriteQueue`), with Signal-Desktop's key derivation |
-| [`services/profiles.ts`](../src/engine/services/profiles.ts) | Versioned profile fetch and decrypt, profile upload, avatars, username lookup, expiring profile key credentials |
+| [`services/storage/`](../src/engine/services/storage) | Storage Service key derivation (`crypto.ts`), pull (`pull.ts`), and writes (`mutate.ts`: `mutateStorage`, `StorageWriteQueue`), following Signal-Desktop |
+| [`services/profiles.ts`](../src/engine/services/profiles.ts) | Versioned profile fetch and decrypt, profile upload, username lookup, expiring profile key credentials; the cipher and avatars are in `profile-crypto.ts` and `profile-avatar.ts` |
 | [`services/groups-v2.ts`](../src/engine/services/groups-v2.ts) | zkgroup group IDs, `GroupContextV2`, group state fetch and decode, invite links |
 | [`services/group-changes.ts`](../src/engine/services/group-changes.ts) | Groups V2 change builders and `applyGroupChange` |
 | [`services/group-send.ts`](../src/engine/services/group-send.ts) | Group send endorsements and tokens, per-group sender key distribution IDs, and which member devices have our sender key |

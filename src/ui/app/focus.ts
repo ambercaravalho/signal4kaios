@@ -3,12 +3,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useIsTop, useKeys } from './router';
 
-/** True while the user is typing in a text field, where arrow and Back keys belong to the field. */
-export function isTyping(): boolean {
-  const t = document.activeElement;
-  return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
-}
-
 export interface ListNav {
   index: number;
   setIndex(i: number): void;

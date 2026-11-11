@@ -1,5 +1,14 @@
 /* KaiOS 3.0+ system APIs (navigator.b2g, WebActivity, ServiceWorker), with desktop-browser fallbacks. */
 
+/** A privileged XHR (no CORS, the platform's certificate checks), or null where the constructor refuses `mozSystem`. */
+export function mozSystemXhr(): XMLHttpRequest | null {
+  try {
+    return new (XMLHttpRequest as any)({ mozSystem: true });
+  } catch {
+    return null;
+  }
+}
+
 function b2g(): B2gNavigator | null {
   return (typeof navigator !== 'undefined' && navigator.b2g) || null;
 }

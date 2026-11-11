@@ -1,6 +1,7 @@
 /** Minimal HTTP/1.1 client over a `ByteStream`, with a small keep-alive pool per host. Responses are untrusted input: sizes are capped and malformed framing fails the request. */
 
-import { ByteStream, concatBytes, Connector, TransportError, writeAll } from './stream';
+import { concatBytes } from '../../bytes';
+import { ByteStream, Connector, TransportError, writeAll } from './stream';
 
 export interface HttpRequest {
   method: string;
@@ -234,7 +235,7 @@ export class ResponseParser {
   }
 }
 
-export function assertSafeHeader(name: string, value: string): void {
+function assertSafeHeader(name: string, value: string): void {
   if (!TOKEN.test(name)) throw new TransportError('protocol', `invalid header name ${JSON.stringify(name)}`);
   if (/[\r\n\0]/.test(value)) throw new TransportError('protocol', `invalid value for header ${name}`);
 }

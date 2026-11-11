@@ -2,15 +2,14 @@ import './ui-env';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { concatBytes } from '../src/engine/bytes';
 import { createNet, net } from '../src/engine/net/transport';
-import { ByteStream, concatBytes, Connector } from '../src/engine/net/transport/stream';
+import { ByteStream, Connector } from '../src/engine/net/transport/stream';
 import { TlsSession } from '../src/engine/net/transport/tls-stream';
 import { config } from '../src/ui/data/config';
 import * as nativeTls from '../src/ui/data/nativeTls';
 import { activeProxy, isProxyLink, parseProxyLink, saveProxy, validProxyHost } from '../src/ui/data/proxy';
-
-const enc = (s: string) => new TextEncoder().encode(s);
-const dec = (b: Uint8Array) => new TextDecoder().decode(b);
+import { text, utf8 } from './helpers';
 
 describe('proxy links', () => {
   it('reads the host from signal.tube links and typed addresses', () => {
@@ -70,7 +69,7 @@ function passthroughSession(hosts: string[]) {
   return (host: string): TlsSession => {
     hosts.push(host);
     let handshaking = true;
-    let out: Uint8Array = enc('client hello');
+    let out: Uint8Array = text('client hello');
     let unread: Uint8Array = new Uint8Array(0);
     return {
       feed(data) {
@@ -105,13 +104,13 @@ function server(dials: string[], label: string): Connector {
     let seen = '';
     const stream: ByteStream = {
       write(data) {
-        const text = dec(data);
-        if (text === 'client hello') setImmediate(() => stream.onData && stream.onData(enc('server hello')));
+        const chunk = utf8(data);
+        if (chunk === 'client hello') setImmediate(() => stream.onData && stream.onData(text('server hello')));
         else {
-          seen += text;
+          seen += chunk;
           if (seen.includes('\r\n\r\n')) {
             seen = '';
-            setImmediate(() => stream.onData && stream.onData(enc('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n')));
+            setImmediate(() => stream.onData && stream.onData(text('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n')));
           }
         }
         return true;

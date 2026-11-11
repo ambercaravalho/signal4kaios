@@ -8,7 +8,11 @@ use std::time::{Duration, SystemTime};
 
 use futures_util::FutureExt;
 use js_sys::{Array, Object, Reflect, Uint8Array};
-use libsignal_protocol::SignalProtocolError;
+use libsignal_protocol::{
+    DecryptionErrorMessage, GenericSignedPreKey, IdentityKey, IdentityKeyPair, KyberPreKeyRecord, PlaintextContent,
+    PreKeyRecord, PreKeySignalMessage, SenderCertificate, SenderKeyDistributionMessage, SenderKeyMessage,
+    SenderKeyRecord, SessionRecord, SignalMessage, SignalProtocolError, SignedPreKeyRecord, kem,
+};
 use rand::TryRngCore;
 use wasm_bindgen::prelude::*;
 
@@ -84,6 +88,35 @@ pub(crate) fn protocol_error(e: SignalProtocolError) -> JsValue {
 
 pub(crate) fn invalid(message: impl std::fmt::Display) -> JsValue {
     js_error("InvalidArgument", message)
+}
+
+/// A libsignal record, key, or message that TypeScript passes in serialized.
+pub(crate) trait FromBytes: Sized {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignalProtocolError>;
+}
+
+macro_rules! from_bytes {
+    ($via:ident: $($t:ty),+) => {
+        $(impl FromBytes for $t {
+            fn from_bytes(bytes: &[u8]) -> Result<Self, SignalProtocolError> {
+                <$t>::$via(bytes)
+            }
+        })+
+    };
+}
+
+from_bytes!(deserialize:
+    SessionRecord, PreKeyRecord, SignedPreKeyRecord, KyberPreKeyRecord, SenderKeyRecord, SenderCertificate, kem::PublicKey
+);
+from_bytes!(decode: IdentityKey);
+from_bytes!(try_from:
+    SignalMessage, PreKeySignalMessage, PlaintextContent, DecryptionErrorMessage, SenderKeyMessage,
+    SenderKeyDistributionMessage, IdentityKeyPair
+);
+
+/// Parses a serialized libsignal value, failing with the stable error code TypeScript branches on.
+pub(crate) fn parse<T: FromBytes>(bytes: &[u8]) -> Result<T, JsValue> {
+    T::from_bytes(bytes).map_err(protocol_error)
 }
 
 /// Small builder for plain JS result objects.

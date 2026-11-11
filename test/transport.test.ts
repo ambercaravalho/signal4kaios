@@ -2,12 +2,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Http1Client, ResponseParser } from '../src/engine/net/transport/http1';
-import { ByteStream, concatBytes, Connector, TransportError } from '../src/engine/net/transport/stream';
+import { concatBytes } from '../src/engine/bytes';
+import { ByteStream, Connector, TransportError } from '../src/engine/net/transport/stream';
 import { connectTls, TlsSession } from '../src/engine/net/transport/tls-stream';
 import { decodeFrame, encodeFrame, PinnedWebSocket, websocketAccept } from '../src/engine/net/transport/websocket';
+import { text, utf8 } from './helpers';
 
-const enc = (s: string) => new TextEncoder().encode(s);
-const dec = (b: Uint8Array) => new TextDecoder().decode(b);
 const tick = () => new Promise((r) => setImmediate(r));
 
 /** Server side of an in-memory connection. */
@@ -38,11 +38,11 @@ class FakeConn {
   }
 
   text(): string {
-    return dec(this.received);
+    return utf8(this.received);
   }
 
   send(data: Uint8Array | string): void {
-    const bytes = typeof data === 'string' ? enc(data) : data;
+    const bytes = typeof data === 'string' ? text(data) : data;
     setImmediate(() => {
       if (this.client.onData) this.client.onData(bytes);
     });
@@ -84,46 +84,46 @@ function respondTo(conn: FakeConn, reply: (head: string, index: number) => strin
 describe('HTTP/1.1 response parsing', () => {
   it('reads a Content-Length body fed one byte at a time', () => {
     const p = new ResponseParser('GET', 1024);
-    const raw = enc('HTTP/1.1 200 OK\r\nContent-Length: 5\r\nX-Two: a\r\nx-two: b\r\n\r\nhello');
+    const raw = text('HTTP/1.1 200 OK\r\nContent-Length: 5\r\nX-Two: a\r\nx-two: b\r\n\r\nhello');
     let done = false;
     for (const b of raw) done = p.feed(new Uint8Array([b]));
     assert.equal(done, true);
     assert.equal(p.head?.status, 200);
     assert.equal(p.head?.headers['x-two'], 'a, b');
-    assert.equal(dec(p.body()), 'hello');
+    assert.equal(utf8(p.body()), 'hello');
     assert.equal(p.reusable, true);
   });
 
   it('reads chunked bodies with extensions and trailers', () => {
     const p = new ResponseParser('GET', 1024);
-    const raw = enc('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4;ext=1\r\nWiki\r\n5\r\npedia\r\n0\r\nX-Trailer: y\r\n\r\n');
+    const raw = text('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4;ext=1\r\nWiki\r\n5\r\npedia\r\n0\r\nX-Trailer: y\r\n\r\n');
     let done = false;
     for (let i = 0; i < raw.length; i += 3) done = p.feed(raw.subarray(i, i + 3));
     assert.equal(done, true);
-    assert.equal(dec(p.body()), 'Wikipedia');
+    assert.equal(utf8(p.body()), 'Wikipedia');
   });
 
   it('skips 100 Continue and treats 204 as bodiless', () => {
     const p = new ResponseParser('PUT', 1024);
-    assert.equal(p.feed(enc('HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 204 No Content\r\n\r\n')), true);
+    assert.equal(p.feed(text('HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 204 No Content\r\n\r\n')), true);
     assert.equal(p.head?.status, 204);
     assert.equal(p.body().length, 0);
   });
 
   it('reads until close when there is no length, and marks the connection not reusable', () => {
     const p = new ResponseParser('GET', 1024);
-    assert.equal(p.feed(enc('HTTP/1.1 200 OK\r\n\r\npart')), false);
+    assert.equal(p.feed(text('HTTP/1.1 200 OK\r\n\r\npart')), false);
     assert.equal(p.end(), true);
-    assert.equal(dec(p.body()), 'part');
+    assert.equal(utf8(p.body()), 'part');
     assert.equal(p.reusable, false);
   });
 
   it('rejects oversized and malformed responses', () => {
-    assert.throws(() => new ResponseParser('GET', 10).feed(enc('HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\n')), /too large/);
-    assert.throws(() => new ResponseParser('GET', 10).feed(enc('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n')), /chunk size/);
-    assert.throws(() => new ResponseParser('GET', 10).feed(enc('HTTP/1.1 200 OK\r\nContent-Length: -1\r\n\r\n')), /Content-Length/);
-    assert.throws(() => new ResponseParser('GET', 10).feed(enc('SMTP ready\r\n\r\n')), /status line/);
-    assert.throws(() => new ResponseParser('GET', 10).feed(enc('HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n')), /transfer encoding/);
+    assert.throws(() => new ResponseParser('GET', 10).feed(text('HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\n')), /too large/);
+    assert.throws(() => new ResponseParser('GET', 10).feed(text('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n')), /chunk size/);
+    assert.throws(() => new ResponseParser('GET', 10).feed(text('HTTP/1.1 200 OK\r\nContent-Length: -1\r\n\r\n')), /Content-Length/);
+    assert.throws(() => new ResponseParser('GET', 10).feed(text('SMTP ready\r\n\r\n')), /status line/);
+    assert.throws(() => new ResponseParser('GET', 10).feed(text('HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n')), /transfer encoding/);
   });
 });
 
@@ -131,10 +131,10 @@ describe('HTTP/1.1 client', () => {
   it('sends Host, Content-Length, and the body, and parses the reply', async () => {
     const { connect, conns } = fakeServer((c) => respondTo(c, () => 'HTTP/1.1 201 Created\r\nLocation: /next\r\nContent-Length: 2\r\n\r\nok'));
     const client = new Http1Client(connect, { userAgent: 'Test/1' });
-    const res = await client.request({ method: 'put', url: 'https://chat.signal.org/v1/x?y=1', headers: { 'X-A': 'b' }, body: enc('{}') });
+    const res = await client.request({ method: 'put', url: 'https://chat.signal.org/v1/x?y=1', headers: { 'X-A': 'b' }, body: text('{}') });
     assert.equal(res.status, 201);
     assert.equal(res.headers.location, '/next');
-    assert.equal(dec(res.body), 'ok');
+    assert.equal(utf8(res.body), 'ok');
     const sent = conns[0].text();
     assert.match(sent, /^PUT \/v1\/x\?y=1 HTTP\/1\.1\r\nHost: chat\.signal\.org\r\n/);
     assert.match(sent, /\r\nUser-Agent: Test\/1\r\n/);
@@ -147,10 +147,10 @@ describe('HTTP/1.1 client', () => {
       respondTo(c, (_h, i) => (i === 1 ? 'HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 1\r\n\r\nb' : 'HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\na'))
     );
     const client = new Http1Client(connect);
-    assert.equal(dec((await client.request({ method: 'GET', url: 'https://cdn.signal.org/1' })).body), 'a');
-    assert.equal(dec((await client.request({ method: 'GET', url: 'https://cdn.signal.org/2' })).body), 'b');
+    assert.equal(utf8((await client.request({ method: 'GET', url: 'https://cdn.signal.org/1' })).body), 'a');
+    assert.equal(utf8((await client.request({ method: 'GET', url: 'https://cdn.signal.org/2' })).body), 'b');
     assert.equal(conns.length, 1);
-    assert.equal(dec((await client.request({ method: 'GET', url: 'https://cdn.signal.org/3' })).body), 'a');
+    assert.equal(utf8((await client.request({ method: 'GET', url: 'https://cdn.signal.org/3' })).body), 'a');
     assert.equal(conns.length, 2);
     client.closeAll();
   });
@@ -161,7 +161,7 @@ describe('HTTP/1.1 client', () => {
     await client.request({ method: 'GET', url: 'https://chat.signal.org/a' });
     conns[0].onBytes = (c) => c.end();
     const res = await client.request({ method: 'GET', url: 'https://chat.signal.org/b' });
-    assert.equal(dec(res.body), 'z');
+    assert.equal(utf8(res.body), 'z');
     assert.equal(conns.length, 2);
     client.closeAll();
   });
@@ -172,7 +172,7 @@ describe('HTTP/1.1 client', () => {
     const results = await Promise.all(
       Array.from({ length: 7 }, (_, i) => client.request({ method: 'GET', url: `https://cdn.signal.org/${i}` }))
     );
-    assert.deepEqual(results.map((r) => dec(r.body)), Array(7).fill('q'));
+    assert.deepEqual(results.map((r) => utf8(r.body)), Array(7).fill('q'));
     assert.equal(conns.length, 2);
     await client.request({ method: 'GET', url: 'https://cdn2.signal.org/other-host' });
     assert.equal(conns.length, 3);
@@ -364,18 +364,18 @@ describe('WebSocket client', () => {
     const srv = wsServer();
     const s = openSocket(srv.connect);
     await until(() => s.events.includes('open'));
-    srv.conns[0].send(concatBytes(serverFrame(2, enc('ab'), false), concatBytes(serverFrame(9, enc('p')), serverFrame(0, enc('cd')))));
+    srv.conns[0].send(concatBytes(serverFrame(2, text('ab'), false), concatBytes(serverFrame(9, text('p')), serverFrame(0, text('cd')))));
     await until(() => s.messages.length === 1 && srv.frames.length === 1);
-    assert.equal(dec(new Uint8Array(s.messages[0] as ArrayBuffer)), 'abcd');
+    assert.equal(utf8(new Uint8Array(s.messages[0] as ArrayBuffer)), 'abcd');
     assert.equal(srv.frames[0].opcode, 0xa);
-    assert.equal(dec(srv.frames[0].payload), 'p');
+    assert.equal(utf8(srv.frames[0].payload), 'p');
   });
 
   it('reports the server close code and echoes the close', async () => {
     const srv = wsServer();
     const s = openSocket(srv.connect);
     await until(() => s.events.includes('open'));
-    srv.conns[0].send(serverFrame(8, new Uint8Array([0x0f, 0xa1, ...enc('unauthorized')])));
+    srv.conns[0].send(serverFrame(8, new Uint8Array([0x0f, 0xa1, ...text('unauthorized')])));
     await until(() => s.closed() !== null && srv.frames.length === 1);
     assert.deepEqual(s.closed(), { code: 4001, reason: 'unauthorized', wasClean: true });
     assert.equal(srv.frames[0].opcode, 8);
@@ -397,7 +397,7 @@ describe('WebSocket client', () => {
     const srv = wsServer();
     const s = openSocket(srv.connect);
     await until(() => s.events.includes('open'));
-    srv.conns[0].send(encodeFrame(2, enc('x')));
+    srv.conns[0].send(encodeFrame(2, text('x')));
     await until(() => s.closed() !== null);
     assert.equal(s.closed()?.code, 1002);
   });

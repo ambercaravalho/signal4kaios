@@ -6,7 +6,7 @@ import { create } from '@bufbuild/protobuf';
 import { AttachmentPointerSchema } from '../src/engine/gen/SignalService_pb';
 import { GroupV2RecordSchema, OptionalBool } from '../src/engine/gen/SignalStorage_pb';
 import { applyAttachmentMeta, receivedMeta } from '../src/engine/services/attachment-meta';
-import { resolveLegacyNotifyForMentionsIfMuted, setNotifyForMentionsIfMuted } from '../src/engine/services/storage-service';
+import { resolveLegacyNotifyForMentionsIfMuted, setNotifyForMentionsIfMuted } from '../src/engine/services/storage';
 import { applyTheme, setTextSize, TEXT_SIZE_PX } from '../src/ui/app/theme';
 import { signal } from '../src/ui/data/api';
 import { hashPixels, hashToPixels, placeholderSize } from '../src/ui/data/blurhash';
@@ -15,13 +15,10 @@ import { db } from '../src/ui/data/db';
 import { parseFrame } from '../src/ui/data/normalize';
 import * as store from '../src/ui/data/store';
 import type { Conversation } from '../src/ui/data/types';
+import { settle } from './helpers';
 
 const ME = '+15550000';
 const HASH = 'LEHV6nWB2yk8pyo0adR*.7kCMdnj';
-
-function settle(ms = 30): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 function group(extra: Partial<Conversation> = {}): Conversation {
   return { id: 'g:X', type: 'group', sendId: 'group.X', name: 'G', lastTs: 0, lastPreview: '', unread: 0, lastReadTs: 0, ...extra };

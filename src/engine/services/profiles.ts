@@ -1,17 +1,14 @@
-/* Signal profiles, profile avatars, and username lookup. The profile cipher, padding, and request bodies follow Signal-Desktop (Crypto.node.ts, encryptProfileData.preload.ts, WebAPI getProfile/putProfile); profile key versions, commitments, access keys, and username hashes come from libsignal (zkgroup, usernames). */
+/* Signal profiles and username lookup; the cipher is in `./profile-crypto` and avatars in `./profile-avatar`. Request bodies follow Signal-Desktop's WebAPI getProfile/putProfile; profile key versions, commitments, and username hashes come from libsignal (zkgroup, usernames). */
 
-import { fromBase64, randomBytes, toBase64, toHex, toWebSafeBase64 } from '../bytes';
-import { aesGcmDecrypt, aesGcmEncrypt } from '../crypto/primitives';
+import { fromBase64, toBase64, toHex, toWebSafeBase64 } from '../bytes';
 import { libsignal } from '../protocol/libsignal';
 import type { SignalProtocolStore } from '../protocol/store';
-import { DEFAULT_SIGNAL_CDN, DEFAULT_SIGNAL_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
+import { accountBasicAuth, asObject, DEFAULT_SIGNAL_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
+import { parseAvatarForm, uploadProfileAvatar } from './profile-avatar';
+import { decryptProfile, decryptProfileName, encryptPadded, encryptProfile, encryptProfileName, PADDED_LENGTHS, untilNul } from './profile-crypto';
 
-/** Signal-Desktop PaddedLengths. */
-const PADDED_LENGTHS = {
-  name: [53, 257],
-  about: [128, 254, 512],
-  aboutEmoji: [32],
-};
+export { avatarUploadBody, downloadAndDecryptProfileAvatar } from './profile-avatar';
+export { decryptProfile, decryptProfileName, encryptProfileName } from './profile-crypto';
 
 export interface DecryptedProfile {
   uuid: string;
@@ -25,50 +22,6 @@ export interface DecryptedProfile {
   phoneNumberSharing?: string;
   unidentifiedAccess?: string;
   unrestrictedUnidentifiedAccess?: boolean;
-}
-
-export async function encryptProfile(data: Uint8Array, profileKey: Uint8Array): Promise<Uint8Array> {
-  if (profileKey.length !== 32) throw new Error('Got invalid length profile key');
-  const iv = randomBytes(12);
-  const ct = await aesGcmEncrypt(profileKey, iv, data);
-  const out = new Uint8Array(12 + ct.length);
-  out.set(iv);
-  out.set(ct, 12);
-  return out;
-}
-
-export async function decryptProfile(data: Uint8Array, profileKey: Uint8Array): Promise<Uint8Array> {
-  if (data.length < 12 + 16 + 1) throw new Error(`Got too short input: ${data.length}`);
-  if (profileKey.length !== 32) throw new Error('Got invalid length profile key');
-  return aesGcmDecrypt(profileKey, data.subarray(0, 12), data.subarray(12));
-}
-
-async function encryptPadded(item: Uint8Array, profileKey: Uint8Array, lengths: number[]): Promise<Uint8Array> {
-  const padded = lengths.find((l) => item.length <= l);
-  if (!padded) throw new Error('Oversized value');
-  const buf = new Uint8Array(padded);
-  buf.set(item);
-  return encryptProfile(buf, profileKey);
-}
-
-function untilNul(bytes: Uint8Array): string {
-  const end = bytes.indexOf(0);
-  return new TextDecoder().decode(end < 0 ? bytes : bytes.subarray(0, end));
-}
-
-/** Decrypt a profile `name`: given name up to the first NUL, family name up to the next. */
-export async function decryptProfileName(encryptedB64: string, profileKey: Uint8Array): Promise<{ givenName: string; familyName: string; fullName: string }> {
-  const padded = await decryptProfile(fromBase64(encryptedB64), profileKey);
-  let givenEnd = padded.indexOf(0);
-  if (givenEnd < 0) givenEnd = padded.length;
-  const givenName = new TextDecoder().decode(padded.subarray(0, givenEnd));
-  const familyName = givenEnd + 1 < padded.length ? untilNul(padded.subarray(givenEnd + 1)) : '';
-  return { givenName, familyName, fullName: [givenName, familyName].filter(Boolean).join(' ') };
-}
-
-export async function encryptProfileName(givenName: string, familyName: string, profileKey: Uint8Array): Promise<string> {
-  const full = [givenName, familyName].filter(Boolean).join('\0');
-  return toBase64(await encryptPadded(new TextEncoder().encode(full), profileKey, PADDED_LENGTHS.name));
 }
 
 /**
@@ -88,11 +41,11 @@ export async function fetchAndDecryptProfile(
     ? `/v1/profile/${encodeURIComponent(aci)}/${libsignal.profileKeyGetVersion(profileKey!, aci)}`
     : `/v1/profile/${encodeURIComponent(aci)}`;
 
-  const res = await httpJson('GET', path, null, {
+  const res = asObject(await httpJson('GET', path, null, {
     baseUrl: serverUrl,
-    basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
+    basicAuth: accountBasicAuth(acc),
     timeout: 15000,
-  });
+  }));
   if (!res) return null;
 
   const out: DecryptedProfile = {
@@ -104,7 +57,7 @@ export async function fetchAndDecryptProfile(
     aboutEmoji: '',
     avatarUrlPath: typeof res.avatar === 'string' ? res.avatar : undefined,
     phoneNumberSharing: typeof res.phoneNumberSharing === 'string' ? res.phoneNumberSharing : undefined,
-    unidentifiedAccess: res.unidentifiedAccess,
+    unidentifiedAccess: typeof res.unidentifiedAccess === 'string' ? res.unidentifiedAccess : undefined,
     unrestrictedUnidentifiedAccess: !!res.unrestrictedUnidentifiedAccess,
   };
 
@@ -171,11 +124,11 @@ export async function fetchExpiringProfileKeyCredential(
   const req = libsignal.profileKeyCredentialRequest(serverPublicParams, aci, profileKey) as { context: Uint8Array; request: Uint8Array };
   const version = libsignal.profileKeyGetVersion(profileKey, aci);
   // SECURITY-REVIEW: device password is sent only as Basic auth to the Signal chat server.
-  const res = await httpJson('GET', `/v1/profile/${encodeURIComponent(aci)}/${version}/${toHex(req.request)}?credentialType=expiringProfileKey`, null, {
+  const res = asObject(await httpJson('GET', `/v1/profile/${encodeURIComponent(aci)}/${version}/${toHex(req.request)}?credentialType=expiringProfileKey`, null, {
     baseUrl: serverUrl,
-    basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
+    basicAuth: accountBasicAuth(acc),
     timeout: 15000,
-  });
+  }));
   if (!res || typeof res.credential !== 'string') throw new Error('Signal server returned no profile key credential');
   const received = libsignal.receiveExpiringProfileKeyCredential(serverPublicParams, req.context, fromBase64(res.credential), nowSeconds) as {
     credential: Uint8Array;
@@ -202,79 +155,6 @@ export async function adoptOwnProfileKey(store: SignalProtocolStore, profileKey:
     await store.storeValue('profileKeyCredentials', cache);
   }
   return true;
-}
-
-/** Download a profile avatar from CDN 0 and decrypt it with the owner's profile key. */
-export async function downloadAndDecryptProfileAvatar(
-  httpBinary: SignalHttpBinaryFn,
-  avatarUrlPath: string,
-  profileKey: Uint8Array,
-  cdnUrl = DEFAULT_SIGNAL_CDN
-): Promise<Uint8Array> {
-  const cleanPath = avatarUrlPath.replace(/^\/+/, '');
-  const encrypted = await httpBinary('GET', `${cdnUrl}/${cleanPath}`, null, {}, 20000);
-  return decryptProfile(encrypted, profileKey);
-}
-
-/** The S3 POST form `PUT /v1/profile` returns for a new avatar (Signal-Server `ProfileAvatarUploadAttributes`). */
-export interface ProfileAvatarForm {
-  key: string;
-  credential: string;
-  acl: string;
-  algorithm: string;
-  date: string;
-  policy: string;
-  signature: string;
-}
-
-const FORM_FIELDS = ['key', 'credential', 'acl', 'algorithm', 'date', 'policy', 'signature'] as const;
-
-/** The server's upload form, or an error: every field must be present, and since each lands inside the multipart body, only printable ASCII without spaces is accepted. */
-export function parseAvatarForm(res: unknown): ProfileAvatarForm {
-  if (!res || typeof res !== 'object') throw new Error('Signal server returned no avatar upload form');
-  const raw = res as Record<string, unknown>;
-  const out = {} as ProfileAvatarForm;
-  for (const f of FORM_FIELDS) {
-    const v = raw[f];
-    if (typeof v !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(v)) throw new Error(`Avatar upload form has a bad ${f}`);
-    out[f] = v;
-  }
-  if (!/^[A-Za-z0-9_\-/.=+]{1,256}$/.test(out.key) || out.key.indexOf('..') >= 0 || out.key[0] === '/') throw new Error('Avatar upload form has a bad key');
-  return out;
-}
-
-/** Signal-Desktop's `makePutParams`: the form fields in its order, then the encrypted avatar as `file`. */
-export function avatarUploadBody(form: ProfileAvatarForm, encrypted: Uint8Array, boundaryId = toHex(randomBytes(16))): { body: Uint8Array; contentType: string } {
-  const boundary = `----------------${boundaryId}`;
-  const CRLF = '\r\n';
-  const section = (name: string, value: string) => [`--${boundary}`, `Content-Disposition: form-data; name="${name}"${CRLF}`, value].join(CRLF);
-  const start = [
-    section('key', form.key),
-    section('x-amz-credential', form.credential),
-    section('acl', form.acl),
-    section('x-amz-algorithm', form.algorithm),
-    section('x-amz-date', form.date),
-    section('policy', form.policy),
-    section('x-amz-signature', form.signature),
-    section('Content-Type', 'application/octet-stream'),
-    `--${boundary}`,
-    'Content-Disposition: form-data; name="file"',
-    `Content-Type: application/octet-stream${CRLF}${CRLF}`,
-  ].join(CRLF);
-  const head = new TextEncoder().encode(start);
-  const tail = new TextEncoder().encode(`${CRLF}--${boundary}--${CRLF}`);
-  const body = new Uint8Array(head.length + encrypted.length + tail.length);
-  body.set(head);
-  body.set(encrypted, head.length);
-  body.set(tail, head.length + encrypted.length);
-  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
-}
-
-/** POST an encrypted avatar to CDN 0 with the server's form; resolves to the avatar's path. */
-export async function uploadProfileAvatar(httpBinary: SignalHttpBinaryFn, form: ProfileAvatarForm, encrypted: Uint8Array, cdnUrl = DEFAULT_SIGNAL_CDN): Promise<string> {
-  const { body, contentType } = avatarUploadBody(form, encrypted);
-  await httpBinary('POST', `${cdnUrl}/`, body, { 'Content-Type': contentType }, 60000);
-  return form.key;
 }
 
 /** What a profile write did to the avatar: `avatarUrlPath` is the new path, null when the avatar was removed, and absent when it was kept. */
@@ -336,11 +216,11 @@ export async function uploadOwnProfile(
   };
 
   // SECURITY-REVIEW: device password is sent only as Basic auth to the Signal chat server.
-  const res = await httpJson('PUT', '/v1/profile', body, {
+  const res = asObject(await httpJson('PUT', '/v1/profile', body, {
     baseUrl: serverUrl,
-    basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
+    basicAuth: accountBasicAuth(acc),
     timeout: 15000,
-  });
+  }));
   if (patch.avatar === undefined) return {};
   if (patch.avatar === null) return { avatarUrlPath: null };
   const form = parseAvatarForm(res);
@@ -368,14 +248,14 @@ export async function resolveSignalUsername(
   }
 
   const acc = await store.getAccount();
-  const auth = acc ? { username: `${acc.aci}.${acc.deviceId}`, password: acc.password } : undefined;
+  const auth = acc ? accountBasicAuth(acc) : undefined;
   try {
-    const res = await httpJson('GET', `/v1/accounts/username_hash/${toWebSafeBase64(hash)}`, null, {
+    const res = asObject(await httpJson('GET', `/v1/accounts/username_hash/${toWebSafeBase64(hash)}`, null, {
       baseUrl: serverUrl,
       basicAuth: auth,
       noAuth: !auth,
       timeout: 10000,
-    });
+    }));
     if (res && typeof res.uuid === 'string') return { uuid: res.uuid, username: clean };
   } catch {
     // not found

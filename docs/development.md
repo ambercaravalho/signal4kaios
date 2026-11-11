@@ -61,7 +61,7 @@ Install with [`scripts/install.sh`](../scripts/install.sh) (needs [adb](https://
 ## Bumping the libsignal pin
 
 1. Pick a [libsignal release](https://github.com/signalapp/libsignal/releases) and set its commit as the `rev` of **every** libsignal crate in [`Cargo.toml`](../src/native/libsignal-wasm/Cargo.toml).
-2. Match [`rust-toolchain.toml`](../src/native/libsignal-wasm/rust-toolchain.toml) to libsignal's `rust-toolchain`, and bump `wasm-bindgen` (crate, CLI, and `WASM_BINDGEN_VERSION` in [`ci.yml`](../.github/workflows/ci.yml)) if libsignal's lockfile moved.
+2. Match [`rust-toolchain.toml`](../src/native/libsignal-wasm/rust-toolchain.toml) to libsignal's `rust-toolchain`, and bump `wasm-bindgen` (the crate pin and your local CLI; [the shared CI build action](../.github/actions/build/action.yml) reads the pin from `Cargo.toml`) if libsignal's lockfile moved.
 3. Run `cargo update` in `src/native/libsignal-wasm/`, fix any wrapper compile errors (libsignal's Rust API isn't stable), and commit `Cargo.lock`.
 4. Set `@signalapp/libsignal-client` in [`package.json`](../package.json) to the same version, and update the version asserted in [`test/protocol.test.ts`](../test/protocol.test.ts).
 5. If `chat_websocket.proto` changed, update it as below, then run the full [definition of done](#conventions).

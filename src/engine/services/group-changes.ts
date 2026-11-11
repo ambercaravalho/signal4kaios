@@ -20,7 +20,7 @@ import { libsignal } from '../protocol/libsignal';
 import { create, fromBinary, isAci, toBinary } from '../net/proto';
 import { DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
 import type { SignalProtocolStore } from '../protocol/store';
-import type { StorageMutation } from './storage-service';
+import type { StorageMutation } from './storage';
 import {
   decodeGroupState,
   decryptAttribute,

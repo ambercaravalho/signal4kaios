@@ -21,7 +21,7 @@ import { SETUP_URL } from './Onboarding';
 
 type Diagnostics = Awaited<ReturnType<typeof signal.diagnostics>>;
 
-export const CERT_GUIDE_URL = SETUP_URL + '#optional-for-rooted-phones-trust-signals-certificate';
+const CERT_GUIDE_URL = SETUP_URL + '#optional-for-rooted-phones-trust-signals-certificate';
 
 function useNativeTls(): NativeTlsState {
   const [state, setState] = useState(nativeTlsState());
@@ -134,7 +134,7 @@ export function FasterConnectionScreen() {
 }
 
 /** The in-memory log, newest last. Shown unredacted because it never leaves the phone from here. */
-export function DebugLogScreen() {
+function DebugLogScreen() {
   const body = useRef<HTMLDivElement>(null);
   const lines = logLines();
   useEffect(() => {

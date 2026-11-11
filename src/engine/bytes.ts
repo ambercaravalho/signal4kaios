@@ -47,7 +47,10 @@ export function fromHex(hex: string): Uint8Array {
   return out;
 }
 
+/** Returns `a` or `b` itself when the other is empty, so transport read buffers don't copy on every chunk. */
 export function concatBytes(...arrays: Uint8Array[]): Uint8Array {
+  if (arrays.length === 2 && arrays[1].length === 0) return arrays[0];
+  if (arrays.length === 2 && arrays[0].length === 0) return arrays[1];
   let total = 0;
   for (const a of arrays) total += a.length;
   const out = new Uint8Array(total);
@@ -87,4 +90,9 @@ export function bytesToUuid(bytes: Uint8Array): string {
   if (bytes.length !== 16) throw new Error('UUID bytes must be 16 bytes');
   const h = toHex(bytes);
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+/** A Blob over exactly `bytes`, even when it views part of a larger buffer. */
+export function bytesToBlob(bytes: Uint8Array, type: string): Blob {
+  return new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer], { type });
 }

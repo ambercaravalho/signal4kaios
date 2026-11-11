@@ -8,7 +8,7 @@ import { pick, showOptions } from './Overlays';
 import { Screen } from './Screen';
 
 /** Signal's default reactions. */
-export const QUICK_REACTIONS = ['❤️', '👍', '👎', '😂', '😮', '😢'];
+const QUICK_REACTIONS = ['❤️', '👍', '👎', '😂', '😮', '😢'];
 
 const COLS = 6;
 /** The newest emoji release the KaiOS 3.x system emoji font can draw; matches `MAX_EMOJI_VERSION` in scripts/build.mjs. */
@@ -54,12 +54,10 @@ function skinTone(): number {
   return n > 0 && n < SKIN_TONES.length ? n : 0;
 }
 
-interface EmojiEntry {
-  emoji: string;
-  emoji_version: string;
-  skin_tone_support?: boolean;
-  skin_tone_support_unicode_version?: string;
-}
+/** scripts/build.mjs slims entries to plain strings and drops versions it already checked. */
+type EmojiEntry = string | { emoji: string; emoji_version?: string; skin_tone_support?: boolean; skin_tone_support_unicode_version?: string };
+
+const drawable = (version: string | undefined) => version === undefined || parseFloat(version) <= MAX_EMOJI_VERSION;
 
 function categories(tone: number): Category[] {
   const list: Category[] = [];
@@ -67,9 +65,11 @@ function categories(tone: number): Category[] {
   if (r.length) list.push({ id: 'recent', label: S.recentEmoji, emojis: r });
   const mod = SKIN_TONES[tone] || '';
   for (const g of groups as Array<{ slug: string; name: string; emojis: EmojiEntry[] }>) {
-    const emojis = g.emojis
-      .filter((e) => parseFloat(e.emoji_version) <= MAX_EMOJI_VERSION)
-      .map((e) => (mod && e.skin_tone_support && parseFloat(e.skin_tone_support_unicode_version || '99') <= MAX_EMOJI_VERSION ? withSkinTone(e.emoji, mod) : e.emoji));
+    const emojis: string[] = [];
+    for (const e of g.emojis) {
+      if (typeof e === 'string') emojis.push(e);
+      else if (drawable(e.emoji_version)) emojis.push(mod && e.skin_tone_support && drawable(e.skin_tone_support_unicode_version) ? withSkinTone(e.emoji, mod) : e.emoji);
+    }
     if (emojis.length) list.push({ id: g.slug, label: CATEGORY_LABELS[g.slug] || g.name, emojis });
   }
   return list;
@@ -98,7 +98,7 @@ function Cell(props: { emoji: string; focused: boolean }) {
 }
 
 /** A grid of emoji; Enter picks the focused one. */
-export function EmojiGrid(props: { emojis: string[]; onPick(e: string): void }) {
+function EmojiGrid(props: { emojis: string[]; onPick(e: string): void }) {
   const nav = useListNav({ count: props.emojis.length, cols: COLS, onEnter: (i) => props.onPick(props.emojis[i]) });
   return (
     <div class="emoji-grid">

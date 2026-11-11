@@ -113,11 +113,6 @@
   opacity: 0.8;
 }
 
-.notice.focused {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
 .msg {
   display: flex;
   flex-direction: column;
@@ -154,6 +149,7 @@
   border-bottom-right-radius: 0.4rem;
 }
 
+.notice.focused,
 .msg-in.focused .bubble {
   background: var(--accent);
   color: var(--on-accent);

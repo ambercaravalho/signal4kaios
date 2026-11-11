@@ -6,7 +6,7 @@ import type { Attachment } from './types';
 
 export const ATTACHMENT_CACHE_KEEP = 150;
 /** Photos up to this size download on their own when they scroll into view. */
-export const AUTO_DOWNLOAD_BYTES = 400 * 1024;
+const AUTO_DOWNLOAD_BYTES = 400 * 1024;
 
 export class ViewedOnceError extends Error {}
 export class NotDownloadableError extends Error {}

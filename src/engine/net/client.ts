@@ -11,7 +11,6 @@ import {
   Envelope_Type,
   SyncMessage_Request_Type,
 } from '../gen/SignalService_pb';
-import { libsignal } from '../protocol/libsignal';
 import { create, toBinary } from './proto';
 import {
   CIPHERTEXT_PLAINTEXT,
@@ -28,6 +27,8 @@ import {
   sealedEncryptForDevice,
   senderCertificateExpiration,
   senderKeyMultiRecipientEncrypt,
+  sessionRegistrationId,
+  unidentifiedAccessKey,
 } from '../protocol/protocol';
 import {
   analyzeSenderKeyDevices,
@@ -39,13 +40,14 @@ import {
   SenderKeyDevice,
 } from '../services/group-send';
 import type { SignalProtocolStore } from '../protocol/store';
-import { DEFAULT_SIGNAL_SERVER, SIGNAL_CDNS, SignalHttpBinaryFn, SignalHttpJsonFn, SignalHttpRawFn } from './http';
+import { accountBasicAuth, asObject, DEFAULT_SIGNAL_SERVER, SIGNAL_CDNS, SignalHttpBinaryFn, SignalHttpJsonFn, SignalHttpRawFn } from './http';
 import { isAci } from './proto';
-import { AttachmentDescriptor, attachmentCdnKey, decodeAttachmentDescriptor, decryptEnvelope, DecryptedEnvelope, DecryptFailure } from './receive';
+import { type AttachmentDescriptor, attachmentCdnKey, decodeAttachmentDescriptor } from './incoming-json';
+import { decryptEnvelope, DecryptedEnvelope, DecryptFailure } from './receive';
 import type { TrustLevel } from '../protocol/store';
 
 /** Thrown when a recipient's identity key changed after the user marked it verified: sending waits until the user reviews the new safety number. */
-export class IdentityChangedError extends Error {
+class IdentityChangedError extends Error {
   constructor(readonly recipient: string) {
     super(`Safety number with ${recipient} changed; verify it before sending`);
     this.name = 'UntrustedIdentity';
@@ -63,6 +65,11 @@ export interface SenderKeyGroup {
 }
 
 const CONTENT_HINT_DEFAULT = 0;
+
+/** Device IDs from an untrusted 409/410 response list. */
+function deviceIds(v: unknown): number[] {
+  return Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n) && n > 0) : [];
+}
 
 export class SignalClient {
   /** Debug log for details the caller can't see, such as a Sender Key send falling back. */
@@ -102,11 +109,11 @@ export class SignalClient {
     }
     try {
       const auth = await this.authHeader();
-      const res = await this.httpJson('GET', '/v1/certificate/delivery?includeE164=false', null, {
+      const res = asObject(await this.httpJson('GET', '/v1/certificate/delivery?includeE164=false', null, {
         baseUrl: this.serverUrl,
         basicAuth: auth,
         timeout: 10000,
-      });
+      }));
       if (res && typeof res.certificate === 'string') {
         const cert = fromBase64(res.certificate);
         this.cachedSenderCert = { cert, expiresAt: senderCertificateExpiration(cert) - 3600 * 1000 };
@@ -134,7 +141,7 @@ export class SignalClient {
             {
               type: Envelope_Type.PLAINTEXT_CONTENT,
               destinationDeviceId: failure.senderDeviceId,
-              destinationRegistrationId: await this.sessionRegistrationId(failure.senderName, failure.senderDeviceId),
+              destinationRegistrationId: await sessionRegistrationId(this.store, failure.senderName, failure.senderDeviceId),
               content: toBase64(content),
             },
           ],
@@ -149,22 +156,11 @@ export class SignalClient {
     }
   }
 
-  private async sessionRegistrationId(name: string, deviceId: number): Promise<number> {
-    const rec = await this.store.loadSession(name, deviceId);
-    if (!rec) return 0;
-    try {
-      return libsignal.sessionRecordRemoteRegistrationId(rec);
-    } catch {
-      return 0;
-    }
-  }
-
   private async authHeader(): Promise<{ username: string; password: string; aci: string; number: string; deviceId: number }> {
     const acc = await this.store.getAccount();
     if (!acc) throw new Error('This phone is not linked to a Signal account');
     return {
-      username: `${acc.aci}.${acc.deviceId}`,
-      password: acc.password,
+      ...accountBasicAuth(acc),
       aci: acc.aci,
       number: acc.number,
       deviceId: acc.deviceId,
@@ -210,11 +206,11 @@ export class SignalClient {
   private async fetchAndProcessBundles(recipientId: string, selector: string): Promise<number[]> {
     const auth = await this.authHeader();
     const local = await localIdentity(this.store);
-    const res = await this.httpJson('GET', `/v2/keys/${encodeURIComponent(recipientId)}/${selector}`, null, {
+    const res = asObject(await this.httpJson('GET', `/v2/keys/${encodeURIComponent(recipientId)}/${selector}`, null, {
       baseUrl: this.serverUrl,
       basicAuth: auth,
       timeout: 15000,
-    });
+    }));
     const bundles = parsePreKeyResponse(res);
     if (bundles.length > 0) await this.acceptBundleIdentity(recipientId, bundles[0].identityKey);
     const out: number[] = [];
@@ -262,7 +258,7 @@ export class SignalClient {
     let accessKey: string | undefined;
     if (peerProfileKey) {
       senderCert = await this.getSenderCertificate();
-      if (senderCert) accessKey = toBase64(libsignal.profileKeyDeriveAccessKey(peerProfileKey));
+      if (senderCert) accessKey = unidentifiedAccessKey(peerProfileKey);
     }
 
     let devices = await this.devicesFor(recipientId);
@@ -302,22 +298,12 @@ export class SignalClient {
         this.deviceLists.set(recipientId, devices);
         return !!accessKey;
       } catch (err: any) {
-        const status = err && err.status;
-        const body = err && err.body;
-        if (status === 409 && body) {
-          const extra: number[] = Array.isArray(body.extraDevices) ? body.extraDevices : [];
-          const missing: number[] = Array.isArray(body.missingDevices) ? body.missingDevices : [];
-          for (const ex of extra) await deleteSession(this.store, recipientId, ex);
-          devices = devices.filter((d) => !extra.includes(d)).concat(missing.filter((d) => !devices.includes(d)));
-          this.deviceLists.set(recipientId, devices);
+        const fixed = await this.fixDevices(recipientId, err && err.status, err && err.body, devices);
+        if (fixed) {
+          devices = fixed.devices;
           continue;
         }
-        if (status === 410 && body) {
-          const stale: number[] = Array.isArray(body.staleDevices) ? body.staleDevices : [];
-          for (const st of stale) await deleteSession(this.store, recipientId, st);
-          continue;
-        }
-        if (status === 401 && accessKey) {
+        if (err && err.status === 401 && accessKey) {
           // Wrong or outdated profile key: retry identified
           accessKey = undefined;
           senderCert = null;
@@ -365,14 +351,28 @@ export class SignalClient {
     const out: SenderKeyDevice[] = [];
     for (const deviceId of await this.devicesFor(aci)) {
       await this.ensureSession(aci, deviceId);
-      out.push({ aci, deviceId, registrationId: await this.sessionRegistrationId(aci, deviceId) });
+      out.push({ aci, deviceId, registrationId: await sessionRegistrationId(this.store, aci, deviceId) });
     }
     return out;
   }
 
-  private adjustDevices(aci: string, current: number[], add: number[], remove: number[]): void {
-    const next = current.filter((d) => !remove.includes(d)).concat(add.filter((d) => !current.includes(d)));
-    this.deviceLists.set(aci, next);
+  /** Applies a 409 (mismatched devices) or 410 (stale devices) response for `aci`: drops the sessions it names and returns the corrected device list. Null for any other error. */
+  private async fixDevices(aci: string, status: unknown, body: any, current: number[]): Promise<{ devices: number[]; missing: number[]; stale: number[] } | null> {
+    if (!body || typeof body !== 'object') return null;
+    if (status === 409) {
+      const extra = deviceIds(body.extraDevices);
+      const missing = deviceIds(body.missingDevices);
+      for (const ex of extra) await deleteSession(this.store, aci, ex);
+      const devices = current.filter((d) => !extra.includes(d)).concat(missing.filter((d) => !current.includes(d)));
+      this.deviceLists.set(aci, devices);
+      return { devices, missing, stale: [] };
+    }
+    if (status === 410) {
+      const stale = deviceIds(body.staleDevices);
+      for (const st of stale) await deleteSession(this.store, aci, st);
+      return { devices: current, missing: [], stale };
+    }
+    return null;
   }
 
   /**
@@ -436,12 +436,12 @@ export class SignalClient {
       );
       const token = groupSendToken(endorsements, group.secretParams, reached);
       try {
-        const res = await this.httpJson('PUT', `/v1/messages/multi_recipient?ts=${timestamp}&online=${online}&urgent=${!online}&story=false`, body, {
+        const res = asObject(await this.httpJson('PUT', `/v1/messages/multi_recipient?ts=${timestamp}&online=${online}&urgent=${!online}&story=false`, body, {
           baseUrl: this.serverUrl,
           noAuth: true,
           headers: { 'Content-Type': 'application/vnd.signal-messenger.mrm', 'Group-Send-Token': token },
           timeout: 20000,
-        });
+        }));
         const unregistered: string[] = res && Array.isArray(res.uuids404) ? res.uuids404.filter((id: unknown) => typeof id === 'string' && reached.includes(id)) : [];
         for (const aci of unregistered) this.deviceLists.delete(aci);
         return { sent: reached.filter((a) => !unregistered.includes(a)), unregistered };
@@ -451,23 +451,13 @@ export class SignalClient {
         if (attempt > 0 || (status !== 409 && status !== 410) || !entries.length) throw err;
         for (const entry of entries) {
           const aci = entry && typeof entry.uuid === 'string' ? entry.uuid : '';
-          const d = entry && entry.devices;
-          if (!reached.includes(aci) || !d) continue;
-          const nums = (v: unknown) => (Array.isArray(v) ? v.filter((n) => Number.isInteger(n) && n > 0) : []) as number[];
+          if (!reached.includes(aci)) continue;
           const current = devices.filter((x) => x.aci === aci).map((x) => x.deviceId);
-          if (status === 409) {
-            const extra = nums(d.extraDevices);
-            const missing = nums(d.missingDevices);
-            for (const ex of extra) await deleteSession(this.store, aci, ex);
-            for (const m of missing) await this.fetchAndProcessBundles(aci, String(m));
-            this.adjustDevices(aci, current, missing, extra);
-          } else {
-            const stale = nums(d.staleDevices);
-            for (const st of stale) {
-              await deleteSession(this.store, aci, st);
-              await this.fetchAndProcessBundles(aci, String(st));
-            }
-            info.memberDevices = info.memberDevices.filter((m) => !(m.aci === aci && stale.includes(m.deviceId)));
+          const fixed = await this.fixDevices(aci, status, entry.devices, current);
+          if (!fixed) continue;
+          for (const d of fixed.missing.concat(fixed.stale)) await this.fetchAndProcessBundles(aci, String(d));
+          if (fixed.stale.length) {
+            info.memberDevices = info.memberDevices.filter((m) => !(m.aci === aci && fixed.stale.includes(m.deviceId)));
             await saveSenderKeyInfo(this.store, group.internalId, info);
           }
         }
@@ -542,18 +532,20 @@ export class SignalClient {
     const encrypted = await encryptAttachment(plaintext);
     const size = encrypted.ciphertext.length;
 
-    const form = await this.httpJson('GET', `/v4/attachments/form/upload?uploadLength=${size}`, null, {
+    const form = asObject(await this.httpJson('GET', `/v4/attachments/form/upload?uploadLength=${size}`, null, {
       baseUrl: this.serverUrl,
       basicAuth: auth,
       timeout: 15000,
-    });
+    }));
     if (!form || typeof form.key !== 'string' || typeof form.signedUploadLocation !== 'string' || typeof form.cdn !== 'number') {
       throw new Error('Signal server returned an invalid attachment upload form');
     }
     const formHeaders: Record<string, string> = {};
-    if (form.headers && typeof form.headers === 'object') {
-      for (const k of Object.keys(form.headers)) {
-        if (typeof form.headers[k] === 'string') formHeaders[k] = form.headers[k];
+    const headers = asObject(form.headers);
+    if (headers) {
+      for (const k of Object.keys(headers)) {
+        const v = headers[k];
+        if (typeof v === 'string') formHeaders[k] = v;
       }
     }
 

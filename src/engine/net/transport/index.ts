@@ -12,7 +12,6 @@ import { connectTcp, tcpSocketAvailable } from './tcp';
 import { connectTls, TlsSession } from './tls-stream';
 import { PinnedWebSocket } from './websocket';
 
-export { TransportError } from './stream';
 export type { HttpRequest, HttpResponse } from './http1';
 
 /** The `WebSocket` subset both the platform socket and `PinnedWebSocket` provide. */
@@ -29,7 +28,7 @@ export interface SocketLike {
 
 export const SOCKET_OPEN = 1;
 
-export const PROXY_PORT = 443;
+const PROXY_PORT = 443;
 
 export interface NetDeps {
   connectRaw: Connector;

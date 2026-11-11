@@ -18,7 +18,7 @@ Beacon is an unofficial, standalone Signal client for **KaiOS 3.0, 3.1 (Gecko 84
 
 ## Hard rules
 
-- Never reimplement Signal cryptography (sessions, PQXDH, Sealed Sender, Sender Keys, safety numbers, provisioning, zkgroup, usernames) in TypeScript; call libsignal through `src/engine/protocol/protocol.ts`.
+- Never reimplement Signal cryptography (sessions, PQXDH, Sealed Sender, Sender Keys, safety numbers, provisioning, zkgroup, usernames) in TypeScript; call libsignal. Anything that reads or writes session or identity records goes through `src/engine/protocol/protocol.ts`. Stateless wasm bindings (zkgroup, usernames, TLS, PreKey generation) may be called directly from `src/engine/`, never from `src/ui/`.
 - Port Signal-specific derivations from Signal-Desktop instead of inventing them.
 - The privileged CSP forbids `eval()`, `new Function()`, inline `<script>`/`<style>`, and inline event handlers.
 - Don't hard-wrap prose, Markdown, or comments; one line per paragraph, list item, or comment sentence.

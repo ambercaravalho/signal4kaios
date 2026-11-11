@@ -5,6 +5,7 @@ import type { HostHttpOptions, HostRawResponse } from '../../engine/host';
 import { config } from './config';
 import { dbg } from './log';
 import * as nativeTls from './nativeTls';
+import { mozSystemXhr } from './platform';
 
 const MAX_REDIRECTS = 3;
 const MAX_CDN_RESPONSE_BYTES = 200 * 1024 * 1024;
@@ -39,17 +40,9 @@ function encodeBasicAuth(username: string, password: string): string {
   return 'Basic ' + btoa(username + ':' + password);
 }
 
-function makeXhr(): XMLHttpRequest {
-  try {
-    return new (XMLHttpRequest as any)({ mozSystem: true });
-  } catch {
-    return new XMLHttpRequest();
-  }
-}
-
 function xhrSend(method: string, url: string, headers: Record<string, string>, body: BodyInit | Uint8Array | null, timeout: number, maxBytes = 0): Promise<Res> {
   return new Promise((resolve, reject) => {
-    const xhr = makeXhr();
+    const xhr = mozSystemXhr() || new XMLHttpRequest();
     xhr.open(method, url, true);
     xhr.timeout = timeout;
     xhr.responseType = 'arraybuffer';
@@ -128,7 +121,7 @@ function send(method: string, url: string, headers: Record<string, string>, body
 }
 
 /** A JSON request to a Signal service path. Resolves to the parsed body (or a Blob with `binary`); rejects with an `HttpError`. */
-export function request(method: string, path: string, body: unknown, opts: HostHttpOptions & { binary?: boolean } = {}): Promise<any> {
+function request(method: string, path: string, body: unknown, opts: HostHttpOptions & { binary?: boolean } = {}): Promise<any> {
   const base = (opts.baseUrl || config.serverUrl()).replace(/\/+$/, '');
   const headers: Record<string, string> = {};
   let isActiveToken = false;
@@ -185,7 +178,7 @@ export function request(method: string, path: string, body: unknown, opts: HostH
 }
 
 /** A raw binary request (CDN attachments, Storage Service protobufs). Rejects on non-2xx with `status` set. */
-export function rawRequest(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<HostRawResponse> {
+function rawRequest(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<HostRawResponse> {
   return send(method, url, headers || {}, body || null, timeout || 60000).then((res) => {
     if (res.status >= 200 && res.status < 300) return { status: res.status, body: res.body, location: res.header('Location') };
     const err: HttpError = new Error('HTTP ' + res.status);
@@ -195,7 +188,7 @@ export function rawRequest(method: string, url: string, body?: Uint8Array | null
   });
 }
 
-export function rawBinary(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<Uint8Array> {
+function rawBinary(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<Uint8Array> {
   return rawRequest(method, url, body, headers, timeout).then((res) => res.body);
 }
 

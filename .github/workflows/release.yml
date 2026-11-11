@@ -17,32 +17,15 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/build
         with:
-          node-version: 24
-          cache: npm
+          release-tag: ${{ github.ref_name }}
 
-      - name: Install protoc, binaryen, and LLVM
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler binaryen clang llvm
-
-      - name: Install the pinned Rust toolchain
-        working-directory: src/native/libsignal-wasm
-        run: rustup toolchain install
-
-      - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --version "$(sed -n 's/^wasm-bindgen = "=\([^"]*\)"/\1/p' src/native/libsignal-wasm/Cargo.toml)" --locked
-
-      - name: Install, test, and package
+      - name: Release asset name
         id: pkg
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          npm ci
-          npm run build:wasm
-          npm run typecheck
-          npm test
-          SKIP_WASM_BUILD=1 sh scripts/package.sh
-          echo "asset=signal4kaios-${RELEASE_TAG#v}.zip" >> "$GITHUB_OUTPUT"
+        run: echo "asset=signal4kaios-${RELEASE_TAG#v}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         env:

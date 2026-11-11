@@ -52,7 +52,7 @@ export function drawToCanvas(img: HTMLImageElement, g: DrawGeometry): HTMLCanvas
   return canvas;
 }
 
-export function canvasJpeg(canvas: HTMLCanvasElement, quality = 0.8): Promise<Uint8Array> {
+function canvasJpeg(canvas: HTMLCanvasElement, quality = 0.8): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {

@@ -15,10 +15,9 @@ import { libsignal } from '../src/engine/protocol/libsignal';
 import { applyPniChangeNumber } from '../src/engine/services/change-number';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
+import { ALICE as ME, BOB } from './helpers';
 import { contentBytes, envelopeBytes, loadWasmForTests, newAccount } from './support';
 
-const ME = '11111111-1111-4111-8111-111111111111';
-const BOB = '22222222-2222-4222-8222-222222222222';
 const OLD_PNI = '33333333-3333-4333-8333-333333333333';
 const NEW_PNI = '44444444-4444-4444-8444-444444444444';
 const OLD_NUMBER = '+15550001111';

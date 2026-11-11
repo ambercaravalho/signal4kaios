@@ -34,13 +34,9 @@ import {
 } from '../src/engine/services/group-send';
 import { deriveGroupV2Keys } from '../src/engine/services/groups-v2';
 import { libsignal } from '../src/engine/protocol/libsignal';
+import { ALICE, BOB, CAROL, DAVE, u8 } from './helpers';
 import { connect, loadWasmForTests, newAccount, serverKeysFor, TestAccount } from './support';
 
-const ALICE = '11111111-1111-4111-8111-111111111111';
-const BOB = '22222222-2222-4222-8222-222222222222';
-const CAROL = '33333333-3333-4333-8333-333333333333';
-const DAVE = '44444444-4444-4444-8444-444444444444';
-const u8 = (b: Uint8Array): Uint8Array<ArrayBuffer> => new Uint8Array(b);
 const DAY = 86400000;
 
 before(() => {

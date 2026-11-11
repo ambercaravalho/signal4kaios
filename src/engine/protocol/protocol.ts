@@ -3,12 +3,12 @@
  * Each operation hydrates a short-lived libsignal `ProtocolStore` with exactly the records it needs from the SignalProtocolStore, runs one libsignal call, then writes back whatever libsignal changed (sessions, consumed PreKeys, saved identities, sender keys). Callers must serialize operations that touch the same address; SignalClient does this with a single queue.
  */
 
-import { concatBytes, fromBase64, uuidToBytes } from '../bytes';
+import { concatBytes, fromBase64, toBase64, uuidToBytes } from '../bytes';
 import { libsignal } from './libsignal';
 import type { KeyPair, SignalProtocolStore } from './store';
 
 /** Signal production sealed-sender trust roots (public keys, from Signal-Desktop config/production.json). */
-export const SEALED_SENDER_TRUST_ROOTS = [
+const SEALED_SENDER_TRUST_ROOTS = [
   'BXu6QIKVz5MA8gstzfOgRQGqyLqOwNKHL6INkv3IHWMF',
   'BUkY0I+9+oPgDCn4+Ac6Iu813yvqkDr/ga8DzLxFxuk6',
 ];
@@ -18,15 +18,15 @@ export const CIPHERTEXT_PREKEY = 3;
 export const CIPHERTEXT_SENDERKEY = 7;
 export const CIPHERTEXT_PLAINTEXT = 8;
 
-export const FINGERPRINT_VERSION = 2;
-export const FINGERPRINT_ITERATIONS = 5200;
+const FINGERPRINT_VERSION = 2;
+const FINGERPRINT_ITERATIONS = 5200;
 
 /** Stable error code of a libsignal failure (`UntrustedIdentity`, `SessionNotFound`, `DuplicatedMessage`, ...), or '' for other errors. */
 export function errorCode(e: unknown): string {
   return e && typeof (e as Error).name === 'string' && (e as Error).name !== 'Error' ? (e as Error).name : '';
 }
 
-export function protocolError(code: string, message: string): Error {
+function protocolError(code: string, message: string): Error {
   const err = new Error(message);
   err.name = code;
   return err;
@@ -215,14 +215,28 @@ export async function processPreKeyBundle(
   );
 }
 
-function remoteRegistrationId(sessions: FlushResult['sessions'], name: string, deviceId: number): number {
-  const s = sessions.find((x) => x.name === name && x.deviceId === deviceId);
-  if (!s) return 0;
+function recordRegistrationId(record: Uint8Array): number {
   try {
-    return libsignal.sessionRecordRemoteRegistrationId(s.record);
+    return libsignal.sessionRecordRemoteRegistrationId(record);
   } catch {
     return 0;
   }
+}
+
+function remoteRegistrationId(sessions: FlushResult['sessions'], name: string, deviceId: number): number {
+  const s = sessions.find((x) => x.name === name && x.deviceId === deviceId);
+  return s ? recordRegistrationId(s.record) : 0;
+}
+
+/** The remote device's registration ID from our stored session with it; 0 when there is no readable session. */
+export async function sessionRegistrationId(store: SignalProtocolStore, name: string, deviceId: number): Promise<number> {
+  const record = await store.loadSession(name, deviceId);
+  return record ? recordRegistrationId(record) : 0;
+}
+
+/** The Unidentified-Access-Key for a peer's profile key, base64. */
+export function unidentifiedAccessKey(profileKey: Uint8Array): string {
+  return toBase64(libsignal.profileKeyDeriveAccessKey(profileKey));
 }
 
 /** Encrypts a padded Content for one device: `{ type }` is the envelope type (PREKEY_BUNDLE = 3 or CIPHERTEXT = 1). */

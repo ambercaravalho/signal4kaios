@@ -4,16 +4,17 @@ use std::collections::{BTreeSet, HashMap};
 
 use async_trait::async_trait;
 use libsignal_protocol::{
-    DeviceId, Direction, GenericSignedPreKey, IdentityChange, IdentityKey, IdentityKeyPair,
+    DeviceId, Direction, IdentityChange, IdentityKey, IdentityKeyPair,
     IdentityKeyStore, KyberPreKeyId, KyberPreKeyRecord, KyberPreKeyStore, PreKeyId, PreKeyRecord,
-    PreKeyStore, PrivateKey, ProtocolAddress, PublicKey, SenderKeyRecord, SenderKeyStore,
+    PreKeyStore, ProtocolAddress, PublicKey, SenderKeyRecord, SenderKeyStore,
     SessionRecord, SessionStore, SignalProtocolError, SignedPreKeyId, SignedPreKeyRecord,
     SignedPreKeyStore,
 };
 use uuid::Uuid;
 use wasm_bindgen::prelude::*;
 
-use crate::{Obj, array, invalid, protocol_error};
+use crate::keys::{private_key, public_key};
+use crate::{Obj, array, invalid, parse, protocol_error};
 
 type Result<T> = std::result::Result<T, SignalProtocolError>;
 
@@ -238,8 +239,8 @@ impl ProtocolStore {
         identity_private: &[u8],
         registration_id: u32,
     ) -> std::result::Result<ProtocolStore, JsValue> {
-        let public = PublicKey::deserialize(identity_public).map_err(|e| invalid(e))?;
-        let private = PrivateKey::deserialize(identity_private).map_err(|e| invalid(e))?;
+        let public = public_key(identity_public)?;
+        let private = private_key(identity_private)?;
         Ok(ProtocolStore {
             identities: Identities {
                 key_pair: Some(IdentityKeyPair::new(IdentityKey::new(public), private)),
@@ -256,35 +257,35 @@ impl ProtocolStore {
 
     #[wasm_bindgen(js_name = putIdentity)]
     pub fn put_identity(&mut self, name: &str, public_key: &[u8]) -> std::result::Result<(), JsValue> {
-        let key = IdentityKey::decode(public_key).map_err(protocol_error)?;
+        let key = parse::<IdentityKey>(public_key)?;
         self.identities.known.insert(name.to_owned(), key);
         Ok(())
     }
 
     #[wasm_bindgen(js_name = putSession)]
     pub fn put_session(&mut self, name: &str, device: u32, record: &[u8]) -> std::result::Result<(), JsValue> {
-        let record = SessionRecord::deserialize(record).map_err(protocol_error)?;
+        let record = parse::<SessionRecord>(record)?;
         self.sessions.records.insert((name.to_owned(), device), record);
         Ok(())
     }
 
     #[wasm_bindgen(js_name = putPreKey)]
     pub fn put_pre_key(&mut self, id: u32, record: &[u8]) -> std::result::Result<(), JsValue> {
-        let record = PreKeyRecord::deserialize(record).map_err(protocol_error)?;
+        let record = parse::<PreKeyRecord>(record)?;
         self.pre_keys.records.insert(id, record);
         Ok(())
     }
 
     #[wasm_bindgen(js_name = putSignedPreKey)]
     pub fn put_signed_pre_key(&mut self, id: u32, record: &[u8]) -> std::result::Result<(), JsValue> {
-        let record = SignedPreKeyRecord::deserialize(record).map_err(protocol_error)?;
+        let record = parse::<SignedPreKeyRecord>(record)?;
         self.signed_pre_keys.records.insert(id, record);
         Ok(())
     }
 
     #[wasm_bindgen(js_name = putKyberPreKey)]
     pub fn put_kyber_pre_key(&mut self, id: u32, record: &[u8]) -> std::result::Result<(), JsValue> {
-        let record = KyberPreKeyRecord::deserialize(record).map_err(protocol_error)?;
+        let record = parse::<KyberPreKeyRecord>(record)?;
         self.kyber_pre_keys.records.insert(id, record);
         Ok(())
     }
@@ -297,8 +298,8 @@ impl ProtocolStore {
         distribution_id: &str,
         record: &[u8],
     ) -> std::result::Result<(), JsValue> {
-        let dist = Uuid::parse_str(distribution_id).map_err(|e| invalid(e))?;
-        let record = SenderKeyRecord::deserialize(record).map_err(protocol_error)?;
+        let dist = Uuid::parse_str(distribution_id).map_err(invalid)?;
+        let record = parse::<SenderKeyRecord>(record)?;
         self.sender_keys.records.insert((name.to_owned(), device, dist), record);
         Ok(())
     }

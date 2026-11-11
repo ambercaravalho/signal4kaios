@@ -16,11 +16,11 @@ import { libsignal } from '../protocol/libsignal';
 import { generateKyberPreKeys, generateOneTimePreKeys, generateSignedPreKey, ONE_TIME_PRE_KEY_COUNT } from '../protocol/prekeys';
 import { create, decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, fromBinary, serviceIdFrom, toBinary } from './proto';
 import type { AccountCredentials, KeyPair, SignalProtocolStore } from '../protocol/store';
-import { DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SIGNAL_USER_AGENT, SignalHttpJsonFn } from './http';
+import { accountBasicAuth, asObject, DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SIGNAL_USER_AGENT, SignalHttpJsonFn } from './http';
 import { net, SOCKET_OPEN, SocketLike } from './transport';
 
 /** Signal-Desktop `getCapabilities` for a linked device without a PIN. */
-export function linkedDeviceCapabilities(hasE164: boolean): Record<string, boolean> {
+function linkedDeviceCapabilities(hasE164: boolean): Record<string, boolean> {
   return {
     attachmentBackfill: false,
     spqr: true,
@@ -30,7 +30,7 @@ export function linkedDeviceCapabilities(hasE164: boolean): Record<string, boole
 }
 
 /** Signal-Desktop `encryptDeviceName`: SIV-style AES-256-CTR under an ECDH secret with our ACI identity key, serialized as a DeviceName proto. */
-export async function encryptDeviceName(deviceName: string, identityPublic: Uint8Array): Promise<Uint8Array> {
+async function encryptDeviceName(deviceName: string, identityPublic: Uint8Array): Promise<Uint8Array> {
   const plaintext = new TextEncoder().encode(deviceName);
   const ephemeral = libsignal.keyPairGenerate() as { publicKey: Uint8Array; privateKey: Uint8Array };
   const masterSecret = libsignal.calculateAgreement(identityPublic, ephemeral.privateKey);
@@ -66,7 +66,7 @@ function identityKeyPair(pub?: Uint8Array, priv?: Uint8Array): KeyPair | undefin
 }
 
 /** The account master key: derived from the Account Entropy Pool when the primary sends one, else the deprecated raw `masterKey` field. */
-export function provisionedMasterKey(prov: ProvisionMessage): Uint8Array | undefined {
+function provisionedMasterKey(prov: ProvisionMessage): Uint8Array | undefined {
   if (prov.accountEntropyPool) {
     try {
       return libsignal.accountEntropyPoolDeriveMasterKey(prov.accountEntropyPool);
@@ -91,7 +91,7 @@ export interface ProvisioningSession {
 }
 
 /** Completes linking once the ProvisionMessage has been decrypted: registers this device and uploads its PreKeys. */
-export async function finishLinking(
+async function finishLinking(
   store: SignalProtocolStore,
   httpRequest: SignalHttpJsonFn,
   prov: ProvisionMessage,
@@ -140,28 +140,30 @@ export async function finishLinking(
   const encryptedDeviceName = toBase64(await encryptDeviceName(deviceName || 'Signal4KaiOS', aciIdentity.pubKey));
 
   // SECURITY-REVIEW: Basic auth with the freshly generated device password; neither is logged
-  const linkRes = await httpRequest(
-    'PUT',
-    '/v1/devices/link',
-    {
-      verificationCode: prov.provisioningCode,
-      accountAttributes: {
-        fetchesMessages: true,
-        name: encryptedDeviceName,
-        registrationId,
-        pniRegistrationId: hasE164 ? pniRegistrationId : undefined,
-        capabilities: linkedDeviceCapabilities(hasE164),
+  const linkRes = asObject(
+    await httpRequest(
+      'PUT',
+      '/v1/devices/link',
+      {
+        verificationCode: prov.provisioningCode,
+        accountAttributes: {
+          fetchesMessages: true,
+          name: encryptedDeviceName,
+          registrationId,
+          pniRegistrationId: hasE164 ? pniRegistrationId : undefined,
+          capabilities: linkedDeviceCapabilities(hasE164),
+        },
+        aciSignedPreKey,
+        aciPqLastResortPreKey,
+        pniSignedPreKey,
+        pniPqLastResortPreKey,
       },
-      aciSignedPreKey,
-      aciPqLastResortPreKey,
-      pniSignedPreKey,
-      pniPqLastResortPreKey,
-    },
-    {
-      baseUrl: httpBase,
-      basicAuth: { username: aci, password },
-      timeout: 30000,
-    }
+      {
+        baseUrl: httpBase,
+        basicAuth: { username: aci, password },
+        timeout: 30000,
+      }
+    )
   );
 
   if (!linkRes || typeof linkRes.deviceId !== 'number' || linkRes.uuid !== aci) {
@@ -173,7 +175,7 @@ export async function finishLinking(
   if (pni && pniIdentity) await store.saveIdentity('PNI:' + pni, pniIdentity.pubKey);
 
   if (onStatus) onStatus('Uploading PreKeys\u2026');
-  const auth = { username: `${aci}.${creds.deviceId}`, password };
+  const auth = accountBasicAuth({ aci, deviceId: creds.deviceId, password });
   await httpRequest(
     'PUT',
     '/v2/keys?identity=aci',

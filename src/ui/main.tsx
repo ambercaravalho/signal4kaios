@@ -14,7 +14,7 @@ import { hasServiceWorker } from './data/platform';
 import { applyProxy } from './data/proxy';
 import * as screenLock from './data/screen-lock';
 import * as store from './data/store';
-import { setupWake } from './data/wake';
+import { setupWake, WAKE_CACHE } from './data/wake';
 import * as ws from './data/ws';
 import { fmt, S } from './strings';
 import { openChat } from './screens/Chat';
@@ -27,7 +27,6 @@ import './theme/index.css';
 const PRUNE_KEEP = 500;
 const PENDING_CONV_KEY = '/__s4k_pending_conv';
 const PENDING_MAX_AGE_MS = 60000;
-const WAKE_CACHE = 's4k-wake';
 
 function openConversation(convId: string | null | undefined): void {
   if (!convId || store.openConversationId() === convId || !store.conversation(convId)) return;

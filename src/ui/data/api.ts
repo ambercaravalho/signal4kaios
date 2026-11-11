@@ -23,12 +23,16 @@ export interface SyncedContact {
 
 export type GroupDetail = GroupV2Metadata;
 
+function storedList<T>(key: string): Promise<T[]> {
+  return db.kvGet(key).then((l) => (Array.isArray(l) ? (l as T[]) : []), () => []);
+}
+
 export function syncedContacts(): Promise<SyncedContact[]> {
-  return db.kvGet('syncedContacts').then((l) => l || [], () => []);
+  return storedList('syncedContacts');
 }
 
 export function syncedGroups(): Promise<GroupDetail[]> {
-  return db.kvGet('syncedGroups').then((l) => l || [], () => []);
+  return storedList('syncedGroups');
 }
 
 /** Full detail for one group by its `group.` send ID, with an empty placeholder until the group's state arrives. */

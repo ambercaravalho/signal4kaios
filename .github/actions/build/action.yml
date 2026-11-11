@@ -1,0 +1,62 @@
+name: Build, test, and package
+description: Installs the toolchain, builds the wasm, checks the generated protobuf codecs, then typechecks, tests, and packages the app into dist/.
+
+inputs:
+  release-tag:
+    description: Tag being released; package.sh checks it against the manifest version and names the zip after it.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: npm
+
+    - name: Install protoc, binaryen, and LLVM
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler binaryen clang llvm
+
+    - name: Install the pinned Rust toolchain
+      shell: bash
+      working-directory: src/native/libsignal-wasm
+      run: rustup toolchain install
+
+    - name: Read the pinned wasm-bindgen version
+      shell: bash
+      run: echo "WASM_BINDGEN_VERSION=$(sed -n 's/^wasm-bindgen = "=\([^"]*\)"/\1/p' src/native/libsignal-wasm/Cargo.toml)" >> "$GITHUB_ENV"
+
+    - uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ~/.cargo/bin/wasm-bindgen
+          src/native/libsignal-wasm/target
+        key: cargo-${{ runner.os }}-${{ hashFiles('src/native/libsignal-wasm/Cargo.lock', 'src/native/libsignal-wasm/rust-toolchain.toml') }}-wbg${{ env.WASM_BINDGEN_VERSION }}
+
+    - name: Install wasm-bindgen-cli
+      shell: bash
+      run: |
+        if ! wasm-bindgen --version 2>/dev/null | grep -q " $WASM_BINDGEN_VERSION$"; then
+          cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked --force
+        fi
+
+    - shell: bash
+      run: npm ci
+    - shell: bash
+      run: npm run build:wasm
+    - name: Generated protobuf codecs are up to date
+      shell: bash
+      run: npm run gen:protos && git diff --exit-code -- src/engine/gen
+    - shell: bash
+      run: npm run typecheck
+    - shell: bash
+      run: npm test
+    - name: Package
+      shell: bash
+      env:
+        RELEASE_TAG: ${{ inputs.release-tag }}
+      run: SKIP_WASM_BUILD=1 sh scripts/package.sh

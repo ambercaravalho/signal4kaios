@@ -3,6 +3,7 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 
 import { bytesToUuid } from '../bytes';
+import { isUuid } from '../validate';
 import {
   WebSocketMessage,
   WebSocketMessage_Type,
@@ -35,11 +36,9 @@ export function encodeWebSocketRequest(verb: string, path: string, id: bigint, b
   );
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** True for a bare ACI (UUID); PNIs carry a `PNI:` prefix. */
 export function isAci(id: string): boolean {
-  return UUID_RE.test(id);
+  return isUuid(id);
 }
 
 /** Service ID string from the string field or its binary twin (16-byte ACI, or 17 bytes with a 0x01 PNI prefix), as Signal-Desktop's fromServiceIdBinaryOrString does. */

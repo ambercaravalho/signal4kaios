@@ -2,14 +2,14 @@
 
 export const POLL_QUESTION_MAX_SEND = 100;
 export const POLL_QUESTION_MAX_RECEIVE = 200;
-export const POLL_OPTION_MAX = 100;
-export const POLL_OPTIONS_MIN = 2;
+const POLL_OPTION_MAX = 100;
+const POLL_OPTIONS_MIN = 2;
 export const POLL_OPTIONS_MAX = 10;
 /** Desktop's MAX_MESSAGE_BODY_BYTE_LENGTH, which also bounds each poll question and option. */
 const MAX_BODY_BYTES = 2048;
 
 /** Approximate user-visible characters without Intl.Segmenter (missing on Gecko 84): joiners, variation selectors, skin tones, combining marks, and the code point after a joiner don't count. */
-export function graphemeCount(s: string): number {
+function graphemeCount(s: string): number {
   let n = 0;
   let joined = false;
   for (const ch of Array.from(s)) {

@@ -302,7 +302,7 @@ export const db = {
     });
   },
 
-  kvGet(k: string): Promise<any> {
+  kvGet(k: string): Promise<unknown> {
     return tx<{ v: unknown } | undefined>('kv', 'readonly', (s) => reqValue(s.get(k))).then((row) => (row ? row.v : undefined));
   },
 
@@ -312,7 +312,7 @@ export const db = {
     });
   },
 
-  signalKeyGet(k: string): Promise<any> {
+  signalKeyGet(k: string): Promise<unknown> {
     return tx<{ v: unknown } | undefined>('signal_keystore', 'readonly', (s) => reqValue(s.get(k))).then((row) => (row ? row.v : undefined));
   },
 
@@ -322,7 +322,7 @@ export const db = {
     });
   },
 
-  getIdentity(address: string): Promise<any> {
+  getIdentity(address: string): Promise<unknown> {
     return tx('signal_identities', 'readonly', (s) => reqValue(s.get(address)));
   },
 
@@ -332,7 +332,7 @@ export const db = {
     });
   },
 
-  allIdentities(): Promise<any[]> {
+  allIdentities(): Promise<unknown[]> {
     return getAll('signal_identities');
   },
 
@@ -352,7 +352,7 @@ export const db = {
     });
   },
 
-  allSessions(): Promise<any[]> {
+  allSessions(): Promise<unknown[]> {
     return getAll('signal_sessions');
   },
 

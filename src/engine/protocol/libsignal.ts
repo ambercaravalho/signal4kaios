@@ -6,12 +6,12 @@ import init, { initSync, libsignalVersion } from '../../native/libsignal-wasm/pk
 export * as libsignal from '../../native/libsignal-wasm/pkg/libsignal_wasm.js';
 
 /** Path of the wasm binary inside the packaged app, relative to index.html. */
-export const LIBSIGNAL_WASM_PATH = 'vendor/libsignal_wasm_bg.wasm';
+const LIBSIGNAL_WASM_PATH = 'vendor/libsignal_wasm_bg.wasm';
 
 let loading: Promise<string> | null = null;
 let loaded = false;
 
-export class LibsignalUnavailableError extends Error {
+class LibsignalUnavailableError extends Error {
   /** `no-webassembly`: the WebAssembly global is missing; `blocked`: compiling was refused (CSP without `'wasm-unsafe-eval'` on KaiOS 4.0); `fetch`: the binary could not be read. */
   readonly reason: 'no-webassembly' | 'blocked' | 'fetch';
 
