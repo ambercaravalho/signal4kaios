@@ -30,6 +30,7 @@ function useNativeTls(): NativeTlsState {
 }
 
 function fasterLabel(state: NativeTlsState): string {
+  if (net.proxy()) return DEBUG.fasterOffForProxy;
   return state === 'trusted' ? DEBUG.fasterOn : state === 'untrusted' ? DEBUG.fasterOff : DEBUG.fasterChecking;
 }
 
@@ -86,6 +87,7 @@ export function DebugScreen() {
     info('kpk', DEBUG.kyberPreKeys, diag ? (diag.preKeys ? diag.preKeys.kyber : DEBUG.preKeysUnknown) : undefined),
     info('ws', DEBUG.connection, connectionState()),
     info('tls', DEBUG.tls, net.pinnedTlsAvailable() ? DEBUG.available : DEBUG.unavailable),
+    info('proxy', DEBUG.proxy, net.proxy() || DEBUG.proxyDirect),
     { key: 'faster', label: DEBUG.fasterConnection, sub: fasterLabel(tlsState), end: 'chevron', onSelect: () => router.push(FasterConnectionScreen, {}) },
     info('last', DEBUG.lastMessage, last ? fmtTimeFull(last) : DEBUG.never),
     info('db', DEBUG.database, db.name()),

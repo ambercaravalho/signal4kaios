@@ -1,6 +1,7 @@
 /* Whether Gecko trusts Signal's root certificate, which `scripts/signal-cert.mjs` adds on a rooted phone. When it does, requests to Signal's attachment CDNs use the platform's TLS (mozSystem XHR) instead of the in-app client, which takes the TLS work off the app's main thread. Nothing else moves: see `useBuiltIn`. */
 
 import { SIGNAL_CDNS } from '../../engine/net/http';
+import { net } from '../../engine/net/transport';
 import { dbg } from './log';
 
 export type NativeTlsState = 'unknown' | 'trusted' | 'untrusted';
@@ -42,7 +43,7 @@ export function isCdnUrl(url: string): boolean {
  * SECURITY-REVIEW: the platform trusts every public CA, not only Signal's pinned roots, so only CDN traffic may take this path. Attachments are end-to-end encrypted and MAC-checked, and uploads carry one-time upload credentials. Chat, Storage Service, and provisioning carry account credentials or keys and always stay on the pinned client.
  */
 export function useBuiltIn(url: string): boolean {
-  return state === 'trusted' && isCdnUrl(url);
+  return state === 'trusted' && !net.proxy() && isCdnUrl(url);
 }
 
 /** Runs `builtIn`; if it fails at the network level (e.g. the certificate was removed), stops using the platform's TLS and runs `pinned` instead. */
@@ -55,8 +56,9 @@ export function withFallback<T>(builtIn: () => Promise<T>, pinned: () => Promise
   });
 }
 
-/** One unauthenticated request to Signal's CDN over the platform's TLS. Any HTTP status means Gecko accepted Signal's certificate. */
+/** One unauthenticated request to Signal's CDN over the platform's TLS. Any HTTP status means Gecko accepted Signal's certificate. Skipped while a Signal proxy is set, since it would go out directly. */
 export function probe(): Promise<boolean> {
+  if (net.proxy()) return Promise.resolve(state === 'trusted');
   if (pending) return pending;
   pending = new Promise<boolean>((resolve) => {
     let xhr: XMLHttpRequest;

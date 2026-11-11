@@ -231,6 +231,22 @@
   border-radius: 1rem;
 }
 
+.msg-media-blur img {
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+.msg-media-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin: -1.2rem 0 0 -1.2rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  color: #fff;
+}
+
 .msg-media .msg-meta {
   position: absolute;
   right: 0.5rem;
@@ -267,6 +283,23 @@
 .msg-file-size {
   opacity: 0.7;
   font-size: var(--fs-small);
+}
+
+.msg-wave {
+  flex: 1;
+  min-width: 0;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.msg-wave-bar {
+  flex: 1;
+  min-height: 0.2rem;
+  border-radius: 0.1rem;
+  background: currentColor;
+  opacity: 0.75;
 }
 
 .msg-link {

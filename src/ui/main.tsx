@@ -6,16 +6,17 @@ import { toast, ToastHost } from './components/Toast';
 import { signal } from './data/api';
 import { config } from './data/config';
 import { db } from './data/db';
-import { installEngineHost } from './data/engine-host';
+import { installEngineHost, onNumberChange } from './data/engine-host';
 import * as http from './data/http';
 import { dbg } from './data/log';
 import * as nativeTls from './data/nativeTls';
 import { hasServiceWorker } from './data/platform';
+import { applyProxy } from './data/proxy';
 import * as screenLock from './data/screen-lock';
 import * as store from './data/store';
 import { setupWake } from './data/wake';
 import * as ws from './data/ws';
-import { S } from './strings';
+import { fmt, S } from './strings';
 import { openChat } from './screens/Chat';
 import { HomeScreen } from './screens/Home';
 import { LockGate } from './screens/Lock';
@@ -86,6 +87,7 @@ function start(): void {
   http.onUnlinked(onUnlinked);
   ws.onUnlinked(onUnlinked);
   store.on('storage-error', () => toast(S.storageError, 4000));
+  onNumberChange((number) => toast(fmt(S.numberChanged, { number }), 5000));
 
   if (config.isConfigured()) router.reset(HomeScreen, {});
   else if (config.number() || config.aci()) router.reset(LinkScreen, { mode: 'relink' as const });
@@ -112,6 +114,7 @@ function start(): void {
 function boot(): void {
   dbg('boot');
   applyTheme();
+  applyProxy();
   installEngineHost();
   registerServiceWorker();
   screenLock.install();

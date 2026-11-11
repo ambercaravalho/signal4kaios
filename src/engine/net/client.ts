@@ -90,6 +90,11 @@ export class SignalClient {
     return this.profileKeys.get(peerId);
   }
 
+  /** Drop the cached SenderCertificate, e.g. after our number changed. */
+  clearSenderCertificate(): void {
+    this.cachedSenderCert = null;
+  }
+
   /** Our server-issued SenderCertificate for Sealed Sender, cached until an hour before it expires. */
   private async getSenderCertificate(): Promise<Uint8Array | null> {
     if (this.cachedSenderCert && this.cachedSenderCert.expiresAt > Date.now()) {
@@ -167,9 +172,9 @@ export class SignalClient {
   }
 
   /**
-   * Enqueue an incoming binary Envelope for strictly serialized decryption. Sends a DecryptionErrorMessage retry receipt when the ciphertext fails to decrypt.
+   * Enqueue an incoming binary Envelope for strictly serialized decryption. Sends a DecryptionErrorMessage retry receipt when the ciphertext fails to decrypt. `inQueue` runs before the next envelope is decrypted, for content that changes our own keys.
    */
-  enqueueDecryptEnvelope(envelopeBytes: Uint8Array): Promise<DecryptedEnvelope | null> {
+  enqueueDecryptEnvelope(envelopeBytes: Uint8Array, inQueue?: (res: DecryptedEnvelope) => Promise<void>): Promise<DecryptedEnvelope | null> {
     const next = this.decryptQueue.then(async () => {
       try {
         const res = await decryptEnvelope(this.store, envelopeBytes);
@@ -177,6 +182,7 @@ export class SignalClient {
         if (res && c && c.case === 'dataMessage' && c.value.profileKey.length === 32 && res.envelope.sourceUuid) {
           this.setPeerProfileKey(res.envelope.sourceUuid, c.value.profileKey);
         }
+        if (res && inQueue) await inQueue(res);
         return res;
       } catch (err) {
         if (err instanceof DecryptFailure) await this.sendDecryptionErrorReceipt(err);

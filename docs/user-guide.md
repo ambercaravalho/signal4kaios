@@ -55,7 +55,7 @@ OK on a message opens its options. The first one is what the message is most lik
 - **Link previews** show the page's title and site under the text, with its picture once it's downloaded. When you type a link, **Link preview** and the page's title appear above the message box after a moment, and the preview goes with the message; **Options → Remove link preview** sends just the link. Messages with attachments don't get previews. The phone fetches the page itself, as Signal does, so the website sees that it was opened; turn this off in **Settings → Chats → Generate link previews**.
 - **Polls** show their question, answers, and vote counts. OK → **Vote** picks your answer (or answers, when the poll allows several); vote again to change it, or **Remove my vote**. **View votes** lists who picked what, and the person who made the poll can **End poll**.
 
-**Options** in a chat: Attach, Attach view-once photo or video, Insert emoji, Mention (groups), Create poll (groups), Pinned messages, Mute, and Chat settings.
+**Options** in a chat: Attach, Attach view-once photo or video, Record voice message, Insert emoji, Mention (groups), Create poll (groups), Pinned messages, Mute, and Chat settings.
 
 - **Create poll** asks for a question and 2 to 10 answers; leave an answer empty to finish. Then pick whether people can choose one answer or several.
 
@@ -82,9 +82,12 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 
 **Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file). Photos, videos, and files wait above the message box (for example **2 photos**) so you can attach more and type a caption; **Send** sends them together as one message, and **Options → Remove attachments** clears them. Voice recordings send right away on their own. A message can carry up to 32 attachments and 25 MB in total, and each file is sent with its name.
 
+**Options → Record voice message**, or holding the Call key in a chat, starts recording at once. The first time, KaiOS asks whether Beacon may use the microphone. The sheet shows the time and how loud you are; **Stop** ends the recording, then **Send** sends it on its own (your draft stays in the message box) and **Cancel** throws it away. Recordings stop by themselves at 15 minutes. Beacon sends them as MP3 with a waveform, so they play on every Signal app, and a long one takes a few seconds to prepare.
+
+- Voice messages show their waveform and length in the chat.
 - A message with several attachments has **View attachments** first in its options, which lists them to open one.
 
-- Photos show in the chat; small ones download on their own as you scroll to them.
+- Photos show in the chat; small ones download on their own as you scroll to them. Until then, a photo or video shows a blurred preview of itself when the sender's app included one.
 - Voice messages, audio, and video play in the viewer: OK plays or pauses. Video depends on the phone's codecs; H.264 MP4 is the safe choice.
 - **Save to phone** puts the file in the gallery, music, videos, or files.
 - View-once media can be viewed once, then it's gone, including when you open it on another device. **Options → Attach view-once photo or video** sends your own, without a caption.
@@ -103,7 +106,7 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 
 - **For everyone**: **Media** is the first row; see [Media](#media).
 - **For a person**: Nickname (saved as a Signal nickname on all your devices), Disappearing messages, Mute, View safety number, and Block or Unblock.
-- **For a group**: the description, **Members**, and, as the group's permissions allow, the group name, description, and disappearing messages. Admins also get **Permissions** (who can add members, edit group info, and send messages) and **Group link** (off, on, or on with admin approval; show its QR code or reset it). **Block and leave group** and **Leave group** are at the bottom.
+- **For a group**: the description, **Members**, and, as the group's permissions allow, the group name, description, and disappearing messages. While the group is muted, **Notify for mentions** (on unless you turn it off, and kept in step with your other devices) still notifies you when someone mentions you. Admins also get **Permissions** (who can add members, edit group info, and send messages) and **Group link** (off, on, or on with admin approval; show its QR code or reset it). **Block and leave group** and **Leave group** are at the bottom.
 - **Members**: OK on a member to message them or view their safety number; admins can make or remove admins, remove members, and cancel invites. Admins also see **Requests to join** at the top when people asked to join through the group link; OK on one to **Approve** or **Deny** it. The right softkey adds people from your contacts, or by username if you have none. People Signal can't add directly are invited.
 - **Safety number**: compare the 60 digits with the other phone, **Show code** for them to scan, or **Scan code** to scan theirs. OK marks the contact as verified or clears it. [About safety numbers](https://support.signal.org/hc/en-us/articles/360007060632).
 
@@ -111,13 +114,15 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 
 | Section | Items |
 | --- | --- |
-| **Profile** (top row) | Your name, About, and About emoji (Signal requires a name), Username, your **QR code or link**, and Delete username |
+| **Profile** (top row) | Your photo, name, About, and About emoji (Signal requires a name), Username, your **QR code or link**, and Delete username |
 | **Linked device** | Which number this phone is linked as, Sync with your phone, saved accounts (OK switches), Add account, Unlink this phone, and Delete all data |
 | **Chats** | Text formatting; Keep muted chats archived; Generate link previews |
-| **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Screen lock; Blocked |
-| **Appearance** | Theme: light or dark |
+| **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Screen lock; Blocked; Proxy |
+| **Appearance** | Theme: light or dark; Text size: Small, Normal, Large, or Extra large (this phone only) |
 | **Help** | Version, User guide, Source code |
 | **Debug** | Technical details for troubleshooting (see below) |
+
+**Profile → Photo** picks a picture from the gallery or camera, crops the middle square, and saves it at 512 by 512 pixels; with a photo set, it offers **Choose photo** and **Remove photo**. Your photo is encrypted with your profile key like the rest of your profile, and your main phone and other devices pick up the change. A photo set on your main phone shows here too.
 
 **Usernames** have a name and a number, like `name.01`. Type just the name to get a number picked for you, or type the number you want.
 
@@ -125,9 +130,17 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 
 **Privacy → Screen lock** asks for a PIN whenever Beacon opens. Choose 4 to 8 digits and enter them twice. **Lock after** sets how long Beacon can be in the background before it asks again: immediately, 1, 5, 15, or 30 minutes, or 1 hour (1 minute to start with). Type the PIN on the keypad and press **Unlock**. After 3 wrong PINs in a row you wait 30 seconds before the next try, and the wait doubles with each wrong PIN, up to 15 minutes. Turning the lock off asks for the PIN. Screen lock only hides Beacon: your messages aren't encrypted with the PIN, and notifications still show. If you forget the PIN, **Forgot PIN** on the lock screen → **Delete all data** is the only way back in, and then you link the phone again.
 
+### Proxy
+
+Where Signal is blocked, a [Signal proxy](https://support.signal.org/hc/en-us/articles/360056052052) run by someone you trust can get you connected. Open **Settings → Privacy → Proxy**, choose **Proxy address**, and type the address (like `proxy.example.com`), or open a `signal.tube` proxy link from a chat or scan one with **New chat → Scan**, and Beacon asks whether to use it. **Use proxy** turns it on and off and keeps the address. The setting applies to every account on the phone.
+
+The proxy can see that you use Signal, but not your messages or who you talk to: everything inside stays encrypted to Signal's servers. While it's on, the bar under the header says when Beacon is connecting through the proxy or can't reach it, and Debug shows which proxy is used. Faster connection is turned off so nothing bypasses the proxy. Link previews still fetch the website directly, so turn off **Settings → Chats → Generate link previews** if that matters to you.
+
 When your main phone gives your profile a new key, which Signal does after you block someone, Beacon picks up the new key too.
 
 Each account has its own history on the phone, and switching accounts restarts Beacon.
+
+If you change your number on your main phone, Beacon follows: it shows **Your number changed to …**, keeps your chats and history, and stays linked. Messages sent to your new number arrive as usual.
 
 **Debug** shows the details a bug report needs: app and library versions, account and device IDs, how many one-time keys the server holds, the connection state, when the last message arrived, and storage use. It can refresh keys, ask your main phone to sync, reconnect, show the log, and **Share debug log**. The shared log has phone numbers, account IDs, and keys removed.
 
@@ -155,5 +168,7 @@ Beacon doesn't yet support every Signal feature. Calls, stories, and more are tr
 | Scanning a username QR code | Not supported yet; ask for the username instead. Codes with a phone number or a group link work. |
 | Polls in one-to-one chats | Not supported yet. You can vote in and end polls anywhere, but **Create poll** is only in groups. |
 | Group message requests | Not supported yet. A group someone you don't know adds you to shows as a normal chat; leave or block it in **Chat settings**. |
+| Holding the Call key to record a voice message | Works only on phones that pass a held Call key to apps. **Options → Record voice message** works everywhere. |
+| Notifications while a chat is muted | Only mentions of you come through. Replies to your messages and calls stay silent, unlike Signal's newer apps. |
 | Forwarding files you sent from this phone | Not possible, because the phone doesn't keep a copy it can resend. They're also left out of **Media**. |
 | Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open, and trusting Signal's certificate on a rooted phone doesn't change that. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |

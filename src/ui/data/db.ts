@@ -15,7 +15,7 @@ let signalStateReset = false;
 let accountOverride: string | null = null;
 
 function dbName(): string {
-  const num = accountOverride !== null ? accountOverride : config.number();
+  const num = accountOverride !== null ? accountOverride : config.dbNumber();
   return num ? 'signal4kaios:' + num : 'signal4kaios';
 }
 
@@ -324,6 +324,12 @@ export const db = {
 
   getIdentity(address: string): Promise<any> {
     return tx('signal_identities', 'readonly', (s) => reqValue(s.get(address)));
+  },
+
+  deleteIdentity(address: string): Promise<void> {
+    return tx('signal_identities', 'readwrite', (s) => {
+      s.delete(address);
+    });
   },
 
   allIdentities(): Promise<any[]> {

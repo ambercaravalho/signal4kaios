@@ -302,6 +302,29 @@ describe('store', () => {
     assert.equal(store.attachmentLabel(rec.attachments), '3 attachments');
     assert.equal(store.attachmentLabel(rec.attachments.slice(0, 2)), '2 photos');
     await assert.rejects(store.sendAttachments(ALICE, Array.from({ length: store.MAX_ATTACHMENTS + 1 }, () => files[0]), ''));
+    assert.equal(sent[1], undefined);
+    assert.equal(sent[0].attachment_meta, undefined);
+  });
+
+  it('sends a recorded voice message with its waveform and length, and keeps them on received ones', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 8200 };
+    };
+    const rec = await store.sendAttachments(ALICE, [{ dataUri: 'data:audio/mpeg;base64,AAAA', contentType: 'audio/mpeg', filename: '', size: 3, voiceNote: true, waveform: [10, 200], duration: 4.2 }], '');
+    assert.deepEqual(sent[0].attachment_meta, [{ voice: true, waveform: [10, 200], duration: 4.2 }]);
+    assert.equal(rec.attachments[0].filename, '');
+    assert.deepEqual(rec.attachments[0].waveform, [10, 200]);
+    assert.equal(rec.attachments[0].duration, 4.2);
+    assert.equal(store.attachmentLabel(rec.attachments), 'Voice message');
+
+    store.ingestRaw(incoming(8300, '', { attachments: [{ id: 'att-wave', contentType: 'audio/mpeg', voiceNote: true, waveform: new Array(150).fill(300), duration: 9.5 }] }));
+    await settle();
+    const got = (await db.getMessage(ALICE + '|8300|' + ALICE))!.attachments[0];
+    assert.equal(got.waveform!.length, 100);
+    assert.ok(got.waveform!.every((v) => v === 255));
+    assert.equal(got.duration, 9.5);
   });
 
   it('reports opened media once and drops view-once copies opened on another device', async () => {

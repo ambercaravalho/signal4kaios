@@ -12,21 +12,25 @@ import { RichText } from '../components/RichText';
 import { Screen } from '../components/Screen';
 import { TextField } from '../components/TextField';
 import { toast } from '../components/Toast';
+import { recordVoice } from '../components/VoiceRecorder';
 import { groupDetail, signal, type GroupDetail } from '../data/api';
 import { ATTACHMENT_CACHE_KEEP, autoDownloads, cachedAttachment, isImage, loadAttachment, readDataUri } from '../data/attachments';
+import { blurHashUrl, photoBlurHash } from '../data/blurhash';
 import { config } from '../data/config';
 import { db } from '../data/db';
-import { fmtBytes, fmtClock, fmtDay, fmtMsgTime } from '../data/format';
+import { fmtBytes, fmtClock, fmtDay, fmtLength, fmtMsgTime } from '../data/format';
 import { fetchLinkPreview, previewCandidate, type FetchedPreview } from '../data/link-preview-fetch';
-import { openUrl } from '../data/platform';
+import { chooseFile, openUrl } from '../data/platform';
 import * as store from '../data/store';
 import { extractUrls, isJumboEmoji, type PickedMention } from '../data/styled';
 import type { Attachment, ContactCard, Conversation, LinkPreview, Message, MessageStatus, Notice, Poll, Quote } from '../data/types';
+import { voiceNoteFile, waveformBars } from '../data/voice-recorder';
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
 import { isGroupLink, JoinGroupScreen } from './JoinGroup';
 import { MessageDetailsScreen, PollVotesScreen } from './MessageDetails';
+import { askUseProxy, isProxyLink } from './Proxy';
 import { SafetyNumberScreen } from './SafetyNumber';
 import { ForwardScreen } from './SearchList';
 import { ViewerScreen } from './Viewer';
@@ -44,6 +48,7 @@ const PREVIEW_DEBOUNCE_MS = 1000;
 const LATEST = Number.MAX_SAFE_INTEGER;
 /** How far Up and Down scroll through a message taller than the screen before focus moves on. */
 const STEP_PX = 60;
+const VOICE_BARS = 32;
 
 export function openChat(convId: string, targetTs?: number): void {
   router.push(ChatScreen, { convId, targetTs });
@@ -153,7 +158,31 @@ function AttachmentView(props: { att: Attachment; meta?: VNode | null; photoOnly
         {props.meta}
       </div>
     );
+  const placeholder = !att.viewOnce && att.blurHash && (isImage(att) || (att.contentType || '').indexOf('video/') === 0) ? blurHashUrl(att.blurHash, att.width, att.height) : null;
+  if (placeholder)
+    return (
+      <div class="msg-media msg-media-blur" ref={ref}>
+        <img src={placeholder} alt="" />
+        {!isImage(att) && <Icon name="play" class="msg-media-play" />}
+        {props.meta}
+      </div>
+    );
   if (props.photoOnly) return <div ref={ref} />;
+  if (!att.viewOnce && (att.contentType || '').indexOf('audio/') === 0 && (att.waveform || att.duration))
+    return (
+      <>
+        <div class="msg-file msg-voice" ref={ref}>
+          <Icon name="mic" />
+          <span class="msg-wave">
+            {waveformBars(att.waveform || [], VOICE_BARS).map((v, i) => (
+              <span key={i} class="msg-wave-bar" style={{ height: Math.max(10, Math.round(v * 100)) + '%' }} />
+            ))}
+          </span>
+          {att.duration ? <span class="msg-file-size">{fmtLength(att.duration)}</span> : null}
+        </div>
+        {props.meta}
+      </>
+    );
   return (
     <>
       <div class="msg-file" ref={ref}>
@@ -353,23 +382,6 @@ export function NoticeLine(props: { m: Message; focused: boolean }) {
       <span class="notice-time">{fmtClock(m.timestamp)}</span>
     </div>
   );
-}
-
-/** The OS picker on KaiOS already offers the camera, recorder, and gallery, so one file input covers photos, voice notes, and files. */
-function chooseFile(accept?: string): Promise<File | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    if (accept) input.accept = accept;
-    input.className = 'hidden';
-    document.body.appendChild(input);
-    input.addEventListener('change', () => {
-      const file = (input.files && input.files[0]) || null;
-      input.remove();
-      resolve(file);
-    });
-    input.click();
-  });
 }
 
 function canChange(m: Message): boolean {
@@ -665,6 +677,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     toast(S.preparingFile);
     try {
       const out: store.OutgoingFile = { dataUri: await readDataUri(file, file.name), contentType: type, filename: file.name, size: file.size };
+      if (type.indexOf('image/') === 0) Object.assign(out, await photoBlurHash(file));
       if (!alone) {
         setTray((cur) => cur.concat(out));
         setFocusedId(null);
@@ -676,6 +689,17 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
         store.setDraft(convId, '', []);
       }
       await store.sendAttachments(convId, [out], caption, { viewOnce });
+    } catch (e) {
+      toast(sendError(e));
+    }
+  }
+
+  /** A voice message goes alone, without the draft, as in Signal. */
+  async function voiceMessage(): Promise<void> {
+    const note = await recordVoice();
+    if (!note) return;
+    try {
+      await store.sendAttachments(convId, [await voiceNoteFile(note)], '');
     } catch (e) {
       toast(sendError(e));
     }
@@ -717,6 +741,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   async function openLinks(urls: string[]): Promise<void> {
     const url = urls.length === 1 ? urls[0] : await pick(S.openLink, urls.map((u) => ({ value: u, label: u })), '');
     if (url && isGroupLink(url)) router.push(JoinGroupScreen, { url });
+    else if (url && isProxyLink(url)) void askUseProxy(url);
     else if (url) openUrl(url).catch(() => toast(S.errGeneric));
   }
 
@@ -913,6 +938,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       DIVIDER,
       canCompose && !editing && { label: S.attach, onSelect: () => attach(false) },
       canCompose && !editing && { label: S.attachViewOnce, onSelect: () => attach(true) },
+      canCompose && !editing && { label: S.recordVoice, onSelect: voiceMessage },
       tray.length > 0 && { label: S.removeAttachments, danger: true, onSelect: () => setTray([]) },
       shownPreview && {
         label: S.removeLinkPreview,
@@ -987,6 +1013,9 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
         return true;
       case 'SoftRight':
         chatOptions();
+        return true;
+      case 'Call':
+        if (e.repeat && canCompose && !editing) voiceMessage();
         return true;
       case 'SoftLeft':
         if (!quote && !editing) return false;

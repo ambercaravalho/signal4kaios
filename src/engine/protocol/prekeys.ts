@@ -65,6 +65,15 @@ async function allocateIds(
   return ids;
 }
 
+/** Move `identity`'s counters past PreKey IDs another device chose for us (Signal-Desktop `updateOurPniKeyMaterial`), so ours don't reuse them. */
+export async function skipPreKeyIds(store: SignalProtocolStore, identity: 'aci' | 'pni', used: { signedPreKey?: number; kyberPreKey?: number }): Promise<void> {
+  const key = 'preKeyIds:' + identity;
+  const counters: IdCounters = (await store.loadValue<IdCounters>(key)) || { preKey: randomStartId(), signedPreKey: randomStartId(), kyberPreKey: randomStartId() };
+  if (used.signedPreKey !== undefined) counters.signedPreKey = nextId(used.signedPreKey);
+  if (used.kyberPreKey !== undefined) counters.kyberPreKey = nextId(used.kyberPreKey);
+  await store.storeValue(key, counters);
+}
+
 export async function generateSignedPreKey(
   store: SignalProtocolStore,
   identity: 'aci' | 'pni',

@@ -60,7 +60,7 @@ import { decryptDeviceName, ProvisioningCallbacks, ProvisioningSession, startDev
 import { DeviceNameSchema } from './gen/DeviceName_pb';
 import { IndexedDbSignalStore, TrustLevel } from './protocol/store';
 import { POLL_QUESTION_MAX_SEND, validPoll } from './services/polls';
-import { mutateStorage, pullFromStorageService, setPhoneNumberPrivacy, StorageMutation, StorageWriteQueue } from './services/storage-service';
+import { mutateStorage, pullFromStorageService, setNotifyForMentionsIfMuted, setPhoneNumberPrivacy, StorageMutation, StorageWriteQueue } from './services/storage-service';
 import { AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema, ContactRecord_NameSchema } from './gen/SignalStorage_pb';
 import { diffGroupState, groupChangeAuthor, isDecodedGroup } from './services/group-updates';
 import { reportSpam as reportSpamMessages } from './services/report-spam';
@@ -70,7 +70,9 @@ import { SenderKeyGroup, SignalClient } from './net/client';
 import { endorsesAll, loadGroupSendEndorsements } from './services/group-send';
 import { DEFAULT_SIGNAL_SERVER } from './net/http';
 import { net } from './net/transport';
-import { IncomingEnvelope, parseContactsSyncBlob } from './net/receive';
+import { DecryptedEnvelope, IncomingEnvelope, parseContactsSyncBlob } from './net/receive';
+import { applyPniChangeNumber, NumberChange } from './services/change-number';
+import { applyAttachmentMeta, type AttachmentMeta } from './services/attachment-meta';
 import { ChatStateEntry, host } from './host';
 
 type DataMessageInit = MessageInitShape<typeof DataMessageSchema>;
@@ -89,6 +91,10 @@ export interface MessageRef {
 const MAX_DEVICE_NAME = 64;
 /** Signal-Desktop's composer limit. */
 const MAX_ATTACHMENTS = 32;
+
+const OWN_AVATAR_PATH = 'ownAvatarUrlPath';
+const OWN_AVATAR_CACHED_FOR = 'ownAvatarCachedFor';
+const OWN_AVATAR_CACHE = 'avatar:self';
 
 function parseDataUri(dataUri: string): { contentType: string; filename?: string; bytes: Uint8Array } {
   const comma = dataUri.indexOf(',');
@@ -591,7 +597,7 @@ async function syncFromStorageService(): Promise<boolean> {
         blocked: gv2.blocked ?? prev.blocked ?? false,
         archived: gv2.archived ?? prev.archived ?? false,
       });
-      if (gv2.changed) chatState.push({ groupInternalId: keys.internalId, archived: !!gv2.archived, muted: (gv2.mutedUntilTimestamp || 0) > Date.now(), markedUnread: !!gv2.markedUnread });
+      if (gv2.changed) chatState.push({ groupInternalId: keys.internalId, archived: !!gv2.archived, muted: (gv2.mutedUntilTimestamp || 0) > Date.now(), markedUnread: !!gv2.markedUnread, mentionsIfMuted: gv2.notifyForMentionsIfMuted ?? null });
     }
     await host().db.kvSet('syncedGroups', Array.from(byGrpId.values()));
     for (const gv2 of res.groupsV2) {
@@ -601,6 +607,7 @@ async function syncFromStorageService(): Promise<boolean> {
 
   if (res.account) {
     if (await adoptOwnProfileKey(store, res.account.profileKey)) host().dbg('storage: adopted the profile key from the account record');
+    await store.storeValue(OWN_AVATAR_PATH, res.account.avatarUrlPath || '');
     const patch: Record<string, any> = {};
     const fullName = [res.account.givenName, res.account.familyName].filter(Boolean).join(' ');
     if (fullName) patch.profileName = fullName;
@@ -619,6 +626,7 @@ async function syncFromStorageService(): Promise<boolean> {
     if (res.account.universalExpireTimer !== undefined) patch.defaultExpireTimer = res.account.universalExpireTimer;
     patch.sharePhoneNumber = res.account.sharePhoneNumber;
     patch.findableByNumber = res.account.findableByNumber;
+    patch.notifyMentionsIfMuted = res.account.notifyForMentionsIfMuted;
     host().config.set(patch);
     const acc = await store.getAccount();
     if (acc && res.account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!res.account.noteToSelfArchived, markedUnread: !!res.account.noteToSelfMarkedUnread });
@@ -646,6 +654,33 @@ async function refreshOwnDeviceName(): Promise<void> {
   if (!ours || typeof ours.name !== 'string' || !ours.name) return;
   const name = (await decryptDeviceName(fromBinary(DeviceNameSchema, fromBase64(ours.name)), acc.aciIdentityKeyPair.privKey)).trim();
   if (name) host().config.set({ deviceName: name.slice(0, MAX_DEVICE_NAME) });
+}
+
+/** A number change from our primary phone, applied inside the decryption queue as Signal-Desktop does: the envelopes after it may be addressed to the new PNI. */
+async function applyOwnKeyChanges(res: DecryptedEnvelope): Promise<void> {
+  const c = res.content.content;
+  if (c.case !== 'syncMessage' || c.value.content.case !== 'pniChangeNumber') return;
+  let change: NumberChange | null;
+  try {
+    change = await applyPniChangeNumber(store, res.envelope, c.value.content.value);
+  } catch (e: any) {
+    host().dbg('sync: number change rejected: ' + (e && e.message));
+    return;
+  }
+  if (!change) {
+    host().dbg('sync: incomplete number change ignored');
+    return;
+  }
+  host().dbg('sync: our number changed');
+  client.clearSenderCertificate();
+  host().numberChanged(change.number);
+  const acc = await store.getAccount();
+  if (!acc || !acc.pniIdentityKeyPair) return;
+  const pniKeys = acc.pniIdentityKeyPair;
+  const basicAuth = { username: `${acc.aci}.${acc.deviceId}`, password: acc.password };
+  generatePreKeyUpload(store, 'pni', pniKeys)
+    .then((body) => httpJson('PUT', '/v2/keys?identity=pni', body, { basicAuth }))
+    .catch((e: any) => host().dbg('sync: PNI PreKey upload after the number change failed: ' + (e && e.message)));
 }
 
 async function handleIncomingSyncMessage(env: IncomingEnvelope, content: Content): Promise<void> {
@@ -827,7 +862,7 @@ export const signalBridge = {
    * Decrypt a binary Signal `Envelope` from a WebSocket `/api/v1/message` request and return the JSON frame for the app's store.
    */
   async processIncomingEnvelope(envelopeBytes: Uint8Array): Promise<{ envelope: any } | null> {
-    const res = await client.enqueueDecryptEnvelope(envelopeBytes);
+    const res = await client.enqueueDecryptEnvelope(envelopeBytes, applyOwnKeyChanges);
     if (!res) return null;
     const c = res.content.content;
     const sender = res.envelope.sourceUuid;
@@ -880,6 +915,8 @@ export const signalBridge = {
     quote_message?: string;
     quote_attachments?: Array<{ contentType: string; filename: string }>;
     base64_attachments?: string[];
+    /** Per attachment, in the same order: a recorded voice message's flag, waveform, and length. */
+    attachment_meta?: Array<AttachmentMeta | null>;
     edit_timestamp?: number;
     mentions?: Array<{ start: number; length: number; uuid: string }>;
     view_once?: boolean;
@@ -898,11 +935,13 @@ export const signalBridge = {
     const files = payload.base64_attachments || [];
     if (files.length > MAX_ATTACHMENTS) throw new Error(`At most ${MAX_ATTACHMENTS} attachments per message`);
     const uploadedAttachments: AttachmentPointer[] = [];
-    for (const dataUri of files) {
-      const { contentType, filename, bytes } = parseDataUri(dataUri);
+    for (let i = 0; i < files.length; i++) {
+      const { contentType, filename, bytes } = parseDataUri(files[i]);
+      const meta = (payload.attachment_meta && payload.attachment_meta[i]) || null;
       const ext = contentType.split('/')[1] || 'bin';
-      const ptr = await client.uploadAttachment(bytes, contentType, filename || `attachment.${ext}`);
+      const ptr = await client.uploadAttachment(bytes, contentType, filename || (meta && meta.voice ? '' : `attachment.${ext}`));
       if (contentType.startsWith('audio/') && files.length === 1) ptr.flags |= AttachmentPointer_Flags.VOICE_MESSAGE;
+      applyAttachmentMeta(ptr, meta);
       uploadedAttachments.push(ptr);
     }
 
@@ -1151,6 +1190,55 @@ export const signalBridge = {
     const blob = new Blob([ab], { type: 'image/jpeg' });
     await host().db.putAttachment('avatar:' + uuidOrNumber, blob, 'image/jpeg');
     return blob;
+  },
+
+  /** Our own profile photo, cached under `avatar:self` for the path it was downloaded from; null when we have none. */
+  async ownAvatarBlob(): Promise<Blob | null> {
+    const acc = await store.getAccount();
+    if (!acc || !acc.profileKey) return null;
+    let path = (await store.loadValue(OWN_AVATAR_PATH)) as string | undefined;
+    if (path === undefined) {
+      const prof = await fetchAndDecryptProfile(store, httpJson, acc.aci, acc.profileKey, serverUrl());
+      if (!prof) return null;
+      path = prof.avatarUrlPath || '';
+      await store.storeValue(OWN_AVATAR_PATH, path);
+    }
+    if (!path) return null;
+    if ((await store.loadValue(OWN_AVATAR_CACHED_FOR)) === path) {
+      const cached = await host().db.getAttachment(OWN_AVATAR_CACHE);
+      if (cached && cached.blob && cached.blob.size) return cached.blob;
+    }
+    const bytes = await downloadAndDecryptProfileAvatar(httpBinary, path, acc.profileKey);
+    const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: 'image/jpeg' });
+    await host().db.putAttachment(OWN_AVATAR_CACHE, blob, 'image/jpeg');
+    await store.storeValue(OWN_AVATAR_CACHED_FOR, path);
+    return blob;
+  },
+
+  /** Set our profile photo to `jpeg`, or remove it with null, like Signal-Desktop's `writeProfile`; the new path goes to `AccountRecord.avatarUrlPath` so our other devices pick it up. */
+  async setOwnAvatar(jpeg: Uint8Array | null): Promise<void> {
+    const res = await uploadOwnProfile(
+      store,
+      httpJson,
+      { name: host().config.profileName() || 'Signal User', sharePhoneNumber: host().config.sharePhoneNumber(), avatar: jpeg },
+      serverUrl(),
+      { httpBinary }
+    );
+    if (!res || res.avatarUrlPath === undefined) throw new Error('The profile was not written');
+    const path = res.avatarUrlPath || '';
+    if (jpeg) {
+      await host().db.putAttachment(OWN_AVATAR_CACHE, new Blob([jpeg.slice().buffer as ArrayBuffer], { type: 'image/jpeg' }), 'image/jpeg');
+      await store.storeValue(OWN_AVATAR_CACHED_FOR, path);
+    }
+    await store.storeValue(OWN_AVATAR_PATH, path);
+    await storageQueue.enqueue([
+      {
+        type: 'account',
+        update: (a) => {
+          a.avatarUrlPath = path;
+        },
+      },
+    ]);
   },
 
   async updateOwnProfile(body: { name?: string; about?: string; emoji?: string }): Promise<void> {
@@ -1406,7 +1494,7 @@ export const signalBridge = {
   },
 
   /** Publish a chat's archive, mute, marked-unread, or pinned state to Storage Service so the account's other devices match. Only the fields that are set change. */
-  async syncChatState(chat: { type: 'direct' | 'group'; sendId: string; archived?: boolean; muted?: boolean; markedUnread?: boolean; pinned?: boolean }): Promise<void> {
+  async syncChatState(chat: { type: 'direct' | 'group'; sendId: string; archived?: boolean; muted?: boolean; markedUnread?: boolean; pinned?: boolean; mentionsIfMuted?: boolean }): Promise<void> {
     const mutations: StorageMutation[] = [];
     const setState = (r: { archived: boolean; mutedUntilTimestamp: bigint; markedUnread: boolean }) => {
       if (chat.archived !== undefined) r.archived = chat.archived;
@@ -1419,7 +1507,16 @@ export const signalBridge = {
 
     if (chat.type === 'group') {
       const masterKey = await groupMasterKey(chat.sendId);
-      if (stateChanged) mutations.push({ type: 'groupV2', masterKey, update: setState });
+      if (stateChanged || chat.mentionsIfMuted !== undefined) {
+        mutations.push({
+          type: 'groupV2',
+          masterKey,
+          update: (g) => {
+            setState(g);
+            if (chat.mentionsIfMuted !== undefined) setNotifyForMentionsIfMuted(g, chat.mentionsIfMuted);
+          },
+        });
+      }
       isPin = (p) => p.identifier.case === 'groupMasterKey' && constantTimeEqual(p.identifier.value, masterKey);
       pin = { identifier: { case: 'groupMasterKey', value: masterKey } };
     } else {

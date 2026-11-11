@@ -23,6 +23,7 @@ import {
   SyncMessage_MessageRequestResponse_Type,
   TypingMessage_Action,
 } from '../gen/SignalService_pb';
+import { receivedMeta } from '../services/attachment-meta';
 import { groupIdFromMasterKey } from '../services/groups-v2';
 import { isValidLinkPreview } from '../services/link-previews';
 import { POLL_OPTIONS_MAX, POLL_QUESTION_MAX_RECEIVE, validPoll } from '../services/polls';
@@ -71,9 +72,18 @@ export interface IncomingEnvelope {
   serverTimestamp: number;
   serverGuid: string;
   reportSpamToken?: Uint8Array;
+  /** Our new PNI, untagged, on the envelope carrying a number change. */
+  updatedPni?: string;
 }
 
 const MAX_REPORT_TOKEN_BYTES = 1024;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Signal-Desktop `fromPniUuidBytesOrUntaggedString`: 16 raw bytes, or a UUID string with or without the `PNI:` tag. */
+export function updatedPniFrom(str: string | undefined, binary: Uint8Array | undefined): string | undefined {
+  const id = binary && binary.length === 16 ? bytesToUuid(binary) : (str || '').replace(/^PNI:/, '');
+  return UUID_RE.test(id) ? id.toLowerCase() : undefined;
+}
 
 export function attachmentCdnKey(att: AttachmentPointer): string {
   const id = att.attachmentIdentifier;
@@ -186,6 +196,7 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
       size: a.ptr.size || 0,
       voiceNote: ((a.ptr.flags || 0) & AttachmentPointer_Flags.VOICE_MESSAGE) !== 0,
       viewOnce: !!dm.isViewOnce,
+      ...receivedMeta(a.ptr),
     })),
   };
 
@@ -482,6 +493,7 @@ export async function decryptEnvelope(store: SignalProtocolStore, envelopeBytes:
     serverTimestamp: num(raw.serverTimestamp),
     serverGuid: raw.serverGuidBinary.length === 16 ? bytesToUuid(raw.serverGuidBinary) : raw.serverGuid,
     reportSpamToken: raw.reportSpamToken.length ? raw.reportSpamToken : undefined,
+    updatedPni: updatedPniFrom(raw.updatedPni, raw.updatedPniBinary),
   };
   const payload = raw.content;
 

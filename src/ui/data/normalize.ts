@@ -25,6 +25,8 @@ export interface MessageEvent {
   sealed?: boolean;
   serverGuid?: string;
   reportToken?: string;
+  /** The ACIs the message mentions. */
+  mentioned?: string[];
 }
 
 export interface NoticeEvent {
@@ -271,6 +273,8 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
   };
   if (card) ev.contactCard = card;
   if (poll) ev.poll = poll;
+  const mentioned = Array.isArray(dm.mentions) ? dm.mentions.map((m: any) => str(m && m.uuid)).filter(Boolean) : [];
+  if (mentioned.length) ev.mentioned = mentioned;
   const preview = previewOf(dm);
   if (preview) ev.preview = preview;
   if (incoming ? env.sealed === true : dm.sealed === true) ev.sealed = true;
@@ -280,9 +284,22 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_WAVEFORM = 100;
+const MAX_EDGE = 20000;
 
 function attachmentOf(a: any, viewOnce: boolean): Attachment {
-  return { id: str(a.id), contentType: str(a.contentType), filename: str(a.filename), size: num(a.size), voiceNote: !!a.voiceNote, viewOnce: !!(a.viewOnce || viewOnce) };
+  const out: Attachment = { id: str(a.id), contentType: str(a.contentType), filename: str(a.filename), size: num(a.size), voiceNote: !!a.voiceNote, viewOnce: !!(a.viewOnce || viewOnce) };
+  if (Array.isArray(a.waveform) && a.waveform.length) out.waveform = a.waveform.slice(0, MAX_WAVEFORM).map((v: unknown) => Math.max(0, Math.min(255, num(v))));
+  const duration = Number(a.duration);
+  if (isFinite(duration) && duration > 0) out.duration = duration;
+  if (typeof a.blurHash === 'string' && /^[0-9A-Za-z#$%*+,\-.:;=?@[\]^_{|}~]{6,120}$/.test(a.blurHash)) out.blurHash = a.blurHash;
+  const w = num(a.width);
+  const h = num(a.height);
+  if (w > 0 && h > 0 && w <= MAX_EDGE && h <= MAX_EDGE) {
+    out.width = w;
+    out.height = h;
+  }
+  return out;
 }
 
 function previewOf(dm: any): LinkPreview | null {

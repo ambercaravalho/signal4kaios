@@ -4,6 +4,7 @@ import { fromBase64, uuidToBytes } from '../../engine/bytes';
 import { signal } from '../data/api';
 import { db } from '../data/db';
 import { initials } from '../data/format';
+import { loadOwnPhoto, onOwnPhotoChange } from '../data/own-photo';
 import { contactByKey, isSelfConv } from '../data/store';
 import type { Conversation } from '../data/types';
 import { Icon } from './Icon';
@@ -70,7 +71,11 @@ function fetchPhoto(conv: AvatarSubject): Promise<Blob> {
   return signal.fetchContactAvatarBlob(c.uuid).then(ensureImage);
 }
 
+/** The subject for our own profile (the Settings and Profile rows), as opposed to the Note to Self chat. */
+export const OWN_PROFILE_PREFIX = 'profile:';
+
 function loadPhoto(conv: AvatarSubject): Promise<string | null> {
+  if (conv.id.indexOf(OWN_PROFILE_PREFIX) === 0) return loadOwnPhoto();
   if (conv.id in photoUrl) return Promise.resolve(photoUrl[conv.id]);
   if (!pending[conv.id]) {
     const key = 'avatar:' + conv.id;
@@ -96,7 +101,10 @@ function loadPhoto(conv: AvatarSubject): Promise<string | null> {
 export function Avatar(props: { conv: AvatarSubject; size?: 'md' | 'lg' }) {
   const { conv } = props;
   const self = isSelfConv(conv);
-  const [url, setUrl] = useState<string | null>(photoUrl[conv.id] || null);
+  const own = conv.id.indexOf(OWN_PROFILE_PREFIX) === 0;
+  const [url, setUrl] = useState<string | null>(own ? null : photoUrl[conv.id] || null);
+  const [ownVersion, setOwnVersion] = useState(0);
+  useEffect(() => (own ? onOwnPhotoChange(() => setOwnVersion((n) => n + 1)) : undefined), [own]);
   useEffect(() => {
     if (self) return;
     let live = true;
@@ -106,7 +114,7 @@ export function Avatar(props: { conv: AvatarSubject; size?: 'md' | 'lg' }) {
     return () => {
       live = false;
     };
-  }, [conv.id, self]);
+  }, [conv.id, self, ownVersion]);
 
   const [bg, fg] = AVATAR_COLORS[avatarColorFor(conv)];
   const cls = 'avatar' + (props.size === 'lg' ? ' avatar-lg' : '');

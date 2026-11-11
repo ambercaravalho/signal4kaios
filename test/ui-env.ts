@@ -12,3 +12,23 @@ const mem: Record<string, string> = {};
   },
 };
 (globalThis as any).document = { hidden: false, addEventListener() {} };
+if (!(globalThis as any).FileReader) {
+  (globalThis as any).FileReader = class {
+    result: string | null = null;
+    error: Error | null = null;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    readAsDataURL(blob: Blob): void {
+      blob.arrayBuffer().then(
+        (buf) => {
+          this.result = 'data:' + (blob.type || 'application/octet-stream') + ';base64,' + Buffer.from(buf).toString('base64');
+          if (this.onload) this.onload();
+        },
+        (e) => {
+          this.error = e;
+          if (this.onerror) this.onerror();
+        }
+      );
+    }
+  };
+}

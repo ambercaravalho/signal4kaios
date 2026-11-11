@@ -2,6 +2,28 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.7.0
+
+The fifth round of Signal features from the roadmap. Install over v2.6.0; your chats and settings carry over. KaiOS asks for the microphone the first time you record a voice message.
+
+### New
+
+- **Signal proxy.** Where Signal is blocked, **Settings → Privacy → Proxy** connects through a [Signal proxy](https://support.signal.org/hc/en-us/articles/360056052052) run by someone you trust. Type its address, or open or scan a `signal.tube` proxy link and Beacon asks whether to use it. The proxy can't read your messages or see who you talk to. While it's on, the bar under the header says when Beacon can't reach it, and nothing bypasses it except link previews, which you can turn off.
+- **Your profile photo.** **Settings → Profile → Photo** picks a picture from the gallery or camera and saves the middle square, or removes your photo. Your phone and other devices pick up the change, and a photo set on your phone shows in Beacon.
+- **Voice messages you record.** **Options → Record voice message** in a chat, or holding the Call key on phones that allow it, records right away with the time and a level on screen. **Stop**, then **Send** or **Cancel**; recordings stop at 15 minutes. They're sent as MP3 with a waveform so every Signal app plays them.
+- **Waveforms.** Voice messages show their waveform and length in the chat.
+- **Mentions in muted groups.** A muted group still notifies you when someone mentions you, as in Signal. **Chat settings → Notify for mentions** turns that off for a group, shared with your other devices.
+- **Text size.** **Settings → Appearance → Text size** makes everything Small, Normal, Large, or Extra large on this phone.
+- **Blurred previews.** Photos and videos show a blurred preview of themselves until they download, when the sender's app included one, and photos you send include one for others.
+
+### Changed
+
+- **Number changes.** When you change your number on your main phone, Beacon now follows: it shows **Your number changed to …**, keeps your chats, stays linked, and receives messages sent to the new number. Before, it needed linking again.
+
+### Fixed
+
+- **Profile photo kept when editing your profile.** Changing your name or About in Beacon no longer removes your profile photo.
+
 ## v2.6.0
 
 The fourth round of Signal features from the roadmap. Install over v2.5.0; your chats and settings carry over.

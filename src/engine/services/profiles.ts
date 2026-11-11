@@ -216,17 +216,87 @@ export async function downloadAndDecryptProfileAvatar(
   return decryptProfile(encrypted, profileKey);
 }
 
+/** The S3 POST form `PUT /v1/profile` returns for a new avatar (Signal-Server `ProfileAvatarUploadAttributes`). */
+export interface ProfileAvatarForm {
+  key: string;
+  credential: string;
+  acl: string;
+  algorithm: string;
+  date: string;
+  policy: string;
+  signature: string;
+}
+
+const FORM_FIELDS = ['key', 'credential', 'acl', 'algorithm', 'date', 'policy', 'signature'] as const;
+
+/** The server's upload form, or an error: every field must be present, and since each lands inside the multipart body, only printable ASCII without spaces is accepted. */
+export function parseAvatarForm(res: unknown): ProfileAvatarForm {
+  if (!res || typeof res !== 'object') throw new Error('Signal server returned no avatar upload form');
+  const raw = res as Record<string, unknown>;
+  const out = {} as ProfileAvatarForm;
+  for (const f of FORM_FIELDS) {
+    const v = raw[f];
+    if (typeof v !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(v)) throw new Error(`Avatar upload form has a bad ${f}`);
+    out[f] = v;
+  }
+  if (!/^[A-Za-z0-9_\-/.=+]{1,256}$/.test(out.key) || out.key.indexOf('..') >= 0 || out.key[0] === '/') throw new Error('Avatar upload form has a bad key');
+  return out;
+}
+
+/** Signal-Desktop's `makePutParams`: the form fields in its order, then the encrypted avatar as `file`. */
+export function avatarUploadBody(form: ProfileAvatarForm, encrypted: Uint8Array, boundaryId = toHex(randomBytes(16))): { body: Uint8Array; contentType: string } {
+  const boundary = `----------------${boundaryId}`;
+  const CRLF = '\r\n';
+  const section = (name: string, value: string) => [`--${boundary}`, `Content-Disposition: form-data; name="${name}"${CRLF}`, value].join(CRLF);
+  const start = [
+    section('key', form.key),
+    section('x-amz-credential', form.credential),
+    section('acl', form.acl),
+    section('x-amz-algorithm', form.algorithm),
+    section('x-amz-date', form.date),
+    section('policy', form.policy),
+    section('x-amz-signature', form.signature),
+    section('Content-Type', 'application/octet-stream'),
+    `--${boundary}`,
+    'Content-Disposition: form-data; name="file"',
+    `Content-Type: application/octet-stream${CRLF}${CRLF}`,
+  ].join(CRLF);
+  const head = new TextEncoder().encode(start);
+  const tail = new TextEncoder().encode(`${CRLF}--${boundary}--${CRLF}`);
+  const body = new Uint8Array(head.length + encrypted.length + tail.length);
+  body.set(head);
+  body.set(encrypted, head.length);
+  body.set(tail, head.length + encrypted.length);
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
+/** POST an encrypted avatar to CDN 0 with the server's form; resolves to the avatar's path. */
+export async function uploadProfileAvatar(httpBinary: SignalHttpBinaryFn, form: ProfileAvatarForm, encrypted: Uint8Array, cdnUrl = DEFAULT_SIGNAL_CDN): Promise<string> {
+  const { body, contentType } = avatarUploadBody(form, encrypted);
+  await httpBinary('POST', `${cdnUrl}/`, body, { 'Content-Type': contentType }, 60000);
+  return form.key;
+}
+
+/** What a profile write did to the avatar: `avatarUrlPath` is the new path, null when the avatar was removed, and absent when it was kept. */
+export interface OwnProfileWrite {
+  avatarUrlPath?: string | null;
+}
+
 /**
- * Write our profile with `PUT /v1/profile` like Signal-Desktop: version and commitment from zkgroup, padded encrypted fields, and the existing avatar kept (`avatar: false, sameAvatar: true`). Fields not in `patch` are carried over from the current profile so a name change doesn't clear the about text; with no name in either, nothing is written.
+ * Write our profile with `PUT /v1/profile` like Signal-Desktop: version and commitment from zkgroup, and padded encrypted fields. Fields not in `patch` are carried over from the current profile so a name change doesn't clear the about text; with no name in either, nothing is written and the result is null.
+ *
+ * `patch.avatar` uploads new avatar bytes (encrypted unpadded, as Desktop does) through `upload`, or with null removes the avatar; left out, the avatar is kept.
  */
 export async function uploadOwnProfile(
   store: SignalProtocolStore,
   httpJson: SignalHttpJsonFn,
-  patch: { name?: string; about?: string; emoji?: string; sharePhoneNumber: boolean },
-  serverUrl = DEFAULT_SIGNAL_SERVER
-): Promise<void> {
+  patch: { name?: string; about?: string; emoji?: string; sharePhoneNumber: boolean; avatar?: Uint8Array | null },
+  serverUrl = DEFAULT_SIGNAL_SERVER,
+  upload?: { httpBinary: SignalHttpBinaryFn; cdnUrl?: string }
+): Promise<OwnProfileWrite | null> {
   const acc = await store.getAccount();
-  if (!acc || !acc.profileKey || acc.profileKey.length !== 32) return;
+  if (!acc || !acc.profileKey || acc.profileKey.length !== 32) return null;
+  if (patch.avatar && !upload) throw new Error('An avatar upload needs the CDN client');
   const key = acc.profileKey;
 
   let current: DecryptedProfile | null = null;
@@ -246,7 +316,7 @@ export async function uploadOwnProfile(
     givenName = current.givenName;
     familyName = current.familyName;
   } else {
-    return;
+    return null;
   }
   const about = patch.about !== undefined ? patch.about : current ? current.about : '';
   const emoji = patch.emoji !== undefined ? patch.emoji : current ? current.aboutEmoji : '';
@@ -258,18 +328,24 @@ export async function uploadOwnProfile(
     aboutEmoji: emoji ? toBase64(await encryptPadded(new TextEncoder().encode(emoji), key, PADDED_LENGTHS.aboutEmoji)) : null,
     badgeIds: [],
     paymentAddress: null,
-    avatar: false,
-    sameAvatar: true,
+    // Signal's server reads `avatar: false` as removing the avatar whatever `sameAvatar` says, so keeping it sends `avatar: true, sameAvatar: true`.
+    avatar: patch.avatar !== null,
+    sameAvatar: patch.avatar === undefined,
     commitment: toBase64(libsignal.profileKeyGetCommitment(key, acc.aci)),
     phoneNumberSharing: toBase64(await encryptProfile(new Uint8Array([patch.sharePhoneNumber ? 1 : 0]), key)),
   };
 
   // SECURITY-REVIEW: device password is sent only as Basic auth to the Signal chat server.
-  await httpJson('PUT', '/v1/profile', body, {
+  const res = await httpJson('PUT', '/v1/profile', body, {
     baseUrl: serverUrl,
     basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
     timeout: 15000,
   });
+  if (patch.avatar === undefined) return {};
+  if (patch.avatar === null) return { avatarUrlPath: null };
+  const form = parseAvatarForm(res);
+  const encrypted = await encryptProfile(patch.avatar, key);
+  return { avatarUrlPath: await uploadProfileAvatar(upload!.httpBinary, form, encrypted, upload!.cdnUrl) };
 }
 
 /**

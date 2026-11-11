@@ -106,6 +106,16 @@ function pinnedSend(method: string, url: string, headers: Record<string, string>
   );
 }
 
+function isSignalUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'signal.org' || host.endsWith('.signal.org');
+  } catch {
+    return false;
+  }
+}
+
+/* With a Signal proxy set, nothing for Signal's hosts may go out directly: the platform-TLS CDN path is skipped, and without the pinned client the request fails instead of falling back to XHR. */
 function send(method: string, url: string, headers: Record<string, string>, body: string | Uint8Array | null, timeout: number): Promise<Res> {
   if (net.isPinnedUrl(url)) {
     const bytes = typeof body === 'string' ? new TextEncoder().encode(body) : body;
@@ -113,6 +123,7 @@ function send(method: string, url: string, headers: Record<string, string>, body
     if (nativeTls.useBuiltIn(url)) return nativeTls.withFallback(() => xhrSend(method, url, headers, bytes || null, timeout, MAX_CDN_RESPONSE_BYTES), pinned);
     return pinned();
   }
+  if (net.proxy() && isSignalUrl(url)) return Promise.reject(netError('network', 'network'));
   return xhrSend(method, url, headers, body, timeout);
 }
 

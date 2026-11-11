@@ -69,7 +69,7 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
       onLinked: (creds) => {
         session.current = null;
         // SECURITY-REVIEW: the device password goes to config storage only; it is never logged or shown.
-        config.set({ number: creds.number || creds.aci, aci: creds.aci, deviceId: creds.deviceId, deviceToken: creds.password, deviceName });
+        config.set({ number: creds.number || creds.aci, dbNumber: creds.number || creds.aci, aci: creds.aci, deviceId: creds.deviceId, deviceToken: creds.password, deviceName });
         config.saveActiveAccount();
         setState('syncing');
         signal

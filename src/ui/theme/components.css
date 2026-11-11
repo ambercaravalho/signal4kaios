@@ -386,6 +386,42 @@
   background: var(--danger);
 }
 
+.voice-rec {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 1.4rem var(--pad) 1.6rem;
+}
+
+.voice-rec .icon {
+  flex: none;
+}
+
+.voice-rec-live {
+  color: var(--danger);
+}
+
+.voice-rec-time {
+  flex: none;
+  min-width: 4.4rem;
+  font-size: var(--fs-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-rec-level {
+  flex: 1;
+  height: 0.6rem;
+  border-radius: 0.3rem;
+  background: var(--sep-bg);
+  overflow: hidden;
+}
+
+.voice-rec-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
 @keyframes rise {
   from {
     transform: translateY(100%);

@@ -29,6 +29,7 @@ export interface HostDb {
   signalKeySet(k: string, v: unknown): Promise<void>;
   putIdentity(rec: unknown): Promise<void>;
   getIdentity(address: string): Promise<any>;
+  deleteIdentity(address: string): Promise<void>;
   allIdentities(): Promise<any[]>;
   putSession(address: string, data: Uint8Array): Promise<void>;
   getSession(address: string): Promise<Uint8Array | undefined>;
@@ -57,6 +58,8 @@ export interface ChatStateEntry {
   archived: boolean;
   muted?: boolean;
   markedUnread?: boolean;
+  /** A group's mentions-while-muted setting; null follows the account's default. */
+  mentionsIfMuted?: boolean | null;
 }
 
 export type PinnedChat = { uuid?: string; number?: string; groupInternalId?: string };
@@ -72,6 +75,8 @@ export interface EngineHost {
   applyChatState(states: ChatStateEntry[], pinned: PinnedChat[] | null): void;
   /** A frame the engine made itself (group update lines), handled like a decrypted one. */
   ingest(frame: { envelope: unknown }): void;
+  /** Our primary phone changed the account's number; the protocol store already has the new one. */
+  numberChanged(number: string): void;
 }
 
 let current: EngineHost | null = null;

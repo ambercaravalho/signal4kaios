@@ -5,6 +5,8 @@ export const DEFAULT_SIGNAL_SERVER = 'https://chat.signal.org';
 
 export interface SavedAccount {
   number: string;
+  /** The number the account's database was created under; IndexedDB can't rename it after a number change. */
+  dbNumber?: string;
   aci: string;
   deviceId: number;
   serverUrl: string;
@@ -12,6 +14,9 @@ export interface SavedAccount {
 }
 
 export type ThemeName = 'light' | 'dark';
+
+export type TextSize = 'small' | 'normal' | 'large' | 'xlarge';
+export const TEXT_SIZES: TextSize[] = ['small', 'normal', 'large', 'xlarge'];
 
 /** The screen lock PIN's salted hash, how long the app may sit in the background before locking, and the wrong-PIN count. */
 export interface ScreenLockConfig {
@@ -26,6 +31,7 @@ export interface ScreenLockConfig {
 interface ConfigData {
   serverUrl?: string;
   number?: string;
+  dbNumber?: string;
   aci?: string;
   deviceId?: number;
   deviceToken?: string;
@@ -44,9 +50,14 @@ interface ConfigData {
   /** Seconds; the disappearing-message timer new 1:1 chats start with. */
   defaultExpireTimer?: number;
   keepMutedArchived?: boolean;
+  /** The account's default for mentions in muted chats, from Storage Service. */
+  notifyMentionsIfMuted?: boolean;
+  textSize?: TextSize;
   sharePhoneNumber?: boolean;
   findableByNumber?: boolean;
   screenLock?: ScreenLockConfig;
+  proxyAddress?: string;
+  proxyEnabled?: boolean;
   accounts?: SavedAccount[];
   [k: string]: unknown;
 }
@@ -78,6 +89,12 @@ export const config = {
 
   number(): string {
     return read().number || '';
+  },
+
+  /** The number naming the active account's database. */
+  dbNumber(): string {
+    const c = read();
+    return c.dbNumber || c.number || '';
   },
 
   aci(): string {
@@ -160,6 +177,27 @@ export const config = {
     return read().keepMutedArchived !== false;
   },
 
+  /** Mentions notify in muted chats unless turned off, as in Signal. */
+  notifyMentionsIfMuted(): boolean {
+    return read().notifyMentionsIfMuted !== false;
+  },
+
+  /** Text size on this phone only. */
+  textSize(): TextSize {
+    const v = read().textSize;
+    return v && TEXT_SIZES.indexOf(v) >= 0 ? v : 'normal';
+  },
+
+  /** The Signal proxy's hostname, kept while the proxy is turned off. */
+  proxyAddress(): string {
+    const v = read().proxyAddress;
+    return typeof v === 'string' ? v : '';
+  },
+
+  proxyEnabled(): boolean {
+    return read().proxyEnabled === true;
+  },
+
   screenLock(): ScreenLockConfig | null {
     const s = read().screenLock;
     if (!s || typeof s.salt !== 'string' || typeof s.hash !== 'string' || !(s.iterations > 0)) return null;
@@ -193,16 +231,27 @@ export const config = {
     const list = c.accounts || [];
     const entry: SavedAccount = {
       number: c.number || '',
+      dbNumber: c.dbNumber || c.number || '',
       aci: c.aci || '',
       deviceId: c.deviceId || 0,
       serverUrl: c.serverUrl || DEFAULT_SIGNAL_SERVER,
       deviceToken: c.deviceToken || '',
     };
-    const i = list.findIndex((a) => a.number === entry.number || (!!entry.aci && a.aci === entry.aci));
+    const i = list.findIndex((a) => (!!entry.aci && a.aci === entry.aci) || a.number === entry.number);
     if (i >= 0) list[i] = entry;
     else list.push(entry);
     c.accounts = list;
     write(c);
+  },
+
+  /** The active account has a new number; its database keeps the name it was created under. */
+  changeNumber(number: string): void {
+    const c = read();
+    if (!number || number === c.number) return;
+    c.dbNumber = c.dbNumber || c.number || '';
+    c.number = number;
+    write(c);
+    if ((c.accounts || []).some((a) => (!!c.aci && a.aci === c.aci) || a.number === c.dbNumber)) config.saveActiveAccount();
   },
 
   /** Drop the active account's device credentials, after unlinking or a 401. */
@@ -223,6 +272,7 @@ export const config = {
     if (!a) return false;
     c.serverUrl = a.serverUrl || DEFAULT_SIGNAL_SERVER;
     c.number = a.number || '';
+    c.dbNumber = a.dbNumber || a.number || '';
     c.aci = a.aci || '';
     c.deviceId = a.deviceId || 0;
     c.deviceToken = a.deviceToken || '';

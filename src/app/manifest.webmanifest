@@ -14,7 +14,7 @@
     { "src": "/assets/icons/kaios_112.png", "type": "image/png", "sizes": "112x112" }
   ],
   "b2g_features": {
-    "version": "2.6.0",
+    "version": "2.7.0",
     "type": "privileged",
     "origin": "signal4kaios",
     "subtitle": "For Signal accounts",
@@ -39,6 +39,9 @@
       },
       "video-capture": {
         "description": "Use the camera to scan QR codes"
+      },
+      "audio-capture": {
+        "description": "Record voice messages"
       },
       "device-storage:pictures": {
         "access": "readcreate",
