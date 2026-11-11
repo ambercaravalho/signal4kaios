@@ -23,7 +23,7 @@ import {
   SyncMessage_MessageRequestResponse_Type,
   TypingMessage_Action,
 } from '../gen/SignalService_pb';
-import { receivedAudioMeta } from '../services/attachment-meta';
+import { receivedMeta } from '../services/attachment-meta';
 import { groupIdFromMasterKey } from '../services/groups-v2';
 import { isValidLinkPreview } from '../services/link-previews';
 import { POLL_OPTIONS_MAX, POLL_QUESTION_MAX_RECEIVE, validPoll } from '../services/polls';
@@ -196,7 +196,7 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
       size: a.ptr.size || 0,
       voiceNote: ((a.ptr.flags || 0) & AttachmentPointer_Flags.VOICE_MESSAGE) !== 0,
       viewOnce: !!dm.isViewOnce,
-      ...receivedAudioMeta(a.ptr),
+      ...receivedMeta(a.ptr),
     })),
   };
 

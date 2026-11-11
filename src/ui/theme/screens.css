@@ -231,6 +231,22 @@
   border-radius: 1rem;
 }
 
+.msg-media-blur img {
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+.msg-media-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin: -1.2rem 0 0 -1.2rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  color: #fff;
+}
+
 .msg-media .msg-meta {
   position: absolute;
   right: 0.5rem;

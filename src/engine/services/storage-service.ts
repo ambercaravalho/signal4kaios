@@ -12,6 +12,7 @@ import {
   ManifestRecord_Identifier_Type,
   ManifestRecord_IdentifierSchema,
   ManifestRecordSchema,
+  OptionalBool,
   ReadOperationSchema,
   StorageItemsSchema,
   StorageManifestSchema,
@@ -63,6 +64,8 @@ export interface StorageGroupV2Record {
   archived?: boolean;
   markedUnread?: boolean;
   mutedUntilTimestamp?: number;
+  /** Whether a mention still notifies while the group is muted; unset follows the account's default. */
+  notifyForMentionsIfMuted?: boolean;
 }
 
 export interface StoragePinnedConversation {
@@ -92,6 +95,29 @@ export interface StorageAccountRecord {
   sharePhoneNumber: boolean;
   /** Whether people who have our number can find us by it. */
   findableByNumber: boolean;
+  /** The default for mentions in muted chats; Signal treats unset as on. */
+  notifyForMentionsIfMuted: boolean;
+}
+
+function fromOptionalBool(v: OptionalBool): boolean | undefined {
+  return v === OptionalBool.ENABLED ? true : v === OptionalBool.DISABLED ? false : undefined;
+}
+
+export function toOptionalBool(v: boolean | undefined): OptionalBool {
+  return v === true ? OptionalBool.ENABLED : v === false ? OptionalBool.DISABLED : OptionalBool.UNSET;
+}
+
+/** Signal-Desktop's `resolveLegacyNotifyForMentionsIfMuted`: the deprecated "don't notify" wins when set, and an explicit "off" with the old field clear means an older client turned mentions back on. */
+export function resolveLegacyNotifyForMentionsIfMuted(dontNotifyForMentionsIfMuted: boolean, notifyForMentionsIfMuted: boolean | undefined): boolean | undefined {
+  if (dontNotifyForMentionsIfMuted) return false;
+  if (notifyForMentionsIfMuted == null) return undefined;
+  return true;
+}
+
+/** Writes a group's mentions-while-muted setting like Signal-Desktop, keeping the deprecated field in step for older clients. */
+export function setNotifyForMentionsIfMuted(g: GroupV2Record, notify: boolean | undefined): void {
+  g.notifyForMentionsIfMuted = toOptionalBool(notify);
+  g.dontNotifyForMentionsIfMuted = notify === false;
 }
 
 export interface StorageSyncResult {
@@ -291,6 +317,7 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
         archived: g.archived,
         markedUnread: g.markedUnread,
         mutedUntilTimestamp: num(g.mutedUntilTimestamp),
+        notifyForMentionsIfMuted: resolveLegacyNotifyForMentionsIfMuted(g.dontNotifyForMentionsIfMuted, fromOptionalBool(g.notifyForMentionsIfMuted)),
       });
     } else if (rec.case === 'account') {
       const a = rec.value;
@@ -323,6 +350,7 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
         noteToSelfMarkedUnread: a.noteToSelfMarkedUnread,
         sharePhoneNumber: a.phoneNumberSharingMode === AccountRecord_PhoneNumberSharingMode.EVERYBODY,
         findableByNumber: !a.unlistedPhoneNumber,
+        notifyForMentionsIfMuted: a.notifyForMentionsIfMuted !== OptionalBool.DISABLED,
       };
     }
   }

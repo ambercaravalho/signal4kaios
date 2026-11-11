@@ -79,6 +79,12 @@ function muteRow(conv: Conversation): Row {
   return { key: 'mute', label: S.muteNotifications, end: 'toggle', checked: !!conv.muted, action: conv.muted ? S.turnOff : S.turnOn, onSelect: () => store.setMuted(conv.id, !conv.muted) };
 }
 
+function mentionsRow(conv: Conversation): Row | false {
+  if (!conv.muted) return false;
+  const on = store.mentionsNotifyWhileMuted(conv);
+  return { key: 'mentions', label: S.notifyForMentions, sub: S.notifyForMentionsHint, end: 'toggle', checked: on, action: on ? S.turnOff : S.turnOn, onSelect: () => store.setMentionsIfMuted(conv.id, !on) };
+}
+
 function directRows(conv: Conversation): Row[] {
   const contact = store.contactByKey(conv.id);
   const recipient = (contact && (contact.uuid || contact.number)) || conv.sendId || conv.id;
@@ -112,7 +118,7 @@ function directRows(conv: Conversation): Row[] {
 
 function groupRows(conv: Conversation, d: GroupDetail | null, reload: () => void): Row[] {
   const sendId = conv.sendId;
-  if (!sendId) return [{ key: 'wait', label: S.groupNotReady }, muteRow(conv)];
+  if (!sendId) return [{ key: 'wait', label: S.groupNotReady }, muteRow(conv), mentionsRow(conv)];
   const admin = amAdmin(d);
   const canEdit = allowed(d, 'edit_group');
   const perms = (d && d.permissions) || PERM_DEFAULTS;
@@ -170,6 +176,7 @@ function groupRows(conv: Conversation, d: GroupDetail | null, reload: () => void
     canEdit && { key: 'name', label: S.groupName, sub: (d && d.name) || conv.name, onSelect: () => edit('name') },
     { key: 'timer', label: S.disappearingMessages, sub: expireLabel(conv.expireTimer || 0), onSelect: canEdit ? () => chooseTimer(conv) : undefined },
     muteRow(conv),
+    mentionsRow(conv),
     admin && { section: S.permissions },
     admin && { key: 'p-add', label: S.addMembersPermission, sub: permLabel(perms.add_members), onSelect: () => setPerm('add_members', S.addMembersPermission) },
     admin && { key: 'p-edit', label: S.editGroupPermission, sub: permLabel(perms.edit_group), onSelect: () => setPerm('edit_group', S.editGroupPermission) },

@@ -58,6 +58,8 @@ export interface ChatStateEntry {
   archived: boolean;
   muted?: boolean;
   markedUnread?: boolean;
+  /** A group's mentions-while-muted setting; null follows the account's default. */
+  mentionsIfMuted?: boolean | null;
 }
 
 export type PinnedChat = { uuid?: string; number?: string; groupInternalId?: string };

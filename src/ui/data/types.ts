@@ -16,6 +16,10 @@ export interface Attachment {
   waveform?: number[];
   /** Length in seconds, for audio. */
   duration?: number;
+  /** A blurred stand-in for a photo or video until it downloads. */
+  blurHash?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface QuotedAttachment {
@@ -142,6 +146,8 @@ export interface Conversation {
   lastReadTs: number;
   archived?: boolean;
   muted?: boolean;
+  /** A group's choice of whether mentions notify while it's muted; unset follows the account's default. */
+  mentionsIfMuted?: boolean;
   pinned?: boolean;
   /** "Mark as unread" with nothing actually unread; opening the chat clears it. */
   markedUnread?: boolean;

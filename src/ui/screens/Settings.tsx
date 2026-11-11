@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useStoreEvents } from '../app/hooks';
 import { router, useOnResume } from '../app/router';
-import { setTheme } from '../app/theme';
+import { setTextSize, setTheme } from '../app/theme';
 import { Avatar, OWN_PROFILE_PREFIX } from '../components/Avatar';
 import { Spinner } from '../components/List';
 import { pickEmoji } from '../components/Emoji';
@@ -11,7 +11,7 @@ import { Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
 import { toast } from '../components/Toast';
 import { signal, syncedContacts, syncedGroups, unlink, updateProfile } from '../data/api';
-import { config, type ThemeName } from '../data/config';
+import { config, type TextSize, type ThemeName } from '../data/config';
 import { db } from '../data/db';
 import { EXPIRE_OPTIONS, expireLabel } from '../data/format';
 import { squareGeometry, scaleToJpeg } from '../data/image-scale';
@@ -454,9 +454,28 @@ export function AppearanceScreen() {
       refresh();
     }
   }
+  const size = config.textSize();
+  const sizes: Array<{ value: TextSize; label: string }> = [
+    { value: 'small', label: S.textSmall },
+    { value: 'normal', label: S.textNormal },
+    { value: 'large', label: S.textLarge },
+    { value: 'xlarge', label: S.textExtraLarge },
+  ];
+  async function chooseSize(): Promise<void> {
+    const v = await pick<TextSize>(S.textSize, sizes, size);
+    if (v) {
+      setTextSize(v);
+      refresh();
+    }
+  }
   return (
     <Screen title={S.appearance}>
-      <RowList rows={[{ key: 'theme', label: S.theme, sub: theme === 'dark' ? S.dark : S.light, onSelect: choose }]} />
+      <RowList
+        rows={[
+          { key: 'theme', label: S.theme, sub: theme === 'dark' ? S.dark : S.light, onSelect: choose },
+          { key: 'text', label: S.textSize, sub: sizes.filter((s) => s.value === size)[0].label, onSelect: chooseSize },
+        ]}
+      />
     </Screen>
   );
 }

@@ -55,7 +55,7 @@ OK on a message opens its options. The first one is what the message is most lik
 - **Link previews** show the page's title and site under the text, with its picture once it's downloaded. When you type a link, **Link preview** and the page's title appear above the message box after a moment, and the preview goes with the message; **Options → Remove link preview** sends just the link. Messages with attachments don't get previews. The phone fetches the page itself, as Signal does, so the website sees that it was opened; turn this off in **Settings → Chats → Generate link previews**.
 - **Polls** show their question, answers, and vote counts. OK → **Vote** picks your answer (or answers, when the poll allows several); vote again to change it, or **Remove my vote**. **View votes** lists who picked what, and the person who made the poll can **End poll**.
 
-**Options** in a chat: Attach, Attach view-once photo or video, Insert emoji, Mention (groups), Create poll (groups), Pinned messages, Mute, and Chat settings.
+**Options** in a chat: Attach, Attach view-once photo or video, Record voice message, Insert emoji, Mention (groups), Create poll (groups), Pinned messages, Mute, and Chat settings.
 
 - **Create poll** asks for a question and 2 to 10 answers; leave an answer empty to finish. Then pick whether people can choose one answer or several.
 
@@ -87,7 +87,7 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 - Voice messages show their waveform and length in the chat.
 - A message with several attachments has **View attachments** first in its options, which lists them to open one.
 
-- Photos show in the chat; small ones download on their own as you scroll to them.
+- Photos show in the chat; small ones download on their own as you scroll to them. Until then, a photo or video shows a blurred preview of itself when the sender's app included one.
 - Voice messages, audio, and video play in the viewer: OK plays or pauses. Video depends on the phone's codecs; H.264 MP4 is the safe choice.
 - **Save to phone** puts the file in the gallery, music, videos, or files.
 - View-once media can be viewed once, then it's gone, including when you open it on another device. **Options → Attach view-once photo or video** sends your own, without a caption.
@@ -106,7 +106,7 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 
 - **For everyone**: **Media** is the first row; see [Media](#media).
 - **For a person**: Nickname (saved as a Signal nickname on all your devices), Disappearing messages, Mute, View safety number, and Block or Unblock.
-- **For a group**: the description, **Members**, and, as the group's permissions allow, the group name, description, and disappearing messages. Admins also get **Permissions** (who can add members, edit group info, and send messages) and **Group link** (off, on, or on with admin approval; show its QR code or reset it). **Block and leave group** and **Leave group** are at the bottom.
+- **For a group**: the description, **Members**, and, as the group's permissions allow, the group name, description, and disappearing messages. While the group is muted, **Notify for mentions** (on unless you turn it off, and kept in step with your other devices) still notifies you when someone mentions you. Admins also get **Permissions** (who can add members, edit group info, and send messages) and **Group link** (off, on, or on with admin approval; show its QR code or reset it). **Block and leave group** and **Leave group** are at the bottom.
 - **Members**: OK on a member to message them or view their safety number; admins can make or remove admins, remove members, and cancel invites. Admins also see **Requests to join** at the top when people asked to join through the group link; OK on one to **Approve** or **Deny** it. The right softkey adds people from your contacts, or by username if you have none. People Signal can't add directly are invited.
 - **Safety number**: compare the 60 digits with the other phone, **Show code** for them to scan, or **Scan code** to scan theirs. OK marks the contact as verified or clears it. [About safety numbers](https://support.signal.org/hc/en-us/articles/360007060632).
 
@@ -118,7 +118,7 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 | **Linked device** | Which number this phone is linked as, Sync with your phone, saved accounts (OK switches), Add account, Unlink this phone, and Delete all data |
 | **Chats** | Text formatting; Keep muted chats archived; Generate link previews |
 | **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Screen lock; Blocked; Proxy |
-| **Appearance** | Theme: light or dark |
+| **Appearance** | Theme: light or dark; Text size: Small, Normal, Large, or Extra large (this phone only) |
 | **Help** | Version, User guide, Source code |
 | **Debug** | Technical details for troubleshooting (see below) |
 

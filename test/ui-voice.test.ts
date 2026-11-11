@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 import { create } from '@bufbuild/protobuf';
 import { AttachmentPointer_Flags, AttachmentPointerSchema } from '../src/engine/gen/SignalService_pb';
-import { applyAttachmentMeta, receivedAudioMeta } from '../src/engine/services/attachment-meta';
+import { applyAttachmentMeta, receivedMeta } from '../src/engine/services/attachment-meta';
 import { fmtLength } from '../src/ui/data/format';
 import { encodeVoice, type RecorderDeps, toMono, toPeak, VoiceRecorder, voiceNoteFile, WaveformBuilder, waveformBars } from '../src/ui/data/voice-recorder';
 
@@ -197,11 +197,11 @@ describe('voice messages', () => {
 
   it('reads at most 100 bars and a sane length from received pointers', () => {
     const ptr = create(AttachmentPointerSchema, { contentType: 'audio/mpeg', audioWaveform: new Uint8Array(250).fill(7), audioDurationSeconds: 12.25 });
-    const meta = receivedAudioMeta(ptr);
+    const meta = receivedMeta(ptr);
     assert.equal(meta.waveform!.length, 100);
     assert.equal(meta.duration, 12.25);
-    assert.deepEqual(receivedAudioMeta(create(AttachmentPointerSchema, { contentType: 'audio/mpeg', audioDurationSeconds: Infinity })), {});
-    assert.deepEqual(receivedAudioMeta(create(AttachmentPointerSchema, { contentType: 'image/png', audioWaveform: new Uint8Array([1]) })), {});
+    assert.deepEqual(receivedMeta(create(AttachmentPointerSchema, { contentType: 'audio/mpeg', audioDurationSeconds: Infinity })), {});
+    assert.deepEqual(receivedMeta(create(AttachmentPointerSchema, { contentType: 'image/png', audioWaveform: new Uint8Array([1]) })), {});
   });
 
   it('draws bubble bars and lengths', () => {

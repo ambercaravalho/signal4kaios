@@ -15,6 +15,9 @@ export interface SavedAccount {
 
 export type ThemeName = 'light' | 'dark';
 
+export type TextSize = 'small' | 'normal' | 'large' | 'xlarge';
+export const TEXT_SIZES: TextSize[] = ['small', 'normal', 'large', 'xlarge'];
+
 /** The screen lock PIN's salted hash, how long the app may sit in the background before locking, and the wrong-PIN count. */
 export interface ScreenLockConfig {
   salt: string;
@@ -47,6 +50,9 @@ interface ConfigData {
   /** Seconds; the disappearing-message timer new 1:1 chats start with. */
   defaultExpireTimer?: number;
   keepMutedArchived?: boolean;
+  /** The account's default for mentions in muted chats, from Storage Service. */
+  notifyMentionsIfMuted?: boolean;
+  textSize?: TextSize;
   sharePhoneNumber?: boolean;
   findableByNumber?: boolean;
   screenLock?: ScreenLockConfig;
@@ -169,6 +175,17 @@ export const config = {
   /** Muted chats stay archived when new messages arrive, as in Signal. */
   keepMutedArchived(): boolean {
     return read().keepMutedArchived !== false;
+  },
+
+  /** Mentions notify in muted chats unless turned off, as in Signal. */
+  notifyMentionsIfMuted(): boolean {
+    return read().notifyMentionsIfMuted !== false;
+  },
+
+  /** Text size on this phone only. */
+  textSize(): TextSize {
+    const v = read().textSize;
+    return v && TEXT_SIZES.indexOf(v) >= 0 ? v : 'normal';
   },
 
   /** The Signal proxy's hostname, kept while the proxy is turned off. */

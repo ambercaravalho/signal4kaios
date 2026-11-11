@@ -208,8 +208,23 @@ export function onNotificationClick(fn: (convId: string) => void): void {
   notificationClick = fn;
 }
 
-function notify(conv: Conversation, rec: Message): void {
-  if (conv.muted || !document.hidden || typeof Notification === 'undefined') return;
+/** Whether a mention of us still notifies while this group is muted: its own setting, else the account's default. */
+export function mentionsNotifyWhileMuted(conv: Conversation): boolean {
+  return conv.type === 'group' && (conv.mentionsIfMuted !== undefined ? conv.mentionsIfMuted : config.notifyMentionsIfMuted());
+}
+
+function mentionsMe(mentioned: string[] | undefined): boolean {
+  const me = config.aci();
+  return !!me && !!mentioned && mentioned.indexOf(me) >= 0;
+}
+
+/** Whether a new message in `conv` should raise a notification while Beacon is in the background. */
+export function shouldNotify(conv: Conversation, mentioned?: string[]): boolean {
+  return !conv.muted || (mentionsMe(mentioned) && mentionsNotifyWhileMuted(conv));
+}
+
+function notify(conv: Conversation, rec: Message, mentioned?: string[]): void {
+  if (!shouldNotify(conv, mentioned) || !document.hidden || typeof Notification === 'undefined') return;
   const title = conv.name || 'Beacon';
   let body = messageText(rec) || 'New message';
   if (conv.type === 'group' && !rec.notice) body = displayName(rec.author) + ': ' + body;
@@ -276,7 +291,7 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   emit('message', rec);
   emit('conversations');
   // Draining the offline queue (silent) must not notify per message: the queue replays on every reconnect.
-  if (ev.incoming && !silent) notify(conv, rec);
+  if (ev.incoming && !silent) notify(conv, rec, ev.mentioned);
   if (ev.incoming && openConvId === conv.id) markRead(conv.id);
 }
 
@@ -749,17 +764,36 @@ export interface OutgoingFile {
   voiceNote?: boolean;
   waveform?: number[];
   duration?: number;
+  blurHash?: string;
+  width?: number;
+  height?: number;
 }
 
-function outgoingMeta(f: Pick<Attachment, 'voiceNote' | 'waveform' | 'duration'>): SendMeta | null {
-  if (!f.voiceNote && !f.waveform && !f.duration) return null;
-  return { voice: !!f.voiceNote, waveform: f.waveform, duration: f.duration };
+type AttachmentExtras = Pick<Attachment, 'voiceNote' | 'waveform' | 'duration' | 'blurHash' | 'width' | 'height'>;
+
+function outgoingMeta(f: AttachmentExtras): SendMeta | null {
+  if (!f.voiceNote && !f.waveform && !f.duration && !f.blurHash && !f.width) return null;
+  const meta: SendMeta = {};
+  if (f.voiceNote) meta.voice = true;
+  if (f.waveform) meta.waveform = f.waveform;
+  if (f.duration) meta.duration = f.duration;
+  if (f.blurHash) meta.blurHash = f.blurHash;
+  if (f.width && f.height) {
+    meta.width = f.width;
+    meta.height = f.height;
+  }
+  return meta;
 }
 
 function localAttachment(f: OutgoingFile): Attachment {
   const att: Attachment = { id: '', contentType: f.contentType || 'image/jpeg', filename: f.filename == null ? 'photo.jpg' : f.filename, size: f.size || 0, voiceNote: !!f.voiceNote };
   if (f.waveform && f.waveform.length) att.waveform = f.waveform;
   if (f.duration) att.duration = f.duration;
+  if (f.blurHash) att.blurHash = f.blurHash;
+  if (f.width && f.height) {
+    att.width = f.width;
+    att.height = f.height;
+  }
   return att;
 }
 
@@ -823,7 +857,7 @@ export function forwardMessage(convId: string, m: Message, dataUri?: string): Pr
     return Promise.reject(e);
   }
   const src = dataUri ? m.attachments[0] : undefined;
-  const attachments: Attachment[] = src ? [localAttachment({ dataUri: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: src.voiceNote, waveform: src.waveform, duration: src.duration })] : [];
+  const attachments: Attachment[] = src ? [localAttachment({ dataUri: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: src.voiceNote, waveform: src.waveform, duration: src.duration, blurHash: src.blurHash, width: src.width, height: src.height })] : [];
   return withDefaultTimer(conv, () => {
     const rec = newOutgoingRec(conv, { body: m.body, styles: m.styles || [], attachments });
     const payload: SendPayload = { recipients: [conv.sendId!], message: m.body, styles: m.styles || [], expire_timer: conv.expireTimer || 0 };
@@ -1210,7 +1244,7 @@ export function setMessagePinned(rec: Message, pinned: boolean): Promise<void> {
 }
 
 /* Local archive, mute, and pin changes are published to Storage Service; changes that came from there go through applyChatState and never echo back. */
-function syncChatState(conv: Conversation, fields: { archived?: boolean; muted?: boolean; markedUnread?: boolean; pinned?: boolean }): void {
+function syncChatState(conv: Conversation, fields: { archived?: boolean; muted?: boolean; markedUnread?: boolean; pinned?: boolean; mentionsIfMuted?: boolean }): void {
   if (!conv.sendId) return;
   signal.syncChatState(Object.assign({ type: conv.type, sendId: conv.sendId }, fields)).catch((err) => dbg('chat state sync failed: ' + (err && err.message)));
 }
@@ -1235,6 +1269,11 @@ export function applyChatState(states: ChatStateEntry[], pinned: PinnedChat[] | 
     }
     if (s.markedUnread !== undefined && !!conv.markedUnread !== s.markedUnread) {
       conv.markedUnread = s.markedUnread;
+      changed[conv.id] = conv;
+    }
+    if (s.mentionsIfMuted !== undefined && conv.mentionsIfMuted !== (s.mentionsIfMuted === null ? undefined : s.mentionsIfMuted)) {
+      if (s.mentionsIfMuted === null) delete conv.mentionsIfMuted;
+      else conv.mentionsIfMuted = s.mentionsIfMuted;
       changed[conv.id] = conv;
     }
   }
@@ -1279,6 +1318,16 @@ export function setMuted(convId: string, val: boolean): void {
   persistConv(conv);
   emit('conversations');
   syncChatState(conv, { muted: val });
+}
+
+/** Whether mentions of us notify while this group is muted, kept on the account's other devices too. */
+export function setMentionsIfMuted(convId: string, val: boolean): void {
+  const conv = convs[convId];
+  if (!conv || conv.type !== 'group' || mentionsNotifyWhileMuted(conv) === val) return;
+  conv.mentionsIfMuted = val;
+  persistConv(conv);
+  emit('conversations');
+  syncChatState(conv, { mentionsIfMuted: val });
 }
 
 /** Flag a chat as unread without touching its messages, as Signal's "Mark as unread". */

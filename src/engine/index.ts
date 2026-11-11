@@ -60,7 +60,7 @@ import { decryptDeviceName, ProvisioningCallbacks, ProvisioningSession, startDev
 import { DeviceNameSchema } from './gen/DeviceName_pb';
 import { IndexedDbSignalStore, TrustLevel } from './protocol/store';
 import { POLL_QUESTION_MAX_SEND, validPoll } from './services/polls';
-import { mutateStorage, pullFromStorageService, setPhoneNumberPrivacy, StorageMutation, StorageWriteQueue } from './services/storage-service';
+import { mutateStorage, pullFromStorageService, setNotifyForMentionsIfMuted, setPhoneNumberPrivacy, StorageMutation, StorageWriteQueue } from './services/storage-service';
 import { AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema, ContactRecord_NameSchema } from './gen/SignalStorage_pb';
 import { diffGroupState, groupChangeAuthor, isDecodedGroup } from './services/group-updates';
 import { reportSpam as reportSpamMessages } from './services/report-spam';
@@ -597,7 +597,7 @@ async function syncFromStorageService(): Promise<boolean> {
         blocked: gv2.blocked ?? prev.blocked ?? false,
         archived: gv2.archived ?? prev.archived ?? false,
       });
-      if (gv2.changed) chatState.push({ groupInternalId: keys.internalId, archived: !!gv2.archived, muted: (gv2.mutedUntilTimestamp || 0) > Date.now(), markedUnread: !!gv2.markedUnread });
+      if (gv2.changed) chatState.push({ groupInternalId: keys.internalId, archived: !!gv2.archived, muted: (gv2.mutedUntilTimestamp || 0) > Date.now(), markedUnread: !!gv2.markedUnread, mentionsIfMuted: gv2.notifyForMentionsIfMuted ?? null });
     }
     await host().db.kvSet('syncedGroups', Array.from(byGrpId.values()));
     for (const gv2 of res.groupsV2) {
@@ -626,6 +626,7 @@ async function syncFromStorageService(): Promise<boolean> {
     if (res.account.universalExpireTimer !== undefined) patch.defaultExpireTimer = res.account.universalExpireTimer;
     patch.sharePhoneNumber = res.account.sharePhoneNumber;
     patch.findableByNumber = res.account.findableByNumber;
+    patch.notifyMentionsIfMuted = res.account.notifyForMentionsIfMuted;
     host().config.set(patch);
     const acc = await store.getAccount();
     if (acc && res.account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!res.account.noteToSelfArchived, markedUnread: !!res.account.noteToSelfMarkedUnread });
@@ -1493,7 +1494,7 @@ export const signalBridge = {
   },
 
   /** Publish a chat's archive, mute, marked-unread, or pinned state to Storage Service so the account's other devices match. Only the fields that are set change. */
-  async syncChatState(chat: { type: 'direct' | 'group'; sendId: string; archived?: boolean; muted?: boolean; markedUnread?: boolean; pinned?: boolean }): Promise<void> {
+  async syncChatState(chat: { type: 'direct' | 'group'; sendId: string; archived?: boolean; muted?: boolean; markedUnread?: boolean; pinned?: boolean; mentionsIfMuted?: boolean }): Promise<void> {
     const mutations: StorageMutation[] = [];
     const setState = (r: { archived: boolean; mutedUntilTimestamp: bigint; markedUnread: boolean }) => {
       if (chat.archived !== undefined) r.archived = chat.archived;
@@ -1506,7 +1507,16 @@ export const signalBridge = {
 
     if (chat.type === 'group') {
       const masterKey = await groupMasterKey(chat.sendId);
-      if (stateChanged) mutations.push({ type: 'groupV2', masterKey, update: setState });
+      if (stateChanged || chat.mentionsIfMuted !== undefined) {
+        mutations.push({
+          type: 'groupV2',
+          masterKey,
+          update: (g) => {
+            setState(g);
+            if (chat.mentionsIfMuted !== undefined) setNotifyForMentionsIfMuted(g, chat.mentionsIfMuted);
+          },
+        });
+      }
       isPin = (p) => p.identifier.case === 'groupMasterKey' && constantTimeEqual(p.identifier.value, masterKey);
       pin = { identifier: { case: 'groupMasterKey', value: masterKey } };
     } else {

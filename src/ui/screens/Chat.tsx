@@ -15,6 +15,7 @@ import { toast } from '../components/Toast';
 import { recordVoice } from '../components/VoiceRecorder';
 import { groupDetail, signal, type GroupDetail } from '../data/api';
 import { ATTACHMENT_CACHE_KEEP, autoDownloads, cachedAttachment, isImage, loadAttachment, readDataUri } from '../data/attachments';
+import { blurHashUrl, photoBlurHash } from '../data/blurhash';
 import { config } from '../data/config';
 import { db } from '../data/db';
 import { fmtBytes, fmtClock, fmtDay, fmtLength, fmtMsgTime } from '../data/format';
@@ -154,6 +155,15 @@ function AttachmentView(props: { att: Attachment; meta?: VNode | null; photoOnly
     return (
       <div class="msg-media" ref={ref}>
         <img src={url} alt="" />
+        {props.meta}
+      </div>
+    );
+  const placeholder = !att.viewOnce && att.blurHash && (isImage(att) || (att.contentType || '').indexOf('video/') === 0) ? blurHashUrl(att.blurHash, att.width, att.height) : null;
+  if (placeholder)
+    return (
+      <div class="msg-media msg-media-blur" ref={ref}>
+        <img src={placeholder} alt="" />
+        {!isImage(att) && <Icon name="play" class="msg-media-play" />}
         {props.meta}
       </div>
     );
@@ -667,6 +677,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     toast(S.preparingFile);
     try {
       const out: store.OutgoingFile = { dataUri: await readDataUri(file, file.name), contentType: type, filename: file.name, size: file.size };
+      if (type.indexOf('image/') === 0) Object.assign(out, await photoBlurHash(file));
       if (!alone) {
         setTray((cur) => cur.concat(out));
         setFocusedId(null);
