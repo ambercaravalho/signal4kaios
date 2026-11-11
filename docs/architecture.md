@@ -152,6 +152,8 @@ sequenceDiagram
 
 A frame is acknowledged only after it has been decrypted and stored, so a crash never loses a message. Envelopes are decrypted one at a time ([`net/client.ts`](../src/engine/net/client.ts) `enqueueDecryptEnvelope`). A message that fails to decrypt triggers a `DecryptionErrorMessage` retry receipt to the sender. After the initial offline queue drains (`/api/v1/queue/empty`), queued messages don't each raise a notification.
 
+When the main phone changes the account's number, it sends each linked device a `SyncMessage.PniChangeNumber` with that device's new PNI identity key pair, signed PreKey, last-resort Kyber PreKey, and registration ID, and the envelope carries the new PNI (`updatedPni`). [`services/change-number.ts`](../src/engine/services/change-number.ts) applies it inside the decryption queue, as Signal-Desktop does, because the envelopes after it may be addressed to the new PNI: libsignal parses the records, the old PNI identity is dropped, group credentials and the sender certificate are cleared, and fresh PNI PreKeys are uploaded. The app then shows the new number, but the account's database keeps the name it was created under (`dbNumber` in `s4k.config`), since IndexedDB can't rename a database.
+
 ## Sending
 
 `store.send*` in [`src/ui/data/store.ts`](../src/ui/data/store.ts) writes an optimistic `pending` message, then calls the engine's `signalBridge.send`. The engine:

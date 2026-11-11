@@ -70,7 +70,8 @@ import { SenderKeyGroup, SignalClient } from './net/client';
 import { endorsesAll, loadGroupSendEndorsements } from './services/group-send';
 import { DEFAULT_SIGNAL_SERVER } from './net/http';
 import { net } from './net/transport';
-import { IncomingEnvelope, parseContactsSyncBlob } from './net/receive';
+import { DecryptedEnvelope, IncomingEnvelope, parseContactsSyncBlob } from './net/receive';
+import { applyPniChangeNumber, NumberChange } from './services/change-number';
 import { ChatStateEntry, host } from './host';
 
 type DataMessageInit = MessageInitShape<typeof DataMessageSchema>;
@@ -653,6 +654,33 @@ async function refreshOwnDeviceName(): Promise<void> {
   if (name) host().config.set({ deviceName: name.slice(0, MAX_DEVICE_NAME) });
 }
 
+/** A number change from our primary phone, applied inside the decryption queue as Signal-Desktop does: the envelopes after it may be addressed to the new PNI. */
+async function applyOwnKeyChanges(res: DecryptedEnvelope): Promise<void> {
+  const c = res.content.content;
+  if (c.case !== 'syncMessage' || c.value.content.case !== 'pniChangeNumber') return;
+  let change: NumberChange | null;
+  try {
+    change = await applyPniChangeNumber(store, res.envelope, c.value.content.value);
+  } catch (e: any) {
+    host().dbg('sync: number change rejected: ' + (e && e.message));
+    return;
+  }
+  if (!change) {
+    host().dbg('sync: incomplete number change ignored');
+    return;
+  }
+  host().dbg('sync: our number changed');
+  client.clearSenderCertificate();
+  host().numberChanged(change.number);
+  const acc = await store.getAccount();
+  if (!acc || !acc.pniIdentityKeyPair) return;
+  const pniKeys = acc.pniIdentityKeyPair;
+  const basicAuth = { username: `${acc.aci}.${acc.deviceId}`, password: acc.password };
+  generatePreKeyUpload(store, 'pni', pniKeys)
+    .then((body) => httpJson('PUT', '/v2/keys?identity=pni', body, { basicAuth }))
+    .catch((e: any) => host().dbg('sync: PNI PreKey upload after the number change failed: ' + (e && e.message)));
+}
+
 async function handleIncomingSyncMessage(env: IncomingEnvelope, content: Content): Promise<void> {
   if (content.content.case !== 'syncMessage') return;
   const acc = await store.getAccount();
@@ -832,7 +860,7 @@ export const signalBridge = {
    * Decrypt a binary Signal `Envelope` from a WebSocket `/api/v1/message` request and return the JSON frame for the app's store.
    */
   async processIncomingEnvelope(envelopeBytes: Uint8Array): Promise<{ envelope: any } | null> {
-    const res = await client.enqueueDecryptEnvelope(envelopeBytes);
+    const res = await client.enqueueDecryptEnvelope(envelopeBytes, applyOwnKeyChanges);
     if (!res) return null;
     const c = res.content.content;
     const sender = res.envelope.sourceUuid;

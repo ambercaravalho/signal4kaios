@@ -137,6 +137,8 @@ When your main phone gives your profile a new key, which Signal does after you b
 
 Each account has its own history on the phone, and switching accounts restarts Beacon.
 
+If you change your number on your main phone, Beacon follows: it shows **Your number changed to …**, keeps your chats and history, and stays linked. Messages sent to your new number arrive as usual.
+
 **Debug** shows the details a bug report needs: app and library versions, account and device IDs, how many one-time keys the server holds, the connection state, when the last message arrived, and storage use. It can refresh keys, ask your main phone to sync, reconnect, show the log, and **Share debug log**. The shared log has phone numbers, account IDs, and keys removed.
 
 **Debug → Faster connection** shows whether photos, video, voice notes, and files travel over the phone's built-in TLS. That needs a rooted phone that trusts Signal's root certificate; **How to turn it on** opens [the setup steps](setup.md#optional-for-rooted-phones-trust-signals-certificate), and **Check again** looks again after you install it.

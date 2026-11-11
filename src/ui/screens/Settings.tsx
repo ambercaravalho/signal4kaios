@@ -222,7 +222,7 @@ export function ProfileScreen() {
 /** Every account's database and all settings, then a fresh start at the welcome screen. */
 export async function deleteAllData(): Promise<void> {
   ws.stop();
-  for (const a of config.accounts()) await db.useAccount(a.number).then(() => db.wipe()).catch(() => {});
+  for (const a of config.accounts()) await db.useAccount(a.dbNumber || a.number).then(() => db.wipe()).catch(() => {});
   await db.useAccount(null).then(() => db.wipe()).catch(() => {});
   config.clear();
   location.reload();

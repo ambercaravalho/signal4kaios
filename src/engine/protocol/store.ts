@@ -61,6 +61,7 @@ export interface SignalProtocolStore {
   /** Stores `publicKey` for `address`; returns true when it replaced a different key (the trust level then drops to UNTRUSTED until the user reviews the new safety number). */
   saveIdentity(address: string, publicKey: Uint8Array, meta?: { number?: string; uuid?: string }): Promise<boolean>;
   setIdentityTrust(address: string, trustLevel: TrustLevel): Promise<void>;
+  removeIdentity(address: string): Promise<void>;
   getAllIdentities(): Promise<IdentityRecord[]>;
 
   loadPreKey(id: number): Promise<Uint8Array | null>;
@@ -160,6 +161,10 @@ export class MemorySignalStore implements SignalProtocolStore {
   async setIdentityTrust(address: string, trustLevel: TrustLevel): Promise<void> {
     const rec = this.identities.get(address);
     if (rec) rec.trustLevel = trustLevel;
+  }
+
+  async removeIdentity(address: string): Promise<void> {
+    this.identities.delete(address);
   }
 
   async getAllIdentities(): Promise<IdentityRecord[]> {
@@ -329,6 +334,10 @@ export class IndexedDbSignalStore implements SignalProtocolStore {
       existing.trustLevel = trustLevel;
       await this.db().putIdentity(existing);
     }
+  }
+
+  async removeIdentity(address: string): Promise<void> {
+    await this.db().deleteIdentity(address);
   }
 
   async getAllIdentities(): Promise<IdentityRecord[]> {

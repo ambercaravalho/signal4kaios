@@ -29,6 +29,7 @@ export interface HostDb {
   signalKeySet(k: string, v: unknown): Promise<void>;
   putIdentity(rec: unknown): Promise<void>;
   getIdentity(address: string): Promise<any>;
+  deleteIdentity(address: string): Promise<void>;
   allIdentities(): Promise<any[]>;
   putSession(address: string, data: Uint8Array): Promise<void>;
   getSession(address: string): Promise<Uint8Array | undefined>;
@@ -72,6 +73,8 @@ export interface EngineHost {
   applyChatState(states: ChatStateEntry[], pinned: PinnedChat[] | null): void;
   /** A frame the engine made itself (group update lines), handled like a decrypted one. */
   ingest(frame: { envelope: unknown }): void;
+  /** Our primary phone changed the account's number; the protocol store already has the new one. */
+  numberChanged(number: string): void;
 }
 
 let current: EngineHost | null = null;

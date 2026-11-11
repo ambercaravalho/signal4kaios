@@ -1,7 +1,7 @@
 //! Curve25519 key handling and PreKey record generation.
 
 use libsignal_protocol::{
-    GenericSignedPreKey, KeyPair, KyberPreKeyId, KyberPreKeyRecord, PreKeyId, PreKeyRecord,
+    GenericSignedPreKey, IdentityKeyPair, KeyPair, KyberPreKeyId, KyberPreKeyRecord, PreKeyId, PreKeyRecord,
     PrivateKey, PublicKey, SignedPreKeyId, SignedPreKeyRecord, Timestamp, kem,
 };
 use rand::Rng;
@@ -124,6 +124,31 @@ pub fn kyber_pre_key_record_generate(
         .bytes("publicKey", &public)
         .bytes("signature", &signature)
         .build())
+}
+
+/// `{ publicKey (33 bytes), privateKey (32 bytes) }` from a serialized `IdentityKeyPair`, as the primary device sends in
+/// `SyncMessage.PniChangeNumber`.
+#[wasm_bindgen(js_name = identityKeyPairDeserialize)]
+pub fn identity_key_pair_deserialize(serialized: &[u8]) -> Result<JsValue, JsValue> {
+    let pair = IdentityKeyPair::try_from(serialized).map_err(protocol_error)?;
+    Ok(Obj::new()
+        .bytes("publicKey", &pair.identity_key().serialize())
+        .bytes("privateKey", &pair.private_key().serialize())
+        .build())
+}
+
+/// The ID of a serialized `SignedPreKeyRecord`, which must parse.
+#[wasm_bindgen(js_name = signedPreKeyRecordId)]
+pub fn signed_pre_key_record_id(record: &[u8]) -> Result<u32, JsValue> {
+    let record = SignedPreKeyRecord::deserialize(record).map_err(protocol_error)?;
+    Ok(u32::from(record.id().map_err(protocol_error)?))
+}
+
+/// The ID of a serialized `KyberPreKeyRecord`, which must parse.
+#[wasm_bindgen(js_name = kyberPreKeyRecordId)]
+pub fn kyber_pre_key_record_id(record: &[u8]) -> Result<u32, JsValue> {
+    let record = KyberPreKeyRecord::deserialize(record).map_err(protocol_error)?;
+    Ok(u32::from(record.id().map_err(protocol_error)?))
 }
 
 /// KEM encapsulation against a serialized (type-prefixed) public key: `{ ciphertext, sharedSecret }`. Test helper for the

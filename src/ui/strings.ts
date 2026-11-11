@@ -42,6 +42,7 @@ export const S = {
   noArchivedHint: 'Chats you archive appear here.',
   connecting: 'Connecting…',
   offline: 'No connection',
+  numberChanged: 'Your number changed to {number}',
   connectingProxy: 'Connecting through proxy…',
   offlineProxy: 'Can’t reach the proxy',
   markAllRead: 'Mark all as read',

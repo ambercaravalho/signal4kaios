@@ -5,6 +5,8 @@ export const DEFAULT_SIGNAL_SERVER = 'https://chat.signal.org';
 
 export interface SavedAccount {
   number: string;
+  /** The number the account's database was created under; IndexedDB can't rename it after a number change. */
+  dbNumber?: string;
   aci: string;
   deviceId: number;
   serverUrl: string;
@@ -26,6 +28,7 @@ export interface ScreenLockConfig {
 interface ConfigData {
   serverUrl?: string;
   number?: string;
+  dbNumber?: string;
   aci?: string;
   deviceId?: number;
   deviceToken?: string;
@@ -80,6 +83,12 @@ export const config = {
 
   number(): string {
     return read().number || '';
+  },
+
+  /** The number naming the active account's database. */
+  dbNumber(): string {
+    const c = read();
+    return c.dbNumber || c.number || '';
   },
 
   aci(): string {
@@ -205,16 +214,27 @@ export const config = {
     const list = c.accounts || [];
     const entry: SavedAccount = {
       number: c.number || '',
+      dbNumber: c.dbNumber || c.number || '',
       aci: c.aci || '',
       deviceId: c.deviceId || 0,
       serverUrl: c.serverUrl || DEFAULT_SIGNAL_SERVER,
       deviceToken: c.deviceToken || '',
     };
-    const i = list.findIndex((a) => a.number === entry.number || (!!entry.aci && a.aci === entry.aci));
+    const i = list.findIndex((a) => (!!entry.aci && a.aci === entry.aci) || a.number === entry.number);
     if (i >= 0) list[i] = entry;
     else list.push(entry);
     c.accounts = list;
     write(c);
+  },
+
+  /** The active account has a new number; its database keeps the name it was created under. */
+  changeNumber(number: string): void {
+    const c = read();
+    if (!number || number === c.number) return;
+    c.dbNumber = c.dbNumber || c.number || '';
+    c.number = number;
+    write(c);
+    if ((c.accounts || []).some((a) => (!!c.aci && a.aci === c.aci) || a.number === c.dbNumber)) config.saveActiveAccount();
   },
 
   /** Drop the active account's device credentials, after unlinking or a 401. */
@@ -235,6 +255,7 @@ export const config = {
     if (!a) return false;
     c.serverUrl = a.serverUrl || DEFAULT_SIGNAL_SERVER;
     c.number = a.number || '';
+    c.dbNumber = a.dbNumber || a.number || '';
     c.aci = a.aci || '';
     c.deviceId = a.deviceId || 0;
     c.deviceToken = a.deviceToken || '';

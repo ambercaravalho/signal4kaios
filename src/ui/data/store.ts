@@ -66,10 +66,11 @@ function self(): string {
 
 function isSelfKey(key: string): boolean {
   const n = config.number();
+  const aci = config.aci();
   if (!key || !n) return false;
-  if (key === n) return true;
+  if (key === n || (!!aci && key === aci)) return true;
   const c = contactsByKey[key];
-  return !!(c && c.number && c.number === n);
+  return !!(c && ((c.number && c.number === n) || (!!aci && c.uuid === aci)));
 }
 
 export function isSelfConv(conv: Pick<Conversation, 'id' | 'type'> | undefined | null): boolean {
