@@ -1,0 +1,39 @@
+---
+description: Size limits, where shared helpers live, duplication, dependencies, bundle budget, and test layout
+globs: src/**,test/**,scripts/**
+alwaysApply: false
+---
+
+# Code quality
+
+## Size
+
+- Soft limits: about 400 lines per file and 60 per function. Past the limit, split the file into a folder of focused modules and keep the old path as a barrel so imports don't churn.
+- Barrels today: `src/engine/index.ts` (over `bridge/`), `src/engine/services/storage/index.ts`, `src/engine/services/profiles.ts` (re-exports `profile-crypto.ts` and `profile-avatar.ts`), `src/ui/data/store.ts` (over `data/store/`), `src/ui/data/normalize.ts` (over `data/normalize/`), `src/ui/screens/Chat.tsx` (over `components/chat/`), `src/ui/screens/Settings.tsx` (over `screens/settings/`), `src/ui/screens/ChatSettings.tsx` (re-exports `Members.tsx`), and `src/ui/screens/SearchList.tsx` (over `NewChat`, `Search`, and `Forward`). Add new code to the module, not the barrel.
+- Known exceptions, to split when next touched: `src/engine/net/client.ts`, `src/engine/protocol/protocol.ts`, `src/engine/protocol/store.ts`, `src/engine/net/transport/http1.ts`, `src/engine/services/group-changes.ts`, `src/ui/data/db.ts`, `test/ui-store.test.ts`, and `test/transport.test.ts`. `src/ui/strings.ts` is one table by design.
+
+## One home per concept
+
+- IDs, regexes, and input validation: `src/engine/validate.ts`. Byte and base64 conversions: `src/engine/bytes.ts`. AES-GCM, HMAC, and attachment crypto: `src/engine/crypto/`. Auth headers, XHR, `JsonObject`, and `asObject`: `src/engine/net/http.ts`. Shared Preact hooks (`useStoreEvents`, `useRefresh`, `useObjectUrl`, `useTicker`): `src/ui/app/hooks.ts`.
+- Grep before writing a helper. The second time code appears, extract it into its home instead of copying it.
+- No unused exports and no commented-out code; delete it, git keeps the history.
+- An empty `catch` must `dbg` the error or say in a comment why ignoring it is safe.
+
+## Dependencies
+
+- Add an npm or Rust package only when it is tree-shakeable, runs on Gecko 84 without `eval`, and is smaller than the code it replaces. Record it in `NOTICE` and state the bytes it adds in the PR.
+- Deliberately ours, don't swap for packages:
+  - `net/transport/http1.ts`, `websocket.ts`, and `tls-stream.ts`, plus `tls.rs`: they run over KaiOS's raw `TCPSocket`, which no HTTP or WebSocket package targets.
+  - `ui/data/db.ts`: a thin IndexedDB layer smaller than `idb`, with the account-per-database upgrade rules built in.
+  - `ui/data/format.ts`: a few fixed date and duration formats; `date-fns` would add more than it removes.
+  - `linkRuns` in `ui/data/styled.ts`: it must match the engine's link-preview rule exactly, which linkify wouldn't.
+  - The QR drawing in `components/Qr.tsx` (encoding comes from `qr`) and the slim-emoji esbuild plugin in `scripts/build.mjs`, which trims `unicode-emoji-json` to what KaiOS 3.x can draw.
+
+## Bundle budget
+
+- For any change that could add more than 20 KB to `src/app/build/app.js`, run `node scripts/build.mjs --analyze`, check the largest inputs, and put the size delta in the PR.
+
+## Tests
+
+- Fixtures (`ALICE`, `BOB`, ...), `settle`, and the byte helpers live in `test/helpers.ts`; wasm loading and linked test accounts live in `test/support.ts`. Import them rather than redefining them.
+- One test file per domain (`engine-storage`, `engine-groups`, `ui-store`, ...); add cases to the matching file.
