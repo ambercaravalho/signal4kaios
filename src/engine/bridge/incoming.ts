@@ -1,7 +1,6 @@
 /* Incoming WebSocket frames: decoding, ACKs, and turning a decrypted envelope into the app's JSON frame. */
 
-import { ContentSchema } from '../gen/SignalService_pb';
-import { create, decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, isAci } from '../net/proto';
+import { decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, isAci } from '../net/proto';
 import { isFromBlocked } from './blocked';
 import { client, store } from './context';
 import { recordPeerProfileKey, updateSyncedContact } from './contacts';
@@ -51,11 +50,6 @@ export const incomingMethods = {
           }
         }).catch(() => {});
       }
-    }
-
-    if (c.case === 'callMessage' && c.value.offer && isAci(sender)) {
-      const busy = create(ContentSchema, { content: { case: 'callMessage', value: { busy: { id: c.value.offer.id } } } });
-      client.sendContentToRecipient(sender, busy, Date.now(), true).catch(() => {});
     }
 
     if (c.case === 'syncMessage') {

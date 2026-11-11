@@ -4,9 +4,9 @@ import { config } from '../config';
 import { db } from '../db';
 import { dbg } from '../log';
 import { type MessageEvent, type NoticeEvent, parseFrame, type StoreEvent } from '../normalize';
-import type { Message } from '../types';
+import type { Message, NoticeKind } from '../types';
 import { unarchiveOnActivity } from './chat-state';
-import { altKeyOf, displayName, self } from './contacts';
+import { altKeyOf, displayName, isSelfKey, self } from './contacts';
 import { ensureConv, msgId, persistConv, timerLine } from './conversations';
 import { emit } from './events';
 import { applyAdminDelete, applyDeleteSync } from './message-actions';
@@ -68,7 +68,9 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   if (ev.incoming && state.openConvId === conv.id) markRead(conv.id);
 }
 
-/** Missed calls count as unread and notify, as in Signal; other notices only show in the chat. */
+const ALERTING_NOTICES: NoticeKind[] = ['missedCall', 'payment', 'storyReaction'];
+
+/** Calls, payments, and reactions to your story count as unread and notify, as in Signal, unless they came from one of your own devices; other notices only show in the chat. */
 export function applyNotice(ev: NoticeEvent, silent: boolean): void {
   if ((ev.notice.kind === 'safetyNumber' || ev.notice.kind === 'groupUpdate') && !convs[ev.convId]) return;
   const conv = ensureConv({ convId: ev.convId, groupInternalId: ev.groupInternalId, incoming: true, authorName: '' });
@@ -90,7 +92,7 @@ export function applyNotice(ev: NoticeEvent, silent: boolean): void {
     notice: ev.notice,
   };
   db.putMessage(rec);
-  const alerts = ev.notice.kind === 'missedCall';
+  const alerts = ALERTING_NOTICES.indexOf(ev.notice.kind) >= 0 && !isSelfKey(ev.author);
   if (ev.timestamp >= (conv.lastTs || 0)) {
     conv.lastTs = ev.timestamp;
     conv.lastPreview = messageText(rec);

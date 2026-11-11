@@ -11,6 +11,8 @@ import {
   type ConversationIdentifier,
   type DataMessage,
   DataMessage_Flags,
+  type DataMessage_Payment,
+  DataMessage_Payment_Activation_Type,
   Envelope_Type,
   ReceiptMessage_Type,
   SyncMessage_MessageRequestResponse_Type,
@@ -240,7 +242,24 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
   if ((dm.flags & DataMessage_Flags.EXPIRATION_TIMER_UPDATE) !== 0) out.expirationTimerUpdate = true;
   if (dm.groupCallUpdate) out.groupCallUpdate = true;
 
+  if (dm.storyContext) {
+    out.storyContext = {
+      authorUuid: serviceIdFrom(dm.storyContext.authorAci, dm.storyContext.authorAciBinary) || undefined,
+      sentTimestamp: num(dm.storyContext.sentTimestamp),
+    };
+  }
+
+  const payment = dm.payment && paymentKind(dm.payment);
+  if (payment) out.payment = { kind: payment };
+
   return out;
+}
+
+/** Which kind of payment event this is; Beacon only points to the phone, so receipts, amounts, and notes stay behind. */
+function paymentKind(p: DataMessage_Payment): string | undefined {
+  if (p.Item.case === 'notification') return 'notification';
+  if (p.Item.case === 'activation') return p.Item.value.type === DataMessage_Payment_Activation_Type.ACTIVATED ? 'activated' : 'activationRequest';
+  return undefined;
 }
 
 /** A sync message's chat: `{ groupId }` (internal ID, base64) or `{ uuid }` / `{ number }` for a person. */

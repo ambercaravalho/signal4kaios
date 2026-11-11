@@ -79,16 +79,22 @@ function stylesOf(dm: any, nameOf: NameOf): StyleRange[] {
   return out;
 }
 
-const NOTICE_KINDS: NoticeKind[] = ['missedCall', 'safetyNumber', 'groupCall'];
+const NOTICE_KINDS: NoticeKind[] = ['missedCall', 'safetyNumber', 'groupCall', 'payment', 'storyReaction'];
+const PAYMENT_KINDS = ['notification', 'activationRequest', 'activated'];
+const MAX_EMOJI = 16;
 
 export function noticeEvent(env: any, n: any, conv: Conv, author: string): StoreEvent[] {
   const kind = str(n && n.kind) as NoticeKind;
-  if (NOTICE_KINDS.indexOf(kind) < 0 || !conv.convId) {
+  const text = kind === 'storyReaction' ? str(n.text).slice(0, MAX_EMOJI) : '';
+  const value = kind === 'payment' ? str(n.value) : '';
+  if (NOTICE_KINDS.indexOf(kind) < 0 || !conv.convId || (kind === 'storyReaction' && !text) || (kind === 'payment' && PAYMENT_KINDS.indexOf(value) < 0)) {
     dbg('normalize: unknown notice');
     return [];
   }
   const notice: Notice = { kind };
   if (n.video) notice.video = true;
+  if (text) notice.text = text;
+  if (value) notice.value = value;
   return [{ type: 'notice', convId: conv.convId, groupInternalId: conv.groupInternalId, author, timestamp: num(n.timestamp) || num(env.timestamp), notice }];
 }
 
@@ -101,6 +107,10 @@ function quoteOf(dm: any): Quote | null {
   return out;
 }
 
+function storyQuoteOf(sc: any): Quote {
+  return { author: str(sc.authorUuid), timestamp: num(sc.sentTimestamp), text: '', story: true };
+}
+
 export function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf, authorOverride?: string, convOverride?: Conv): StoreEvent[] {
   const conv = convOverride || convFor(env, dm);
   const author = authorOverride || peerKey(env) || '';
@@ -109,6 +119,15 @@ export function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: 
     return [];
   }
   const convId = conv.convId;
+  const at = num(dm.timestamp) || num(env.timestamp);
+
+  if (dm.storyContext) {
+    if (conv.groupInternalId) {
+      dbg('normalize: group story reply');
+      return [];
+    }
+    if (dm.reaction) return dm.reaction.isRemove ? [] : noticeEvent(env, { kind: 'storyReaction', text: dm.reaction.emoji, timestamp: at }, conv, author);
+  }
 
   if (dm.reaction) {
     const r = dm.reaction;
@@ -162,7 +181,8 @@ export function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: 
   }
 
   if (dm.expirationTimerUpdate) return [{ type: 'timer', convId, seconds: num(dm.expiresInSeconds), author, timestamp: num(dm.timestamp) || num(env.timestamp) }];
-  if (dm.groupCallUpdate) return noticeEvent(env, { kind: 'groupCall', timestamp: num(dm.timestamp) || num(env.timestamp) }, conv, author);
+  if (dm.groupCallUpdate) return noticeEvent(env, { kind: 'groupCall', timestamp: at }, conv, author);
+  if (dm.payment) return noticeEvent(env, { kind: 'payment', value: dm.payment.kind, timestamp: at }, conv, author);
 
   const attachments: any[] = Array.isArray(dm.attachments) ? dm.attachments : [];
   const body = dm.message;
@@ -183,7 +203,7 @@ export function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: 
     timestamp: num(dm.timestamp) || num(env.timestamp),
     body: applyMentions(str(body), dm.mentions, nameOf),
     styles: stylesOf(dm, nameOf),
-    quote: quoteOf(dm),
+    quote: dm.storyContext ? storyQuoteOf(dm.storyContext) : quoteOf(dm),
     attachments: attachments.map((a) => attachmentOf(a, !!dm.viewOnce)),
     expiresInSeconds: num(dm.expiresInSeconds),
   };

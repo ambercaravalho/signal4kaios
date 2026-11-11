@@ -2,7 +2,7 @@ import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { concatBytes, toBase64, uuidToBytes } from '../src/engine/bytes';
-import { ContactDetailsSchema, ContentSchema, DataMessage_Flags, SyncMessage_MessageRequestResponse_Type } from '../src/engine/gen/SignalService_pb';
+import { ContactDetailsSchema, ContentSchema, DataMessage_Flags, DataMessage_Payment_Activation_Type, SyncMessage_MessageRequestResponse_Type } from '../src/engine/gen/SignalService_pb';
 import { create, serviceIdFrom, toBinary } from '../src/engine/net/proto';
 import { MemorySignalStore } from '../src/engine/protocol/store';
 import { ALICE, BOB } from './helpers';
@@ -49,6 +49,21 @@ describe('Sync and service IDs', () => {
     assert.equal(timer.expiresInSeconds, 3600);
     const quoted = frame({ timestamp: 1000n, body: 'nice', quote: { id: 7n, authorAci: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', fileName: 'a.jpg' }] } });
     assert.deepEqual(quoted.quote, { id: 7, authorUuid: ALICE, text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }] });
+  });
+
+  it('keeps only the kind of a payment and which story a reply is about', () => {
+    const env = { sourceUuid: BOB, sourceDevice: 1, timestamp: 1000 } as any;
+    const frame = (dm: any) => contentToNormalizedFrame(env, create(ContentSchema, { content: { case: 'dataMessage', value: dm } })).envelope.dataMessage;
+    const paid = frame({ timestamp: 1000n, payment: { Item: { case: 'notification', value: { note: 'rent', Transaction: { case: 'mobileCoin', value: { receipt: new Uint8Array([9, 9, 9]) } } } } } });
+    assert.deepEqual(paid.payment, { kind: 'notification' });
+    assert.equal(JSON.stringify(paid).includes('rent'), false);
+    const activation = (type: DataMessage_Payment_Activation_Type) => frame({ timestamp: 1000n, payment: { Item: { case: 'activation', value: { type } } } }).payment;
+    assert.deepEqual(activation(DataMessage_Payment_Activation_Type.REQUEST), { kind: 'activationRequest' });
+    assert.deepEqual(activation(DataMessage_Payment_Activation_Type.ACTIVATED), { kind: 'activated' });
+    assert.equal(frame({ timestamp: 1000n, payment: {} }).payment, undefined);
+    const reply = frame({ timestamp: 1000n, body: 'love it', storyContext: { authorAciBinary: uuidToBytes(ALICE), sentTimestamp: 77n } });
+    assert.deepEqual(reply.storyContext, { authorUuid: ALICE, sentTimestamp: 77 });
+    assert.equal(reply.message, 'love it');
   });
 
   it('turns polls, votes, and poll ends into normalize frames within Signal-Desktop limits', () => {

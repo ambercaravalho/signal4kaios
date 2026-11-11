@@ -25,6 +25,7 @@ function quoteAuthorName(author: string): string {
 }
 
 function quoteText(q: Quote): string {
+  if (q.story) return S.storyQuote;
   return q.text || store.attachmentLabel(q.attachments) || S.photo;
 }
 

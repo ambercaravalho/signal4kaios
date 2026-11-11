@@ -215,6 +215,31 @@ describe('parseFrame', () => {
     assert.deepEqual(ev, { type: 'notice', convId: 'g:GID', groupInternalId: 'GID', author: 'aci-bob', timestamp: 60, notice: { kind: 'groupCall' } });
   });
 
+  it('shows 1:1 story replies with a story quote and reactions as a notice, and drops group story replies', () => {
+    const story = { authorUuid: 'aci-me', sentTimestamp: 70 };
+    const parse = (dm: any) => parseFrame({ envelope: { sourceNumber: '+3', timestamp: 80, dataMessage: { timestamp: 80, storyContext: story, ...dm } } }, '+1', nameOf);
+    const [reply] = parse({ message: 'love it' });
+    assert.equal(reply.type, 'message');
+    if (reply.type === 'message') {
+      assert.equal(reply.body, 'love it');
+      assert.deepEqual(reply.quote, { author: 'aci-me', timestamp: 70, text: '', story: true });
+    }
+    assert.deepEqual(parse({ reaction: { emoji: '❤️', targetSentTimestamp: 70 } }), [
+      { type: 'notice', convId: '+3', groupInternalId: null, author: '+3', timestamp: 80, notice: { kind: 'storyReaction', text: '❤️' } },
+    ]);
+    assert.deepEqual(parse({ reaction: { emoji: '❤️', isRemove: true } }), []);
+    assert.deepEqual(parse({ reaction: { emoji: '' } }), []);
+    assert.deepEqual(parse({ message: 'nice', groupInfo: { groupId: 'GID' } }), []);
+  });
+
+  it('shows payments as a notice and drops unknown payment kinds', () => {
+    const parse = (payment: any) => parseFrame({ envelope: { sourceNumber: '+3', timestamp: 90, dataMessage: { timestamp: 90, payment } } }, '+1', nameOf);
+    for (const kind of ['notification', 'activationRequest', 'activated']) {
+      assert.deepEqual(parse({ kind }), [{ type: 'notice', convId: '+3', groupInternalId: null, author: '+3', timestamp: 90, notice: { kind: 'payment', value: kind } }]);
+    }
+    assert.deepEqual(parse({ kind: 'refund' }), []);
+  });
+
   it('keeps the type of quoted attachments', () => {
     const [ev] = parseFrame({ envelope: { sourceNumber: '+3', dataMessage: { message: 'nice', quote: { id: 4, authorUuid: 'aci-bob', text: '', attachments: [{ contentType: 'image/jpeg', filename: 'a.jpg' }, 'junk'] } } } }, '+1', nameOf);
     assert.equal(ev.type, 'message');
