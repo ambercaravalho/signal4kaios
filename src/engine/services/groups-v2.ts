@@ -95,7 +95,7 @@ export function buildGroupContextV2(groupRecord: { masterKey?: string; revision?
   return create(GroupContextV2Schema, { masterKey: mk, revision: groupRecord.revision || 0 });
 }
 
-function decryptAttribute(secretParams: Uint8Array, ciphertext: Uint8Array) {
+export function decryptAttribute(secretParams: Uint8Array, ciphertext: Uint8Array) {
   if (ciphertext.length === 0) return undefined;
   try {
     return fromBinary(GroupAttributeBlobSchema, libsignal.groupDecryptBlob(secretParams, ciphertext)).content;
@@ -196,6 +196,21 @@ export function groupInviteLink(masterKey: Uint8Array, inviteLinkPassword: Uint8
     create(GroupInviteLinkSchema, { contents: { case: 'contentsV1', value: { groupMasterKey: masterKey, inviteLinkPassword } } })
   );
   return 'https://signal.group/#' + toWebSafeBase64(bytes);
+}
+
+/** The master key and password in a `https://signal.group/#…` link, like Signal-Desktop's parseGroupLink; null for anything else. */
+export function parseGroupLink(url: string): { masterKey: Uint8Array; password: Uint8Array } | null {
+  const m = /^(?:https:\/\/signal\.group\/|sgnl:\/\/signal\.group\/)#([A-Za-z0-9_-]+={0,2})$/.exec((url || '').trim());
+  if (!m) return null;
+  try {
+    const link = fromBinary(GroupInviteLinkSchema, fromBase64(m[1]));
+    if (link.contents.case !== 'contentsV1') return null;
+    const { groupMasterKey, inviteLinkPassword } = link.contents.value;
+    if (groupMasterKey.length !== 32 || inviteLinkPassword.length === 0) return null;
+    return { masterKey: groupMasterKey, password: inviteLinkPassword };
+  } catch {
+    return null;
+  }
 }
 
 /** Decrypted service IDs of a member list; entries that fail to decrypt are skipped. */

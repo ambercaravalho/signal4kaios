@@ -93,7 +93,9 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 
 ## Starting a chat and searching
 
-**New chat** lists your contacts and groups and filters them as you type a name. Type a username to get **Find by username**, or a number to get **Find by phone number**. **Scan** (right softkey) reads a QR code with a phone number in it.
+**New chat** lists your contacts and groups and filters them as you type a name. Type a username to get **Find by username**, or a number to get **Find by phone number**. **Scan** (right softkey) reads a QR code with a phone number or a group link in it.
+
+**Joining a group by its link**: **Open link** on a `signal.group` link in a chat, or scanning a group's QR code, shows the group's name, how many members it has, and its description. **Join** adds you right away; when the group needs an admin's approval it's **Request to join** instead, and the same screen then offers **Cancel request** until an admin decides. Once you're in, the group opens with a **You joined the group via the group link** line.
 
 **Search** (in the chats list's Options) finds chats by name and messages by text. Messages are searched on this phone only, because Signal doesn't keep your history on its servers.
 
@@ -146,7 +148,7 @@ Beacon doesn't yet support every Signal feature. Calls, stories, and more are tr
 | Action | What happens now |
 | --- | --- |
 | Starting a chat by phone number | Works for numbers in your synced contacts and for Signal usernames. Other numbers can't be looked up, because the phone can't run Signal's contact discovery yet ([details](development.md#phone-number-lookup-cdsi-spike-findings)). |
-| Scanning a username QR code | Not supported yet; ask for the username instead. Codes with a phone number work. |
+| Scanning a username QR code | Not supported yet; ask for the username instead. Codes with a phone number or a group link work. |
 | Polls in one-to-one chats | Not supported yet. You can vote in and end polls anywhere, but **Create poll** is only in groups. |
 | Group message requests | Not supported yet. A group someone you don't know adds you to shows as a normal chat; leave or block it in **Chat settings**. |
 | Forwarding files you sent from this phone | Not possible, because the phone doesn't keep a copy it can resend. They're also left out of **Media**. |

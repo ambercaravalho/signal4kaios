@@ -22,15 +22,21 @@ import {
   TypingMessage_Action,
   Verified_State,
 } from './gen/SignalService_pb';
-import { buildGroupContextV2, deriveGroupV2Keys, fetchGroupState, GroupLinkMode, GroupV2Metadata, SERVER_PUBLIC_PARAMS } from './services/groups-v2';
+import { buildGroupContextV2, deriveGroupV2Keys, fetchGroupState, GroupLinkMode, GroupV2Metadata, parseGroupLink, SERVER_PUBLIC_PARAMS } from './services/groups-v2';
 import {
   addMembersActions,
   applyGroupChange,
   approveRequestsActions,
+  cancelGroupJoinRequest,
   descriptionActions,
+  fetchGroupJoinInfo,
   GroupActionsInit,
+  GroupChangeError,
+  GroupJoinInfoView,
   GroupSnapshot,
   inviteLinkActions,
+  joinedGroupMutation,
+  joinGroupViaLink,
   leaveActions,
   permissionActions,
   removeMembersActions,
@@ -445,9 +451,15 @@ async function groupMasterKey(groupSendId: string): Promise<Uint8Array> {
 /**
  * Apply a Groups V2 change on the storage server, then send the signed change to everyone affected (GroupContextV2 with `groupChange`, as Signal-Desktop's sendGroupUpdate does) and to our other devices. Resolves to the new group state, or null when nothing changed.
  */
+function groupDeps() {
+  return { store, httpJson, httpBinary, serverUrl: serverUrl() };
+}
+
+export type GroupLinkPreview = GroupJoinInfoView & { internalId: string; member: boolean };
+
 async function changeGroup(groupSendId: string, build: (snap: GroupSnapshot) => GroupActionsInit | null | Promise<GroupActionsInit | null>): Promise<GroupV2Metadata | null> {
   const masterKey = await groupMasterKey(groupSendId);
-  const res = await applyGroupChange({ store, httpJson, httpBinary, serverUrl: serverUrl() }, masterKey, build);
+  const res = await applyGroupChange(groupDeps(), masterKey, build);
   if (!res) return null;
   const acc = await store.getAccount();
   const ts = Date.now();
@@ -1305,6 +1317,57 @@ export const signalBridge = {
   /** Let people who asked to join through the group link in; deny a request with `removeGroupMembers`. */
   async approveGroupRequests(groupSendId: string, ids: string[]): Promise<GroupV2Metadata | null> {
     return changeGroup(groupSendId, (snap) => approveRequestsActions(snap, ids));
+  },
+
+  /** What a signal.group link leads to: the group's name, size, and whether joining needs an admin, or `member` when we are already in it. */
+  async groupLinkInfo(url: string): Promise<GroupLinkPreview> {
+    const link = parseGroupLink(url);
+    if (!link) throw new GroupChangeError('GroupLinkInvalid', 'This is not a group link');
+    const keys = deriveGroupV2Keys(link.masterKey);
+    const list: Array<any> = (await host().db.kvGet('syncedGroups')) || [];
+    const known = list.find((g) => g.internal_id === keys.internalId);
+    const self = host().config.aci() || '';
+    if (known && Array.isArray(known.members) && known.members.includes(self)) {
+      return { internalId: keys.internalId, title: known.name || '', description: known.description || '', memberCount: known.members.length, revision: known.revision || 0, approvalRequired: false, pending: false, member: true };
+    }
+    const info = await fetchGroupJoinInfo(groupDeps(), link.masterKey, link.password);
+    return { ...info, internalId: keys.internalId, member: false };
+  },
+
+  /** Join through a signal.group link, or ask to join when the group needs an admin's approval. */
+  async joinGroupLink(url: string): Promise<{ joined: boolean; internalId: string; name: string }> {
+    const link = parseGroupLink(url);
+    if (!link) throw new GroupChangeError('GroupLinkInvalid', 'This is not a group link');
+    const acc = await store.getAccount();
+    if (!acc || !acc.profileKey) throw new Error('This phone is not linked to a Signal account');
+    const keys = deriveGroupV2Keys(link.masterKey);
+    const cred = await fetchExpiringProfileKeyCredential(store, httpJson, SERVER_PUBLIC_PARAMS, acc.aci, acc.profileKey, serverUrl());
+    const presentation = libsignal.groupProfileKeyCredentialPresentation(SERVER_PUBLIC_PARAMS, keys.secretParams, cred);
+    const res = await joinGroupViaLink(groupDeps(), link.masterKey, link.password, presentation);
+    if (!res.joined) return { joined: false, internalId: keys.internalId, name: '' };
+
+    const state = await fetchGroupState(store, httpJson, httpBinary, link.masterKey, serverUrl());
+    await mergeGroupState(state);
+    await storageQueue
+      .enqueue([joinedGroupMutation(link.masterKey)])
+      .catch((e: any) => host().dbg('group storage record failed: ' + (e && e.message)));
+    const ts = Date.now();
+    const dm: DataMessageInit = {
+      timestamp: BigInt(ts),
+      profileKey: acc.profileKey,
+      groupV2: { masterKey: link.masterKey, revision: res.revision, groupChange: res.groupChange },
+    };
+    const notify = state.members.concat(state.pending).filter((id) => isAci(id) && id !== acc.aci);
+    await client.sendGroupContent(notify, dataContent(dm), ts).catch((e: any) => host().dbg('group update send failed: ' + (e && e.message)));
+    await client.sendSyncMessage(syncSent('', ts, dm), ts);
+    return { joined: true, internalId: keys.internalId, name: state.name };
+  },
+
+  /** Withdraw a request to join made through a group link. */
+  async cancelGroupLinkRequest(url: string): Promise<void> {
+    const link = parseGroupLink(url);
+    if (!link) throw new GroupChangeError('GroupLinkInvalid', 'This is not a group link');
+    await cancelGroupJoinRequest(groupDeps(), link.masterKey, link.password);
   },
 
   async setGroupAdmins(groupSendId: string, ids: string[], admin: boolean): Promise<GroupV2Metadata | null> {

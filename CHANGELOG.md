@@ -7,6 +7,7 @@ Each `## v<version>` section becomes the notes of that GitHub Release; the relea
 ### New
 
 - **Link previews you send.** Type a link and, after a moment, **Link preview** with the page's title shows above the message box; it's sent with the message, picture included. **Options → Remove link preview** sends the link without it. Turn previews off in **Settings → Chats → Generate link previews**, which is shared with your other devices. As in Signal, the phone fetches the page itself, so the website sees that it was opened.
+- **Join a group by its link.** **Open link** on a `signal.group` link, or **New chat → Scan** on a group's QR code, shows the group's name, size, and description. **Join** adds you, or **Request to join** asks the group's admins when they approve new members; you can **Cancel request** from the same link while you wait.
 
 ## v2.5.0
 

@@ -25,6 +25,7 @@ import type { Attachment, ContactCard, Conversation, LinkPreview, Message, Messa
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
+import { isGroupLink, JoinGroupScreen } from './JoinGroup';
 import { MessageDetailsScreen, PollVotesScreen } from './MessageDetails';
 import { SafetyNumberScreen } from './SafetyNumber';
 import { ForwardScreen } from './SearchList';
@@ -715,7 +716,8 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   async function openLinks(urls: string[]): Promise<void> {
     const url = urls.length === 1 ? urls[0] : await pick(S.openLink, urls.map((u) => ({ value: u, label: u })), '');
-    if (url) openUrl(url).catch(() => toast(S.errGeneric));
+    if (url && isGroupLink(url)) router.push(JoinGroupScreen, { url });
+    else if (url) openUrl(url).catch(() => toast(S.errGeneric));
   }
 
   function copyText(text: string): void {

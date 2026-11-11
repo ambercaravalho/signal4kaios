@@ -1361,6 +1361,18 @@ export function groupConversation(internalId: string): Conversation {
   return conv;
 }
 
+/** The chat for a group we just joined through its link, starting with a "You joined" line. */
+export function joinedGroupConversation(internalId: string, name: string): Conversation {
+  const conv = groupConversation(internalId);
+  if (name && conv.name !== name) {
+    conv.name = name;
+    persistConv(conv);
+  }
+  const aci = config.aci();
+  if (aci) ingestRaw({ envelope: { groupUpdate: { groupId: internalId, author: aci, timestamp: Date.now(), changes: [{ change: 'joinedViaLink', target: aci }] } } });
+  return conv;
+}
+
 export async function init(): Promise<void> {
   try {
     for (const c of await db.allContacts()) {

@@ -57,7 +57,7 @@ The [setup guide](docs/setup.md) covers every install route and what to do if so
 | **Disappearing messages** | Per-chat timer, a live countdown on each message, and automatic deletion |
 | **Media** | Encrypted photos, video, voice notes, and files via Signal's CDNs |
 | **Sync** | Contacts, groups, blocked list, and profiles from Signal's Storage Service and your primary device; nicknames, blocking, archive, mute, pinned chats, and your username sync back |
-| **Groups** | Rename, description, timer, members, admins, invites, permissions, group links, leave, and block, as real Groups V2 changes |
+| **Groups** | Rename, description, timer, members, admins, invites, permissions, group links, joining by link, leave, and block, as real Groups V2 changes |
 | **Organization** | Multiple accounts, archived, muted, and pinned chats, pinned messages, a Signal username with its QR code, and local search |
 
 For what isn't supported yet, see [Known limitations](docs/user-guide.md#known-limitations) and the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap).

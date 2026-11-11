@@ -8,6 +8,7 @@ export function friendlyError(err: unknown, fallback: string = S.errGeneric): st
   const e = (err || {}) as { kind?: string; status?: number; message?: string; name?: string };
   const msg = String(e.message || '');
   dbg('error: ' + (e.kind ? e.kind + ' ' : '') + (e.status ? e.status + ' ' : '') + msg);
+  if (e.name === 'GroupLinkInvalid') return S.groupLinkInvalid;
   if (e.kind === 'network' || /network|offline|connect|socket/i.test(msg)) return S.errOffline;
   if (e.kind === 'timeout' || /timed? ?out/i.test(msg)) return S.errTimeout;
   if (e.status === 401 || e.status === 403) return e.status === 401 ? S.errUnlinked : S.errNotAllowed;
