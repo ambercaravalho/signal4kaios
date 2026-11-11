@@ -32,22 +32,24 @@ export interface Quote {
   timestamp: number;
   text: string;
   attachments?: QuotedAttachment[];
+  /** A reply to a story, which Beacon can't show; `timestamp` is the story's. */
+  story?: boolean;
 }
 
-export type NoticeKind = 'missedCall' | 'safetyNumber' | 'groupCall' | 'pollEnded' | 'timer' | 'groupUpdate';
+export type NoticeKind = 'missedCall' | 'safetyNumber' | 'groupCall' | 'pollEnded' | 'timer' | 'groupUpdate' | 'payment' | 'storyReaction';
 
 /** A line in the chat about the chat itself rather than a message someone wrote. The message's author is who made the change, or '' when that isn't known. */
 export interface Notice {
   kind: NoticeKind;
   video?: boolean;
-  /** The poll's question for `pollEnded`; the new group name for a `title` change. */
+  /** The poll's question for `pollEnded`; the new group name for a `title` change; the emoji for `storyReaction`. */
   text?: string;
   /** The disappearing-message time, for `timer` and a group's `timer` change. */
   seconds?: number;
   /** What changed in the group, and who it's about (a service ID). */
   change?: GroupUpdateKind;
   target?: string;
-  /** A permission ('only-admins' or 'every-member') or group link mode; `from` is the link mode before. */
+  /** A permission ('only-admins' or 'every-member') or group link mode, with `from` the link mode before; for `payment`, 'notification', 'activationRequest', or 'activated'. */
   value?: string;
   from?: string;
   /** How many people were invited or had an invitation revoked. */

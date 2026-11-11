@@ -42,7 +42,19 @@ export function noticeText(notice: Notice, author: string): string {
       return timerText(notice.seconds || 0, author, lineNames);
     case 'groupUpdate':
       return groupUpdateText(notice, author, lineNames);
+    case 'payment':
+      return paymentText(notice.value, author);
+    case 'storyReaction':
+      return fmt(lineNames.isMe(author) ? S.storyReactionSent : S.storyReaction, { name: displayName(author), emoji: notice.text || '' });
   }
+}
+
+function paymentText(kind: string | undefined, author: string): string {
+  const me = lineNames.isMe(author);
+  const name = displayName(author);
+  if (kind === 'activationRequest') return me ? S.paymentActivationRequestSent : fmt(S.paymentActivationRequest, { name });
+  if (kind === 'activated') return me ? S.paymentActivatedYou : fmt(S.paymentActivated, { name });
+  return me ? S.paymentSent : fmt(S.paymentReceived, { name });
 }
 
 const lineNames: LineNames = {

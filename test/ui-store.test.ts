@@ -210,7 +210,26 @@ describe('store', () => {
     assert.equal(rec.body, '');
     const conv = store.conversation(ALICE)!;
     assert.equal(conv.unread, before + 1);
-    assert.equal(conv.lastPreview, 'Missed voice call');
+    assert.equal(conv.lastPreview, 'Voice call. Answer it on your phone.');
+  });
+
+  it('notifies for payments and story reactions from others, but not for our own from another device', async () => {
+    const unread = store.conversation(ALICE)!.unread;
+    const ts = Date.now() + 61000;
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: ts, dataMessage: { timestamp: ts, payment: { kind: 'notification' } } } });
+    await settle();
+    assert.equal(store.conversation(ALICE)!.lastPreview, 'Alice sent you a payment. Check your phone to see it.');
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: ts + 1, dataMessage: { timestamp: ts + 1, reaction: { emoji: '❤️' }, storyContext: { authorUuid: 'aci-me', sentTimestamp: 5 } } } });
+    await settle();
+    assert.equal(store.conversation(ALICE)!.lastPreview, 'Alice reacted ❤️ to your story');
+    assert.equal(store.conversation(ALICE)!.unread, unread + 2);
+
+    store.ingestRaw({ envelope: { sourceNumber: ME, timestamp: ts + 2, syncMessage: { sentMessage: { destinationNumber: ALICE, timestamp: ts + 2, payment: { kind: 'notification' } } } } });
+    await settle();
+    assert.equal(store.conversation(ALICE)!.lastPreview, 'You sent a payment. Check your phone to see it.');
+    assert.equal(store.conversation(ALICE)!.unread, unread + 2);
+    assert.equal(store.noticeText({ kind: 'payment', value: 'activationRequest' }, ALICE), 'Alice asked you to turn on payments, which you can do on your phone.');
+    assert.equal(store.noticeText({ kind: 'storyReaction', text: '👍' }, ME), 'You reacted 👍 to their story');
   });
 
   it('adds safety number notices only to existing chats, without counting them unread', async () => {

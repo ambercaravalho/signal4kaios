@@ -26,7 +26,7 @@
 </div>
 
 > [!NOTE]
-> Beacon is a work in progress. Everyday messaging, groups, and sync work, but calls, stories, and some other Signal features don't yet. The [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) tracks everything that's missing.
+> Beacon is a work in progress. Everyday messaging, groups, and sync work, but voice calls and some other Signal features don't yet; the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) tracks them. Video calls, stories, and payments won't be added: video doesn't suit a low-powered phone with a single rear camera, and stories and payments see little use. When one of those arrives, Beacon shows a line in the chat pointing you to your phone.
 
 ## Why Beacon
 
