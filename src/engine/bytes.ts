@@ -91,3 +91,8 @@ export function bytesToUuid(bytes: Uint8Array): string {
   const h = toHex(bytes);
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
+
+/** A Blob over exactly `bytes`, even when it views part of a larger buffer. */
+export function bytesToBlob(bytes: Uint8Array, type: string): Blob {
+  return new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer], { type });
+}

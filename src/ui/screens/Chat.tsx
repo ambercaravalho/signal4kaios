@@ -376,7 +376,7 @@ function canChange(m: Message): boolean {
 /** One conversation: messages above, the composer below. Up and Down move between messages and the composer; OK on a message opens its options. */
 export function ChatScreen(props: { convId: string; targetTs?: number }) {
   const { convId } = props;
-  useStoreEvents(['conversations', 'typing'], (evt, id) => evt === 'conversations' || id === convId);
+  useStoreEvents(['conversations', 'typing'], (evt, ...args) => evt === 'conversations' || args[0] === convId);
   const conv = store.conversation(convId) as Conversation | undefined;
   const convRef = useRef(conv);
   convRef.current = conv;

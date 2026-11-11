@@ -355,13 +355,14 @@ function editEvent(env: any, edit: any, author: string, nameOf: NameOf, convOver
 }
 
 /** Events for one decrypted frame. `selfNumber` is the author of messages synced from our other devices; `nameOf` names mentioned people. */
-export function parseFrame(frame: any, selfNumber: string, nameOf: NameOf): StoreEvent[] {
-  const env = frame && frame.envelope;
-  if (!env || typeof env !== 'object') {
+export function parseFrame(frame: unknown, selfNumber: string, nameOf: NameOf): StoreEvent[] {
+  const raw = frame && typeof frame === 'object' ? (frame as { envelope?: unknown }).envelope : undefined;
+  if (!raw || typeof raw !== 'object') {
     dbg('normalize: frame without envelope');
     return [];
   }
 
+  const env = raw as Record<string, unknown>;
   const events = envelopeEvents(env, selfNumber, nameOf);
   const peer = peerKey(env);
   // One millisecond early, so it sits before the message it arrived with and can't share that message's ID.

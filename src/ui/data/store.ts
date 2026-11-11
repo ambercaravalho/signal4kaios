@@ -1453,7 +1453,8 @@ export async function init(): Promise<void> {
       if (c.number) contactsByKey[c.number] = c;
       if (c.uuid) contactsByKey[c.uuid] = c;
     }
-    groupsByInternal = (await db.kvGet('groups')) || {};
+    const groups = await db.kvGet('groups');
+    groupsByInternal = groups && typeof groups === 'object' ? (groups as typeof groupsByInternal) : {};
     for (const c of await db.allConversations()) convs[c.id] = c;
     ready = true;
     emit('conversations');

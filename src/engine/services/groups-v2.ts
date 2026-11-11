@@ -13,7 +13,7 @@ import type { GroupContextV2 } from '../gen/SignalService_pb';
 import { GroupContextV2Schema } from '../gen/SignalService_pb';
 import { libsignal } from '../protocol/libsignal';
 import { create, fromBinary, toBinary } from '../net/proto';
-import { accountBasicAuth, DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
+import { accountBasicAuth, asObject, DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
 import type { SignalProtocolStore } from '../protocol/store';
 import { storeGroupSendEndorsements } from './group-send';
 
@@ -127,12 +127,12 @@ async function groupCredentialForToday(store: SignalProtocolStore, httpJson: Sig
   if (!acc) throw new Error('This phone is not linked to a Signal account');
   const end = today + 7 * 86400;
   // SECURITY-REVIEW: device password is sent only as Basic auth to the Signal chat server.
-  const res = await httpJson(
+  const res = asObject(await httpJson(
     'GET',
     `/v1/certificate/auth/group?redemptionStartSeconds=${today}&redemptionEndSeconds=${end}&v101=true&zkcCredential=true`,
     null,
     { baseUrl: serverUrl, basicAuth: accountBasicAuth(acc), timeout: 15000 }
-  );
+  ));
   const list: StoredGroupCredential[] = [];
   if (res && Array.isArray(res.credentials)) {
     for (const c of res.credentials) {

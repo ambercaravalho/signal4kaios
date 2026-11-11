@@ -24,6 +24,14 @@ export function accountBasicAuth(acc: { aci: string; deviceId: number; password:
   return { username: `${acc.aci}.${acc.deviceId}`, password: acc.password };
 }
 
+/** A decoded JSON response: every field is untrusted until checked. */
+export type JsonObject = Record<string, unknown>;
+
+/** `v` when it is a JSON object, else null. */
+export function asObject(v: unknown): JsonObject | null {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as JsonObject) : null;
+}
+
 export type SignalHttpJsonFn = (
   method: string,
   path: string,
@@ -37,7 +45,7 @@ export type SignalHttpJsonFn = (
     timeout?: number;
     binary?: boolean;
   }
-) => Promise<any>;
+) => Promise<unknown>;
 
 export type SignalHttpBinaryFn = (
   method: string,

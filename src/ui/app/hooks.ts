@@ -2,15 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { on, StoreEvents } from '../data/store';
 
 /** Re-render when any of these store events fire (and `filter` accepts them). */
-export function useStoreEvents<K extends keyof StoreEvents>(events: K[], filter?: (evt: K, ...args: any[]) => boolean): number {
+export function useStoreEvents<K extends keyof StoreEvents>(events: K[], filter?: (evt: K, ...args: StoreEvents[K]) => boolean): number {
   const [v, setV] = useState(0);
   const f = useRef(filter);
   f.current = filter;
   useEffect(() => {
     const offs = events.map((evt) =>
-      on(evt, ((...args: any[]) => {
+      on(evt, (...args: StoreEvents[K]) => {
         if (!f.current || f.current(evt, ...args)) setV((n) => n + 1);
-      }) as any)
+      })
     );
     return () => offs.forEach((off) => off());
   }, [events.join(',')]);
@@ -21,7 +21,7 @@ export function useStoreEvents<K extends keyof StoreEvents>(events: K[], filter?
 export function useStoreEvent<K extends keyof StoreEvents>(evt: K, fn: (...args: StoreEvents[K]) => void): void {
   const ref = useRef(fn);
   ref.current = fn;
-  useEffect(() => on(evt, ((...args: StoreEvents[K]) => ref.current(...args)) as any), [evt]);
+  useEffect(() => on(evt, (...args: StoreEvents[K]) => ref.current(...args)), [evt]);
 }
 
 /** Re-render after changing a setting stored outside component state. */

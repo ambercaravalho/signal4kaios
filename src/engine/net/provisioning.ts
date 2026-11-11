@@ -16,7 +16,7 @@ import { libsignal } from '../protocol/libsignal';
 import { generateKyberPreKeys, generateOneTimePreKeys, generateSignedPreKey, ONE_TIME_PRE_KEY_COUNT } from '../protocol/prekeys';
 import { create, decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, fromBinary, serviceIdFrom, toBinary } from './proto';
 import type { AccountCredentials, KeyPair, SignalProtocolStore } from '../protocol/store';
-import { accountBasicAuth, DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SIGNAL_USER_AGENT, SignalHttpJsonFn } from './http';
+import { accountBasicAuth, asObject, DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SIGNAL_USER_AGENT, SignalHttpJsonFn } from './http';
 import { net, SOCKET_OPEN, SocketLike } from './transport';
 
 /** Signal-Desktop `getCapabilities` for a linked device without a PIN. */
@@ -140,28 +140,30 @@ async function finishLinking(
   const encryptedDeviceName = toBase64(await encryptDeviceName(deviceName || 'Signal4KaiOS', aciIdentity.pubKey));
 
   // SECURITY-REVIEW: Basic auth with the freshly generated device password; neither is logged
-  const linkRes = await httpRequest(
-    'PUT',
-    '/v1/devices/link',
-    {
-      verificationCode: prov.provisioningCode,
-      accountAttributes: {
-        fetchesMessages: true,
-        name: encryptedDeviceName,
-        registrationId,
-        pniRegistrationId: hasE164 ? pniRegistrationId : undefined,
-        capabilities: linkedDeviceCapabilities(hasE164),
+  const linkRes = asObject(
+    await httpRequest(
+      'PUT',
+      '/v1/devices/link',
+      {
+        verificationCode: prov.provisioningCode,
+        accountAttributes: {
+          fetchesMessages: true,
+          name: encryptedDeviceName,
+          registrationId,
+          pniRegistrationId: hasE164 ? pniRegistrationId : undefined,
+          capabilities: linkedDeviceCapabilities(hasE164),
+        },
+        aciSignedPreKey,
+        aciPqLastResortPreKey,
+        pniSignedPreKey,
+        pniPqLastResortPreKey,
       },
-      aciSignedPreKey,
-      aciPqLastResortPreKey,
-      pniSignedPreKey,
-      pniPqLastResortPreKey,
-    },
-    {
-      baseUrl: httpBase,
-      basicAuth: { username: aci, password },
-      timeout: 30000,
-    }
+      {
+        baseUrl: httpBase,
+        basicAuth: { username: aci, password },
+        timeout: 30000,
+      }
+    )
   );
 
   if (!linkRes || typeof linkRes.deviceId !== 'number' || linkRes.uuid !== aci) {

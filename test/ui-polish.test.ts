@@ -6,7 +6,7 @@ import { create } from '@bufbuild/protobuf';
 import { AttachmentPointerSchema } from '../src/engine/gen/SignalService_pb';
 import { GroupV2RecordSchema, OptionalBool } from '../src/engine/gen/SignalStorage_pb';
 import { applyAttachmentMeta, receivedMeta } from '../src/engine/services/attachment-meta';
-import { resolveLegacyNotifyForMentionsIfMuted, setNotifyForMentionsIfMuted } from '../src/engine/services/storage-service';
+import { resolveLegacyNotifyForMentionsIfMuted, setNotifyForMentionsIfMuted } from '../src/engine/services/storage';
 import { applyTheme, setTextSize, TEXT_SIZE_PX } from '../src/ui/app/theme';
 import { signal } from '../src/ui/data/api';
 import { hashPixels, hashToPixels, placeholderSize } from '../src/ui/data/blurhash';

@@ -63,11 +63,12 @@ import {
   pullFromStorageService,
   setPhoneNumberPrivacy,
   StorageWriteQueue,
-} from '../src/engine/services/storage-service';
+} from '../src/engine/services/storage';
 import { MemorySignalStore } from '../src/engine/protocol/store';
 import { deleteUsername, setUsername, usernameCandidates, usernameLinkUrl } from '../src/engine/services/usernames';
 import { loadWasmForTests } from './support';
-import { contentToNormalizedFrame, decodeAttachmentDescriptor, parseContactsSyncBlob } from '../src/engine/net/receive';
+import { contentToNormalizedFrame, decodeAttachmentDescriptor } from '../src/engine/net/incoming-json';
+import { parseContactsSyncBlob } from '../src/engine/net/receive';
 import { reportSpam } from '../src/engine/services/report-spam';
 import { diffGroupState, groupChangeAuthor, isDecodedGroup } from '../src/engine/services/group-updates';
 

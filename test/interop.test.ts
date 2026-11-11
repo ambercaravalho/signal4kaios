@@ -25,7 +25,7 @@ import {
   sealedEncryptForDevice,
   unseal,
 } from '../src/engine/protocol/protocol';
-import { deriveStorageItemKey, deriveStorageManifestKey, deriveStorageServiceKey } from '../src/engine/services/storage-service';
+import { deriveStorageItemKey, deriveStorageManifestKey, deriveStorageServiceKey } from '../src/engine/services/storage';
 import { loadWasmForTests, newAccount, serverKeysFor } from './support';
 
 const ALICE = '11111111-1111-4111-8111-111111111111';
