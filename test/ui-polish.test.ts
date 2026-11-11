@@ -15,13 +15,10 @@ import { db } from '../src/ui/data/db';
 import { parseFrame } from '../src/ui/data/normalize';
 import * as store from '../src/ui/data/store';
 import type { Conversation } from '../src/ui/data/types';
+import { settle } from './helpers';
 
 const ME = '+15550000';
 const HASH = 'LEHV6nWB2yk8pyo0adR*.7kCMdnj';
-
-function settle(ms = 30): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 function group(extra: Partial<Conversation> = {}): Conversation {
   return { id: 'g:X', type: 'group', sendId: 'group.X', name: 'G', lastTs: 0, lastPreview: '', unread: 0, lastReadTs: 0, ...extra };

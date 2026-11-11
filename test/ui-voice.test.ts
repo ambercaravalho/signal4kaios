@@ -7,10 +7,7 @@ import { AttachmentPointer_Flags, AttachmentPointerSchema } from '../src/engine/
 import { applyAttachmentMeta, receivedMeta } from '../src/engine/services/attachment-meta';
 import { fmtLength } from '../src/ui/data/format';
 import { encodeVoice, type RecorderDeps, toMono, toPeak, VoiceRecorder, voiceNoteFile, WaveformBuilder, waveformBars } from '../src/ui/data/voice-recorder';
-
-function settle(ms = 10): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
+import { settle } from './helpers';
 
 function waveformOf(samples: ArrayLike<number>): number[] {
   const b = new WaveformBuilder();

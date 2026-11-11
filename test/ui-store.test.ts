@@ -6,13 +6,10 @@ import { signal, updateProfile } from '../src/ui/data/api';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
+import { settle } from './helpers';
 
 const ME = '+15550000';
 const ALICE = '+15550001';
-
-function settle(ms = 30): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 function incoming(ts: number, body: string, extra: Record<string, unknown> = {}) {
   return { envelope: { sourceNumber: ALICE, sourceName: 'Alice', timestamp: ts, dataMessage: { timestamp: ts, message: body, ...extra } } };

@@ -26,12 +26,8 @@ import {
   unseal,
 } from '../src/engine/protocol/protocol';
 import { deriveStorageItemKey, deriveStorageManifestKey, deriveStorageServiceKey } from '../src/engine/services/storage';
+import { ALICE, BOB, text, u8 } from './helpers';
 import { loadWasmForTests, newAccount, serverKeysFor } from './support';
-
-const ALICE = '11111111-1111-4111-8111-111111111111';
-const BOB = '22222222-2222-4222-8222-222222222222';
-const text = (s: string): Uint8Array<ArrayBuffer> => new Uint8Array(new TextEncoder().encode(s));
-const u8 = (b: Uint8Array): Uint8Array<ArrayBuffer> => new Uint8Array(b);
 
 before(() => {
   loadWasmForTests();

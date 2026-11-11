@@ -22,14 +22,11 @@ import { NewChatScreen, SearchScreen } from '../src/ui/screens/SearchList';
 import { SettingsScreen } from '../src/ui/screens/Settings';
 import { StartupErrorScreen } from '../src/ui/screens/StartupError';
 import { DEBUG, S } from '../src/ui/strings';
+import { settle } from './helpers';
 
 const ME = '+15550000';
 const ALICE = '+15550001';
 const JARGON = /\b(pre-?keys?|aci|pni|uuid|websocket|libsignal|wasm|provisioning|e2ee|protobuf)\b/i;
-
-function settle(ms = 30): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 function html(): string {
   return renderToString(<RouterView />);

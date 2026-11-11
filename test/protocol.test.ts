@@ -16,12 +16,9 @@ import {
   plaintextContentBody,
   safetyNumber,
 } from '../src/engine/protocol/protocol';
+import { ALICE, BOB, text } from './helpers';
 import { connect, contentBytes, envelopeBytes, loadWasmForTests, newAccount } from './support';
 import { decryptEnvelope, DecryptFailure } from '../src/engine/net/receive';
-
-const ALICE = '11111111-1111-4111-8111-111111111111';
-const BOB = '22222222-2222-4222-8222-222222222222';
-const text = (s: string) => new TextEncoder().encode(s);
 
 before(() => {
   assert.equal(loadWasmForTests(), '0.106.2');
