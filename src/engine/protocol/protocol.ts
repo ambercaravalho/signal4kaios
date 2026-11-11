@@ -398,6 +398,51 @@ export async function decryptSenderKey(
   return res.value;
 }
 
+/* ---- Sender keys (group send) ---- */
+
+/** Our SenderKeyDistributionMessage for `distributionId`, creating our sender key chain the first time. */
+export async function createSenderKeyDistribution(store: SignalProtocolStore, local: LocalIdentity, distributionId: string): Promise<Uint8Array> {
+  const res = await run(store, local, { senderKeys: [[local.serviceId, local.deviceId, distributionId]] }, (ps) =>
+    libsignal.createSenderKeyDistributionMessage(ps, local.serviceId, local.deviceId, distributionId)
+  );
+  return res.value;
+}
+
+/**
+ * Encrypts a padded Content once with our sender key, then seals it for every device in `devices` as one Sealed Sender v2 message for `PUT /v1/messages/multi_recipient`. Every device needs a session already.
+ */
+export async function senderKeyMultiRecipientEncrypt(
+  store: SignalProtocolStore,
+  local: LocalIdentity,
+  distributionId: string,
+  devices: Array<{ name: string; deviceId: number }>,
+  senderCertificate: Uint8Array,
+  paddedContent: Uint8Array,
+  contentHint: number,
+  groupId: Uint8Array
+): Promise<Uint8Array> {
+  const sorted = devices.slice().sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.deviceId - b.deviceId));
+  const names = Array.from(new Set(sorted.map((d) => d.name)));
+  const res = await run(
+    store,
+    local,
+    { identities: names, sessions: sorted.map((d) => [d.name, d.deviceId] as [string, number]), senderKeys: [[local.serviceId, local.deviceId, distributionId]] },
+    (ps) => {
+      const message = libsignal.groupEncrypt(ps, local.serviceId, local.deviceId, distributionId, paddedContent);
+      return libsignal.sealedSenderMultiRecipientEncrypt(
+        ps,
+        sorted.map((d) => d.name),
+        new Uint32Array(sorted.map((d) => d.deviceId)),
+        senderCertificate,
+        message,
+        contentHint,
+        groupId
+      );
+    }
+  );
+  return res.value;
+}
+
 /* ---- Retry receipts ---- */
 
 /** Serialized PlaintextContent carrying a DecryptionErrorMessage for a message we could not decrypt (envelope type PLAINTEXT_CONTENT = 8). */

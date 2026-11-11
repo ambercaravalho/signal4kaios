@@ -65,7 +65,8 @@ import { diffGroupState, groupChangeAuthor, isDecodedGroup } from './services/gr
 import { reportSpam as reportSpamMessages } from './services/report-spam';
 import { previewFieldsForSend } from './services/link-previews';
 import { deleteUsername as deleteAccountUsername, setUsername as setAccountUsername, usernameLinkUrl } from './services/usernames';
-import { SignalClient } from './net/client';
+import { SenderKeyGroup, SignalClient } from './net/client';
+import { endorsesAll, loadGroupSendEndorsements } from './services/group-send';
 import { DEFAULT_SIGNAL_SERVER } from './net/http';
 import { net } from './net/transport';
 import { IncomingEnvelope, parseContactsSyncBlob } from './net/receive';
@@ -180,6 +181,7 @@ function httpRaw(method: string, url: string, body?: Uint8Array | null, headers?
 }
 
 const client = new SignalClient(store, httpJson, httpBinary, httpRaw);
+client.log = (message) => host().dbg(message);
 
 function serverUrl(): string {
   return host().config.serverUrl() || DEFAULT_SIGNAL_SERVER;
@@ -379,9 +381,30 @@ async function addressableMessages(refs: MessageRef[]): Promise<AddressableMessa
   return out;
 }
 
+const ENDORSEMENT_REFRESH_MS = 10 * 60 * 1000;
+const endorsementRefreshedAt = new Map<string, number>();
+
+/** A group's Sender Key send details. Endorsements that are missing, expiring, or don't cover every member are refetched with the group, at most every 10 minutes. */
+async function senderKeyGroup(internalId: string, masterKey: Uint8Array, members: string[]): Promise<SenderKeyGroup> {
+  let endorsements = await loadGroupSendEndorsements(store, internalId);
+  if (!endorsesAll(endorsements, members) && Date.now() - (endorsementRefreshedAt.get(internalId) || 0) > ENDORSEMENT_REFRESH_MS) {
+    endorsementRefreshedAt.set(internalId, Date.now());
+    try {
+      await refreshGroup(masterKey);
+      endorsements = await loadGroupSendEndorsements(store, internalId);
+    } catch (e: any) {
+      host().dbg('group refresh for endorsements failed: ' + (e && e.message));
+    }
+  }
+  return { internalId, secretParams: deriveGroupV2Keys(masterKey).secretParams, endorsements };
+}
+
 /** Resolves to whether every recipient got it sealed. */
-async function deliver(target: { isGroup: boolean; peers: string[] }, content: Content, ts: number, online = false): Promise<boolean> {
-  if (target.isGroup) return client.sendGroupContent(target.peers, content, ts, online);
+async function deliver(target: { isGroup: boolean; peers: string[]; groupV2?: DataMessage['groupV2']; internalId?: string }, content: Content, ts: number, online = false): Promise<boolean> {
+  if (target.isGroup) {
+    const group = target.groupV2 && target.internalId ? await senderKeyGroup(target.internalId, target.groupV2.masterKey, target.peers) : undefined;
+    return client.sendGroupContent(target.peers, content, ts, online, group);
+  }
   let sealed = target.peers.length > 0;
   for (const peer of target.peers) if (!(await client.sendContentToRecipient(peer, content, ts, online))) sealed = false;
   return sealed;

@@ -15,6 +15,7 @@ import { libsignal } from '../protocol/libsignal';
 import { create, fromBinary, toBinary } from '../net/proto';
 import { DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
 import type { SignalProtocolStore } from '../protocol/store';
+import { storeGroupSendEndorsements } from './group-send';
 
 /** zkgroup ServerPublicParams for Signal production (Signal-Desktop config/production.json). */
 export const SERVER_PUBLIC_PARAMS = fromBase64(
@@ -184,8 +185,17 @@ export async function fetchGroup(
   const keys = deriveGroupV2Keys(masterKey);
   const headers = await groupAuthHeaders(store, httpJson, keys, serverUrl, serverPublicParams);
   const bytes = await httpBinary('GET', `${storageUrl}/v2/groups/`, null, headers, 20000);
-  const group = fromBinary(GroupResponseSchema, bytes).group;
+  const res = fromBinary(GroupResponseSchema, bytes);
+  const group = res.group;
   if (!group) throw new Error('Storage server returned no group');
+  if (res.groupSendEndorsementsResponse.length) {
+    const members = decryptMemberIds(keys, group.members.map((m) => m.userId));
+    try {
+      await storeGroupSendEndorsements(store, keys.internalId, keys.secretParams, serverPublicParams, res.groupSendEndorsementsResponse, members);
+    } catch {
+      // Without endorsements, sends to this group go to each member separately.
+    }
+  }
   return { keys, group, headers };
 }
 

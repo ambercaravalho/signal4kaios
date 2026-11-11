@@ -17,6 +17,7 @@ export const SIGNAL_CDNS: Record<number, string> = {
 export type SignalHttpJsonFn = (
   method: string,
   path: string,
+  /** Sent as JSON, except bytes, which go as-is with the `Content-Type` from `headers`. */
   body: unknown,
   opts?: {
     baseUrl?: string;

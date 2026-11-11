@@ -15,6 +15,7 @@ import { libsignal } from '../protocol/libsignal';
 import { create, toBinary } from './proto';
 import {
   CIPHERTEXT_PLAINTEXT,
+  createSenderKeyDistribution,
   decryptionErrorContent,
   deleteSession,
   encryptForDevice,
@@ -26,7 +27,17 @@ import {
   safetyNumber,
   sealedEncryptForDevice,
   senderCertificateExpiration,
+  senderKeyMultiRecipientEncrypt,
 } from '../protocol/protocol';
+import {
+  analyzeSenderKeyDevices,
+  GroupSendEndorsements,
+  groupSendToken,
+  loadSenderKeyInfo,
+  rotateSenderKey,
+  saveSenderKeyInfo,
+  SenderKeyDevice,
+} from '../services/group-send';
 import type { SignalProtocolStore } from '../protocol/store';
 import { DEFAULT_SIGNAL_SERVER, SIGNAL_CDNS, SignalHttpBinaryFn, SignalHttpJsonFn, SignalHttpRawFn } from './http';
 import { isAci } from './proto';
@@ -44,7 +55,18 @@ export class IdentityChangedError extends Error {
 /**
  * High-level SignalClient coordinating outbound encryption, device fanout, attachment upload/download, and identity verification.
  */
+/** What a Sender Key send to a group needs: its identifier (base64), its secret params, and its members' group send endorsements. */
+export interface SenderKeyGroup {
+  internalId: string;
+  secretParams: Uint8Array;
+  endorsements: GroupSendEndorsements | null;
+}
+
+const CONTENT_HINT_DEFAULT = 0;
+
 export class SignalClient {
+  /** Debug log for details the caller can't see, such as a Sender Key send falling back. */
+  log: (message: string) => void = () => {};
   private deviceLists = new Map<string, number[]>();
   private profileKeys = new Map<string, Uint8Array>();
   private cachedSenderCert: { cert: Uint8Array; expiresAt: number } | null = null;
@@ -302,15 +324,25 @@ export class SignalClient {
   }
 
   /**
-   * Send a group Content to every member as individual Sealed Sender (or identified) 1:1 messages. Signal's multi-recipient sender-key endpoint needs group send endorsements we don't hold, and a raw SenderKeyMessage via /v1/messages is not a valid envelope, so groups use pairwise fanout. Errors for single members are collected; the call fails only if no member received it.
+   * Send a group Content to every member. With `group` and its endorsements, members with an endorsement get one Sender Key message through `PUT /v1/messages/multi_recipient`; everyone else, and everyone when that fails, gets individual Sealed Sender (or identified) 1:1 messages. Errors for single members are collected; the call fails only if no member received it. Resolves to whether every member got it sealed.
    */
-  async sendGroupContent(recipients: string[], content: Content, timestamp: number, online = false): Promise<boolean> {
+  async sendGroupContent(recipients: string[], content: Content, timestamp: number, online = false, group?: SenderKeyGroup): Promise<boolean> {
     const auth = await this.authHeader();
-    const targets = recipients.filter((p) => p && p !== auth.aci && isAci(p));
-    let lastError: unknown = null;
-    let delivered = 0;
+    const targets = Array.from(new Set(recipients.filter((p) => p && p !== auth.aci && isAci(p))));
+    let pairwise = targets;
     let sealed = 0;
-    for (const peer of targets) {
+    let delivered = 0;
+    if (group && group.endorsements && targets.length > 0) {
+      try {
+        const res = await this.sendViaSenderKey(group, group.endorsements, targets, content, timestamp, online);
+        sealed = delivered = res.sent.length;
+        pairwise = targets.filter((t) => !res.sent.includes(t) && !res.unregistered.includes(t));
+      } catch (err: any) {
+        this.log('sender key send failed, sending to each member: ' + (err && (err.status || err.message)));
+      }
+    }
+    let lastError: unknown = null;
+    for (const peer of pairwise) {
       try {
         if (await this.sendContentToRecipient(peer, content, timestamp, online)) sealed++;
         delivered++;
@@ -320,6 +352,121 @@ export class SignalClient {
     }
     if (targets.length > 0 && delivered === 0 && lastError) throw lastError;
     return targets.length > 0 && sealed === targets.length;
+  }
+
+  /** Every device of `aci` with a session ready, each with its registration ID. */
+  private async senderKeyDevices(aci: string): Promise<SenderKeyDevice[]> {
+    const out: SenderKeyDevice[] = [];
+    for (const deviceId of await this.devicesFor(aci)) {
+      await this.ensureSession(aci, deviceId);
+      out.push({ aci, deviceId, registrationId: await this.sessionRegistrationId(aci, deviceId) });
+    }
+    return out;
+  }
+
+  private adjustDevices(aci: string, current: number[], add: number[], remove: number[]): void {
+    const next = current.filter((d) => !remove.includes(d)).concat(add.filter((d) => !current.includes(d)));
+    this.deviceLists.set(aci, next);
+  }
+
+  /**
+   * One Sender Key message for the members we hold endorsements for, as Signal-Desktop's sendToGroupViaSenderKey: rotate the key when someone left, send our SenderKeyDistributionMessage to devices that don't have it yet, then seal the message for every device at once. A 409 or 410 (device lists out of date) is fixed and retried once; anything else throws so the caller sends one by one.
+   */
+  private async sendViaSenderKey(
+    group: SenderKeyGroup,
+    endorsements: GroupSendEndorsements,
+    targets: string[],
+    content: Content,
+    timestamp: number,
+    online: boolean
+  ): Promise<{ sent: string[]; unregistered: string[] }> {
+    const members = targets.filter((a) => !!endorsements.members[a]);
+    if (members.length < 2) throw new Error('Not enough recipients for a Sender Key message');
+    const senderCert = await this.getSenderCertificate();
+    if (!senderCert) throw new Error('No sender certificate');
+    const local = await localIdentity(this.store);
+    const plain = padMessagePlaintext(toBinary(ContentSchema, content));
+
+    for (let attempt = 0; ; attempt++) {
+      const devices: SenderKeyDevice[] = [];
+      const reached: string[] = [];
+      for (const aci of members) {
+        try {
+          const list = await this.senderKeyDevices(aci);
+          if (list.length) reached.push(aci);
+          devices.push(...list);
+        } catch (err: any) {
+          this.log('no devices for a group member: ' + (err && (err.status || err.message)));
+        }
+      }
+      if (reached.length < 2) throw new Error('Not enough recipients for a Sender Key message');
+
+      let info = await loadSenderKeyInfo(this.store, group.internalId);
+      let seen = analyzeSenderKeyDevices(info.memberDevices, devices);
+      if (seen.removedAcis.some((a) => !targets.includes(a))) {
+        info = await rotateSenderKey(this.store, group.internalId);
+        seen = analyzeSenderKeyDevices([], devices);
+      } else if (seen.removedDevices.length) {
+        info.memberDevices = info.memberDevices.filter((m) => !seen.removedDevices.includes(m));
+        await saveSenderKeyInfo(this.store, group.internalId, info);
+      }
+      const skdm = await createSenderKeyDistribution(this.store, local, info.distributionId);
+      if (seen.newAcis.length) {
+        const skdmContent = create(ContentSchema, { senderKeyDistributionMessage: skdm });
+        for (const aci of seen.newAcis) await this.sendContentToRecipient(aci, skdmContent, Date.now());
+        info.memberDevices = info.memberDevices.concat(seen.newDevices);
+        await saveSenderKeyInfo(this.store, group.internalId, info);
+      }
+
+      const body = await senderKeyMultiRecipientEncrypt(
+        this.store,
+        local,
+        info.distributionId,
+        devices.map((d) => ({ name: d.aci, deviceId: d.deviceId })),
+        senderCert,
+        plain,
+        CONTENT_HINT_DEFAULT,
+        fromBase64(group.internalId)
+      );
+      const token = groupSendToken(endorsements, group.secretParams, reached);
+      try {
+        const res = await this.httpJson('PUT', `/v1/messages/multi_recipient?ts=${timestamp}&online=${online}&urgent=${!online}&story=false`, body, {
+          baseUrl: this.serverUrl,
+          noAuth: true,
+          headers: { 'Content-Type': 'application/vnd.signal-messenger.mrm', 'Group-Send-Token': token },
+          timeout: 20000,
+        });
+        const unregistered: string[] = res && Array.isArray(res.uuids404) ? res.uuids404.filter((id: unknown) => typeof id === 'string' && reached.includes(id)) : [];
+        for (const aci of unregistered) this.deviceLists.delete(aci);
+        return { sent: reached.filter((a) => !unregistered.includes(a)), unregistered };
+      } catch (err: any) {
+        const status = err && err.status;
+        const entries: any[] = err && Array.isArray(err.body) ? err.body : [];
+        if (attempt > 0 || (status !== 409 && status !== 410) || !entries.length) throw err;
+        for (const entry of entries) {
+          const aci = entry && typeof entry.uuid === 'string' ? entry.uuid : '';
+          const d = entry && entry.devices;
+          if (!reached.includes(aci) || !d) continue;
+          const nums = (v: unknown) => (Array.isArray(v) ? v.filter((n) => Number.isInteger(n) && n > 0) : []) as number[];
+          const current = devices.filter((x) => x.aci === aci).map((x) => x.deviceId);
+          if (status === 409) {
+            const extra = nums(d.extraDevices);
+            const missing = nums(d.missingDevices);
+            for (const ex of extra) await deleteSession(this.store, aci, ex);
+            for (const m of missing) await this.fetchAndProcessBundles(aci, String(m));
+            this.adjustDevices(aci, current, missing, extra);
+          } else {
+            const stale = nums(d.staleDevices);
+            for (const st of stale) {
+              await deleteSession(this.store, aci, st);
+              await this.fetchAndProcessBundles(aci, String(st));
+            }
+            info.memberDevices = info.memberDevices.filter((m) => !(m.aci === aci && stale.includes(m.deviceId)));
+            await saveSenderKeyInfo(this.store, group.internalId, info);
+          }
+        }
+      }
+    }
   }
 
   /**
