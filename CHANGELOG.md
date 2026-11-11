@@ -2,6 +2,15 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.7.1
+
+A behind-the-scenes cleanup release with no feature changes. Install over v2.7.0; your chats and settings carry over.
+
+### Changed
+
+- **Less to load.** The app's code is about a quarter smaller, so the phone has less to read when Beacon starts, and the download is a little smaller too.
+- **Internal cleanup.** Large parts of the code were reorganized and duplicate code removed, which makes future features and fixes quicker to ship. Everything should look and work exactly as before; if something doesn't, please report it.
+
 ## v2.7.0
 
 The fifth round of Signal features from the roadmap. Install over v2.6.0; your chats and settings carry over. KaiOS asks for the microphone the first time you record a voice message.
