@@ -53,7 +53,8 @@ The [setup guide](docs/setup.md) covers every install route and what to do if so
 | Area | What you get |
 | --- | --- |
 | **Encryption** | libsignal on the phone: PQXDH, Double Ratchet, Sealed Sender, Sender Keys, safety numbers, and AES-256 attachment encryption |
-| **Messaging** | 1:1 and group chats, reactions, replies, edits, delete for everyone, read receipts, typing indicators, and text formatting |
+| **Messaging** | 1:1 and group chats, reactions, replies, edits, delete for everyone, read receipts, typing indicators, text formatting, polls, and link previews |
+| **Privacy** | A screen lock PIN, who can see and find your number, read receipt and typing controls, and blocking |
 | **Disappearing messages** | Per-chat timer, a live countdown on each message, and automatic deletion |
 | **Media** | Encrypted photos, video, voice notes, and files via Signal's CDNs |
 | **Sync** | Contacts, groups, blocked list, and profiles from Signal's Storage Service and your primary device; nicknames, blocking, archive, mute, pinned chats, and your username sync back |
