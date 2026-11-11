@@ -269,6 +269,23 @@
   font-size: var(--fs-small);
 }
 
+.msg-wave {
+  flex: 1;
+  min-width: 0;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.msg-wave-bar {
+  flex: 1;
+  min-height: 0.2rem;
+  border-radius: 0.1rem;
+  background: currentColor;
+  opacity: 0.75;
+}
+
 .msg-link {
   margin: 0.3rem 0;
   padding: 0.3rem 0.6rem;

@@ -40,6 +40,9 @@
       "video-capture": {
         "description": "Use the camera to scan QR codes"
       },
+      "audio-capture": {
+        "description": "Record voice messages"
+      },
       "device-storage:pictures": {
         "access": "readcreate",
         "description": "Save received photos to the gallery"

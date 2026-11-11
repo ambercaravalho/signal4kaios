@@ -12,6 +12,10 @@ export interface Attachment {
   size: number;
   voiceNote?: boolean;
   viewOnce?: boolean;
+  /** A voice message's bars, 0 to 255 each. */
+  waveform?: number[];
+  /** Length in seconds, for audio. */
+  duration?: number;
 }
 
 export interface QuotedAttachment {

@@ -70,6 +70,15 @@ export function fmtDuration(secs: number): string {
   return Math.round(days / 7) + 'w';
 }
 
+/** A recording's length: "0:07", "3:45", "1:02:03". */
+export function fmtLength(secs: number): string {
+  secs = Math.max(0, Math.floor(secs));
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = pad2(secs % 60);
+  return h ? h + ':' + pad2(m) + ':' + s : m + ':' + s;
+}
+
 export function fmtBytes(n: number): string {
   if (!n) return '';
   if (n < 1024) return n + ' B';

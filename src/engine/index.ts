@@ -72,6 +72,7 @@ import { DEFAULT_SIGNAL_SERVER } from './net/http';
 import { net } from './net/transport';
 import { DecryptedEnvelope, IncomingEnvelope, parseContactsSyncBlob } from './net/receive';
 import { applyPniChangeNumber, NumberChange } from './services/change-number';
+import { applyAttachmentMeta, type AttachmentMeta } from './services/attachment-meta';
 import { ChatStateEntry, host } from './host';
 
 type DataMessageInit = MessageInitShape<typeof DataMessageSchema>;
@@ -913,6 +914,8 @@ export const signalBridge = {
     quote_message?: string;
     quote_attachments?: Array<{ contentType: string; filename: string }>;
     base64_attachments?: string[];
+    /** Per attachment, in the same order: a recorded voice message's flag, waveform, and length. */
+    attachment_meta?: Array<AttachmentMeta | null>;
     edit_timestamp?: number;
     mentions?: Array<{ start: number; length: number; uuid: string }>;
     view_once?: boolean;
@@ -931,11 +934,13 @@ export const signalBridge = {
     const files = payload.base64_attachments || [];
     if (files.length > MAX_ATTACHMENTS) throw new Error(`At most ${MAX_ATTACHMENTS} attachments per message`);
     const uploadedAttachments: AttachmentPointer[] = [];
-    for (const dataUri of files) {
-      const { contentType, filename, bytes } = parseDataUri(dataUri);
+    for (let i = 0; i < files.length; i++) {
+      const { contentType, filename, bytes } = parseDataUri(files[i]);
+      const meta = (payload.attachment_meta && payload.attachment_meta[i]) || null;
       const ext = contentType.split('/')[1] || 'bin';
-      const ptr = await client.uploadAttachment(bytes, contentType, filename || `attachment.${ext}`);
+      const ptr = await client.uploadAttachment(bytes, contentType, filename || (meta && meta.voice ? '' : `attachment.${ext}`));
       if (contentType.startsWith('audio/') && files.length === 1) ptr.flags |= AttachmentPointer_Flags.VOICE_MESSAGE;
+      applyAttachmentMeta(ptr, meta);
       uploadedAttachments.push(ptr);
     }
 

@@ -18,3 +18,4 @@ The app bundle (src/app/build/app.js) also includes these JavaScript libraries, 
 - unicode-emoji-json (https://github.com/muan/unicode-emoji-json), MIT License, Copyright (c) 2019 Mu-An Chiou; its data is derived from the Unicode emoji data files (Unicode License v3, https://www.unicode.org/license.txt).
 - @noble/hashes (https://github.com/paulmillr/noble-hashes), MIT License, Copyright (c) 2022 Paul Miller.
 - Protobuf-ES runtime, @bufbuild/protobuf (https://github.com/bufbuild/protobuf-es), Apache License 2.0 and BSD-3-Clause.
+- @breezystack/lamejs (https://github.com/shijinyu/lamejs), a JavaScript port of the LAME MP3 encoder, GNU Lesser General Public License version 3 (LGPL-3.0).

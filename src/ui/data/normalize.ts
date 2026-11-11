@@ -280,9 +280,14 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_WAVEFORM = 100;
 
 function attachmentOf(a: any, viewOnce: boolean): Attachment {
-  return { id: str(a.id), contentType: str(a.contentType), filename: str(a.filename), size: num(a.size), voiceNote: !!a.voiceNote, viewOnce: !!(a.viewOnce || viewOnce) };
+  const out: Attachment = { id: str(a.id), contentType: str(a.contentType), filename: str(a.filename), size: num(a.size), voiceNote: !!a.voiceNote, viewOnce: !!(a.viewOnce || viewOnce) };
+  if (Array.isArray(a.waveform) && a.waveform.length) out.waveform = a.waveform.slice(0, MAX_WAVEFORM).map((v: unknown) => Math.max(0, Math.min(255, num(v))));
+  const duration = Number(a.duration);
+  if (isFinite(duration) && duration > 0) out.duration = duration;
+  return out;
 }
 
 function previewOf(dm: any): LinkPreview | null {

@@ -12,16 +12,18 @@ import { RichText } from '../components/RichText';
 import { Screen } from '../components/Screen';
 import { TextField } from '../components/TextField';
 import { toast } from '../components/Toast';
+import { recordVoice } from '../components/VoiceRecorder';
 import { groupDetail, signal, type GroupDetail } from '../data/api';
 import { ATTACHMENT_CACHE_KEEP, autoDownloads, cachedAttachment, isImage, loadAttachment, readDataUri } from '../data/attachments';
 import { config } from '../data/config';
 import { db } from '../data/db';
-import { fmtBytes, fmtClock, fmtDay, fmtMsgTime } from '../data/format';
+import { fmtBytes, fmtClock, fmtDay, fmtLength, fmtMsgTime } from '../data/format';
 import { fetchLinkPreview, previewCandidate, type FetchedPreview } from '../data/link-preview-fetch';
 import { chooseFile, openUrl } from '../data/platform';
 import * as store from '../data/store';
 import { extractUrls, isJumboEmoji, type PickedMention } from '../data/styled';
 import type { Attachment, ContactCard, Conversation, LinkPreview, Message, MessageStatus, Notice, Poll, Quote } from '../data/types';
+import { voiceNoteFile, waveformBars } from '../data/voice-recorder';
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
@@ -45,6 +47,7 @@ const PREVIEW_DEBOUNCE_MS = 1000;
 const LATEST = Number.MAX_SAFE_INTEGER;
 /** How far Up and Down scroll through a message taller than the screen before focus moves on. */
 const STEP_PX = 60;
+const VOICE_BARS = 32;
 
 export function openChat(convId: string, targetTs?: number): void {
   router.push(ChatScreen, { convId, targetTs });
@@ -155,6 +158,21 @@ function AttachmentView(props: { att: Attachment; meta?: VNode | null; photoOnly
       </div>
     );
   if (props.photoOnly) return <div ref={ref} />;
+  if (!att.viewOnce && (att.contentType || '').indexOf('audio/') === 0 && (att.waveform || att.duration))
+    return (
+      <>
+        <div class="msg-file msg-voice" ref={ref}>
+          <Icon name="mic" />
+          <span class="msg-wave">
+            {waveformBars(att.waveform || [], VOICE_BARS).map((v, i) => (
+              <span key={i} class="msg-wave-bar" style={{ height: Math.max(10, Math.round(v * 100)) + '%' }} />
+            ))}
+          </span>
+          {att.duration ? <span class="msg-file-size">{fmtLength(att.duration)}</span> : null}
+        </div>
+        {props.meta}
+      </>
+    );
   return (
     <>
       <div class="msg-file" ref={ref}>
@@ -665,6 +683,17 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     }
   }
 
+  /** A voice message goes alone, without the draft, as in Signal. */
+  async function voiceMessage(): Promise<void> {
+    const note = await recordVoice();
+    if (!note) return;
+    try {
+      await store.sendAttachments(convId, [await voiceNoteFile(note)], '');
+    } catch (e) {
+      toast(sendError(e));
+    }
+  }
+
   async function pickAttachment(m: Message): Promise<void> {
     const i = await pick(
       S.viewAttachments,
@@ -898,6 +927,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       DIVIDER,
       canCompose && !editing && { label: S.attach, onSelect: () => attach(false) },
       canCompose && !editing && { label: S.attachViewOnce, onSelect: () => attach(true) },
+      canCompose && !editing && { label: S.recordVoice, onSelect: voiceMessage },
       tray.length > 0 && { label: S.removeAttachments, danger: true, onSelect: () => setTray([]) },
       shownPreview && {
         label: S.removeLinkPreview,
@@ -972,6 +1002,9 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
         return true;
       case 'SoftRight':
         chatOptions();
+        return true;
+      case 'Call':
+        if (e.repeat && canCompose && !editing) voiceMessage();
         return true;
       case 'SoftLeft':
         if (!quote && !editing) return false;

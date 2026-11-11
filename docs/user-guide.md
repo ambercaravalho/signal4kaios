@@ -82,6 +82,9 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 
 **Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file). Photos, videos, and files wait above the message box (for example **2 photos**) so you can attach more and type a caption; **Send** sends them together as one message, and **Options → Remove attachments** clears them. Voice recordings send right away on their own. A message can carry up to 32 attachments and 25 MB in total, and each file is sent with its name.
 
+**Options → Record voice message**, or holding the Call key in a chat, starts recording at once. The first time, KaiOS asks whether Beacon may use the microphone. The sheet shows the time and how loud you are; **Stop** ends the recording, then **Send** sends it on its own (your draft stays in the message box) and **Cancel** throws it away. Recordings stop by themselves at 15 minutes. Beacon sends them as MP3 with a waveform, so they play on every Signal app, and a long one takes a few seconds to prepare.
+
+- Voice messages show their waveform and length in the chat.
 - A message with several attachments has **View attachments** first in its options, which lists them to open one.
 
 - Photos show in the chat; small ones download on their own as you scroll to them.

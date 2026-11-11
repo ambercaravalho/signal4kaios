@@ -598,6 +598,7 @@ export async function refreshDirectory(): Promise<boolean> {
 }
 
 type SendPayload = Parameters<typeof signal.send>[0];
+type SendMeta = NonNullable<NonNullable<SendPayload['attachment_meta']>[number]>;
 
 function sendCore(conv: Conversation, rec: Message, payload: SendPayload, preview: string): Promise<Message> {
   db.putMessage(rec);
@@ -746,6 +747,20 @@ export interface OutgoingFile {
   filename?: string;
   size?: number;
   voiceNote?: boolean;
+  waveform?: number[];
+  duration?: number;
+}
+
+function outgoingMeta(f: Pick<Attachment, 'voiceNote' | 'waveform' | 'duration'>): SendMeta | null {
+  if (!f.voiceNote && !f.waveform && !f.duration) return null;
+  return { voice: !!f.voiceNote, waveform: f.waveform, duration: f.duration };
+}
+
+function localAttachment(f: OutgoingFile): Attachment {
+  const att: Attachment = { id: '', contentType: f.contentType || 'image/jpeg', filename: f.filename == null ? 'photo.jpg' : f.filename, size: f.size || 0, voiceNote: !!f.voiceNote };
+  if (f.waveform && f.waveform.length) att.waveform = f.waveform;
+  if (f.duration) att.duration = f.duration;
+  return att;
 }
 
 /** One message carrying `files` in order, with `caption` as its text. View-once media goes alone and without a caption, as in Signal. */
@@ -758,7 +773,7 @@ export function sendAttachments(convId: string, files: OutgoingFile[], caption: 
     return Promise.reject(e);
   }
   const atts: Attachment[] = files.map((f) => {
-    const att: Attachment = { id: '', contentType: f.contentType || 'image/jpeg', filename: f.filename || 'photo.jpg', size: f.size || 0, voiceNote: !!f.voiceNote };
+    const att = localAttachment(f);
     if (opts.viewOnce) att.viewOnce = true;
     return att;
   });
@@ -767,6 +782,8 @@ export function sendAttachments(convId: string, files: OutgoingFile[], caption: 
     const st = styled(text);
     const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: atts, quote: opts.quote || null });
     const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, base64_attachments: files.map((f) => f.dataUri) };
+    const meta = files.map(outgoingMeta);
+    if (meta.some(Boolean)) payload.attachment_meta = meta;
     if (opts.viewOnce) payload.view_once = true;
     addQuote(payload, opts.quote);
     return sendCore(conv, rec, payload, st.body || attachmentLabel(atts));
@@ -806,11 +823,13 @@ export function forwardMessage(convId: string, m: Message, dataUri?: string): Pr
     return Promise.reject(e);
   }
   const src = dataUri ? m.attachments[0] : undefined;
-  const attachments: Attachment[] = src ? [{ id: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: !!src.voiceNote }] : [];
+  const attachments: Attachment[] = src ? [localAttachment({ dataUri: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: src.voiceNote, waveform: src.waveform, duration: src.duration })] : [];
   return withDefaultTimer(conv, () => {
     const rec = newOutgoingRec(conv, { body: m.body, styles: m.styles || [], attachments });
     const payload: SendPayload = { recipients: [conv.sendId!], message: m.body, styles: m.styles || [], expire_timer: conv.expireTimer || 0 };
     if (dataUri) payload.base64_attachments = [dataUri];
+    const meta = src && outgoingMeta(src);
+    if (meta) payload.attachment_meta = [meta];
     return sendCore(conv, rec, payload, previewOf(rec));
   });
 }
