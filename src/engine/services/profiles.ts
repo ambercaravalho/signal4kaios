@@ -1,10 +1,10 @@
 /* Signal profiles, profile avatars, and username lookup. The profile cipher, padding, and request bodies follow Signal-Desktop (Crypto.node.ts, encryptProfileData.preload.ts, WebAPI getProfile/putProfile); profile key versions, commitments, access keys, and username hashes come from libsignal (zkgroup, usernames). */
 
 import { fromBase64, randomBytes, toBase64, toHex, toWebSafeBase64 } from '../bytes';
-import { aesGcmDecrypt, aesGcmEncrypt } from '../crypto/primitives';
+import { openGcm, sealGcm } from '../crypto/primitives';
 import { libsignal } from '../protocol/libsignal';
 import type { SignalProtocolStore } from '../protocol/store';
-import { DEFAULT_SIGNAL_CDN, DEFAULT_SIGNAL_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
+import { accountBasicAuth, DEFAULT_SIGNAL_CDN, DEFAULT_SIGNAL_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
 
 /** Signal-Desktop PaddedLengths. */
 const PADDED_LENGTHS = {
@@ -29,18 +29,12 @@ export interface DecryptedProfile {
 
 async function encryptProfile(data: Uint8Array, profileKey: Uint8Array): Promise<Uint8Array> {
   if (profileKey.length !== 32) throw new Error('Got invalid length profile key');
-  const iv = randomBytes(12);
-  const ct = await aesGcmEncrypt(profileKey, iv, data);
-  const out = new Uint8Array(12 + ct.length);
-  out.set(iv);
-  out.set(ct, 12);
-  return out;
+  return sealGcm(profileKey, data);
 }
 
 export async function decryptProfile(data: Uint8Array, profileKey: Uint8Array): Promise<Uint8Array> {
-  if (data.length < 12 + 16 + 1) throw new Error(`Got too short input: ${data.length}`);
   if (profileKey.length !== 32) throw new Error('Got invalid length profile key');
-  return aesGcmDecrypt(profileKey, data.subarray(0, 12), data.subarray(12));
+  return openGcm(profileKey, data, 1);
 }
 
 async function encryptPadded(item: Uint8Array, profileKey: Uint8Array, lengths: number[]): Promise<Uint8Array> {
@@ -90,7 +84,7 @@ export async function fetchAndDecryptProfile(
 
   const res = await httpJson('GET', path, null, {
     baseUrl: serverUrl,
-    basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
+    basicAuth: accountBasicAuth(acc),
     timeout: 15000,
   });
   if (!res) return null;
@@ -173,7 +167,7 @@ export async function fetchExpiringProfileKeyCredential(
   // SECURITY-REVIEW: device password is sent only as Basic auth to the Signal chat server.
   const res = await httpJson('GET', `/v1/profile/${encodeURIComponent(aci)}/${version}/${toHex(req.request)}?credentialType=expiringProfileKey`, null, {
     baseUrl: serverUrl,
-    basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
+    basicAuth: accountBasicAuth(acc),
     timeout: 15000,
   });
   if (!res || typeof res.credential !== 'string') throw new Error('Signal server returned no profile key credential');
@@ -338,7 +332,7 @@ export async function uploadOwnProfile(
   // SECURITY-REVIEW: device password is sent only as Basic auth to the Signal chat server.
   const res = await httpJson('PUT', '/v1/profile', body, {
     baseUrl: serverUrl,
-    basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
+    basicAuth: accountBasicAuth(acc),
     timeout: 15000,
   });
   if (patch.avatar === undefined) return {};
@@ -368,7 +362,7 @@ export async function resolveSignalUsername(
   }
 
   const acc = await store.getAccount();
-  const auth = acc ? { username: `${acc.aci}.${acc.deviceId}`, password: acc.password } : undefined;
+  const auth = acc ? accountBasicAuth(acc) : undefined;
   try {
     const res = await httpJson('GET', `/v1/accounts/username_hash/${toWebSafeBase64(hash)}`, null, {
       baseUrl: serverUrl,

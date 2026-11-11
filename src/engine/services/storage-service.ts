@@ -1,7 +1,7 @@
 /* Signal Storage Service: contacts, Groups V2, and account settings in the encrypted manifest on storage.signal.org, read and written the way Signal-Desktop's services/storage.preload.ts does. Key derivation and record layout follow Signal-Desktop's Crypto.node.ts. */
 
 import { concatBytes, constantTimeEqual, randomBytes, toBase64, uuidToBytes } from '../bytes';
-import { aesGcmDecrypt, aesGcmEncrypt, hkdfSha256, hmacSha256 } from '../crypto/primitives';
+import { hkdfSha256, hmacSha256, openGcm, sealGcm } from '../crypto/primitives';
 import {
   AccountRecord,
   AccountRecord_PhoneNumberSharingMode,
@@ -22,7 +22,7 @@ import {
 } from '../gen/SignalStorage_pb';
 import { create, fromBinary, num, serviceIdFrom, toBinary } from '../net/proto';
 import type { SignalProtocolStore, TrustLevel } from '../protocol/store';
-import { DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
+import { accountBasicAuth, DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
 
 const enc = new TextEncoder();
 const ITEM_KEY_INFO_PREFIX = '20240801_SIGNAL_STORAGE_SERVICE_ITEM_';
@@ -155,16 +155,7 @@ export function deriveStorageItemKey(storageServiceKey: Uint8Array, key: Uint8Ar
   return hkdfSha256(recordIkm, concatBytes(enc.encode(ITEM_KEY_INFO_PREFIX), key), 32, new Uint8Array(0));
 }
 
-/** AES-256-GCM with a 12-byte IV prefix (Signal-Desktop decryptProfile, also used for storage records). */
-export async function decryptStorageValue(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
-  if (data.length < 12 + 16) throw new Error('Encrypted storage value too short');
-  return aesGcmDecrypt(key, data.subarray(0, 12), data.subarray(12));
-}
-
-async function encryptStorageValue(key: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
-  const iv = randomBytes(12);
-  return concatBytes(iv, await aesGcmEncrypt(key, iv, plaintext));
-}
+export const decryptStorageValue = (key: Uint8Array, data: Uint8Array): Promise<Uint8Array> => openGcm(key, data);
 
 function identityStateToTrust(state: ContactRecord_IdentityState): TrustLevel {
   switch (state) {
@@ -208,7 +199,7 @@ async function openSession(
   // SECURITY-REVIEW: storage credentials come from the chat server and are sent only to storage.signal.org as Basic auth.
   const cred = await httpJson('GET', '/v1/storage/auth', null, {
     baseUrl: serverUrl,
-    basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
+    basicAuth: accountBasicAuth(acc),
     timeout: 15000,
   });
   if (!cred || typeof cred.username !== 'string' || typeof cred.password !== 'string') {
@@ -477,7 +468,7 @@ export async function mutateStorage(
       const key = randomBytes(16);
       const plain = toBinary(StorageRecordSchema, w.record);
       const itemKey = deriveStorageItemKey(session.storageKey, key, manifest.recordIkm);
-      insertItem.push({ key, value: await encryptStorageValue(itemKey, plain) });
+      insertItem.push({ key, value: await sealGcm(itemKey, plain) });
       identifiers.push(create(ManifestRecord_IdentifierSchema, { raw: key, type: w.type }));
       nextRecords.set(toBase64(key), w.record);
     }
@@ -485,7 +476,7 @@ export async function mutateStorage(
     manifest.sourceDevice = session.deviceId;
     manifest.identifiers = identifiers;
 
-    const manifestValue = await encryptStorageValue(
+    const manifestValue = await sealGcm(
       deriveStorageManifestKey(session.storageKey, newVersion),
       toBinary(ManifestRecordSchema, manifest)
     );

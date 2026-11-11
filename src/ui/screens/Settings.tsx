@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { useStoreEvents } from '../app/hooks';
+import { useRefresh, useStoreEvents } from '../app/hooks';
 import { router, useOnResume } from '../app/router';
 import { setTextSize, setTheme } from '../app/theme';
 import { Avatar, OWN_PROFILE_PREFIX } from '../components/Avatar';
@@ -9,11 +9,12 @@ import { confirm, pick, prompt, showOptions } from '../components/Overlays';
 import { promptPin } from '../components/PinEntry';
 import { Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
+import { pickTimer, toggleRow } from '../components/setting-rows';
 import { toast } from '../components/Toast';
 import { signal, syncedContacts, syncedGroups, unlink, updateProfile } from '../data/api';
 import { config, type TextSize, type ThemeName } from '../data/config';
 import { db } from '../data/db';
-import { EXPIRE_OPTIONS, expireLabel } from '../data/format';
+import { expireLabel } from '../data/format';
 import { squareGeometry, scaleToJpeg } from '../data/image-scale';
 import { loadOwnPhoto, ownPhotoChanged } from '../data/own-photo';
 import { appVersion, chooseFile, openUrl } from '../data/platform';
@@ -32,21 +33,11 @@ export const GUIDE_URL = 'https://github.com/ambercaravalho/signal4kaios/blob/ma
 export const SOURCE_URL = 'https://github.com/ambercaravalho/signal4kaios';
 const PROFILE_PHOTO_EDGE = 512;
 
-/** Re-render after changing a setting stored outside component state. */
-function useRefresh(): () => void {
-  const [, set] = useState(0);
-  return () => set((n) => n + 1);
-}
-
 function selfName(): string {
   const cached = config.profileName();
   if (cached) return cached;
   const me = store.contactByKey(config.number());
   return me && me.name && me.name !== config.number() && me.name !== store.SELF_NAME ? me.name : '';
-}
-
-function toggle(key: string, label: string, value: boolean, set: (v: boolean) => void, sub?: string): Row {
-  return { key, label, sub, end: 'toggle', checked: value, action: value ? S.turnOff : S.turnOn, onSelect: () => set(!value) };
 }
 
 /** Top-level settings, grouped like Signal's. */
@@ -286,9 +277,9 @@ export function LinkedDeviceScreen() {
 export function ChatsSettingsScreen() {
   const refresh = useRefresh();
   const rows: Row[] = [
-    toggle('fmt', S.textFormatting, config.styledText(), (v) => (config.set({ styledText: v }), refresh()), S.textFormattingHint),
-    toggle('muted', S.keepMutedArchived, config.keepMutedArchived(), (v) => (config.set({ keepMutedArchived: v }), refresh())),
-    toggle('previews', S.generateLinkPreviews, config.linkPreviews(), setLinkPreviews, S.generateLinkPreviewsHint),
+    toggleRow('fmt', S.textFormatting, config.styledText(), (v) => (config.set({ styledText: v }), refresh()), S.textFormattingHint),
+    toggleRow('muted', S.keepMutedArchived, config.keepMutedArchived(), (v) => (config.set({ keepMutedArchived: v }), refresh())),
+    toggleRow('previews', S.generateLinkPreviews, config.linkPreviews(), setLinkPreviews, S.generateLinkPreviewsHint),
   ];
 
   function setLinkPreviews(on: boolean): void {
@@ -308,7 +299,7 @@ export function PrivacyScreen() {
   const defaultTimer = config.defaultExpireTimer();
 
   async function chooseDefaultTimer(): Promise<void> {
-    const secs = await pick(S.defaultTimer, EXPIRE_OPTIONS.map((o) => ({ value: o.secs, label: o.label })), defaultTimer);
+    const secs = await pickTimer(S.defaultTimer, defaultTimer);
     if (secs === undefined || secs === defaultTimer) return;
     config.set({ defaultExpireTimer: secs });
     refresh();
@@ -322,10 +313,10 @@ export function PrivacyScreen() {
   }
 
   const rows: Row[] = [
-    toggle('receipts', S.readReceipts, config.sendReadReceipts(), (v) => (config.set({ sendReadReceipts: v }), refresh()), S.readReceiptsHint),
-    toggle('typing', S.typingIndicators, config.typingIndicators(), (v) => (config.set({ typingIndicators: v }), refresh()), S.typingIndicatorsHint),
+    toggleRow('receipts', S.readReceipts, config.sendReadReceipts(), (v) => (config.set({ sendReadReceipts: v }), refresh()), S.readReceiptsHint),
+    toggleRow('typing', S.typingIndicators, config.typingIndicators(), (v) => (config.set({ typingIndicators: v }), refresh()), S.typingIndicatorsHint),
     { key: 'timer', label: S.defaultTimer, sub: expireLabel(defaultTimer), onSelect: chooseDefaultTimer },
-    toggle('private', S.privateDeliveryIcon, config.sealedSenderIndicators(), setPrivateIcon, S.privateDeliveryHint),
+    toggleRow('private', S.privateDeliveryIcon, config.sealedSenderIndicators(), setPrivateIcon, S.privateDeliveryHint),
     { key: 'phone', label: S.phoneNumber, end: 'chevron', onSelect: () => router.push(PhoneNumberScreen, {}) },
     { key: 'lock', label: S.screenLock, sub: screenLock.enabled() ? lockAfterLabel(screenLock.lockAfter()) : undefined, end: 'chevron', onSelect: () => router.push(ScreenLockScreen, {}) },
     { key: 'blocked', label: S.blockedPeople, end: 'chevron', onSelect: () => router.push(BlockedScreen, {}) },
@@ -396,7 +387,7 @@ export function ScreenLockScreen() {
   }
 
   const rows: Row[] = [
-    toggle('lock', S.screenLock, on, (v) => void (v ? turnOn() : turnOff()), S.screenLockHint),
+    toggleRow('lock', S.screenLock, on, (v) => void (v ? turnOn() : turnOff()), S.screenLockHint),
     on && { key: 'after', label: S.lockAfter, sub: lockAfterLabel(screenLock.lockAfter()), onSelect: chooseLockAfter },
   ];
   return (

@@ -5,6 +5,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
+import { concatBytes, randomBytes } from '../bytes';
 
 export function hashSha256(data: Uint8Array): Uint8Array {
   return sha256(data);
@@ -115,6 +116,21 @@ export async function aesGcmDecrypt(
   if (aad) params.additionalData = toArrayBuffer(aad);
   const decrypted = await subtle().decrypt(params, cryptoKey, toArrayBuffer(ciphertextAndTag));
   return new Uint8Array(decrypted);
+}
+
+const GCM_IV_BYTES = 12;
+const GCM_TAG_BYTES = 16;
+
+/** AES-256-GCM under a fresh random IV, returned as `iv || ciphertext || tag`: Signal's layout for profile fields and Storage Service records. */
+export async function sealGcm(key: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
+  const iv = randomBytes(GCM_IV_BYTES);
+  return concatBytes(iv, await aesGcmEncrypt(key, iv, plaintext));
+}
+
+/** Opens `sealGcm` output; throws when `data` is shorter than an IV and tag plus `minPlaintext` bytes. */
+export async function openGcm(key: Uint8Array, data: Uint8Array, minPlaintext = 0): Promise<Uint8Array> {
+  if (data.length < GCM_IV_BYTES + GCM_TAG_BYTES + minPlaintext) throw new Error(`Encrypted value too short: ${data.length}`);
+  return aesGcmDecrypt(key, data.subarray(0, GCM_IV_BYTES), data.subarray(GCM_IV_BYTES));
 }
 
 /**

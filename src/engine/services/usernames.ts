@@ -3,7 +3,7 @@
 import { fromBase64, toWebSafeBase64, uuidToBytes } from '../bytes';
 import { libsignal } from '../protocol/libsignal';
 import type { SignalProtocolStore } from '../protocol/store';
-import { DEFAULT_SIGNAL_SERVER, SignalHttpJsonFn } from '../net/http';
+import { accountBasicAuth, DEFAULT_SIGNAL_SERVER, SignalHttpJsonFn } from '../net/http';
 
 type UsernameErrorCode =
   | 'UsernameInvalid'
@@ -93,7 +93,7 @@ export async function setUsername(
   const acc = await store.getAccount();
   if (!acc) throw new Error('Not linked');
   // SECURITY-REVIEW: device credentials authenticate the reserve/confirm calls; never log them.
-  const opts = { baseUrl: serverUrl, basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password }, timeout: 15000 };
+  const opts = { baseUrl: serverUrl, basicAuth: accountBasicAuth(acc), timeout: 15000 };
 
   const candidates = usernameCandidates(input);
   const hashes = candidates.map((c) => toWebSafeBase64(libsignal.usernameHash(c)));
@@ -143,7 +143,7 @@ export async function deleteUsername(store: SignalProtocolStore, httpJson: Signa
   // SECURITY-REVIEW: device credentials authenticate the delete call; never log them.
   await httpJson('DELETE', '/v1/accounts/username_hash', null, {
     baseUrl: serverUrl,
-    basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password },
+    basicAuth: accountBasicAuth(acc),
     timeout: 15000,
   });
 }

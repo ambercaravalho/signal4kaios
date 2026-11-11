@@ -74,6 +74,17 @@ function write(c: ConfigData): void {
   localStorage.setItem(KEY, JSON.stringify(c));
 }
 
+type StringKey = 'number' | 'aci' | 'deviceToken' | 'deviceName' | 'username' | 'usernameLink' | 'profileName' | 'profileAbout' | 'profileAboutEmoji' | 'proxyAddress';
+type FlagKey = 'sendReadReceipts' | 'styledText' | 'typingIndicators' | 'linkPreviews' | 'sealedSenderIndicators' | 'keepMutedArchived' | 'notifyMentionsIfMuted' | 'sharePhoneNumber' | 'proxyEnabled';
+
+const text = (k: StringKey) => (): string => {
+  const v = read()[k];
+  return typeof v === 'string' ? v : '';
+};
+/** A setting that is on unless turned off, like most of Signal's. */
+const onUnlessOff = (k: FlagKey) => (): boolean => read()[k] !== false;
+const offUnlessOn = (k: FlagKey) => (): boolean => read()[k] === true;
+
 export const config = {
   set(patch: Partial<ConfigData>): void {
     write(Object.assign(read(), patch));
@@ -87,9 +98,7 @@ export const config = {
     return config.serverUrl().replace(/^http/, 'ws');
   },
 
-  number(): string {
-    return read().number || '';
-  },
+  number: text('number'),
 
   /** The number naming the active account's database. */
   dbNumber(): string {
@@ -97,66 +106,30 @@ export const config = {
     return c.dbNumber || c.number || '';
   },
 
-  aci(): string {
-    return read().aci || '';
-  },
+  aci: text('aci'),
 
   deviceId(): number {
     return read().deviceId || 0;
   },
 
   /** The linked device's Signal password. Never logged. */
-  deviceToken(): string {
-    return read().deviceToken || '';
-  },
-
-  deviceName(): string {
-    return read().deviceName || '';
-  },
-
-  username(): string {
-    return read().username || '';
-  },
-
-  usernameLink(): string {
-    return read().usernameLink || '';
-  },
-
-  profileName(): string {
-    return read().profileName || '';
-  },
-
-  profileAbout(): string {
-    return read().profileAbout || '';
-  },
-
-  profileAboutEmoji(): string {
-    return read().profileAboutEmoji || '';
-  },
+  deviceToken: text('deviceToken'),
+  deviceName: text('deviceName'),
+  username: text('username'),
+  usernameLink: text('usernameLink'),
+  profileName: text('profileName'),
+  profileAbout: text('profileAbout'),
+  profileAboutEmoji: text('profileAboutEmoji'),
 
   theme(): ThemeName {
     return read().theme === 'dark' ? 'dark' : 'light';
   },
 
-  sendReadReceipts(): boolean {
-    return read().sendReadReceipts !== false;
-  },
-
-  styledText(): boolean {
-    return read().styledText !== false;
-  },
-
-  typingIndicators(): boolean {
-    return read().typingIndicators !== false;
-  },
-
-  linkPreviews(): boolean {
-    return read().linkPreviews !== false;
-  },
-
-  sealedSenderIndicators(): boolean {
-    return read().sealedSenderIndicators === true;
-  },
+  sendReadReceipts: onUnlessOff('sendReadReceipts'),
+  styledText: onUnlessOff('styledText'),
+  typingIndicators: onUnlessOff('typingIndicators'),
+  linkPreviews: onUnlessOff('linkPreviews'),
+  sealedSenderIndicators: offUnlessOn('sealedSenderIndicators'),
 
   defaultExpireTimer(): number {
     const v = read().defaultExpireTimer;
@@ -164,23 +137,16 @@ export const config = {
   },
 
   /** Whether everybody sees our number; Signal defaults to nobody. */
-  sharePhoneNumber(): boolean {
-    return read().sharePhoneNumber === true;
-  },
+  sharePhoneNumber: offUnlessOn('sharePhoneNumber'),
 
   findableByNumber(): boolean {
     return config.sharePhoneNumber() || read().findableByNumber !== false;
   },
 
   /** Muted chats stay archived when new messages arrive, as in Signal. */
-  keepMutedArchived(): boolean {
-    return read().keepMutedArchived !== false;
-  },
-
+  keepMutedArchived: onUnlessOff('keepMutedArchived'),
   /** Mentions notify in muted chats unless turned off, as in Signal. */
-  notifyMentionsIfMuted(): boolean {
-    return read().notifyMentionsIfMuted !== false;
-  },
+  notifyMentionsIfMuted: onUnlessOff('notifyMentionsIfMuted'),
 
   /** Text size on this phone only. */
   textSize(): TextSize {
@@ -189,14 +155,8 @@ export const config = {
   },
 
   /** The Signal proxy's hostname, kept while the proxy is turned off. */
-  proxyAddress(): string {
-    const v = read().proxyAddress;
-    return typeof v === 'string' ? v : '';
-  },
-
-  proxyEnabled(): boolean {
-    return read().proxyEnabled === true;
-  },
+  proxyAddress: text('proxyAddress'),
+  proxyEnabled: offUnlessOn('proxyEnabled'),
 
   screenLock(): ScreenLockConfig | null {
     const s = read().screenLock;

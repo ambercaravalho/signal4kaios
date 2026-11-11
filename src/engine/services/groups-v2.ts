@@ -13,7 +13,7 @@ import type { GroupContextV2 } from '../gen/SignalService_pb';
 import { GroupContextV2Schema } from '../gen/SignalService_pb';
 import { libsignal } from '../protocol/libsignal';
 import { create, fromBinary, toBinary } from '../net/proto';
-import { DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
+import { accountBasicAuth, DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
 import type { SignalProtocolStore } from '../protocol/store';
 import { storeGroupSendEndorsements } from './group-send';
 
@@ -131,7 +131,7 @@ async function groupCredentialForToday(store: SignalProtocolStore, httpJson: Sig
     'GET',
     `/v1/certificate/auth/group?redemptionStartSeconds=${today}&redemptionEndSeconds=${end}&v101=true&zkcCredential=true`,
     null,
-    { baseUrl: serverUrl, basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password }, timeout: 15000 }
+    { baseUrl: serverUrl, basicAuth: accountBasicAuth(acc), timeout: 15000 }
   );
   const list: StoredGroupCredential[] = [];
   if (res && Array.isArray(res.credentials)) {

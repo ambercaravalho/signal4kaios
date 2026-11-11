@@ -1,6 +1,7 @@
 /* Turns the JSON frames the engine produces from decrypted envelopes into typed events for the store. Frames are untrusted: unknown or malformed shapes are logged and dropped, never thrown. */
 
 import type { GroupUpdateKind } from '../../engine/services/group-updates';
+import { isBlurHash, isUuid } from '../../engine/validate';
 import { dbg } from './log';
 import type { StyleRange } from './styled';
 import type { Attachment, ContactCard, LinkPreview, Notice, NoticeKind, Poll, Quote } from './types';
@@ -278,12 +279,11 @@ function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: NameOf,
   const preview = previewOf(dm);
   if (preview) ev.preview = preview;
   if (incoming ? env.sealed === true : dm.sealed === true) ev.sealed = true;
-  if (incoming && UUID_RE.test(str(env.serverGuid))) ev.serverGuid = str(env.serverGuid);
+  if (incoming && isUuid(str(env.serverGuid))) ev.serverGuid = str(env.serverGuid);
   if (incoming && /^[A-Za-z0-9+/=]{1,2048}$/.test(str(env.reportSpamToken))) ev.reportToken = str(env.reportSpamToken);
   return [ev];
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_WAVEFORM = 100;
 const MAX_EDGE = 20000;
 
@@ -292,7 +292,7 @@ function attachmentOf(a: any, viewOnce: boolean): Attachment {
   if (Array.isArray(a.waveform) && a.waveform.length) out.waveform = a.waveform.slice(0, MAX_WAVEFORM).map((v: unknown) => Math.max(0, Math.min(255, num(v))));
   const duration = Number(a.duration);
   if (isFinite(duration) && duration > 0) out.duration = duration;
-  if (typeof a.blurHash === 'string' && /^[0-9A-Za-z#$%*+,\-.:;=?@[\]^_{|}~]{6,120}$/.test(a.blurHash)) out.blurHash = a.blurHash;
+  if (isBlurHash(a.blurHash)) out.blurHash = a.blurHash;
   const w = num(a.width);
   const h = num(a.height);
   if (w > 0 && h > 0 && w <= MAX_EDGE && h <= MAX_EDGE) {

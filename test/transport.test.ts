@@ -2,7 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Http1Client, ResponseParser } from '../src/engine/net/transport/http1';
-import { ByteStream, concatBytes, Connector, TransportError } from '../src/engine/net/transport/stream';
+import { concatBytes } from '../src/engine/bytes';
+import { ByteStream, Connector, TransportError } from '../src/engine/net/transport/stream';
 import { connectTls, TlsSession } from '../src/engine/net/transport/tls-stream';
 import { decodeFrame, encodeFrame, PinnedWebSocket, websocketAccept } from '../src/engine/net/transport/websocket';
 

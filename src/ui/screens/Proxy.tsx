@@ -1,9 +1,10 @@
 /* Settings > Privacy > Proxy, and the question asked when someone opens a Signal proxy link. */
 
-import { useState } from 'preact/hooks';
+import { useRefresh } from '../app/hooks';
 import { confirm, prompt } from '../components/Overlays';
 import { Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
+import { toggleRow } from '../components/setting-rows';
 import { toast } from '../components/Toast';
 import { config } from '../data/config';
 import { isProxyLink, parseProxyLink, saveProxy } from '../data/proxy';
@@ -41,8 +42,7 @@ export async function askUseProxy(link: string): Promise<void> {
 }
 
 export function ProxyScreen() {
-  const [, setN] = useState(0);
-  const refresh = () => setN((n) => n + 1);
+  const refresh = useRefresh();
   const address = config.proxyAddress();
   const enabled = config.proxyEnabled() && !!address;
 
@@ -65,7 +65,7 @@ export function ProxyScreen() {
   }
 
   const rows: Row[] = [
-    { key: 'use', label: S.useProxy, sub: S.useProxyHint, end: 'toggle', checked: enabled, action: enabled ? S.turnOff : S.turnOn, onSelect: toggle },
+    toggleRow('use', S.useProxy, enabled, () => void toggle(), S.useProxyHint),
     { key: 'addr', label: S.proxyAddress, sub: address || S.usernameNone, onSelect: editAddress },
   ];
   return (

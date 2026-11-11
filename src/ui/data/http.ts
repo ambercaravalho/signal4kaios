@@ -5,6 +5,7 @@ import type { HostHttpOptions, HostRawResponse } from '../../engine/host';
 import { config } from './config';
 import { dbg } from './log';
 import * as nativeTls from './nativeTls';
+import { mozSystemXhr } from './platform';
 
 const MAX_REDIRECTS = 3;
 const MAX_CDN_RESPONSE_BYTES = 200 * 1024 * 1024;
@@ -39,17 +40,9 @@ function encodeBasicAuth(username: string, password: string): string {
   return 'Basic ' + btoa(username + ':' + password);
 }
 
-function makeXhr(): XMLHttpRequest {
-  try {
-    return new (XMLHttpRequest as any)({ mozSystem: true });
-  } catch {
-    return new XMLHttpRequest();
-  }
-}
-
 function xhrSend(method: string, url: string, headers: Record<string, string>, body: BodyInit | Uint8Array | null, timeout: number, maxBytes = 0): Promise<Res> {
   return new Promise((resolve, reject) => {
-    const xhr = makeXhr();
+    const xhr = mozSystemXhr() || new XMLHttpRequest();
     xhr.open(method, url, true);
     xhr.timeout = timeout;
     xhr.responseType = 'arraybuffer';

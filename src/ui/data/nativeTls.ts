@@ -3,6 +3,7 @@
 import { SIGNAL_CDNS } from '../../engine/net/http';
 import { net } from '../../engine/net/transport';
 import { dbg } from './log';
+import { mozSystemXhr } from './platform';
 
 export type NativeTlsState = 'unknown' | 'trusted' | 'untrusted';
 
@@ -61,9 +62,12 @@ export function probe(): Promise<boolean> {
   if (net.proxy()) return Promise.resolve(state === 'trusted');
   if (pending) return pending;
   pending = new Promise<boolean>((resolve) => {
-    let xhr: XMLHttpRequest;
+    const xhr = mozSystemXhr();
+    if (!xhr) {
+      resolve(false);
+      return;
+    }
     try {
-      xhr = new (XMLHttpRequest as any)({ mozSystem: true });
       xhr.open('HEAD', SIGNAL_CDNS[0] + '/', true);
       xhr.timeout = PROBE_TIMEOUT_MS;
     } catch {

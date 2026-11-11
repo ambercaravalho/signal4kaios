@@ -27,6 +27,7 @@ import { receivedMeta } from '../services/attachment-meta';
 import { groupIdFromMasterKey } from '../services/groups-v2';
 import { isValidLinkPreview } from '../services/link-previews';
 import { POLL_OPTIONS_MAX, POLL_QUESTION_MAX_RECEIVE, validPoll } from '../services/polls';
+import { isUuid } from '../validate';
 import { create, fromBinary, num, readDelimited, serviceIdFrom } from './proto';
 import {
   archiveSession,
@@ -77,12 +78,11 @@ export interface IncomingEnvelope {
 }
 
 const MAX_REPORT_TOKEN_BYTES = 1024;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Signal-Desktop `fromPniUuidBytesOrUntaggedString`: 16 raw bytes, or a UUID string with or without the `PNI:` tag. */
 export function updatedPniFrom(str: string | undefined, binary: Uint8Array | undefined): string | undefined {
   const id = binary && binary.length === 16 ? bytesToUuid(binary) : (str || '').replace(/^PNI:/, '');
-  return UUID_RE.test(id) ? id.toLowerCase() : undefined;
+  return isUuid(id) ? id.toLowerCase() : undefined;
 }
 
 export function attachmentCdnKey(att: AttachmentPointer): string {

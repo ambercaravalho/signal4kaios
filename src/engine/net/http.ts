@@ -14,6 +14,16 @@ export const SIGNAL_CDNS: Record<number, string> = {
   3: 'https://cdn3.signal.org',
 };
 
+export interface BasicAuth {
+  username: string;
+  password: string;
+}
+
+/** SECURITY-REVIEW: the linked device's chat-server login, `aci.deviceId` with the device password; send it only to Signal's chat server. */
+export function accountBasicAuth(acc: { aci: string; deviceId: number; password: string }): BasicAuth {
+  return { username: `${acc.aci}.${acc.deviceId}`, password: acc.password };
+}
+
 export type SignalHttpJsonFn = (
   method: string,
   path: string,
@@ -22,7 +32,7 @@ export type SignalHttpJsonFn = (
   opts?: {
     baseUrl?: string;
     noAuth?: boolean;
-    basicAuth?: { username: string; password: string };
+    basicAuth?: BasicAuth;
     headers?: Record<string, string>;
     timeout?: number;
     binary?: boolean;

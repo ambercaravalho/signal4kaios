@@ -16,7 +16,7 @@ import { libsignal } from '../protocol/libsignal';
 import { generateKyberPreKeys, generateOneTimePreKeys, generateSignedPreKey, ONE_TIME_PRE_KEY_COUNT } from '../protocol/prekeys';
 import { create, decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, fromBinary, serviceIdFrom, toBinary } from './proto';
 import type { AccountCredentials, KeyPair, SignalProtocolStore } from '../protocol/store';
-import { DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SIGNAL_USER_AGENT, SignalHttpJsonFn } from './http';
+import { accountBasicAuth, DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SIGNAL_USER_AGENT, SignalHttpJsonFn } from './http';
 import { net, SOCKET_OPEN, SocketLike } from './transport';
 
 /** Signal-Desktop `getCapabilities` for a linked device without a PIN. */
@@ -173,7 +173,7 @@ async function finishLinking(
   if (pni && pniIdentity) await store.saveIdentity('PNI:' + pni, pniIdentity.pubKey);
 
   if (onStatus) onStatus('Uploading PreKeys\u2026');
-  const auth = { username: `${aci}.${creds.deviceId}`, password };
+  const auth = accountBasicAuth({ aci, deviceId: creds.deviceId, password });
   await httpRequest(
     'PUT',
     '/v2/keys?identity=aci',

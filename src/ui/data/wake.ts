@@ -4,7 +4,10 @@ import { config } from './config';
 import { dbg } from './log';
 import { hasServiceWorker } from './platform';
 
-const WAKE_CACHE = 's4k-wake';
+/** Cache Storage shared with `src/app/sw.js`; the name is kept from 2.0.x. */
+export const WAKE_CACHE = 's4k-wake';
+/** The `alarm` system message type `sw.js` relays to the app. */
+export const WAKE_ALARM = 's4k-wake';
 const LEGACY_CREDENTIALS_KEY = '/__s4k_wake_cfg';
 
 function ensurePermission(): Promise<string> {

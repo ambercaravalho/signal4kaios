@@ -68,7 +68,7 @@ import { previewFieldsForSend } from './services/link-previews';
 import { deleteUsername as deleteAccountUsername, setUsername as setAccountUsername, usernameLinkUrl } from './services/usernames';
 import { SenderKeyGroup, SignalClient } from './net/client';
 import { endorsesAll, loadGroupSendEndorsements } from './services/group-send';
-import { DEFAULT_SIGNAL_SERVER } from './net/http';
+import { accountBasicAuth, DEFAULT_SIGNAL_SERVER } from './net/http';
 import { net } from './net/transport';
 import { DecryptedEnvelope, IncomingEnvelope, parseContactsSyncBlob } from './net/receive';
 import { applyPniChangeNumber, NumberChange } from './services/change-number';
@@ -648,7 +648,7 @@ async function refreshOwnDeviceName(): Promise<void> {
   const acc = await store.getAccount();
   if (!acc) return;
   // SECURITY-REVIEW: the device list is fetched with this device's credentials; the name is decrypted with our ACI identity key, which stays in the protocol store.
-  const res = await httpJson('GET', '/v1/devices', null, { basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password } });
+  const res = await httpJson('GET', '/v1/devices', null, { basicAuth: accountBasicAuth(acc) });
   const devices: any[] = res && Array.isArray(res.devices) ? res.devices : [];
   const ours = devices.find((d) => d && d.id === acc.deviceId);
   if (!ours || typeof ours.name !== 'string' || !ours.name) return;
@@ -677,7 +677,7 @@ async function applyOwnKeyChanges(res: DecryptedEnvelope): Promise<void> {
   const acc = await store.getAccount();
   if (!acc || !acc.pniIdentityKeyPair) return;
   const pniKeys = acc.pniIdentityKeyPair;
-  const basicAuth = { username: `${acc.aci}.${acc.deviceId}`, password: acc.password };
+  const basicAuth = accountBasicAuth(acc);
   generatePreKeyUpload(store, 'pni', pniKeys)
     .then((body) => httpJson('PUT', '/v2/keys?identity=pni', body, { basicAuth }))
     .catch((e: any) => host().dbg('sync: PNI PreKey upload after the number change failed: ' + (e && e.message)));
@@ -836,7 +836,7 @@ export const signalBridge = {
   async replenishPreKeys(): Promise<void> {
     const acc = await store.getAccount();
     if (!acc) return;
-    const basicAuth = { username: `${acc.aci}.${acc.deviceId}`, password: acc.password };
+    const basicAuth = accountBasicAuth(acc);
     await httpJson('PUT', '/v2/keys?identity=aci', await generatePreKeyUpload(store, 'aci', acc.aciIdentityKeyPair), { basicAuth });
     if (acc.pniIdentityKeyPair) {
       await httpJson('PUT', '/v2/keys?identity=pni', await generatePreKeyUpload(store, 'pni', acc.pniIdentityKeyPair), { basicAuth }).catch(() => {});
@@ -1729,7 +1729,7 @@ export const signalBridge = {
     let preKeys: { ec: number; kyber: number } | null = null;
     if (acc) {
       try {
-        const res = await httpJson('GET', '/v2/keys?identity=aci', null, { basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password } });
+        const res = await httpJson('GET', '/v2/keys?identity=aci', null, { basicAuth: accountBasicAuth(acc) });
         preKeys = { ec: Number(res && res.count) || 0, kyber: Number(res && res.pqCount) || 0 };
       } catch (e: any) {
         host().dbg('PreKey count failed: ' + (e && e.message));

@@ -1,7 +1,8 @@
 import type { VNode } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useFocusScroll } from '../app/focus';
-import { useStoreEvent, useStoreEvents } from '../app/hooks';
+import { useObjectUrl, useStoreEvent, useStoreEvents } from '../app/hooks';
+import { attachmentIcon } from '../components/attachment-icon';
 import { router, useIsTop, useKeys, useOnResume, useSoftkeys } from '../app/router';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { pickEmoji, pickReaction } from '../components/Emoji';
@@ -70,7 +71,7 @@ function authorName(m: Message): string {
 }
 
 function quoteAuthorName(author: string): string {
-  return author === store.selfNumber() || author === config.aci() ? S.you : store.displayName(author);
+  return store.isSelf(author) ? S.you : store.displayName(author);
 }
 
 function attachmentAction(att: Attachment): string {
@@ -82,26 +83,14 @@ function attachmentAction(att: Attachment): string {
   return S.openFile;
 }
 
-function isMe(id: string): boolean {
-  return id === store.selfNumber() || (!!config.aci() && id === config.aci());
-}
-
 /** Only admins can send in an announcement-only group. */
 function canSendIn(group: GroupDetail | null): boolean {
   if (!group || !group.permissions || group.permissions.send_messages !== 'only-admins') return true;
-  return (group.admins || []).some(isMe);
+  return (group.admins || []).some(store.isSelf);
 }
 
 function quoteText(q: Quote): string {
   return q.text || store.attachmentLabel(q.attachments) || S.photo;
-}
-
-export function attachmentIcon(att: Pick<Attachment, 'contentType'> & Partial<Attachment>): string {
-  const t = att.contentType || '';
-  if (att.voiceNote || t.indexOf('audio/') === 0) return 'mic';
-  if (t.indexOf('video/') === 0) return 'play';
-  if (t.indexOf('image/') === 0) return 'photo';
-  return 'file';
 }
 
 function StatusIcon(props: { status: MessageStatus }) {
@@ -117,16 +106,13 @@ function StatusIcon(props: { status: MessageStatus }) {
 function AttachmentView(props: { att: Attachment; meta?: VNode | null; photoOnly?: boolean }) {
   const { att } = props;
   const ref = useRef<HTMLDivElement>(null);
-  const [url, setUrl] = useState<string | null>(null);
+  const [url, showBlob] = useObjectUrl(att.id);
   useEffect(() => {
     if (!isImage(att) || att.viewOnce || !att.id) return;
     let live = true;
-    let obj: string | null = null;
     let io: IntersectionObserver | null = null;
     const show = (b: Blob | null) => {
-      if (!live || !b) return;
-      obj = URL.createObjectURL(b);
-      setUrl(obj);
+      if (live && b) showBlob(b);
     };
     cachedAttachment(att).then((b) => {
       if (b) return show(b);
@@ -148,7 +134,6 @@ function AttachmentView(props: { att: Attachment; meta?: VNode | null; photoOnly
     return () => {
       live = false;
       if (io) io.disconnect();
-      if (obj) URL.revokeObjectURL(obj);
     };
   }, [att.id]);
   if (url)
@@ -885,7 +870,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   }
 
   function canAdminDelete(m: Message): boolean {
-    return m.incoming && !m.deleted && !m.notice && !!group && (group.admins || []).some(isMe) && Date.now() - m.timestamp < store.ADMIN_DELETE_MAX_AGE;
+    return m.incoming && !m.deleted && !m.notice && !!group && (group.admins || []).some(store.isSelf) && Date.now() - m.timestamp < store.ADMIN_DELETE_MAX_AGE;
   }
 
   async function showPinned(): Promise<void> {

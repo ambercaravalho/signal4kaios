@@ -1,41 +1,37 @@
 import { useEffect, useState } from 'preact/hooks';
+import { useObjectUrl } from '../app/hooks';
 import { router } from '../app/router';
+import { attachmentIcon } from '../components/attachment-icon';
 import { Icon } from '../components/Icon';
 import { EmptyState, Spinner } from '../components/List';
 import { Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
 import { cachedAttachment, isImage } from '../data/attachments';
-import { config } from '../data/config';
 import { fmtTime } from '../data/format';
 import * as store from '../data/store';
 import type { Attachment, Message } from '../data/types';
 import { S } from '../strings';
-import { attachmentIcon } from './Chat';
 import { ViewerScreen } from './Viewer';
 
 /** A downloaded photo as a small square; anything else as its type icon. */
 function Thumb(props: { att: Attachment }) {
   const { att } = props;
-  const [url, setUrl] = useState<string | null>(null);
+  const [url, show] = useObjectUrl(att.id);
   useEffect(() => {
     if (!isImage(att)) return;
     let live = true;
-    let obj: string | null = null;
     cachedAttachment(att).then((b) => {
-      if (!live || !b) return;
-      obj = URL.createObjectURL(b);
-      setUrl(obj);
+      if (live && b) show(b);
     });
     return () => {
       live = false;
-      if (obj) URL.revokeObjectURL(obj);
     };
   }, [att.id]);
   return <span class="media-thumb">{url ? <img class="media-thumb-img" src={url} alt="" /> : <Icon name={attachmentIcon(att)} />}</span>;
 }
 
 function senderName(m: Message): string {
-  return !m.incoming || m.author === store.selfNumber() || m.author === config.aci() ? S.you : store.displayName(m.author);
+  return !m.incoming || store.isSelf(m.author) ? S.you : store.displayName(m.author);
 }
 
 /** A chat's photos, videos, voice messages, and files, newest first. OK opens one in the viewer. */

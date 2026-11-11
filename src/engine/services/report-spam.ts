@@ -1,7 +1,7 @@
 /* Reporting a message request as spam, ported from Signal-Desktop's reportSpamJobQueue and WebAPI reportMessage. */
 
 import type { SignalHttpJsonFn } from '../net/http';
-import { DEFAULT_SIGNAL_SERVER } from '../net/http';
+import { accountBasicAuth, DEFAULT_SIGNAL_SERVER } from '../net/http';
 import { isAci } from '../net/proto';
 import type { SignalProtocolStore } from '../protocol/store';
 
@@ -23,7 +23,7 @@ export async function reportSpam(
   const acc = await store.getAccount();
   if (!acc) throw new Error('Not linked');
   // SECURITY-REVIEW: device credentials authenticate the report calls; never log them or the reporting token.
-  const opts = { baseUrl: serverUrl, basicAuth: { username: `${acc.aci}.${acc.deviceId}`, password: acc.password }, timeout: 15000 };
+  const opts = { baseUrl: serverUrl, basicAuth: accountBasicAuth(acc), timeout: 15000 };
   await Promise.all(guids.map((guid) => httpJson('POST', `/v1/messages/report/${aci}/${guid}`, token ? { token } : {}, opts)));
   return guids.length;
 }

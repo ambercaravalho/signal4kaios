@@ -39,7 +39,7 @@ import {
   SenderKeyDevice,
 } from '../services/group-send';
 import type { SignalProtocolStore } from '../protocol/store';
-import { DEFAULT_SIGNAL_SERVER, SIGNAL_CDNS, SignalHttpBinaryFn, SignalHttpJsonFn, SignalHttpRawFn } from './http';
+import { accountBasicAuth, DEFAULT_SIGNAL_SERVER, SIGNAL_CDNS, SignalHttpBinaryFn, SignalHttpJsonFn, SignalHttpRawFn } from './http';
 import { isAci } from './proto';
 import { AttachmentDescriptor, attachmentCdnKey, decodeAttachmentDescriptor, decryptEnvelope, DecryptedEnvelope, DecryptFailure } from './receive';
 import type { TrustLevel } from '../protocol/store';
@@ -163,8 +163,7 @@ export class SignalClient {
     const acc = await this.store.getAccount();
     if (!acc) throw new Error('This phone is not linked to a Signal account');
     return {
-      username: `${acc.aci}.${acc.deviceId}`,
-      password: acc.password,
+      ...accountBasicAuth(acc),
       aci: acc.aci,
       number: acc.number,
       deviceId: acc.deviceId,

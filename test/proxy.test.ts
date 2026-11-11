@@ -2,8 +2,9 @@ import './ui-env';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { concatBytes } from '../src/engine/bytes';
 import { createNet, net } from '../src/engine/net/transport';
-import { ByteStream, concatBytes, Connector } from '../src/engine/net/transport/stream';
+import { ByteStream, Connector } from '../src/engine/net/transport/stream';
 import { TlsSession } from '../src/engine/net/transport/tls-stream';
 import { config } from '../src/ui/data/config';
 import * as nativeTls from '../src/ui/data/nativeTls';

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { useObjectUrl } from '../app/hooks';
 import { useKeys, useSoftkeys } from '../app/router';
 import { Icon } from '../components/Icon';
 import { Spinner } from '../components/List';
@@ -17,7 +18,7 @@ import { S } from '../strings';
 export function ViewerScreen(props: { att: Attachment; title: string; onOpened?: () => void }) {
   const { att } = props;
   const [blob, setBlob] = useState<Blob | null>(null);
-  const [url, setUrl] = useState<string | null>(null);
+  const [url, showBlob] = useObjectUrl(att.id);
   const [error, setError] = useState('');
   const [playing, setPlaying] = useState(false);
   const media = useRef<HTMLMediaElement | null>(null);
@@ -25,13 +26,11 @@ export function ViewerScreen(props: { att: Attachment; title: string; onOpened?:
 
   useEffect(() => {
     let live = true;
-    let obj: string | null = null;
     loadAttachment(att).then(
       (b) => {
         if (!live) return;
-        obj = URL.createObjectURL(b);
         setBlob(b);
-        setUrl(obj);
+        showBlob(b);
         if (props.onOpened) props.onOpened();
       },
       (e) => {
@@ -44,7 +43,6 @@ export function ViewerScreen(props: { att: Attachment; title: string; onOpened?:
     return () => {
       live = false;
       if (media.current) media.current.pause();
-      if (obj) URL.revokeObjectURL(obj);
     };
   }, [att.id]);
 

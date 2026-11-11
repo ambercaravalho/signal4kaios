@@ -1,6 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { useEffect, useState } from 'preact/hooks';
 import { fromBase64, uuidToBytes } from '../../engine/bytes';
+import { isUuid } from '../../engine/validate';
 import { signal } from '../data/api';
 import { db } from '../data/db';
 import { initials } from '../data/format';
@@ -28,7 +29,6 @@ export const AVATAR_COLORS: Array<[string, string]> = [
   ['#d7d7d9', '#5c5c5c'],
 ];
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const colorMemo: Record<string, number> = {};
 
 /** Port of Signal-Desktop's `getIdentifierHash` / `generateAvatarColor` (ts/Crypto.node.ts): SHA-256 of the ACI's binary form, else the number's UTF-8, else the group ID's bytes; the first byte picks the color. */
@@ -37,7 +37,7 @@ export function avatarColorIndex(id: { aci?: string; e164?: string; groupId?: st
   if (key in colorMemo) return colorMemo[key];
   let bytes: Uint8Array | null = null;
   try {
-    if (id.aci && UUID_RE.test(id.aci)) bytes = uuidToBytes(id.aci);
+    if (id.aci && isUuid(id.aci)) bytes = uuidToBytes(id.aci);
     else if (id.e164) bytes = new TextEncoder().encode(id.e164);
     else if (id.groupId) bytes = fromBase64(id.groupId);
   } catch {
@@ -51,7 +51,7 @@ export function avatarColorIndex(id: { aci?: string; e164?: string; groupId?: st
 function avatarColorFor(conv: Pick<Conversation, 'id' | 'type' | 'groupInternalId'>): number {
   if (conv.type === 'group') return avatarColorIndex({ groupId: conv.groupInternalId });
   const c = contactByKey(conv.id);
-  const aci = (c && c.uuid) || (UUID_RE.test(conv.id) ? conv.id : '');
+  const aci = (c && c.uuid) || (isUuid(conv.id) ? conv.id : '');
   return avatarColorIndex({ aci, e164: aci ? undefined : (c && c.number) || conv.id });
 }
 

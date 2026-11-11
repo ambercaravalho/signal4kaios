@@ -1,6 +1,7 @@
 /** Minimal HTTP/1.1 client over a `ByteStream`, with a small keep-alive pool per host. Responses are untrusted input: sizes are capped and malformed framing fails the request. */
 
-import { ByteStream, concatBytes, Connector, TransportError, writeAll } from './stream';
+import { concatBytes } from '../../bytes';
+import { ByteStream, Connector, TransportError, writeAll } from './stream';
 
 export interface HttpRequest {
   method: string;

@@ -5,8 +5,7 @@ import type { IncomingEnvelope } from '../net/receive';
 import { libsignal } from '../protocol/libsignal';
 import { skipPreKeyIds } from '../protocol/prekeys';
 import type { SignalProtocolStore } from '../protocol/store';
-
-const E164_RE = /^\+[1-9][0-9]{6,14}$/;
+import { E164_RE } from '../validate';
 
 export interface NumberChange {
   number: string;

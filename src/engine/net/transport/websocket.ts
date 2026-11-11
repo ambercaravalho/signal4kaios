@@ -2,9 +2,9 @@
 
 import { sha1 } from '@noble/hashes/legacy.js';
 
-import { toBase64 } from '../../bytes';
+import { concatBytes, toBase64 } from '../../bytes';
 import { parseHttpsUrl, parseResponseHead, buildRequestHead } from './http1';
-import { ByteStream, concatBytes, Connector, TransportError } from './stream';
+import { ByteStream, Connector, TransportError } from './stream';
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;

@@ -7,6 +7,7 @@ import * as nativeTls from './nativeTls';
 import { scheduleAlarm } from './platform';
 import { ingestRaw, refreshDirectory, setConnection } from './store';
 import type { SocketLike } from '../../engine/net/transport';
+import { WAKE_ALARM } from './wake';
 
 const CLOSE_UNAUTHORIZED = 4001;
 const CLOSE_FORBIDDEN = 4003;
@@ -59,7 +60,7 @@ function sendAck(reqId: bigint | undefined): void {
 }
 
 function scheduleWakeAlarm(): void {
-  scheduleAlarm(new Date(Date.now() + WAKE_ALARM_MS), { type: 's4k-wake' }).catch((e) => dbg('ws: could not schedule wake alarm ' + (e && e.message)));
+  scheduleAlarm(new Date(Date.now() + WAKE_ALARM_MS), { type: WAKE_ALARM }).catch((e) => dbg('ws: could not schedule wake alarm ' + (e && e.message)));
 }
 
 function startHeartbeat(): void {
@@ -240,7 +241,7 @@ export function installWakeHandlers(): void {
   if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
     navigator.serviceWorker.addEventListener('message', (evt) => {
       const data = evt && evt.data;
-      if (data && data.type === 's4k-wake') {
+      if (data && data.type === WAKE_ALARM) {
         dbg('ws: wake alarm');
         wakeIfClosed();
         scheduleWakeAlarm();

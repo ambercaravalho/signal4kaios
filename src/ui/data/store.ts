@@ -64,6 +64,11 @@ function self(): string {
   return config.number();
 }
 
+/** Whether `key` (a number, an ACI, or a contact key) is us. */
+export function isSelf(key: string | undefined): boolean {
+  return !!key && isSelfKey(key);
+}
+
 function isSelfKey(key: string): boolean {
   const n = config.number();
   const aci = config.aci();
@@ -615,6 +620,10 @@ export async function refreshDirectory(): Promise<boolean> {
 type SendPayload = Parameters<typeof signal.send>[0];
 type SendMeta = NonNullable<NonNullable<SendPayload['attachment_meta']>[number]>;
 
+function basePayload(conv: Conversation, message: string): SendPayload {
+  return { recipients: [conv.sendId!], message, expire_timer: conv.expireTimer || 0 };
+}
+
 function sendCore(conv: Conversation, rec: Message, payload: SendPayload, preview: string): Promise<Message> {
   db.putMessage(rec);
   conv.lastTs = rec.timestamp;
@@ -734,7 +743,7 @@ export function sendText(convId: string, text: string, quote?: Quote | null, men
     const wire = encodeMentions(st.body, st.styles, mentions);
     const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, quote: quote || null });
     if (wire.mentions.length) rec.mentions = mentions;
-    const payload: SendPayload = { recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0 };
+    const payload: SendPayload = { ...basePayload(conv, wire.body), styles: wire.styles, mentions: wire.mentions };
     addQuote(payload, quote);
     if (preview && isValidLinkPreview(preview.url, wire.body)) {
       payload.preview = { url: preview.url, title: preview.title, description: preview.description, date: preview.date, image: preview.image ? imageDataUri(preview.image) : undefined };
@@ -815,7 +824,7 @@ export function sendAttachments(convId: string, files: OutgoingFile[], caption: 
   return withDefaultTimer(conv, () => {
     const st = styled(text);
     const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: atts, quote: opts.quote || null });
-    const payload: SendPayload = { recipients: [conv.sendId!], message: st.body, styles: st.styles, expire_timer: conv.expireTimer || 0, base64_attachments: files.map((f) => f.dataUri) };
+    const payload: SendPayload = { ...basePayload(conv, st.body), styles: st.styles, base64_attachments: files.map((f) => f.dataUri) };
     const meta = files.map(outgoingMeta);
     if (meta.some(Boolean)) payload.attachment_meta = meta;
     if (opts.viewOnce) payload.view_once = true;
@@ -833,7 +842,7 @@ export function sendEdit(rec: Message, newText: string, mentions: PickedMention[
   }
   const st = styled(newText);
   const wire = encodeMentions(st.body, st.styles, mentions);
-  return signal.send({ recipients: [conv.sendId!], message: wire.body, styles: wire.styles, mentions: wire.mentions, expire_timer: conv.expireTimer || 0, edit_timestamp: rec.timestamp }).then((res) => {
+  return signal.send({ ...basePayload(conv, wire.body), styles: wire.styles, mentions: wire.mentions, edit_timestamp: rec.timestamp }).then((res) => {
     keepVersion(rec);
     rec.editedAt = (res && res.timestamp) || Date.now();
     rec.body = st.body;
@@ -860,7 +869,7 @@ export function forwardMessage(convId: string, m: Message, dataUri?: string): Pr
   const attachments: Attachment[] = src ? [localAttachment({ dataUri: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: src.voiceNote, waveform: src.waveform, duration: src.duration, blurHash: src.blurHash, width: src.width, height: src.height })] : [];
   return withDefaultTimer(conv, () => {
     const rec = newOutgoingRec(conv, { body: m.body, styles: m.styles || [], attachments });
-    const payload: SendPayload = { recipients: [conv.sendId!], message: m.body, styles: m.styles || [], expire_timer: conv.expireTimer || 0 };
+    const payload: SendPayload = { ...basePayload(conv, m.body), styles: m.styles || [] };
     if (dataUri) payload.base64_attachments = [dataUri];
     const meta = src && outgoingMeta(src);
     if (meta) payload.attachment_meta = [meta];
@@ -1107,7 +1116,7 @@ export function sendPoll(convId: string, question: string, options: string[], al
   }
   if (conv.type !== 'group') return Promise.reject(new Error('Polls only work in groups'));
   const rec = newOutgoingRec(conv, { poll: { question, options, allowMultiple, votes: {} } });
-  const payload: SendPayload = { recipients: [conv.sendId!], message: '', expire_timer: conv.expireTimer || 0, poll: { question, options, allow_multiple: allowMultiple } };
+  const payload: SendPayload = { ...basePayload(conv, ''), poll: { question, options, allow_multiple: allowMultiple } };
   return sendCore(conv, rec, payload, previewOf(rec));
 }
 
@@ -1191,60 +1200,71 @@ export function adminDelete(rec: Message): Promise<void> {
   if (!conv || conv.type !== 'group' || !conv.sendId) return Promise.reject(new Error('group not ready'));
   return signal.sendAdminDelete(conv.sendId, rec.author, rec.timestamp).then(() => {
     markAdminDeleted(rec);
-    db.putMessage(rec);
-    emit('message-updated', rec, undefined);
+    saveShown(rec);
   });
+}
+
+function saveShown(rec: Message): void {
+  db.putMessage(rec);
+  emit('message-updated', rec, undefined);
+}
+
+/** Shows `apply` at once and undoes it with `revert` if `send` fails. */
+function optimisticUpdate(rec: Message, apply: () => void, revert: () => void, send: () => Promise<unknown>): Promise<void> {
+  apply();
+  saveShown(rec);
+  return send().then(
+    () => undefined,
+    (err) => {
+      revert();
+      saveShown(rec);
+      throw err;
+    }
+  );
+}
+
+function sendIdFor(rec: Message): string | null {
+  const conv = convs[rec.convId];
+  return (conv && conv.sendId) || null;
 }
 
 export function reactTo(rec: Message, emoji: string | null): Promise<void> {
-  const conv = convs[rec.convId];
-  if (!conv || !conv.sendId) return Promise.reject(new Error('group not ready'));
+  const sendId = sendIdFor(rec);
+  if (!sendId) return Promise.reject(new Error('group not ready'));
   const me = self();
-  const target = rec.incoming ? rec.author : me;
-  rec.reactions = rec.reactions || {};
-  const prev = rec.reactions[me] || null;
-  if (emoji) rec.reactions[me] = emoji;
-  else delete rec.reactions[me];
-  db.putMessage(rec);
-  emit('message-updated', rec, undefined);
-  return signal.sendReaction(conv.sendId, target, rec.timestamp, emoji || prev || '', !emoji).catch((err) => {
-    if (prev) rec.reactions[me] = prev;
-    else delete rec.reactions[me];
-    db.putMessage(rec);
-    emit('message-updated', rec, undefined);
-    throw err;
-  });
+  const reactions = (rec.reactions = rec.reactions || {});
+  const prev = reactions[me] || null;
+  const put = (e: string | null) => (e ? (reactions[me] = e) : delete reactions[me]);
+  return optimisticUpdate(rec, () => put(emoji), () => put(prev), () => signal.sendReaction(sendId, rec.incoming ? rec.author : me, rec.timestamp, emoji || prev || '', !emoji));
 }
 
 export function deleteForEveryone(rec: Message): Promise<void> {
-  const conv = convs[rec.convId];
-  if (!conv || !conv.sendId) return Promise.reject(new Error('group not ready'));
-  return signal.sendRemoteDelete(conv.sendId, rec.timestamp).then(() => {
+  const sendId = sendIdFor(rec);
+  if (!sendId) return Promise.reject(new Error('group not ready'));
+  return signal.sendRemoteDelete(sendId, rec.timestamp).then(() => {
     rec.deleted = true;
     rec.body = '';
-    db.putMessage(rec);
-    emit('message-updated', rec, undefined);
+    saveShown(rec);
   });
 }
 
 /** Pin or unpin a message for everyone in the chat; reverts if sending fails. */
 export function setMessagePinned(rec: Message, pinned: boolean): Promise<void> {
-  const conv = convs[rec.convId];
-  if (!conv || !conv.sendId) return Promise.reject(new Error('group not ready'));
-  const target = rec.incoming ? rec.author : self();
-  rec.pinned = pinned;
-  db.putMessage(rec);
-  emit('message-updated', rec, undefined);
-  return signal.sendPin(conv.sendId, target, rec.timestamp, pinned).catch((err) => {
-    rec.pinned = !pinned;
-    db.putMessage(rec);
-    emit('message-updated', rec, undefined);
-    throw err;
-  });
+  const sendId = sendIdFor(rec);
+  if (!sendId) return Promise.reject(new Error('group not ready'));
+  return optimisticUpdate(rec, () => (rec.pinned = pinned), () => (rec.pinned = !pinned), () => signal.sendPin(sendId, rec.incoming ? rec.author : self(), rec.timestamp, pinned));
 }
 
 /* Local archive, mute, and pin changes are published to Storage Service; changes that came from there go through applyChatState and never echo back. */
-function syncChatState(conv: Conversation, fields: { archived?: boolean; muted?: boolean; markedUnread?: boolean; pinned?: boolean; mentionsIfMuted?: boolean }): void {
+interface ChatStateFields {
+  archived?: boolean;
+  muted?: boolean;
+  markedUnread?: boolean;
+  pinned?: boolean;
+  mentionsIfMuted?: boolean;
+}
+
+function syncChatState(conv: Conversation, fields: ChatStateFields): void {
   if (!conv.sendId) return;
   signal.syncChatState(Object.assign({ type: conv.type, sendId: conv.sendId }, fields)).catch((err) => dbg('chat state sync failed: ' + (err && err.message)));
 }
@@ -1302,42 +1322,30 @@ function unarchiveOnActivity(conv: Conversation): void {
   syncChatState(conv, { archived: false });
 }
 
-export function setArchived(convId: string, val: boolean): void {
-  const conv = convs[convId];
-  if (!conv || !!conv.archived === val) return;
-  conv.archived = val;
+/** A local chat-state change: saved, shown, and published to our other devices. */
+function changeChatState(conv: Conversation, fields: ChatStateFields): void {
+  Object.assign(conv, fields);
   persistConv(conv);
   emit('conversations');
-  syncChatState(conv, { archived: val });
+  syncChatState(conv, fields);
 }
 
-export function setMuted(convId: string, val: boolean): void {
+type ChatFlag = 'archived' | 'muted' | 'markedUnread' | 'pinned';
+
+function setChatFlag(convId: string, flag: ChatFlag, val: boolean): void {
   const conv = convs[convId];
-  if (!conv || !!conv.muted === val) return;
-  conv.muted = val;
-  persistConv(conv);
-  emit('conversations');
-  syncChatState(conv, { muted: val });
+  if (conv && !!conv[flag] !== val) changeChatState(conv, { [flag]: val });
 }
+
+export const setArchived = (convId: string, val: boolean): void => setChatFlag(convId, 'archived', val);
+export const setMuted = (convId: string, val: boolean): void => setChatFlag(convId, 'muted', val);
+/** Flag a chat as unread without touching its messages, as Signal's "Mark as unread". */
+export const setMarkedUnread = (convId: string, val: boolean): void => setChatFlag(convId, 'markedUnread', val);
 
 /** Whether mentions of us notify while this group is muted, kept on the account's other devices too. */
 export function setMentionsIfMuted(convId: string, val: boolean): void {
   const conv = convs[convId];
-  if (!conv || conv.type !== 'group' || mentionsNotifyWhileMuted(conv) === val) return;
-  conv.mentionsIfMuted = val;
-  persistConv(conv);
-  emit('conversations');
-  syncChatState(conv, { mentionsIfMuted: val });
-}
-
-/** Flag a chat as unread without touching its messages, as Signal's "Mark as unread". */
-export function setMarkedUnread(convId: string, val: boolean): void {
-  const conv = convs[convId];
-  if (!conv || !!conv.markedUnread === val) return;
-  conv.markedUnread = val;
-  persistConv(conv);
-  emit('conversations');
-  syncChatState(conv, { markedUnread: val });
+  if (conv && conv.type === 'group' && mentionsNotifyWhileMuted(conv) !== val) changeChatState(conv, { mentionsIfMuted: val });
 }
 
 /** Pin a chat to the top of the list; false when Signal's limit is reached. */
@@ -1345,10 +1353,7 @@ export function setConvPinned(convId: string, val: boolean): boolean {
   const conv = convs[convId];
   if (!conv || !!conv.pinned === val) return true;
   if (val && Object.values(convs).filter((c) => c.pinned).length >= MAX_PINNED_CHATS) return false;
-  conv.pinned = val;
-  persistConv(conv);
-  emit('conversations');
-  syncChatState(conv, { pinned: val });
+  setChatFlag(convId, 'pinned', val);
   return true;
 }
 

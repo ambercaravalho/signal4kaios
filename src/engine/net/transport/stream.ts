@@ -24,15 +24,6 @@ export interface ByteStream {
 
 export type Connector = (host: string, port: number, timeoutMs: number) => Promise<ByteStream>;
 
-export function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
-  if (a.length === 0) return b;
-  if (b.length === 0) return a;
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a, 0);
-  out.set(b, a.length);
-  return out;
-}
-
 /** Writes `data` in slices, waiting for `onDrain` whenever the stream reports a full buffer. */
 export function writeAll(stream: ByteStream, data: Uint8Array, chunkSize = 64 * 1024): Promise<void> {
   return new Promise((resolve) => {
