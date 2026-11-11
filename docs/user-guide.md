@@ -111,13 +111,15 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 
 | Section | Items |
 | --- | --- |
-| **Profile** (top row) | Your name, About, and About emoji (Signal requires a name), Username, your **QR code or link**, and Delete username |
+| **Profile** (top row) | Your photo, name, About, and About emoji (Signal requires a name), Username, your **QR code or link**, and Delete username |
 | **Linked device** | Which number this phone is linked as, Sync with your phone, saved accounts (OK switches), Add account, Unlink this phone, and Delete all data |
 | **Chats** | Text formatting; Keep muted chats archived; Generate link previews |
 | **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Screen lock; Blocked; Proxy |
 | **Appearance** | Theme: light or dark |
 | **Help** | Version, User guide, Source code |
 | **Debug** | Technical details for troubleshooting (see below) |
+
+**Profile → Photo** picks a picture from the gallery or camera, crops the middle square, and saves it at 512 by 512 pixels; with a photo set, it offers **Choose photo** and **Remove photo**. Your photo is encrypted with your profile key like the rest of your profile, and your main phone and other devices pick up the change. A photo set on your main phone shows here too.
 
 **Usernames** have a name and a number, like `name.01`. Type just the name to get a number picked for you, or type the number you want.
 

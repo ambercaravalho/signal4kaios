@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { useStoreEvents } from '../app/hooks';
 import { router, useOnResume } from '../app/router';
 import { setTheme } from '../app/theme';
-import { Avatar } from '../components/Avatar';
+import { Avatar, OWN_PROFILE_PREFIX } from '../components/Avatar';
 import { Spinner } from '../components/List';
 import { pickEmoji } from '../components/Emoji';
 import { confirm, pick, prompt, showOptions } from '../components/Overlays';
@@ -14,7 +14,9 @@ import { signal, syncedContacts, syncedGroups, unlink, updateProfile } from '../
 import { config, type ThemeName } from '../data/config';
 import { db } from '../data/db';
 import { EXPIRE_OPTIONS, expireLabel } from '../data/format';
-import { appVersion, openUrl } from '../data/platform';
+import { squareGeometry, scaleToJpeg } from '../data/image-scale';
+import { loadOwnPhoto, ownPhotoChanged } from '../data/own-photo';
+import { appVersion, chooseFile, openUrl } from '../data/platform';
 import * as screenLock from '../data/screen-lock';
 import { activeProxy } from '../data/proxy';
 import { ProxyScreen } from './Proxy';
@@ -28,6 +30,7 @@ import { QrScreen } from './QrScreen';
 
 export const GUIDE_URL = 'https://github.com/ambercaravalho/signal4kaios/blob/main/docs/user-guide.md';
 export const SOURCE_URL = 'https://github.com/ambercaravalho/signal4kaios';
+const PROFILE_PHOTO_EDGE = 512;
 
 /** Re-render after changing a setting stored outside component state. */
 function useRefresh(): () => void {
@@ -52,7 +55,7 @@ export function SettingsScreen() {
   const name = selfName();
   const uname = config.username();
   const rows: Row[] = [
-    { key: 'profile', label: name || S.yourName, sub: uname ? '@' + uname : config.number(), leading: <Avatar conv={{ id: 'profile:' + config.number(), type: 'direct', name: name || config.number() }} />, end: 'chevron', onSelect: () => router.push(ProfileScreen, {}) },
+    { key: 'profile', label: name || S.yourName, sub: uname ? '@' + uname : config.number(), leading: <Avatar conv={{ id: OWN_PROFILE_PREFIX + config.number(), type: 'direct', name: name || config.number() }} />, end: 'chevron', onSelect: () => router.push(ProfileScreen, {}) },
     { section: '' },
     { key: 'linked', label: S.linkedDevice, icon: 'lock', end: 'chevron', onSelect: () => router.push(LinkedDeviceScreen, {}) },
     { key: 'chats', label: S.chatsSection, icon: 'note', end: 'chevron', onSelect: () => router.push(ChatsSettingsScreen, {}) },
@@ -93,6 +96,15 @@ export function ProfileScreen() {
   const about = config.profileAbout();
   const emoji = config.profileAboutEmoji();
   const uname = config.username();
+  const [hasPhoto, setHasPhoto] = useState(false);
+  const [savingPhoto, setSavingPhoto] = useState(false);
+  useEffect(() => {
+    let live = true;
+    loadOwnPhoto().then((url) => live && setHasPhoto(!!url));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   async function chooseEmoji(): Promise<void> {
     const e = await pickEmoji(S.aboutEmoji);
@@ -151,7 +163,48 @@ export function ProfileScreen() {
     );
   }
 
+  async function savePhoto(jpeg: Uint8Array | null): Promise<void> {
+    setSavingPhoto(true);
+    try {
+      await signal.setOwnAvatar(jpeg);
+      ownPhotoChanged();
+      setHasPhoto(!!jpeg);
+      toast(jpeg ? S.photoSaved : S.photoRemoved);
+    } catch (e) {
+      toast(friendlyError(e));
+    } finally {
+      setSavingPhoto(false);
+    }
+  }
+
+  async function choosePhoto(): Promise<void> {
+    const file = await chooseFile('image/*');
+    if (!file) return;
+    let jpeg: Uint8Array;
+    try {
+      jpeg = await scaleToJpeg(file, (w, h) => squareGeometry(w, h, PROFILE_PHOTO_EDGE), 0.85);
+    } catch {
+      toast(S.photoUnreadable);
+      return;
+    }
+    await savePhoto(jpeg);
+  }
+
+  function editPhoto(): void {
+    if (savingPhoto) return;
+    if (!hasPhoto) {
+      choosePhoto();
+      return;
+    }
+    showOptions([
+      { label: S.choosePhoto, onSelect: choosePhoto },
+      { label: S.removePhoto, danger: true, onSelect: () => savePhoto(null) },
+    ]);
+  }
+
+  const self = { id: OWN_PROFILE_PREFIX + config.number(), type: 'direct' as const, name: name || config.number() };
   const rows: Row[] = [
+    { key: 'photo', label: S.photo, sub: savingPhoto ? S.savingPhoto : hasPhoto ? undefined : S.usernameNone, leading: <Avatar conv={self} />, onSelect: editPhoto },
     { key: 'name', label: S.yourName, sub: name || S.usernameNone, onSelect: editName },
     { key: 'about', label: S.about, sub: about || S.usernameNone, onSelect: editAbout },
     { key: 'emoji', label: S.aboutEmoji, sub: emoji || S.usernameNone, onSelect: editEmoji },

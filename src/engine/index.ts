@@ -90,6 +90,10 @@ const MAX_DEVICE_NAME = 64;
 /** Signal-Desktop's composer limit. */
 const MAX_ATTACHMENTS = 32;
 
+const OWN_AVATAR_PATH = 'ownAvatarUrlPath';
+const OWN_AVATAR_CACHED_FOR = 'ownAvatarCachedFor';
+const OWN_AVATAR_CACHE = 'avatar:self';
+
 function parseDataUri(dataUri: string): { contentType: string; filename?: string; bytes: Uint8Array } {
   const comma = dataUri.indexOf(',');
   if (comma < 0) {
@@ -601,6 +605,7 @@ async function syncFromStorageService(): Promise<boolean> {
 
   if (res.account) {
     if (await adoptOwnProfileKey(store, res.account.profileKey)) host().dbg('storage: adopted the profile key from the account record');
+    await store.storeValue(OWN_AVATAR_PATH, res.account.avatarUrlPath || '');
     const patch: Record<string, any> = {};
     const fullName = [res.account.givenName, res.account.familyName].filter(Boolean).join(' ');
     if (fullName) patch.profileName = fullName;
@@ -1151,6 +1156,55 @@ export const signalBridge = {
     const blob = new Blob([ab], { type: 'image/jpeg' });
     await host().db.putAttachment('avatar:' + uuidOrNumber, blob, 'image/jpeg');
     return blob;
+  },
+
+  /** Our own profile photo, cached under `avatar:self` for the path it was downloaded from; null when we have none. */
+  async ownAvatarBlob(): Promise<Blob | null> {
+    const acc = await store.getAccount();
+    if (!acc || !acc.profileKey) return null;
+    let path = (await store.loadValue(OWN_AVATAR_PATH)) as string | undefined;
+    if (path === undefined) {
+      const prof = await fetchAndDecryptProfile(store, httpJson, acc.aci, acc.profileKey, serverUrl());
+      if (!prof) return null;
+      path = prof.avatarUrlPath || '';
+      await store.storeValue(OWN_AVATAR_PATH, path);
+    }
+    if (!path) return null;
+    if ((await store.loadValue(OWN_AVATAR_CACHED_FOR)) === path) {
+      const cached = await host().db.getAttachment(OWN_AVATAR_CACHE);
+      if (cached && cached.blob && cached.blob.size) return cached.blob;
+    }
+    const bytes = await downloadAndDecryptProfileAvatar(httpBinary, path, acc.profileKey);
+    const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: 'image/jpeg' });
+    await host().db.putAttachment(OWN_AVATAR_CACHE, blob, 'image/jpeg');
+    await store.storeValue(OWN_AVATAR_CACHED_FOR, path);
+    return blob;
+  },
+
+  /** Set our profile photo to `jpeg`, or remove it with null, like Signal-Desktop's `writeProfile`; the new path goes to `AccountRecord.avatarUrlPath` so our other devices pick it up. */
+  async setOwnAvatar(jpeg: Uint8Array | null): Promise<void> {
+    const res = await uploadOwnProfile(
+      store,
+      httpJson,
+      { name: host().config.profileName() || 'Signal User', sharePhoneNumber: host().config.sharePhoneNumber(), avatar: jpeg },
+      serverUrl(),
+      { httpBinary }
+    );
+    if (!res || res.avatarUrlPath === undefined) throw new Error('The profile was not written');
+    const path = res.avatarUrlPath || '';
+    if (jpeg) {
+      await host().db.putAttachment(OWN_AVATAR_CACHE, new Blob([jpeg.slice().buffer as ArrayBuffer], { type: 'image/jpeg' }), 'image/jpeg');
+      await store.storeValue(OWN_AVATAR_CACHED_FOR, path);
+    }
+    await store.storeValue(OWN_AVATAR_PATH, path);
+    await storageQueue.enqueue([
+      {
+        type: 'account',
+        update: (a) => {
+          a.avatarUrlPath = path;
+        },
+      },
+    ]);
   },
 
   async updateOwnProfile(body: { name?: string; about?: string; emoji?: string }): Promise<void> {

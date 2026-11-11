@@ -5,6 +5,7 @@ import { config } from './config';
 import { db } from './db';
 import { http } from './http';
 import { dbg } from './log';
+import { ownPhotoChanged } from './own-photo';
 import { applyChatState, ingestRaw, refreshDirectory } from './store';
 
 export function installEngineHost(): void {
@@ -19,7 +20,10 @@ export function installEngineHost(): void {
       set: (patch) => config.set(patch),
     },
     dbg: (msg) => dbg(msg),
-    directoryChanged: () => refreshDirectory(),
+    directoryChanged: () => {
+      ownPhotoChanged();
+      return refreshDirectory();
+    },
     applyChatState,
     ingest: (frame) => ingestRaw(frame),
   });

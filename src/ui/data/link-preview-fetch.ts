@@ -2,6 +2,7 @@
 
 import { toBase64 } from '../../engine/bytes';
 import { linksIn, shouldPreviewHref } from '../../engine/services/link-previews';
+import { fitGeometry, scaleToJpeg } from './image-scale';
 
 const MAX_HTML_BYTES = 1000 * 1024;
 const MAX_IMAGE_BYTES = 1024 * 1024;
@@ -225,33 +226,8 @@ function domParse(html: string): PreviewDocument {
 
 /** Desktop scales preview images down; this keeps the longest edge at 800 px as JPEG. */
 function canvasScale(image: PreviewImage): Promise<PreviewImage> {
-  return new Promise((resolvePromise, reject) => {
-    const url = URL.createObjectURL(new Blob([image.data as BlobPart], { type: image.contentType }));
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, SCALED_EDGE / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return reject(new Error('no canvas'));
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) return reject(new Error('encode failed'));
-          blob.arrayBuffer().then((buf) => resolvePromise({ data: new Uint8Array(buf), contentType: 'image/jpeg' }), reject);
-        },
-        'image/jpeg',
-        0.8
-      );
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('bad image'));
-    };
-    img.src = url;
-  });
+  const blob = new Blob([image.data as BlobPart], { type: image.contentType });
+  return scaleToJpeg(blob, (w, h) => fitGeometry(w, h, SCALED_EDGE)).then((data) => ({ data, contentType: 'image/jpeg' }));
 }
 
 const appDeps: PreviewDeps = { fetch: xhrFetch, parse: domParse, scale: canvasScale };

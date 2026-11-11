@@ -18,7 +18,7 @@ import { config } from '../data/config';
 import { db } from '../data/db';
 import { fmtBytes, fmtClock, fmtDay, fmtMsgTime } from '../data/format';
 import { fetchLinkPreview, previewCandidate, type FetchedPreview } from '../data/link-preview-fetch';
-import { openUrl } from '../data/platform';
+import { chooseFile, openUrl } from '../data/platform';
 import * as store from '../data/store';
 import { extractUrls, isJumboEmoji, type PickedMention } from '../data/styled';
 import type { Attachment, ContactCard, Conversation, LinkPreview, Message, MessageStatus, Notice, Poll, Quote } from '../data/types';
@@ -354,23 +354,6 @@ export function NoticeLine(props: { m: Message; focused: boolean }) {
       <span class="notice-time">{fmtClock(m.timestamp)}</span>
     </div>
   );
-}
-
-/** The OS picker on KaiOS already offers the camera, recorder, and gallery, so one file input covers photos, voice notes, and files. */
-function chooseFile(accept?: string): Promise<File | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    if (accept) input.accept = accept;
-    input.className = 'hidden';
-    document.body.appendChild(input);
-    input.addEventListener('change', () => {
-      const file = (input.files && input.files[0]) || null;
-      input.remove();
-      resolve(file);
-    });
-    input.click();
-  });
 }
 
 function canChange(m: Message): boolean {

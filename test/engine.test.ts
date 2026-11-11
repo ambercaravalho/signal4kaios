@@ -52,7 +52,7 @@ import {
 } from '../src/engine/gen/SignalStorage_pb';
 import { decodeGroupState, deriveGroupV2Keys, groupIdFromMasterKey, groupInviteLink, parseGroupLink } from '../src/engine/services/groups-v2';
 import { libsignal } from '../src/engine/protocol/libsignal';
-import { adoptOwnProfileKey, decryptProfile, decryptProfileName, encryptProfileName, uploadOwnProfile } from '../src/engine/services/profiles';
+import { adoptOwnProfileKey, avatarUploadBody, decryptProfile, decryptProfileName, encryptProfileName, uploadOwnProfile } from '../src/engine/services/profiles';
 import { create, fromBinary, serviceIdFrom, toBinary } from '../src/engine/net/proto';
 import {
   decryptStorageValue,
@@ -151,6 +151,106 @@ describe('Profiles (Signal-Desktop profile cipher)', () => {
     const bytes = await Promise.all(puts.map(async (b) => Array.from(await decryptProfile(fromBase64(b.phoneNumberSharing), profileKey))));
     assert.deepEqual(bytes, [[1], [0]]);
     assert.deepEqual(await decryptProfileName(puts[0].name, profileKey), { givenName: 'Amber', familyName: 'C', fullName: 'Amber C' });
+  });
+
+  describe('profile photo (Signal-Desktop writeProfile and uploadAvatar)', () => {
+    const FORM = { key: 'profiles/AbC_d-9', credential: 'AKIA/20261111/us-east-1/s3/aws4_request', acl: 'private', algorithm: 'AWS4-HMAC-SHA256', date: '20261111T120000Z', policy: 'eyJwb2xpY3kiOnRydWV9', signature: 'deadbeef' };
+
+    function setup(formResponse: unknown = FORM) {
+      const profileKey = randomBytes(32);
+      const store = new MemorySignalStore({
+        aci: ALICE,
+        number: '+15550001111',
+        deviceId: 2,
+        password: 'pw',
+        registrationId: 1,
+        pniRegistrationId: 2,
+        aciIdentityKeyPair: { pubKey: new Uint8Array(33), privKey: new Uint8Array(32) },
+        profileKey,
+      });
+      const puts: any[] = [];
+      const posts: Array<{ url: string; body: Uint8Array; headers: Record<string, string> }> = [];
+      const httpJson = async (method: string, _path: string, body: any) => {
+        if (method === 'GET') throw Object.assign(new Error('HTTP 404'), { status: 404 });
+        puts.push(body);
+        return body.avatar && !body.sameAvatar ? formResponse : null;
+      };
+      const httpBinary = async (method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>) => {
+        assert.equal(method, 'POST');
+        posts.push({ url, body: body!, headers: headers || {} });
+        return new Uint8Array(0);
+      };
+      return { profileKey, store, puts, posts, httpJson: httpJson as any, httpBinary };
+    }
+
+    it('keeps, replaces, or removes the photo with the avatar flags Desktop sends', async () => {
+      const t = setup();
+      assert.deepEqual(await uploadOwnProfile(t.store, t.httpJson, { name: 'Amber', sharePhoneNumber: false }), {});
+      const photo = randomBytes(3000);
+      const added = await uploadOwnProfile(t.store, t.httpJson, { name: 'Amber', sharePhoneNumber: false, avatar: photo }, undefined, { httpBinary: t.httpBinary });
+      assert.deepEqual(added, { avatarUrlPath: FORM.key });
+      assert.deepEqual(await uploadOwnProfile(t.store, t.httpJson, { name: 'Amber', sharePhoneNumber: false, avatar: null }), { avatarUrlPath: null });
+      assert.deepEqual(
+        t.puts.map((b) => [b.avatar, b.sameAvatar]),
+        [
+          [true, true],
+          [true, false],
+          [false, false],
+        ]
+      );
+      assert.equal(t.posts.length, 1, 'only a new photo is uploaded');
+    });
+
+    it('posts the form fields in Desktop’s order with the encrypted photo intact', async () => {
+      const t = setup();
+      const photo = randomBytes(5000);
+      await uploadOwnProfile(t.store, t.httpJson, { name: 'Amber', sharePhoneNumber: false, avatar: photo }, undefined, { httpBinary: t.httpBinary });
+      const { url, body, headers } = t.posts[0];
+      assert.equal(url, 'https://cdn.signal.org/');
+      const m = /^multipart\/form-data; boundary=(-{16}[0-9a-f]{32})$/.exec(headers['Content-Type']);
+      assert.ok(m, headers['Content-Type']);
+      const boundary = m![1];
+      const text = new TextDecoder('latin1').decode(body);
+      const names = Array.from(text.matchAll(/Content-Disposition: form-data; name="([^"]+)"/g)).map((x) => x[1]);
+      assert.deepEqual(names, ['key', 'x-amz-credential', 'acl', 'x-amz-algorithm', 'x-amz-date', 'policy', 'x-amz-signature', 'Content-Type', 'file']);
+      assert.ok(text.includes(`name="key"\r\n\r\n${FORM.key}\r\n--${boundary}`));
+      assert.ok(text.includes(`name="x-amz-signature"\r\n\r\n${FORM.signature}\r\n`));
+
+      const head = new TextEncoder().encode(`name="file"\r\nContent-Type: application/octet-stream\r\n\r\n`);
+      let start = -1;
+      for (let i = 0; i + head.length <= body.length && start < 0; i++) if (head.every((b, j) => body[i + j] === b)) start = i + head.length;
+      const tail = new TextEncoder().encode(`\r\n--${boundary}--\r\n`);
+      assert.deepEqual(body.subarray(body.length - tail.length), tail);
+      const encrypted = body.subarray(start, body.length - tail.length);
+      assert.equal(encrypted.length, 12 + photo.length + 16, 'the photo is encrypted without padding');
+      assert.deepEqual(await decryptProfile(encrypted, t.profileKey), photo);
+    });
+
+    it('rejects an upload form that could break out of its field', async () => {
+      for (const bad of [null, 'form', { ...FORM, key: undefined }, { ...FORM, policy: '' }, { ...FORM, acl: 'private\r\n--x' }, { ...FORM, signature: 'a b' }, { ...FORM, key: '../x' }, { ...FORM, key: '/profiles/x' }]) {
+        const t = setup(bad);
+        await assert.rejects(uploadOwnProfile(t.store, t.httpJson, { name: 'Amber', sharePhoneNumber: false, avatar: randomBytes(10) }, undefined, { httpBinary: t.httpBinary }), /avatar upload form/i, JSON.stringify(bad));
+        assert.equal(t.posts.length, 0);
+      }
+    });
+
+    it('lays out the multipart body exactly', () => {
+      const { body, contentType } = avatarUploadBody(FORM, new Uint8Array([1, 2, 3]), '0123456789abcdef0123456789abcdef');
+      const b = '----------------0123456789abcdef0123456789abcdef';
+      assert.equal(contentType, `multipart/form-data; boundary=${b}`);
+      const field = (n: string, v: string) => `--${b}\r\nContent-Disposition: form-data; name="${n}"\r\n\r\n${v}\r\n`;
+      const expected =
+        field('key', FORM.key) +
+        field('x-amz-credential', FORM.credential) +
+        field('acl', FORM.acl) +
+        field('x-amz-algorithm', FORM.algorithm) +
+        field('x-amz-date', FORM.date) +
+        field('policy', FORM.policy) +
+        field('x-amz-signature', FORM.signature) +
+        field('Content-Type', 'application/octet-stream') +
+        `--${b}\r\nContent-Disposition: form-data; name="file"\r\nContent-Type: application/octet-stream\r\n\r\n\x01\x02\x03\r\n--${b}--\r\n`;
+      assert.equal(new TextDecoder('latin1').decode(body), expected);
+    });
   });
 
   it('derives profile key versions, commitments, and access keys with zkgroup', () => {
@@ -395,6 +495,19 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
     const cache = (await store.loadValue('profileKeyCredentials')) as Record<string, unknown>;
     assert.deepEqual(Object.keys(cache), [BOB], 'our credential for the old key is dropped');
     assert.equal(await adoptOwnProfileKey(store, res!.account?.profileKey), false);
+  });
+
+  it('writes our profile photo path to the account record and reads it back', async () => {
+    const masterKey = randomBytes(32);
+    const store = storageStore(masterKey);
+    const srv = await serveStorage(masterKey);
+    await mutateStorage(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org', [{ type: 'account', update: (a) => { a.avatarUrlPath = 'profiles/abc_DEF-1'; } }]);
+    const account = fromBinary(StorageRecordSchema, await srv.readRecord(ManifestRecord_Identifier_Type.ACCOUNT)).record;
+    assert.equal(account.case, 'account');
+    assert.equal(account.value!.avatarUrlPath, 'profiles/abc_DEF-1');
+    assert.equal(account.value!.givenName, 'Me', 'the rest of the record is kept');
+    const res = await pullFromStorageService(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org');
+    assert.equal(res!.account?.avatarUrlPath, 'profiles/abc_DEF-1');
   });
 
   it('re-reads and retries after a 409, and skips no-op writes', async () => {

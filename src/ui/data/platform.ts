@@ -37,6 +37,23 @@ export function openUrl(url: string): Promise<void> {
   return openActivity('view', { type: 'url', url });
 }
 
+/** The OS picker on KaiOS already offers the camera, recorder, and gallery, so one file input covers photos, voice notes, and files. */
+export function chooseFile(accept?: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    if (accept) input.accept = accept;
+    input.className = 'hidden';
+    document.body.appendChild(input);
+    input.addEventListener('change', () => {
+      const file = (input.files && input.files[0]) || null;
+      input.remove();
+      resolve(file);
+    });
+    input.click();
+  });
+}
+
 /** Save a blob to "pictures", "music", "videos", or "sdcard". */
 export function saveToDevice(kind: string, blob: Blob, name: string): Promise<unknown> {
   const api = b2g();
