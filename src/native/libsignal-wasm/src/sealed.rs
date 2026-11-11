@@ -9,7 +9,8 @@ use libsignal_protocol::{
 use wasm_bindgen::prelude::*;
 
 use crate::store::{ProtocolStore, address, device_u32};
-use crate::{Obj, invalid, js_error, protocol_error, ready, rng, system_time};
+use crate::keys::public_key;
+use crate::{Obj, invalid, js_error, parse, protocol_error, ready, rng, system_time};
 
 /// Seals one SenderKeyMessage for many devices at once, for `PUT /v1/messages/multi_recipient`. `names[i]`/`devices[i]`
 /// is each recipient device; every one needs a session in the store. `group_id` (empty for none) and `content_hint` go
@@ -27,7 +28,7 @@ pub fn sealed_sender_multi_recipient_encrypt_js(
     if names.length() as usize != devices.len() || devices.is_empty() {
         return Err(invalid("names and devices must be the same non-empty length"));
     }
-    let certificate = SenderCertificate::deserialize(sender_certificate).map_err(protocol_error)?;
+    let certificate = parse::<SenderCertificate>(sender_certificate)?;
     let usmc = UnidentifiedSenderMessageContent::new(
         CiphertextMessageType::SenderKey,
         certificate,
@@ -74,7 +75,7 @@ pub fn sealed_sender_encrypt_js(
     plaintext: &[u8],
     now_millis: f64,
 ) -> Result<Vec<u8>, JsValue> {
-    let certificate = SenderCertificate::deserialize(sender_certificate).map_err(protocol_error)?;
+    let certificate = parse::<SenderCertificate>(sender_certificate)?;
     ready(sealed_sender_encrypt(
         &address(name, device)?,
         &certificate,
@@ -93,7 +94,7 @@ fn trust_roots(concatenated: &[u8]) -> Result<Vec<PublicKey>, JsValue> {
     }
     concatenated
         .chunks(33)
-        .map(|chunk| PublicKey::deserialize(chunk).map_err(|e| invalid(e)))
+        .map(public_key)
         .collect()
 }
 
@@ -137,7 +138,7 @@ pub fn sealed_sender_decrypt_to_usmc_js(
 /// certificate until shortly before it expires.
 #[wasm_bindgen(js_name = senderCertificateInfo)]
 pub fn sender_certificate_info(serialized: &[u8]) -> Result<JsValue, JsValue> {
-    let cert = SenderCertificate::deserialize(serialized).map_err(protocol_error)?;
+    let cert = parse::<SenderCertificate>(serialized)?;
     Ok(Obj::new()
         .set("senderUuid", cert.sender_uuid().map_err(protocol_error)?)
         .set(

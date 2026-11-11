@@ -8,22 +8,22 @@ use uuid::Uuid;
 use wasm_bindgen::prelude::*;
 
 use crate::store::{ProtocolStore, address};
-use crate::{invalid, protocol_error, ready, rng};
+use crate::{invalid, parse, protocol_error, ready, rng};
 
 fn distribution(id: &str) -> Result<Uuid, JsValue> {
-    Uuid::parse_str(id).map_err(|e| invalid(e))
+    Uuid::parse_str(id).map_err(invalid)
 }
 
 /// Distribution ID a SenderKeyMessage was encrypted under, so TypeScript can load the matching record.
 #[wasm_bindgen(js_name = senderKeyMessageDistributionId)]
 pub fn sender_key_message_distribution_id(body: &[u8]) -> Result<String, JsValue> {
-    let message = SenderKeyMessage::try_from(body).map_err(protocol_error)?;
+    let message = parse::<SenderKeyMessage>(body)?;
     Ok(message.distribution_id().to_string())
 }
 
 #[wasm_bindgen(js_name = senderKeyDistributionMessageDistributionId)]
 pub fn sender_key_distribution_message_distribution_id(body: &[u8]) -> Result<String, JsValue> {
-    let message = SenderKeyDistributionMessage::try_from(body).map_err(protocol_error)?;
+    let message = parse::<SenderKeyDistributionMessage>(body)?;
     Ok(message.distribution_id().map_err(protocol_error)?.to_string())
 }
 
@@ -34,7 +34,7 @@ pub fn process_sender_key_distribution_message_js(
     device: u32,
     body: &[u8],
 ) -> Result<(), JsValue> {
-    let message = SenderKeyDistributionMessage::try_from(body).map_err(protocol_error)?;
+    let message = parse::<SenderKeyDistributionMessage>(body)?;
     ready(process_sender_key_distribution_message(
         &address(name, device)?,
         &message,

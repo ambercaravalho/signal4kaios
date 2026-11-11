@@ -7,14 +7,14 @@ use libsignal_protocol::{
 use rand::Rng;
 use wasm_bindgen::prelude::*;
 
-use crate::{Obj, invalid, protocol_error, rng};
+use crate::{Obj, invalid, parse, protocol_error, rng};
 
-fn private_key(bytes: &[u8]) -> Result<PrivateKey, JsValue> {
-    PrivateKey::deserialize(bytes).map_err(|e| invalid(e))
+pub(crate) fn private_key(bytes: &[u8]) -> Result<PrivateKey, JsValue> {
+    PrivateKey::deserialize(bytes).map_err(invalid)
 }
 
-fn public_key(bytes: &[u8]) -> Result<PublicKey, JsValue> {
-    PublicKey::deserialize(bytes).map_err(|e| invalid(e))
+pub(crate) fn public_key(bytes: &[u8]) -> Result<PublicKey, JsValue> {
+    PublicKey::deserialize(bytes).map_err(invalid)
 }
 
 /// Generates an X25519 key pair: `{ publicKey (33 bytes), privateKey (32 bytes) }`.
@@ -27,32 +27,12 @@ pub fn key_pair_generate() -> JsValue {
         .build()
 }
 
-#[wasm_bindgen(js_name = publicKeyFromPrivate)]
-pub fn public_key_from_private(private: &[u8]) -> Result<Vec<u8>, JsValue> {
-    let key = private_key(private)?.public_key().map_err(|e| invalid(e))?;
-    Ok(key.serialize().into_vec())
-}
-
 #[wasm_bindgen(js_name = calculateAgreement)]
 pub fn calculate_agreement(their_public: &[u8], our_private: &[u8]) -> Result<Vec<u8>, JsValue> {
     let shared = private_key(our_private)?
         .calculate_agreement(&public_key(their_public)?)
-        .map_err(|e| invalid(e))?;
+        .map_err(invalid)?;
     Ok(shared.into_vec())
-}
-
-/// XEdDSA signature, exactly as libsignal computes it for identity and prekey signatures.
-#[wasm_bindgen(js_name = calculateSignature)]
-pub fn calculate_signature(private: &[u8], message: &[u8]) -> Result<Vec<u8>, JsValue> {
-    let sig = private_key(private)?
-        .calculate_signature(message, &mut rng())
-        .map_err(|e| invalid(e))?;
-    Ok(sig.into_vec())
-}
-
-#[wasm_bindgen(js_name = verifySignature)]
-pub fn verify_signature(public: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, JsValue> {
-    Ok(public_key(public)?.verify_signature(message, signature))
 }
 
 /// Registration IDs are 14-bit values in `1..=16383`, as Signal clients generate them.
@@ -83,7 +63,7 @@ pub fn signed_pre_key_record_generate(
     let pair = KeyPair::generate(&mut rng());
     let signature = identity
         .calculate_signature(&pair.public_key.serialize(), &mut rng())
-        .map_err(|e| invalid(e))?;
+        .map_err(invalid)?;
     let record = SignedPreKeyRecord::new(
         SignedPreKeyId::from(id),
         Timestamp::from_epoch_millis(timestamp_millis.max(0.0) as u64),
@@ -112,7 +92,7 @@ pub fn kyber_pre_key_record_generate(
     let public = pair.public_key.serialize();
     let signature = identity
         .calculate_signature(&public, &mut rng())
-        .map_err(|e| invalid(e))?;
+        .map_err(invalid)?;
     let record = KyberPreKeyRecord::new(
         KyberPreKeyId::from(id),
         Timestamp::from_epoch_millis(timestamp_millis.max(0.0) as u64),
@@ -130,7 +110,7 @@ pub fn kyber_pre_key_record_generate(
 /// `SyncMessage.PniChangeNumber`.
 #[wasm_bindgen(js_name = identityKeyPairDeserialize)]
 pub fn identity_key_pair_deserialize(serialized: &[u8]) -> Result<JsValue, JsValue> {
-    let pair = IdentityKeyPair::try_from(serialized).map_err(protocol_error)?;
+    let pair = parse::<IdentityKeyPair>(serialized)?;
     Ok(Obj::new()
         .bytes("publicKey", &pair.identity_key().serialize())
         .bytes("privateKey", &pair.private_key().serialize())
@@ -140,14 +120,14 @@ pub fn identity_key_pair_deserialize(serialized: &[u8]) -> Result<JsValue, JsVal
 /// The ID of a serialized `SignedPreKeyRecord`, which must parse.
 #[wasm_bindgen(js_name = signedPreKeyRecordId)]
 pub fn signed_pre_key_record_id(record: &[u8]) -> Result<u32, JsValue> {
-    let record = SignedPreKeyRecord::deserialize(record).map_err(protocol_error)?;
+    let record = parse::<SignedPreKeyRecord>(record)?;
     Ok(u32::from(record.id().map_err(protocol_error)?))
 }
 
 /// The ID of a serialized `KyberPreKeyRecord`, which must parse.
 #[wasm_bindgen(js_name = kyberPreKeyRecordId)]
 pub fn kyber_pre_key_record_id(record: &[u8]) -> Result<u32, JsValue> {
-    let record = KyberPreKeyRecord::deserialize(record).map_err(protocol_error)?;
+    let record = parse::<KyberPreKeyRecord>(record)?;
     Ok(u32::from(record.id().map_err(protocol_error)?))
 }
 
@@ -155,8 +135,8 @@ pub fn kyber_pre_key_record_id(record: &[u8]) -> Result<u32, JsValue> {
 /// interop suite.
 #[wasm_bindgen(js_name = kemEncapsulate)]
 pub fn kem_encapsulate(public: &[u8]) -> Result<JsValue, JsValue> {
-    let key = kem::PublicKey::deserialize(public).map_err(protocol_error)?;
-    let (shared, ciphertext) = key.encapsulate(&mut rng()).map_err(|e| invalid(e))?;
+    let key = parse::<kem::PublicKey>(public)?;
+    let (shared, ciphertext) = key.encapsulate(&mut rng()).map_err(invalid)?;
     Ok(Obj::new()
         .bytes("ciphertext", &ciphertext)
         .bytes("sharedSecret", &shared)
@@ -166,10 +146,10 @@ pub fn kem_encapsulate(public: &[u8]) -> Result<JsValue, JsValue> {
 /// Decapsulates with the secret key held by a serialized `KyberPreKeyRecord`. Test helper for the interop suite.
 #[wasm_bindgen(js_name = kyberPreKeyRecordDecapsulate)]
 pub fn kyber_pre_key_record_decapsulate(record: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, JsValue> {
-    let record = KyberPreKeyRecord::deserialize(record).map_err(protocol_error)?;
+    let record = parse::<KyberPreKeyRecord>(record)?;
     let secret = record.secret_key().map_err(protocol_error)?;
     let shared = secret
         .decapsulate(&ciphertext.to_vec().into_boxed_slice())
-        .map_err(|e| invalid(e))?;
+        .map_err(invalid)?;
     Ok(shared.into_vec())
 }

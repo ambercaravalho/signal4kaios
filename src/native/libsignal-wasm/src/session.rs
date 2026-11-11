@@ -3,14 +3,15 @@
 
 use libsignal_protocol::{
     CiphertextMessageType, DecryptionErrorMessage, IdentityKey, KyberPreKeyId,
-    PlaintextContent, PreKeyBundle, PreKeyId, PreKeySignalMessage, PublicKey, SessionRecord,
+    PlaintextContent, PreKeyBundle, PreKeyId, PreKeySignalMessage, SessionRecord,
     SignalMessage, SignedPreKeyId, Timestamp, kem, message_decrypt_prekey, message_decrypt_signal,
     message_encrypt, process_prekey_bundle,
 };
 use wasm_bindgen::prelude::*;
 
 use crate::store::{ProtocolStore, address, device_id};
-use crate::{Obj, invalid, protocol_error, ready, rng, system_time};
+use crate::keys::public_key;
+use crate::{Obj, invalid, parse, protocol_error, ready, rng, system_time};
 
 /// Builds a session with `name.device` from the fields of a `GET /v2/keys/{id}/{device}` response entry. Kyber fields
 /// are mandatory: libsignal no longer establishes X3DH-only sessions.
@@ -37,7 +38,7 @@ pub fn session_process_pre_key_bundle(
     let pre_key = match (pre_key_id, pre_key_public) {
         (Some(id), Some(public)) => Some((
             PreKeyId::from(id),
-            PublicKey::deserialize(&public).map_err(|e| invalid(e))?,
+            public_key(&public)?,
         )),
         _ => None,
     };
@@ -46,12 +47,12 @@ pub fn session_process_pre_key_bundle(
         device_id(device)?,
         pre_key,
         SignedPreKeyId::from(signed_pre_key_id),
-        PublicKey::deserialize(signed_pre_key_public).map_err(|e| invalid(e))?,
+        public_key(signed_pre_key_public)?,
         signed_pre_key_signature.to_vec(),
         KyberPreKeyId::from(kyber_pre_key_id),
-        kem::PublicKey::deserialize(kyber_pre_key_public).map_err(protocol_error)?,
+        parse::<kem::PublicKey>(kyber_pre_key_public)?,
         kyber_pre_key_signature.to_vec(),
-        IdentityKey::decode(identity_key).map_err(protocol_error)?,
+        parse::<IdentityKey>(identity_key)?,
     )
     .map_err(protocol_error)?;
 
@@ -104,7 +105,7 @@ pub fn session_decrypt_signal(
     device: u32,
     body: &[u8],
 ) -> Result<Vec<u8>, JsValue> {
-    let message = SignalMessage::try_from(body).map_err(protocol_error)?;
+    let message = parse::<SignalMessage>(body)?;
     ready(message_decrypt_signal(
         &message,
         &address(name, device)?,
@@ -125,7 +126,7 @@ pub fn session_decrypt_pre_key(
     device: u32,
     body: &[u8],
 ) -> Result<Vec<u8>, JsValue> {
-    let message = PreKeySignalMessage::try_from(body).map_err(protocol_error)?;
+    let message = parse::<PreKeySignalMessage>(body)?;
     let result = ready(message_decrypt_prekey(
         &message,
         &address(name, device)?,
@@ -145,7 +146,7 @@ pub fn session_decrypt_pre_key(
 /// `{ preKeyId?, signedPreKeyId, kyberPreKeyId? }`.
 #[wasm_bindgen(js_name = preKeyMessageIds)]
 pub fn pre_key_message_ids(body: &[u8]) -> Result<JsValue, JsValue> {
-    let message = PreKeySignalMessage::try_from(body).map_err(protocol_error)?;
+    let message = parse::<PreKeySignalMessage>(body)?;
     let mut out = Obj::new().set("signedPreKeyId", u32::from(message.signed_pre_key_id()));
     if let Some(id) = message.pre_key_id() {
         out = out.set("preKeyId", u32::from(id));
@@ -159,14 +160,14 @@ pub fn pre_key_message_ids(body: &[u8]) -> Result<JsValue, JsValue> {
 /// Remote registration ID of the current session state, needed for `destinationRegistrationId` on sends.
 #[wasm_bindgen(js_name = sessionRecordRemoteRegistrationId)]
 pub fn session_record_remote_registration_id(record: &[u8]) -> Result<u32, JsValue> {
-    let record = SessionRecord::deserialize(record).map_err(protocol_error)?;
+    let record = parse::<SessionRecord>(record)?;
     record.remote_registration_id().map_err(protocol_error)
 }
 
 /// Whether the record has a current session state that can still send (not archived or stale).
 #[wasm_bindgen(js_name = sessionRecordHasCurrentState)]
 pub fn session_record_has_current_state(record: &[u8], now_millis: f64) -> Result<bool, JsValue> {
-    let record = SessionRecord::deserialize(record).map_err(protocol_error)?;
+    let record = parse::<SessionRecord>(record)?;
     record
         .has_usable_sender_chain(
             system_time(now_millis),
@@ -178,7 +179,7 @@ pub fn session_record_has_current_state(record: &[u8], now_millis: f64) -> Resul
 /// Archives the current session state (used on END_SESSION and after a peer's DecryptionErrorMessage).
 #[wasm_bindgen(js_name = sessionRecordArchiveCurrentState)]
 pub fn session_record_archive_current_state(record: &[u8]) -> Result<Vec<u8>, JsValue> {
-    let mut record = SessionRecord::deserialize(record).map_err(protocol_error)?;
+    let mut record = parse::<SessionRecord>(record)?;
     record.archive_current_state().map_err(protocol_error)?;
     record.serialize().map_err(protocol_error)
 }
@@ -215,14 +216,14 @@ pub fn decryption_error_plaintext_content(
 /// The padded `Content` bytes carried by a serialized `PlaintextContent` (envelope type PLAINTEXT_CONTENT).
 #[wasm_bindgen(js_name = plaintextContentBody)]
 pub fn plaintext_content_body(serialized: &[u8]) -> Result<Vec<u8>, JsValue> {
-    let content = PlaintextContent::try_from(serialized).map_err(protocol_error)?;
+    let content = parse::<PlaintextContent>(serialized)?;
     Ok(content.body().to_vec())
 }
 
 /// Parses a serialized `DecryptionErrorMessage`: `{ timestamp, deviceId, ratchetKey? }`.
 #[wasm_bindgen(js_name = decryptionErrorMessageParse)]
 pub fn decryption_error_message_parse(serialized: &[u8]) -> Result<JsValue, JsValue> {
-    let message = DecryptionErrorMessage::try_from(serialized).map_err(protocol_error)?;
+    let message = parse::<DecryptionErrorMessage>(serialized)?;
     Ok(Obj::new()
         .set("timestamp", message.timestamp().epoch_millis() as f64)
         .set("deviceId", message.device_id())

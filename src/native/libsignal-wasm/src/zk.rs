@@ -21,12 +21,12 @@ fn verification_failed() -> JsValue {
 }
 
 fn aci(uuid: &str) -> Result<Aci, JsValue> {
-    Ok(Aci::from(Uuid::parse_str(uuid).map_err(|e| invalid(e))?))
+    Ok(Aci::from(Uuid::parse_str(uuid).map_err(invalid)?))
 }
 
 fn pni(uuid: &str) -> Result<Pni, JsValue> {
     let raw = uuid.strip_prefix("PNI:").unwrap_or(uuid);
-    Ok(Pni::from(Uuid::parse_str(raw).map_err(|e| invalid(e))?))
+    Ok(Pni::from(Uuid::parse_str(raw).map_err(invalid)?))
 }
 
 fn profile_key(bytes: &[u8]) -> Result<ProfileKey, JsValue> {
@@ -35,14 +35,14 @@ fn profile_key(bytes: &[u8]) -> Result<ProfileKey, JsValue> {
 }
 
 fn secret_params(serialized: &[u8]) -> Result<GroupSecretParams, JsValue> {
-    zkgroup::deserialize(serialized).map_err(|e| invalid(e))
+    zkgroup::deserialize(serialized).map_err(invalid)
 }
 
 /// 64-character hex profile key version for `GET /v1/profile/{aci}/{version}`.
 #[wasm_bindgen(js_name = profileKeyGetVersion)]
 pub fn profile_key_get_version(profile_key_bytes: &[u8], aci_uuid: &str) -> Result<String, JsValue> {
     let version = profile_key(profile_key_bytes)?.get_profile_key_version(aci(aci_uuid)?);
-    String::from_utf8(zkgroup::serialize(&version)).map_err(|e| invalid(e))
+    String::from_utf8(zkgroup::serialize(&version)).map_err(invalid)
 }
 
 /// Serialized ProfileKeyCommitment for `PUT /v1/profile`.
@@ -90,7 +90,7 @@ pub fn group_encrypt_blob(
 /// Decrypts a member's encrypted service ID, returning the service ID string (`uuid` for ACIs, `PNI:uuid` for PNIs).
 #[wasm_bindgen(js_name = groupDecryptServiceId)]
 pub fn group_decrypt_service_id(secret_params_bytes: &[u8], ciphertext: &[u8]) -> Result<String, JsValue> {
-    let ciphertext: UuidCiphertext = zkgroup::deserialize(ciphertext).map_err(|e| invalid(e))?;
+    let ciphertext: UuidCiphertext = zkgroup::deserialize(ciphertext).map_err(invalid)?;
     let service_id = secret_params(secret_params_bytes)?
         .decrypt_service_id(ciphertext)
         .map_err(|_| verification_failed())?;
@@ -112,7 +112,7 @@ pub fn group_decrypt_profile_key(
     ciphertext: &[u8],
     aci_uuid: &str,
 ) -> Result<Vec<u8>, JsValue> {
-    let ciphertext: ProfileKeyCiphertext = zkgroup::deserialize(ciphertext).map_err(|e| invalid(e))?;
+    let ciphertext: ProfileKeyCiphertext = zkgroup::deserialize(ciphertext).map_err(invalid)?;
     let key = secret_params(secret_params_bytes)?
         .decrypt_profile_key(ciphertext, aci(aci_uuid)?)
         .map_err(|_| verification_failed())?;
@@ -131,7 +131,7 @@ pub fn group_encrypt_profile_key(
 }
 
 fn server_params(serialized: &[u8]) -> Result<ServerPublicParams, JsValue> {
-    zkgroup::deserialize(serialized).map_err(|e| invalid(e))
+    zkgroup::deserialize(serialized).map_err(invalid)
 }
 
 /// `{ context, request }` for one user's expiring profile key credential. `request` goes to
@@ -161,8 +161,8 @@ pub fn receive_expiring_profile_key_credential(
     response: &[u8],
     now_seconds: f64,
 ) -> Result<JsValue, JsValue> {
-    let context: ProfileKeyCredentialRequestContext = zkgroup::deserialize(context).map_err(|e| invalid(e))?;
-    let response: ExpiringProfileKeyCredentialResponse = zkgroup::deserialize(response).map_err(|e| invalid(e))?;
+    let context: ProfileKeyCredentialRequestContext = zkgroup::deserialize(context).map_err(invalid)?;
+    let response: ExpiringProfileKeyCredentialResponse = zkgroup::deserialize(response).map_err(invalid)?;
     let credential = server_params(server_public_params)?
         .receive_expiring_profile_key_credential(&context, &response, Timestamp::from_epoch_seconds(now_seconds.max(0.0) as u64))
         .map_err(|_| verification_failed())?;
@@ -179,7 +179,7 @@ pub fn group_profile_key_credential_presentation(
     secret_params_bytes: &[u8],
     credential: &[u8],
 ) -> Result<Vec<u8>, JsValue> {
-    let credential: ExpiringProfileKeyCredential = zkgroup::deserialize(credential).map_err(|e| invalid(e))?;
+    let credential: ExpiringProfileKeyCredential = zkgroup::deserialize(credential).map_err(invalid)?;
     let presentation = server_params(server_public_params)?.create_expiring_profile_key_credential_presentation(
         random_32(),
         secret_params(secret_params_bytes)?,
@@ -199,7 +199,7 @@ pub fn group_send_endorsements_receive(
     member_service_ids: js_sys::Array,
     now_seconds: f64,
 ) -> Result<JsValue, JsValue> {
-    let response: GroupSendEndorsementsResponse = zkgroup::deserialize(response).map_err(|e| invalid(e))?;
+    let response: GroupSendEndorsementsResponse = zkgroup::deserialize(response).map_err(invalid)?;
     let expiration = response.expiration();
     let mut members: Vec<ServiceId> = Vec::with_capacity(member_service_ids.length() as usize);
     for id in member_service_ids.iter() {
@@ -234,7 +234,7 @@ pub fn group_send_token(
     let mut parsed: Vec<GroupSendEndorsement> = Vec::with_capacity(endorsements.length() as usize);
     for e in endorsements.iter() {
         let bytes = js_sys::Uint8Array::new(&e).to_vec();
-        parsed.push(zkgroup::deserialize(&bytes).map_err(|e| invalid(e))?);
+        parsed.push(zkgroup::deserialize(&bytes).map_err(invalid)?);
     }
     if parsed.is_empty() {
         return Err(invalid("a token needs at least one endorsement"));
@@ -256,8 +256,8 @@ pub fn group_auth_credential_presentation(
     credential_response: &[u8],
     secret_params_bytes: &[u8],
 ) -> Result<Vec<u8>, JsValue> {
-    let server_params: ServerPublicParams = zkgroup::deserialize(server_public_params).map_err(|e| invalid(e))?;
-    let response = AuthCredentialWithPniResponse::new(credential_response).map_err(|e| invalid(e))?;
+    let server_params: ServerPublicParams = zkgroup::deserialize(server_public_params).map_err(invalid)?;
+    let response = AuthCredentialWithPniResponse::new(credential_response).map_err(invalid)?;
     let credential = response
         .receive(
             &server_params,
