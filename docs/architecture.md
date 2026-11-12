@@ -70,19 +70,23 @@ flowchart LR
 | [`transport/http1.ts`](../src/engine/net/transport/http1.ts) | HTTP/1.1 with keep-alive, at most 6 requests per host at once, capped response sizes, and timeouts |
 | [`transport/websocket.ts`](../src/engine/net/transport/websocket.ts) | An RFC 6455 client shaped like the browser `WebSocket`, so callers use either one |
 
-Only `*.signal.org` goes through this path. Other hosts, and environments without `TCPSocket` (desktop browsers, the tests' fallbacks), use mozSystem XHR and the platform `WebSocket`. A redirect off Signal's hosts drops the `Authorization` header and continues over XHR.
-
-On a rooted phone whose Gecko trusts Signal's root ([setup](setup.md#optional-for-rooted-phones-trust-signals-certificate), [`scripts/signal-cert.mjs`](../scripts/signal-cert.mjs)), [`src/ui/data/nativeTls.ts`](../src/ui/data/nativeTls.ts) detects it with one unauthenticated `HEAD https://cdn.signal.org/` per launch, reconnect, and `online` event. While that succeeds, [`http.ts`](../src/ui/data/http.ts) sends requests to the attachment CDNs (`cdn`, `cdn2`, `cdn3`) over mozSystem XHR, capped at 200 MiB like the pinned client, and a network failure switches back to the pinned client for good. The platform trusts every public CA, so nothing carrying account credentials or keys takes this path: the chat socket, the chat and Storage Service APIs, and provisioning (where a forged server could substitute its own QR address) always stay pinned. Attachments are end-to-end encrypted and MAC-checked, and uploads use one-time upload forms.
+Only `*.signal.org` goes through this path, and all of it does, attachment CDNs included, whatever certificates the phone trusts. Other hosts, and environments without `TCPSocket` (desktop browsers, the tests' fallbacks), use mozSystem XHR and the platform `WebSocket`. A redirect off Signal's hosts drops the `Authorization` header and continues over XHR.
 
 ### Signal proxy
 
 With a [Signal proxy](https://signal.org/blog/help-iran-reconnect/) set (**Settings → Privacy → Proxy**, stored app-wide in `s4k.config`), each pinned connection has two TLS layers. The outer one is a `TCPSocket` opened with `useSecureTransport: true` to `<proxy>:443`, so Gecko checks the proxy's ordinary public certificate against the phone's CA store. Inside that stream `tls-stream.ts` runs the usual pinned `TlsConn` handshake with the Signal host's name as SNI, and the proxy (for example [Signal-TLS-Proxy](https://github.com/signalapp/Signal-TLS-Proxy)) forwards by reading that name. The proxy learns that a Signal host was reached, never the traffic or the credentials inside it. `createNet` holds the proxy host; [`src/ui/data/proxy.ts`](../src/ui/data/proxy.ts) parses `https://signal.tube/#<host>` and `sgnl://signal.tube/?host=<host>` links as untrusted input, and changing the setting drops kept-alive connections and reconnects the chat socket.
 
-While a proxy is set nothing for Signal's hosts goes out directly: Faster connection's platform-TLS CDN path and its probe are skipped, the platform `WebSocket` fallback is refused, and a request to a `signal.org` host that can't use the pinned client fails instead of falling back to XHR. Link previews, and CDN redirects to hosts outside `signal.org`, still connect directly.
+While a proxy is set nothing for Signal's hosts goes out directly: the platform `WebSocket` fallback is refused, and a request to a `signal.org` host that can't use the pinned client fails instead of falling back to XHR. Link previews, and CDN redirects to hosts outside `signal.org`, still connect directly.
 
 The chat WebSocket authenticates with an `Authorization: Basic` header on the upgrade request. Signal's server treats query-string credentials as an anonymous socket that never receives messages, which is why only the pinned client can carry the main connection.
 
-A ServiceWorker can't use any of this, because workers have no `TCPSocket`, and the browser `WebSocket` can't set the header. So a closed app can't receive messages: [`sw.js`](../src/app/sw.js) only relays wake alarms to an open window and handles notification taps. See [the user guide](user-guide.md#known-limitations).
+A ServiceWorker can't use any of this, because workers have no `TCPSocket`, and the browser `WebSocket` can't set the header. So a closed app can't receive messages: [`sw.js`](../src/app/sw.js) only relays wake alarms to an open window and handles notification taps, besides the page rewrite below. See [the user guide](user-guide.md#known-limitations).
+
+### WebAssembly on KaiOS 4.0
+
+KaiOS 4.0 serves apps through [`api-daemon`](https://github.com/kaiostech/api-daemon), which sends every app page with a `Content-Security-Policy` header whose `script-src` lacks `'wasm-unsafe-eval'`, and Gecko 123 enforces that for `WebAssembly.compile`. The app can't change the daemon's config, but its own ServiceWorker answers its page loads: `sw.js` fetches the page and returns it with the same header plus `'wasm-unsafe-eval'` in each `script-src`, leaving every other directive and header alone. JavaScript `eval` and inline scripts stay blocked. Other requests are never answered by the worker, and a page that has no `script-src`, already allows WebAssembly, or fails to load passes through untouched. KaiOS 3.x (Gecko 84) doesn't gate WebAssembly on CSP, so the rewrite changes nothing there.
+
+The first launch after an install or update can load before the new worker controls the page. When libsignal then fails with `blocked`, [`src/ui/data/wasm-reload.ts`](../src/ui/data/wasm-reload.ts) waits up to five seconds for the newest `sw.js` to be active and reloads once per session; only a second failure shows **Beacon couldn't start**.
 
 ## Repository layout
 
@@ -93,7 +97,7 @@ src/
     build/                esbuild output (gitignored)
     assets/icons/         beacon.svg and the launcher PNGs rendered from it
     vendor/               libsignal_wasm_bg.wasm
-    sw.js                 ServiceWorker: wake alarms and notification taps
+    sw.js                 ServiceWorker: KaiOS 4.0 WebAssembly policy, wake alarms, notification taps
   ui/                     the app (Preact + TypeScript)
     main.tsx              startup: theme, engine host, ServiceWorker, first screen
     app/                  router, focus and key handling, hooks, theme
@@ -101,7 +105,7 @@ src/
     components/chat/      chat bubbles, message options, and the chat screen's session, composer, and key hooks
     screens/              one module per screen or group of related screens
     screens/settings/     the Settings sub-screens
-    data/                 ws, db, config, http, nativeTls, attachments, platform (B2G APIs)
+    data/                 ws, db, config, http, attachments, platform (B2G APIs), wasm-reload
     data/store/           conversations, messages, sends, and the event hub, behind the data/store.ts barrel
     data/normalize/       JSON frames to store events, behind the data/normalize.ts barrel
     theme/                CSS tokens and styles
@@ -116,7 +120,7 @@ src/
     gen/                  generated protobuf codecs (never hand-edited)
   native/libsignal-wasm/  Rust wrapper crate (AGPL-3.0-only)
   protos/                 vendored Signal .proto files
-scripts/                  build.mjs, icons.mjs, package.sh, install.sh, signal-cert.mjs
+scripts/                  build.mjs, icons.mjs, package.sh, install.sh
 test/                     unit, interop, and known-answer tests
 docs/                     these guides
 ```
@@ -300,8 +304,8 @@ Upgrading from a database older than version 4 discards the protocol state and a
 - **Sync messages** are accepted only from our own ACI. Recipients must be ACIs.
 - **Identity changes.** A contact's first identity key is trusted on first use. If it later changes, the contact drops to untrusted, and if you had verified them, sending stops until you review the new safety number.
 - **Sealed Sender** certificates are checked against Signal's production trust roots.
-- **TLS.** Connections to Signal's hosts trust only the two roots libsignal pins, not the phone's certificate store, so a CA added to the phone can't intercept them. The one exception is opt-in: once the phone trusts Signal's root, attachment CDN transfers use the platform's TLS, whose contents are end-to-end encrypted and MAC-checked ([Network](#network)).
-- **CSP.** The privileged-app CSP forbids `eval`, `new Function`, and inline scripts, and `scripts/package.sh` fails the build if any shipped script contains them.
+- **TLS.** Connections to Signal's hosts trust only the two roots libsignal pins, not the phone's certificate store, so a CA added to the phone can't intercept them.
+- **CSP.** The privileged-app CSP forbids `eval`, `new Function`, and inline scripts, and `scripts/package.sh` fails the build if any shipped script contains them. On KaiOS 4.0 the ServiceWorker adds only `'wasm-unsafe-eval'` to `api-daemon`'s policy ([WebAssembly on KaiOS 4.0](#webassembly-on-kaios-40)).
 - **Screen lock** ([`src/ui/data/screen-lock.ts`](../src/ui/data/screen-lock.ts)) keeps only a salted PBKDF2-SHA-256 hash of the PIN in `s4k.config`, and the wrong-PIN count, so a restart doesn't reset the wait. It covers the UI and nothing else: the databases aren't encrypted with the PIN. The PIN is read from the keypad's digit keys with no text field focused, so the keyboard never sees it.
 - **Profile key.** Only the primary phone rotates the profile key; Signal-Desktop as a linked device doesn't either. A Storage Service pull whose `AccountRecord.profileKey` differs from ours replaces the account's key and drops our cached credential for the old one.
 - **Logs.** The debug log never records keys, passwords, or provisioning codes. Everyday screens show plain-language errors (`friendlyError` in [`src/ui/errors.ts`](../src/ui/errors.ts)); the technical detail goes only to the log, which Settings > Debug shows.

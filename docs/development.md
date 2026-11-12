@@ -56,7 +56,9 @@ The interop tests ([`test/interop.test.ts`](../test/interop.test.ts)) run our wa
 
 ## Running on a phone
 
-Install with [`scripts/install.sh`](../scripts/install.sh) (needs [adb](https://developer.android.com/tools/adb) and [`appscmd`](https://github.com/kaiostech/appscmd)) or OStore's Manual Install, and debug with Firefox at `about:debugging`. On the phone, **Settings → Debug** is the main diagnostic: it shows the account and device IDs, PreKey counts, and connection state, and can share a log with the phone number and IDs redacted. Test on a phone that doesn't trust Signal's root certificate, since that's what users have: connections to Signal then work only through the app's pinned TLS client, and a regression shows up as close code 1015. See the [KaiOS developer docs](https://developer.kaiostech.com) for the platform itself.
+Install with [`scripts/install.sh`](../scripts/install.sh) (needs [adb](https://developer.android.com/tools/adb) and [`appscmd`](https://github.com/kaiostech/appscmd)) or OStore's Manual Install, and debug with Firefox at `about:debugging`. On the phone, **Settings → Debug** is the main diagnostic: it shows the account and device IDs, PreKey counts, and connection state, and can share a log with the phone number and IDs redacted. Connections to Signal work only through the app's pinned TLS client, so a regression there shows up as close code 1015.
+
+Test KaiOS 4.0 with `api-daemon`'s stock policy, with no `'wasm-unsafe-eval'` added to the `csp` line in its `config.toml`, since that's what users have. `adb logcat | grep -i wasm-eval` then shows a policy error only for the first launch after an install or update, followed by one reload ([how it works](architecture.md#webassembly-on-kaios-40)). See the [KaiOS developer docs](https://developer.kaiostech.com) for the platform itself.
 
 ## Bumping the libsignal pin
 
