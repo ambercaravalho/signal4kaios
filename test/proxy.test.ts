@@ -7,7 +7,6 @@ import { createNet, net } from '../src/engine/net/transport';
 import { ByteStream, Connector } from '../src/engine/net/transport/stream';
 import { TlsSession } from '../src/engine/net/transport/tls-stream';
 import { config } from '../src/ui/data/config';
-import * as nativeTls from '../src/ui/data/nativeTls';
 import { activeProxy, isProxyLink, parseProxyLink, saveProxy, validProxyHost } from '../src/ui/data/proxy';
 import { text, utf8 } from './helpers';
 
@@ -182,30 +181,5 @@ describe('connections through a proxy', () => {
     const n = createNet({ connectRaw: server([], 'tcp'), newSession: passthroughSession([]), isPinnedHost: () => true, available: () => false });
     n.setProxy('proxy.example.com');
     assert.throws(() => n.openWebSocket('wss://chat.signal.org/v1/websocket/'), /proxy is set/);
-  });
-
-  it('turns off the faster connection while a proxy is set', async () => {
-    const made: string[] = [];
-    (globalThis as any).XMLHttpRequest = class {
-      status = 404;
-      onload: (() => void) | null = null;
-      open(_m: string, url: string) {
-        made.push(url);
-      }
-      send() {
-        setTimeout(() => this.onload && this.onload(), 1);
-      }
-    };
-    assert.equal(await nativeTls.probe(), true);
-    assert.equal(nativeTls.useBuiltIn('https://cdn.signal.org/attachments/a'), true);
-    net.setProxy('proxy.example.com');
-    try {
-      assert.equal(nativeTls.useBuiltIn('https://cdn.signal.org/attachments/a'), false);
-      made.length = 0;
-      await nativeTls.probe();
-      assert.deepEqual(made, []);
-    } finally {
-      net.setProxy(null);
-    }
   });
 });

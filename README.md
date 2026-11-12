@@ -43,9 +43,6 @@ You need a KaiOS 3.0, 3.1, or 4.0 phone and a Signal account on your main phone.
 2. **Link.** Open Beacon and press **Start**; it shows a QR code. On your main phone, go to Signal → **Settings → Linked devices → Link a new device** and scan it.
 3. **Chat.** Contacts and groups sync from your account within a minute.
 
-> [!IMPORTANT]
-> KaiOS 4.0 blocks WebAssembly by default. Do the one-time [rooted WebAssembly step](docs/setup.md#kaios-40-enable-webassembly) before the first launch.
-
 The [setup guide](docs/setup.md) covers every install route and what to do if something goes wrong.
 
 ## Features
@@ -67,7 +64,7 @@ For what isn't supported yet, see [Known limitations](docs/user-guide.md#known-l
 
 | Guide | Covers |
 | --- | --- |
-| [Setup](docs/setup.md) | Installing, linking, KaiOS 4.0 WebAssembly, and troubleshooting |
+| [Setup](docs/setup.md) | Installing, linking, and troubleshooting |
 | [User guide](docs/user-guide.md) | Every feature and the keypad reference |
 | [Architecture](docs/architecture.md) | How the app, the engine, and libsignal fit together |
 | [Development](docs/development.md) | Building, testing, bumping pins, and releasing |

@@ -3,7 +3,6 @@
 import { signal } from './api';
 import { config } from './config';
 import { dbg } from './log';
-import * as nativeTls from './nativeTls';
 import { scheduleAlarm } from './platform';
 import { ingestRaw, refreshDirectory, setConnection } from './store';
 import type { SocketLike } from '../../engine/net/transport';
@@ -221,7 +220,6 @@ export function stop(): void {
 export function restart(): void {
   stop();
   signal.net.reset();
-  nativeTls.probe();
   attempts = 0;
   connect();
 }

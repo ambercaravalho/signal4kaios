@@ -1,14 +1,12 @@
-/* HTTP to Signal's servers. Signal's certificates chain to Signal's own root, which KaiOS doesn't trust, so `*.signal.org` requests go through the engine's pinned TLS client over `tcp-socket`. On a phone that trusts Signal's root (see `nativeTls.ts`), attachment CDN requests use mozSystem XHR instead. Other hosts, and environments without `TCPSocket`, use mozSystem XHR (privileged app: no CORS). A 401 for the active device means it was unlinked from the phone; `onUnlinked` fires once. */
+/* HTTP to Signal's servers. Signal's certificates chain to Signal's own root, which KaiOS doesn't trust, so `*.signal.org` requests go through the engine's pinned TLS client over `tcp-socket`. Other hosts, and environments without `TCPSocket`, use mozSystem XHR (privileged app: no CORS). A 401 for the active device means it was unlinked from the phone; `onUnlinked` fires once. */
 
 import { net } from '../../engine/net/transport';
 import type { HostHttpOptions, HostRawResponse } from '../../engine/host';
 import { config } from './config';
 import { dbg } from './log';
-import * as nativeTls from './nativeTls';
 import { mozSystemXhr } from './platform';
 
 const MAX_REDIRECTS = 3;
-const MAX_CDN_RESPONSE_BYTES = 200 * 1024 * 1024;
 
 export interface HttpError extends Error {
   kind?: 'network' | 'timeout' | 'http';
@@ -40,21 +38,13 @@ function encodeBasicAuth(username: string, password: string): string {
   return 'Basic ' + btoa(username + ':' + password);
 }
 
-function xhrSend(method: string, url: string, headers: Record<string, string>, body: BodyInit | Uint8Array | null, timeout: number, maxBytes = 0): Promise<Res> {
+function xhrSend(method: string, url: string, headers: Record<string, string>, body: BodyInit | Uint8Array | null, timeout: number): Promise<Res> {
   return new Promise((resolve, reject) => {
     const xhr = mozSystemXhr() || new XMLHttpRequest();
     xhr.open(method, url, true);
     xhr.timeout = timeout;
     xhr.responseType = 'arraybuffer';
     for (const k of Object.keys(headers)) xhr.setRequestHeader(k, headers[k]);
-    if (maxBytes > 0) {
-      xhr.onprogress = (e) => {
-        if (e.loaded <= maxBytes) return;
-        xhr.onload = xhr.onerror = xhr.ontimeout = null;
-        xhr.abort();
-        reject(new Error('response too large'));
-      };
-    }
     xhr.onload = () =>
       resolve({
         status: xhr.status,
@@ -108,13 +98,11 @@ function isSignalUrl(url: string): boolean {
   }
 }
 
-/* With a Signal proxy set, nothing for Signal's hosts may go out directly: the platform-TLS CDN path is skipped, and without the pinned client the request fails instead of falling back to XHR. */
+/* With a Signal proxy set, nothing for Signal's hosts may go out directly: without the pinned client the request fails instead of falling back to XHR. */
 function send(method: string, url: string, headers: Record<string, string>, body: string | Uint8Array | null, timeout: number): Promise<Res> {
   if (net.isPinnedUrl(url)) {
     const bytes = typeof body === 'string' ? new TextEncoder().encode(body) : body;
-    const pinned = () => pinnedSend(method, url, headers, bytes || null, timeout, 0);
-    if (nativeTls.useBuiltIn(url)) return nativeTls.withFallback(() => xhrSend(method, url, headers, bytes || null, timeout, MAX_CDN_RESPONSE_BYTES), pinned);
-    return pinned();
+    return pinnedSend(method, url, headers, bytes || null, timeout, 0);
   }
   if (net.proxy() && isSignalUrl(url)) return Promise.reject(netError('network', 'network'));
   return xhrSend(method, url, headers, body, timeout);

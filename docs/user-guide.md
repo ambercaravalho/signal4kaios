@@ -134,7 +134,7 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 
 Where Signal is blocked, a [Signal proxy](https://support.signal.org/hc/en-us/articles/360056052052) run by someone you trust can get you connected. Open **Settings → Privacy → Proxy**, choose **Proxy address**, and type the address (like `proxy.example.com`), or open a `signal.tube` proxy link from a chat or scan one with **New chat → Scan**, and Beacon asks whether to use it. **Use proxy** turns it on and off and keeps the address. The setting applies to every account on the phone.
 
-The proxy can see that you use Signal, but not your messages or who you talk to: everything inside stays encrypted to Signal's servers. While it's on, the bar under the header says when Beacon is connecting through the proxy or can't reach it, and Debug shows which proxy is used. Faster connection is turned off so nothing bypasses the proxy. Link previews still fetch the website directly, so turn off **Settings → Chats → Generate link previews** if that matters to you.
+The proxy can see that you use Signal, but not your messages or who you talk to: everything inside stays encrypted to Signal's servers. While it's on, the bar under the header says when Beacon is connecting through the proxy or can't reach it, and Debug shows which proxy is used. Link previews still fetch the website directly, so turn off **Settings → Chats → Generate link previews** if that matters to you.
 
 When your main phone gives your profile a new key, which Signal does after you block someone, Beacon picks up the new key too.
 
@@ -143,9 +143,6 @@ Each account has its own history on the phone, and switching accounts restarts B
 If you change your number on your main phone, Beacon follows: it shows **Your number changed to …**, keeps your chats and history, and stays linked. Messages sent to your new number arrive as usual.
 
 **Debug** shows the details a bug report needs: app and library versions, account and device IDs, how many one-time keys the server holds, the connection state, when the last message arrived, and storage use. It can refresh keys, ask your main phone to sync, reconnect, show the log, and **Share debug log**. The shared log has phone numbers, account IDs, and keys removed.
-
-**Debug → Faster connection** shows whether photos, video, voice notes, and files travel over the phone's built-in TLS. That needs a rooted phone that trusts Signal's root certificate; **How to turn it on** opens [the setup steps](setup.md#optional-for-rooted-phones-trust-signals-certificate), and **Check again** looks again after you install it.
-
 ## Notifications
 
 With Beacon in the background, new messages raise a notification unless the chat is muted; group notifications start with the sender's name. Selecting one opens the chat.
@@ -179,4 +176,4 @@ These work only partly:
 | Holding the Call key to record a voice message | Works only on phones that pass a held Call key to apps. **Options → Record voice message** works everywhere. |
 | Notifications while a chat is muted | Only mentions of you come through. Replies to your messages and calls stay silent, unlike Signal's newer apps. |
 | Forwarding files you sent from this phone | Not possible, because the phone doesn't keep a copy it can resend. They're also left out of **Media**. |
-| Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open, and trusting Signal's certificate on a rooted phone doesn't change that. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |
+| Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |

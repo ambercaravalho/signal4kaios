@@ -2,6 +2,15 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.7.3
+
+Beacon now opens on KaiOS 4.0 without any setup on a computer. Install over v2.7.2; your chats and settings carry over.
+
+### Changed
+
+- **KaiOS 4.0.** You no longer need to edit a system file over USB before the first launch. The first time Beacon opens after you install or update it, it may reload once while it sets itself up. If you made that edit for an earlier version, you can keep it or undo it; Beacon works either way.
+- **Faster connection removed.** The **Settings → Debug → Faster connection** option for rooted phones that trust Signal's certificate is gone. Photos, video, and files now always use Beacon's own secure connection, like everything else. If you added Signal's certificate to your phone for it, Beacon no longer uses it.
+
 ## v2.7.2
 
 Calls to you now ring on your phone with Beacon linked, and Beacon tells you when something in a chat needs your phone. Install over v2.7.1; your chats and settings carry over.

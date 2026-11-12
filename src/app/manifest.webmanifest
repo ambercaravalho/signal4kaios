@@ -14,7 +14,7 @@
     { "src": "/assets/icons/kaios_112.png", "type": "image/png", "sizes": "112x112" }
   ],
   "b2g_features": {
-    "version": "2.7.2",
+    "version": "2.7.3",
     "type": "privileged",
     "origin": "signal4kaios",
     "subtitle": "For Signal accounts",
@@ -26,7 +26,7 @@
     "cursor": false,
     "permissions": {
       "systemXHR": {
-        "description": "Connect directly to Signal servers and CDN"
+        "description": "Load link previews and files stored outside Signal's servers"
       },
       "tcp-socket": {
         "description": "Connect securely to Signal servers using Signal's own certificate"
