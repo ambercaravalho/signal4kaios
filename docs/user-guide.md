@@ -119,8 +119,10 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 | **Chats** | Text formatting; Keep muted chats archived; Generate link previews |
 | **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Screen lock; Blocked; Proxy |
 | **Appearance** | Theme: light or dark; Text size: Small, Normal, Large, or Extra large (this phone only) |
-| **Help** | Version, User guide, Source code |
+| **Help** | Short guides by topic, Source code, and the version |
 | **Debug** | Technical details for troubleshooting (see below) |
+
+**Help** lists guides on getting started, keys, chats and messages, groups and safety numbers, settings, the proxy, notifications, what Beacon can't do yet, and troubleshooting. Each opens a page with a QR code for the matching section of these docs: scan it with another phone, or press **Open** to read it in the phone's browser. **Learn more** at the bottom of Privacy, Chats, Phone number, Screen lock, and Proxy, and in the safety number's **Options**, opens the same kind of page, as do **Help** on the welcome screen and when Beacon can't start, and **How to link** in the linking screen's **Options**.
 
 **Profile → Photo** picks a picture from the gallery or camera, crops the middle square, and saves it at 512 by 512 pixels; with a photo set, it offers **Choose photo** and **Remove photo**. Your photo is encrypted with your profile key like the rest of your profile, and your main phone and other devices pick up the change. A photo set on your main phone shows here too.
 

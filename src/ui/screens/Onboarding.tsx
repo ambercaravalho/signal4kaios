@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { router, useKeys, useSoftkeys } from '../app/router';
 import { Spinner } from '../components/List';
 import { DIVIDER, prompt, showOptions } from '../components/Overlays';
+import { Pictogram } from '../components/Pictogram';
 import { QrCode } from '../components/Qr';
 import { Screen } from '../components/Screen';
 import { toast } from '../components/Toast';
@@ -10,24 +11,22 @@ import { signal } from '../data/api';
 import { config } from '../data/config';
 import { db } from '../data/db';
 import { dbg } from '../data/log';
-import { openUrl } from '../data/platform';
 import * as ws from '../data/ws';
 import { APP_NAME, S } from '../strings';
-
-export const SETUP_URL = 'https://github.com/ambercaravalho/signal4kaios/blob/main/docs/setup.md';
+import { openGuide } from './Guide';
 
 /** First run: what Beacon is, then on to linking. */
 export function WelcomeScreen() {
   useSoftkeys({ left: null, center: S.getStarted, right: S.help });
   useKeys((e) => {
     if (e.key === 'Enter') router.replace(LinkScreen, { mode: 'first' as const });
-    else if (e.key === 'SoftRight') openUrl(SETUP_URL).catch(() => {});
+    else if (e.key === 'SoftRight') openGuide('setup');
     else return false;
     return true;
   });
   return (
     <Screen title={APP_NAME} bodyClass="welcome">
-      <img class="welcome-logo" src="/assets/icons/kaios_112.png" alt="" />
+      <Pictogram name="welcome" />
       <div class="welcome-title">{S.welcomeTitle}</div>
       <p>{S.welcomeBody}</p>
       <p class="welcome-note">{S.unofficial}</p>
@@ -113,7 +112,7 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
         { label: S.newCode, onSelect: () => setAttempt((n) => n + 1) },
         { label: S.deviceName, onSelect: rename },
         DIVIDER,
-        { label: S.userGuide, onSelect: () => openUrl(SETUP_URL).catch(() => {}) },
+        { label: S.howToLink, onSelect: () => openGuide('linking') },
       ]);
     else if (busy && (e.key === 'Backspace' || e.key === 'SoftLeft')) return true;
     else return false;

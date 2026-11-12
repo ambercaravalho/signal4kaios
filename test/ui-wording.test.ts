@@ -47,6 +47,13 @@ describe('user-facing wording', () => {
       }
     }
   });
+
+  it('keeps hints to a line or two and dialog bodies to a few', () => {
+    for (const [key, value] of Object.entries(S)) {
+      const limit = /Hint$/.test(key) ? 60 : /Body$|^cantStart/.test(key) ? 120 : key === 'linkSteps' ? 80 : 0;
+      if (limit) assert.ok(value.length <= limit, `S.${key} is ${value.length} characters, over ${limit}: "${value}"`);
+    }
+  });
 });
 
 describe('friendlyError', () => {

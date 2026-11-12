@@ -93,7 +93,7 @@ export function HomeScreen() {
   if (archivedCount)
     rows.push({ key: ARCHIVED_ROW, label: S.archivedChats, icon: 'archive', meta: String(archivedCount), action: S.open, onSelect: () => router.push(ArchivedScreen, {}) });
 
-  const empty = !store.isReady() ? <Spinner /> : <EmptyState title={S.noChats} body={S.noChatsHint} />;
+  const empty = !store.isReady() ? <Spinner /> : <EmptyState title={S.noChats} body={S.noChatsHint} pictogram="chats" />;
 
   return (
     <Screen title={APP_NAME} banner={<ConnectionBanner />}>
@@ -120,7 +120,7 @@ export function ArchivedScreen() {
     <Screen title={S.archivedChats}>
       <RowList
         rows={list.map((c) => convRow(c, true))}
-        empty={<EmptyState title={S.noArchived} body={S.noArchivedHint} />}
+        empty={<EmptyState title={S.noArchived} body={S.noArchivedHint} pictogram="archive" />}
         softkeys={(row) => ({ right: row ? S.options : null })}
         onKey={(e, row) => {
           const conv = e.key === 'SoftRight' && row ? store.conversation(row.key!) : undefined;

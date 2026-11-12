@@ -1,27 +1,28 @@
 import { useEffect, useState } from 'preact/hooks';
-import { RowList } from '../../components/RowList';
+import { Row, RowList } from '../../components/RowList';
 import { Screen } from '../../components/Screen';
-import { toast } from '../../components/Toast';
-import { appVersion, openUrl } from '../../data/platform';
+import { GUIDES, GuideTopic } from '../../data/guides';
+import { appVersion } from '../../data/platform';
 import { APP_NAME, S } from '../../strings';
+import { openGuide } from '../Guide';
 
-export const GUIDE_URL = 'https://github.com/ambercaravalho/signal4kaios/blob/main/docs/user-guide.md';
-export const SOURCE_URL = 'https://github.com/ambercaravalho/signal4kaios';
+export const HELP_TOPICS: GuideTopic[] = ['setup', 'keys', 'chats', 'groups', 'settings', 'proxy', 'notifications', 'limitations', 'troubleshooting'];
 
+/** Short pointers into the full guide; each topic shows a QR code and can open in the browser. */
 export function HelpScreen() {
   const [version, setVersion] = useState('');
   useEffect(() => {
     appVersion().then(setVersion);
   }, []);
-  const open = (url: string) => () => openUrl(url).catch(() => toast(S.errGeneric));
+  const topic = (t: GuideTopic): Row => ({ key: t, label: GUIDES[t].title, icon: GUIDES[t].icon, end: 'chevron', onSelect: () => openGuide(t) });
   return (
     <Screen title={S.help}>
       <RowList
         rows={[
-          { key: 'ver', label: APP_NAME, sub: S.version + ' ' + (version || '…') },
-          { key: 'guide', label: S.userGuide, onSelect: open(GUIDE_URL) },
-          { key: 'src', label: S.sourceCode, onSelect: open(SOURCE_URL) },
-          { key: 'about', label: S.unofficialTitle, sub: S.unofficial },
+          ...HELP_TOPICS.map(topic),
+          { section: APP_NAME },
+          topic('source'),
+          { key: 'about', label: S.version + ' ' + (version || '…'), sub: S.unofficial },
         ]}
       />
     </Screen>

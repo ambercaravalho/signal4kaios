@@ -11,6 +11,7 @@ import { formatSafetyNumber } from '../data/format';
 import { contactByKey } from '../data/store';
 import { friendlyError } from '../errors';
 import { fmt, S } from '../strings';
+import { openGuide } from './Guide';
 import { QrScreen } from './QrScreen';
 
 type Identity = Awaited<ReturnType<typeof signal.identities>>[number];
@@ -65,6 +66,7 @@ export function SafetyNumberScreen(props: { target: string; name: string }) {
       showOptions([
         !!entry.scannable_safety_number && { label: S.showCode, onSelect: () => router.push(QrScreen, { title: S.safetyNumber, text: entry.scannable_safety_number, caption: fmt(S.showCodeHint, { name: props.name }) }) },
         !!entry.scannable_safety_number && { label: S.scanCode, onSelect: scan },
+        { label: S.learnMore, onSelect: () => openGuide('groups') },
       ]);
     else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && body.current) body.current.scrollTop += e.key === 'ArrowDown' ? 40 : -40;
     else return false;
@@ -73,7 +75,7 @@ export function SafetyNumberScreen(props: { target: string; name: string }) {
 
   let content;
   if (entry === undefined) content = <Spinner />;
-  else if (!entry) content = <EmptyState title={S.safetyNumber} body={S.noSafetyNumber} />;
+  else if (!entry) content = <EmptyState title={S.safetyNumber} body={S.noSafetyNumber} pictogram="safety" />;
   else
     content = (
       <>

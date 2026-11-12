@@ -7,6 +7,7 @@ import { signal } from '../../data/api';
 import { config } from '../../data/config';
 import { friendlyError } from '../../errors';
 import { S } from '../../strings';
+import { guideRow } from '../Guide';
 
 export function ChatsSettingsScreen() {
   const refresh = useRefresh();
@@ -14,6 +15,8 @@ export function ChatsSettingsScreen() {
     toggleRow('fmt', S.textFormatting, config.styledText(), (v) => (config.set({ styledText: v }), refresh()), S.textFormattingHint),
     toggleRow('muted', S.keepMutedArchived, config.keepMutedArchived(), (v) => (config.set({ keepMutedArchived: v }), refresh())),
     toggleRow('previews', S.generateLinkPreviews, config.linkPreviews(), setLinkPreviews, S.generateLinkPreviewsHint),
+    { section: '' },
+    guideRow('settings'),
   ];
 
   function setLinkPreviews(on: boolean): void {

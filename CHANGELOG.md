@@ -2,6 +2,21 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.7.4
+
+Help in Beacon is shorter and easier to scan, with pictures, and points you to the full guide when you need more. Install over v2.7.3; your chats and settings carry over.
+
+### New
+
+- **Help by topic.** **Settings → Help** lists short guides, from getting started to troubleshooting. Each shows a QR code for the full guide: scan it with another phone, or press **Open** to read it in the phone's browser.
+- **Learn more.** Privacy, Chats, Phone number, Screen lock, and Proxy settings, and a safety number's **Options**, end with **Learn more**, which opens the matching guide.
+- **Pictures.** The welcome screen, empty lists (chats, archived chats, contacts, search, media, blocked people, and safety numbers), and the screen shown when Beacon can't start now have a simple drawing.
+
+### Changed
+
+- **Shorter wording.** Hints under settings and the text in confirmations are shorter and plainer.
+- **Getting help while linking.** **Help** on the welcome screen and **How to link** in the linking screen's **Options** open a guide page instead of going straight to the browser.
+
 ## v2.7.3
 
 Beacon now opens on KaiOS 4.0 without any setup on a computer. Install over v2.7.2; your chats and settings carry over.

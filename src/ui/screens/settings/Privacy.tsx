@@ -11,6 +11,7 @@ import { activeProxy } from '../../data/proxy';
 import * as screenLock from '../../data/screen-lock';
 import { friendlyError } from '../../errors';
 import { S } from '../../strings';
+import { guideRow } from '../Guide';
 import { ProxyScreen } from '../Proxy';
 import { BlockedScreen } from './Blocked';
 import { PhoneNumberScreen } from './PhoneNumber';
@@ -43,6 +44,8 @@ export function PrivacyScreen() {
     { key: 'lock', label: S.screenLock, sub: screenLock.enabled() ? lockAfterLabel(screenLock.lockAfter()) : undefined, end: 'chevron', onSelect: () => router.push(ScreenLockScreen, {}) },
     { key: 'blocked', label: S.blockedPeople, end: 'chevron', onSelect: () => router.push(BlockedScreen, {}) },
     { key: 'proxy', label: S.proxy, sub: activeProxy() || undefined, end: 'chevron', onSelect: () => router.push(ProxyScreen, {}) },
+    { section: '' },
+    guideRow('settings'),
   ];
   useOnResume(refresh);
   return (

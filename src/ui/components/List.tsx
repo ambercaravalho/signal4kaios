@@ -1,6 +1,7 @@
 import type { ComponentChildren, VNode } from 'preact';
 import { useFocusScroll, useMarquee } from '../app/focus';
 import { Icon } from './Icon';
+import { Pictogram } from './Pictogram';
 
 export type ListEnd = 'chevron' | 'toggle' | 'radio' | 'check';
 
@@ -65,9 +66,10 @@ export function Badge(props: { count: number; dot?: boolean }) {
   return <span class="badge">{props.count > 99 ? '99+' : props.count}</span>;
 }
 
-export function EmptyState(props: { title: string; body?: string }) {
+export function EmptyState(props: { title: string; body?: string; pictogram?: string }) {
   return (
     <div class="empty">
+      {props.pictogram && <Pictogram name={props.pictogram} />}
       <div class="empty-title">{props.title}</div>
       {props.body && <div class="empty-body">{props.body}</div>}
     </div>

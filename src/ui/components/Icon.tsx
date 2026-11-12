@@ -21,6 +21,10 @@ const PATHS: Record<string, string> = {
   note: 'M6 3h12v18H6zM9 8h6M9 12h6M9 16h4',
   archive: 'M3 4h18v4H3zM5 8v12h14V8M10 12h4',
   poll: 'M4 6h10M4 12h16M4 18h7',
+  chat: 'M4 5h16v11H9l-5 4z',
+  gear: 'M12 9a3 3 0 100 6 3 3 0 000-6zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2',
+  bell: 'M6 16v-5a6 6 0 0112 0v5l2 2H4zM10 21h4',
+  help: 'M12 3a9 9 0 100 18 9 9 0 000-18zM9.5 9.5a2.5 2.5 0 114 2c-1 .7-1.5 1.2-1.5 2.5M12 17v.5',
 };
 
 export function Icon(props: { name: keyof typeof PATHS | string; class?: string }) {

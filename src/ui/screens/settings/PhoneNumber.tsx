@@ -7,6 +7,7 @@ import { signal } from '../../data/api';
 import { config } from '../../data/config';
 import { friendlyError } from '../../errors';
 import { S } from '../../strings';
+import { guideRow } from '../Guide';
 
 /** Who sees and who can find you by your number, as in Signal: a number everybody sees can always be found. */
 export function PhoneNumberScreen() {
@@ -38,6 +39,8 @@ export function PhoneNumberScreen() {
       sub: label(findable),
       onSelect: () => (share ? toast(S.findLocked) : choose(S.whoCanFindNumber, S.findNumberHint, findable, (v) => save(false, v))),
     },
+    { section: '' },
+    guideRow('settings'),
   ];
   return (
     <Screen title={S.phoneNumber}>

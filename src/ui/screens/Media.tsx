@@ -58,7 +58,7 @@ export function MediaScreen(props: { convId: string }) {
   }));
   return (
     <Screen title={S.media}>
-      <RowList rows={rows} empty={items ? <EmptyState title={S.noMedia} /> : <Spinner />} />
+      <RowList rows={rows} empty={items ? <EmptyState title={S.noMedia} pictogram="media" /> : <Spinner />} />
     </Screen>
   );
 }
