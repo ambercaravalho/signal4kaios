@@ -9,12 +9,12 @@ import { db } from './data/db';
 import { installEngineHost, onNumberChange } from './data/engine-host';
 import * as http from './data/http';
 import { dbg } from './data/log';
-import * as nativeTls from './data/nativeTls';
 import { hasServiceWorker } from './data/platform';
 import { applyProxy } from './data/proxy';
 import * as screenLock from './data/screen-lock';
 import * as store from './data/store';
 import { setupWake, WAKE_CACHE } from './data/wake';
+import { reloadUnderServiceWorker } from './data/wasm-reload';
 import * as ws from './data/ws';
 import { fmt, S } from './strings';
 import { openChat } from './screens/Chat';
@@ -97,8 +97,6 @@ function start(): void {
     return;
   }
   store.onNotificationClick(openConversation);
-  nativeTls.installProbeHandlers();
-  nativeTls.probe();
   store.init().then(() => {
     ws.connect();
     ws.installWakeHandlers();
@@ -148,7 +146,9 @@ function boot(): void {
     },
     (err) => {
       dbg('libsignal failed to load: ' + ((err && err.reason) || '') + ' ' + (err && err.message));
-      router.reset(StartupErrorScreen, { reason: (err && err.reason) || 'fetch', detail: String((err && err.message) || err) });
+      const showError = () => router.reset(StartupErrorScreen, { reason: (err && err.reason) || 'fetch', detail: String((err && err.message) || err) });
+      if (err && err.reason === 'blocked') reloadUnderServiceWorker().then((reloading) => reloading || showError());
+      else showError();
     }
   );
 }

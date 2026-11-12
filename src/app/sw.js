@@ -1,6 +1,6 @@
 'use strict';
 
-/* Beacon's ServiceWorker (KaiOS 3.0 / 3.1 / 4.0). It relays the app's wake alarm to an open window so the app reconnects, and opens the right chat when a notification is tapped. A closed app can't read messages: Signal only accepts the app's own authenticated connection. */
+/* Beacon's ServiceWorker (KaiOS 3.0 / 3.1 / 4.0). It lets the app compile libsignal's WebAssembly on KaiOS 4.0, relays the app's wake alarm to an open window so the app reconnects, and opens the right chat when a notification is tapped. A closed app can't read messages: Signal only accepts the app's own authenticated connection. */
 
 var WAKE_CACHE = 's4k-wake';
 var LEGACY_CREDENTIALS_KEY = '/__s4k_wake_cfg';
@@ -20,6 +20,53 @@ function dropLegacyCredentials() {
 
 self.addEventListener('activate', function (event) {
   event.waitUntil(Promise.all([self.clients.claim(), dropLegacyCredentials()]));
+});
+
+var SCRIPT_SRC = /^\s*script-src(\s|$)/i;
+var ALLOWS_WASM = /\s'(wasm-)?unsafe-eval'(\s|$)/i;
+
+/* SECURITY-REVIEW: KaiOS 4.0's api-daemon serves app pages with a policy whose script-src lacks 'wasm-unsafe-eval', so libsignal can't compile. This adds only that keyword to each script-src; every other directive, JavaScript eval, and inline scripts stay as strict as before. */
+function allowWasm(header) {
+  var changed = false;
+  var policies = header.split(',').map(function (policy) {
+    var directives = policy.split(';');
+    var found = false;
+    for (var i = 0; i < directives.length; i++) {
+      if (!SCRIPT_SRC.test(directives[i])) continue;
+      found = true;
+      if (ALLOWS_WASM.test(directives[i])) continue;
+      directives[i] = directives[i].replace(/\s*$/, '') + " 'wasm-unsafe-eval'";
+      changed = true;
+    }
+    return found ? directives.join(';') : null;
+  });
+  if (!changed || policies.indexOf(null) !== -1) return null;
+  return policies.join(',');
+}
+
+function withWasmAllowed(response) {
+  try {
+    var policy = response.ok && response.headers.get('Content-Security-Policy');
+    var allowed = policy ? allowWasm(policy) : null;
+    if (!allowed) return response;
+    var headers = new Headers(response.headers);
+    headers.set('Content-Security-Policy', allowed);
+    // The body is read already decoded, so the original encoding and length no longer describe it.
+    headers['delete']('Content-Encoding');
+    headers['delete']('Content-Length');
+    return response.clone().blob().then(function (body) {
+      return new Response(body, { status: response.status, statusText: response.statusText, headers: headers });
+    }, function () {
+      return response;
+    });
+  } catch (e) {
+    return response;
+  }
+}
+
+self.addEventListener('fetch', function (event) {
+  if (event.request.mode !== 'navigate') return;
+  event.respondWith(fetch(event.request).then(withWasmAllowed));
 });
 
 function relayWake() {

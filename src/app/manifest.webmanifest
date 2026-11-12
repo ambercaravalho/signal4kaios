@@ -26,7 +26,7 @@
     "cursor": false,
     "permissions": {
       "systemXHR": {
-        "description": "Connect directly to Signal servers and CDN"
+        "description": "Load link previews and files stored outside Signal's servers"
       },
       "tcp-socket": {
         "description": "Connect securely to Signal servers using Signal's own certificate"
