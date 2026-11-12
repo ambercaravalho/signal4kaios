@@ -2,6 +2,7 @@
  * Loader for the official libsignal crates compiled to WebAssembly (native/libsignal-wasm). Every Signal Protocol operation in the engine goes through `libsignal`; nothing may call it before `loadLibsignal` resolves.
  */
 import init, { initSync, libsignalVersion } from '../../native/libsignal-wasm/pkg/libsignal_wasm.js';
+import { setWasiMemory } from './wasi';
 
 export * as libsignal from '../../native/libsignal-wasm/pkg/libsignal_wasm.js';
 
@@ -41,7 +42,7 @@ export function loadLibsignal(path: string = LIBSIGNAL_WASM_PATH): Promise<strin
       }
       const bytes = await fetchWasm(path);
       try {
-        await init({ module_or_path: bytes });
+        setWasiMemory((await init({ module_or_path: bytes })).memory);
       } catch (e) {
         throw new LibsignalUnavailableError('blocked', `WebAssembly compile failed: ${(e as Error).message}`);
       }
@@ -58,7 +59,7 @@ export function loadLibsignal(path: string = LIBSIGNAL_WASM_PATH): Promise<strin
 /** Synchronous instantiation from bytes already in memory (Node tests). */
 export function loadLibsignalSync(bytes: BufferSource): string {
   if (!loaded) {
-    initSync({ module: bytes });
+    setWasiMemory(initSync({ module: bytes }).memory);
     loaded = true;
   }
   return libsignalVersion();

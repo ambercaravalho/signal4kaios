@@ -33,6 +33,7 @@ const common = {
   legalComments: 'none',
   metafile: analyze,
   define: { 'process.env.NODE_ENV': '"production"' },
+  alias: { wasi_snapshot_preview1: './src/engine/protocol/wasi.ts' },
   logOverride: { 'empty-import-meta': 'silent' },
   logLevel: 'info',
 };

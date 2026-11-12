@@ -15,9 +15,10 @@ runs:
         node-version: 24
         cache: npm
 
-    - name: Install protoc, binaryen, and LLVM
+    # cmake and ninja build BoringSSL for contact discovery; build.sh downloads the pinned wasi-sdk into the cached target directory.
+    - name: Install protoc, binaryen, LLVM, and cmake
       shell: bash
-      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler binaryen clang llvm
+      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler binaryen clang llvm libclang-dev cmake ninja-build
 
     - name: Install the pinned Rust toolchain
       shell: bash

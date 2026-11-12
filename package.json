@@ -1,6 +1,6 @@
 {
   "name": "signal4kaios",
-  "version": "2.9.3",
+  "version": "2.9.4",
   "private": true,
   "description": "Beacon: an unofficial, standalone Signal client for KaiOS 3.0, 3.1, and 4.0",
   "scripts": {
@@ -9,8 +9,8 @@
     "build": "node scripts/build.mjs",
     "icons": "node scripts/icons.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "esbuild test/*.test.ts test/*.test.tsx --bundle --platform=node --format=cjs --target=node22 --jsx=automatic --jsx-import-source=preact --loader:.css=empty --log-override:empty-import-meta=silent --external:@signalapp/libsignal-client --external:'@signalapp/libsignal-client/*' --outdir=dist-test && node --test 'dist-test/*.test.js'",
-    "test:live": "esbuild test/live/*.live.ts --bundle --platform=node --format=cjs --target=node22 --log-override:empty-import-meta=silent --outdir=dist-test/live && node --test 'dist-test/live/*.live.js'",
+    "test": "esbuild test/*.test.ts test/*.test.tsx --bundle --platform=node --format=cjs --target=node22 --jsx=automatic --jsx-import-source=preact --loader:.css=empty --log-override:empty-import-meta=silent --alias:wasi_snapshot_preview1=./src/engine/protocol/wasi.ts --external:@signalapp/libsignal-client --external:'@signalapp/libsignal-client/*' --outdir=dist-test && node --test 'dist-test/*.test.js'",
+    "test:live": "esbuild test/live/*.live.ts --bundle --platform=node --format=cjs --target=node22 --log-override:empty-import-meta=silent --alias:wasi_snapshot_preview1=./src/engine/protocol/wasi.ts --outdir=dist-test/live && node --test 'dist-test/live/*.live.js'",
     "package": "sh scripts/package.sh"
   },
   "engines": {

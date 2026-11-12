@@ -6,6 +6,7 @@ src/app/vendor/libsignal_wasm_bg.wasm
 # libsignal wasm wrapper build output (produced by npm run build:wasm)
 src/native/libsignal-wasm/target/
 src/native/libsignal-wasm/pkg/
+src/native/libsignal-wasm/vendor/
 
 # OS cruft
 .DS_Store

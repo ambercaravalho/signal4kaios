@@ -12,6 +12,7 @@ How Beacon (the signal4kaios repository) turns a KaiOS phone into a Signal linke
 - [Group changes](#group-changes)
 - [Linking](#linking)
 - [The libsignal wrapper](#the-libsignal-wrapper)
+- [Phone number lookup](#phone-number-lookup)
 - [Engine modules](#engine-modules)
 - [Storage](#storage)
 - [Security model](#security-model)
@@ -167,7 +168,7 @@ When the main phone changes the account's number, it sends each linked device a 
 
 `store.send*` in [`src/ui/data/store/send.ts`](../src/ui/data/store/send.ts) writes an optimistic `pending` message, then calls the engine's `signalBridge.send`. The engine:
 
-1. Resolves the recipient to an ACI (phone numbers via synced contacts).
+1. Resolves the recipient to an ACI (phone numbers via synced contacts, including numbers found by [phone number lookup](#phone-number-lookup)).
 2. Builds the `Content` protobuf and pads it.
 3. For each of the recipient's devices, establishes a session from a PreKey bundle if needed (PQXDH) and encrypts with the Double Ratchet. When the recipient's profile key is known, it wraps the result in Sealed Sender with an `Unidentified-Access-Key`.
 4. Sends `PUT /v1/messages/<aci>`, and on `409`/`410` updates the device list and retries.
@@ -283,6 +284,18 @@ Every libsignal call that touches protocol state goes through [`src/engine/proto
 | `username.rs` | Username candidates, zero-knowledge proofs, and encrypted username links |
 | `zk.rs` | Profile key version, commitment, and access key; Groups V2 params, blob and member decryption, profile key encryption, auth and expiring profile key credential presentations; group send endorsements and tokens |
 | `tls.rs` | TLS client for Signal's hosts with libsignal's pinned roots (see [Network](#network)) |
+| `cdsi.rs` | `Cds2Client`: the contact discovery enclave's attestation and Noise channel, from libsignal's `attest` crate (see [Phone number lookup](#phone-number-lookup)) |
+
+## Phone number lookup
+
+Starting a chat with a number that isn't a synced contact asks Signal's contact discovery service (CDSI), an SGX enclave at `wss://cdsi.signal.org/v1/<mrenclave>/discovery`. [`services/cdsi.ts`](../src/engine/services/cdsi.ts) follows libsignal-net's `cdsi.rs`:
+
+1. `GET /v2/directory/auth` returns credentials for the enclave, sent as a Basic `Authorization` header on the WebSocket upgrade. Browser WebSockets can't set headers, so the lookup needs the pinned TLS client.
+2. The enclave's first message is its attestation. `Cds2Client` (libsignal's `attest`, with BoringSSL compiled for WebAssembly; see [Contact discovery build](development.md#contact-discovery-build)) checks the SGX quote, Intel's endorsements, and the production `mrenclave` before it starts the Noise handshake. If attestation fails the socket closes and no number has been sent.
+3. Over the Noise channel the client sends a `ClientRequest` with the numbers as 8-byte big-endian values, gets back a token, and acknowledges it. The enclave answers with 40-byte e164/PNI/ACI records and closes the socket normally.
+4. Close code 4008 means rate limited; its JSON reason carries `retry_after` in seconds, which the app shows as minutes.
+
+Each lookup is a fresh request without a saved token, so it counts against the account's discovery quota like a first lookup on another device. A number with no account, or whose owner turned off **Who can find me by number**, comes back without an ACI and is shown as not found. A found account is saved to `syncedContacts` with its number, ACI, and PNI, so sends and later lookups resolve it like a synced contact.
 
 ## Engine modules
 
@@ -308,6 +321,7 @@ Every libsignal call that touches protocol state goes through [`src/engine/proto
 | [`services/group-avatar.ts`](../src/engine/services/group-avatar.ts) | Group photo download and decrypt |
 | [`services/group-send.ts`](../src/engine/services/group-send.ts) | Group send endorsements and tokens, per-group sender key distribution IDs, and which member devices have our sender key |
 | [`services/usernames.ts`](../src/engine/services/usernames.ts) | Username reserve, confirm, delete, and link URLs |
+| [`services/cdsi.ts`](../src/engine/services/cdsi.ts) | Phone number lookup through contact discovery (see [Phone number lookup](#phone-number-lookup)) |
 | [`crypto/`](../src/engine/crypto) | WebCrypto AES and [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) HMAC/HKDF for attachments, profiles, and storage |
 
 ## Storage

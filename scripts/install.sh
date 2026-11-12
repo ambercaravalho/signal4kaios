@@ -12,7 +12,7 @@
 #
 # Launch from the phone's app list, or from the desktop with:
 #   appscmd launch http://signal4kaios.localhost/manifest.webmanifest
-# (the launch subcommand wants the full manifest URL, not the short name). If the app doesn't appear, reboot the phone.
+# (the launch subcommand wants the full manifest URL, not the short name). If the app doesn't appear, restart B2G (adb shell stop b2g && adb shell start b2g).
 #
 # Debug afterwards with a recent Firefox at about:debugging.
 set -e
@@ -45,5 +45,5 @@ echo "Installing src/app/ via appscmd"
 "$APPSCMD" install src/app/
 
 echo
-echo "OK: installed. Reboot the phone for it to take effect."
+echo "OK: installed. Restart B2G for it to take effect: adb shell stop b2g && adb shell start b2g"
 echo "Debug via a modern Firefox -> about:debugging -> This Firefox / USB."

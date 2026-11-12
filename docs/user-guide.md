@@ -118,6 +118,8 @@ A group opens as a request when someone who isn't in your contacts added or invi
 
 **New chat** lists your contacts and groups and filters them as you type a name. Type a username to get **Find by username**, or a number to get **Find by phone number**. **Scan** (right softkey) reads someone's Signal QR code (their username code or a phone number), a group's QR code, or a proxy's.
 
+**Find by phone number** opens the chat right away for someone in your contacts. Any other number is looked up with Signal, privately: the lookup runs inside Signal's secure enclave, which the phone checks before sending the number. When the number isn't on Signal, or its owner chose not to be found by number, Beacon says **Not found on Signal**; try their username. Signal limits how many numbers an account can look up, so after many lookups Beacon says how many minutes to wait.
+
 **Username links**: **Open link** on a `signal.me` link in a chat, or scanning someone's username QR code, opens a chat with them. When its owner has reset the link, Beacon says **Link no longer works**; ask them for a new one or their username.
 
 **Joining a group by its link**: **Open link** on a `signal.group` link in a chat, or scanning a group's QR code, shows the group's name, how many members it has, and its description. **Join** adds you right away; when the group needs an admin's approval it's **Request to join** instead, and the same screen then offers **Cancel request** until an admin decides. Once you're in, the group opens with a **You joined the group via the group link** line.
@@ -204,7 +206,6 @@ These won't be added, and Beacon points you to your phone for them instead:
 
 These aren't possible on the phone:
 
-- **"Contact joined Signal" alerts**, which need Signal's contact discovery, which the phone can't run yet ([#9](https://github.com/ambercaravalho/signal4kaios/issues/9)).
 - **An unread count on the app icon**, because KaiOS apps can't badge their icon. Unread counts show in the chats list.
 - **A different notification sound for each chat**, because KaiOS apps can't pick the sound of a notification; **Settings → Notifications → Sound** turns it on or off.
 
@@ -212,7 +213,7 @@ These work only partly:
 
 | Action | What happens now |
 | --- | --- |
-| Starting a chat by phone number | Works for numbers in your synced contacts and for Signal usernames. Other numbers can't be looked up, because the phone can't run Signal's contact discovery yet ([details](development.md#phone-number-lookup-cdsi-spike-findings)). |
+| "Contact joined Signal" alerts | Not shown. Beacon looks a number up with Signal only when you start a chat with it, not your whole address book. |
 | Holding the Call key to record a voice message | Works only on phones that pass a held Call key to apps. **Options → Record voice message** works everywhere. |
 | Forwarding files you sent from this phone before Beacon 2.9.3 | Not possible, because the phone didn't keep a copy it can resend. They're also left out of **Media**. Files sent since then can be forwarded. |
 | Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |

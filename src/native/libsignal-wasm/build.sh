@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build the libsignal wasm wrapper: cargo (wasm32) -> wasm-bindgen (--target web) -> optional wasm-opt -> src/app/vendor.
 #
-# Requires the Rust toolchain pinned in rust-toolchain.toml (rustup installs it automatically), protoc (libsignal's build scripts compile .proto files), wasm-bindgen-cli matching the wasm-bindgen version pinned in Cargo.toml, and a clang that can target wasm32 plus llvm-ar (ring, used by the pinned TLS client, compiles C).
+# Requires the Rust toolchain pinned in rust-toolchain.toml (rustup installs it automatically), protoc (libsignal's build scripts compile .proto files), wasm-bindgen-cli matching the wasm-bindgen version pinned in Cargo.toml, a clang that can target wasm32 plus llvm-ar (ring, used by the pinned TLS client, compiles C), and cmake plus curl for the contact discovery dependencies (wasi-deps.sh).
 set -eu
 cd "$(dirname "$0")"
 
@@ -43,8 +43,12 @@ if [ -z "$AR_wasm32_unknown_unknown" ]; then
 fi
 export CC_wasm32_unknown_unknown AR_wasm32_unknown_unknown
 
+. ./wasi-deps.sh
+
 cargo build --release --locked
 wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/release/libsignal_wasm.wasm
+# wasm-bindgen emits one namespace import and one imports-object key per WASI function; one of each is enough and keeps esbuild from warning about duplicate keys.
+perl -0pi -e 'my %seen; s/^import \* as import\d+ from "wasi_snapshot_preview1";?\n/$seen{i}++ ? "" : $&/gme; s/^\s*"wasi_snapshot_preview1": import\d+,\n/$seen{k}++ ? "" : $&/gme' pkg/libsignal_wasm.js
 # The glue is ES module syntax; this lets Node's test runner load it directly when needed.
 printf '{ "type": "module" }\n' > pkg/package.json
 
