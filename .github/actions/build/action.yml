@@ -15,30 +15,56 @@ runs:
         node-version: 24
         cache: npm
 
+    # The built module and glue, keyed on every tracked file of the wrapper crate (the checkout has no build output yet). A hit skips the whole Rust build. Releases always build from source.
+    - name: Restore the wasm build
+      id: wasm
+      if: inputs.release-tag == ''
+      uses: actions/cache@v6
+      with:
+        path: |
+          src/native/libsignal-wasm/pkg
+          src/app/vendor/libsignal_wasm_bg.wasm
+        key: wasm-${{ runner.os }}-${{ hashFiles('src/native/libsignal-wasm/**', 'src/native/libsignal-wasm/.cargo/**') }}
+
     # cmake and ninja build BoringSSL for contact discovery; build.sh downloads the pinned wasi-sdk into the cached target directory.
     - name: Install protoc, binaryen, LLVM, and cmake
+      if: steps.wasm.outputs.cache-hit != 'true'
       shell: bash
       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler binaryen clang llvm libclang-dev cmake ninja-build
 
     - name: Install the pinned Rust toolchain
+      if: steps.wasm.outputs.cache-hit != 'true'
       shell: bash
       working-directory: src/native/libsignal-wasm
       run: rustup toolchain install
 
     - name: Read the pinned wasm-bindgen version
+      if: steps.wasm.outputs.cache-hit != 'true'
       shell: bash
       run: echo "WASM_BINDGEN_VERSION=$(sed -n 's/^wasm-bindgen = "=\([^"]*\)"/\1/p' src/native/libsignal-wasm/Cargo.toml)" >> "$GITHUB_ENV"
 
-    - uses: actions/cache@v6
+    - name: Restore wasm-bindgen-cli
+      if: steps.wasm.outputs.cache-hit != 'true'
+      uses: actions/cache@v6
+      with:
+        path: ~/.cargo/bin/wasm-bindgen
+        key: wasm-bindgen-${{ runner.os }}-${{ env.WASM_BINDGEN_VERSION }}
+
+    # On a Cargo.lock change the newest older cache still covers most crates, BoringSSL (target/boringssl-wasi), and wasi-sdk. vendor/ keeps the patched libc's file times, which cargo uses to decide whether it and everything above it rebuild.
+    - name: Restore the cargo cache
+      if: steps.wasm.outputs.cache-hit != 'true'
+      uses: actions/cache@v6
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-          ~/.cargo/bin/wasm-bindgen
           src/native/libsignal-wasm/target
+          src/native/libsignal-wasm/vendor
         key: cargo-${{ runner.os }}-${{ hashFiles('src/native/libsignal-wasm/Cargo.lock', 'src/native/libsignal-wasm/rust-toolchain.toml') }}-wbg${{ env.WASM_BINDGEN_VERSION }}
+        restore-keys: cargo-${{ runner.os }}-
 
     - name: Install wasm-bindgen-cli
+      if: steps.wasm.outputs.cache-hit != 'true'
       shell: bash
       run: |
         if ! wasm-bindgen --version 2>/dev/null | grep -q " $WASM_BINDGEN_VERSION$"; then
@@ -47,7 +73,9 @@ runs:
 
     - shell: bash
       run: npm ci
-    - shell: bash
+    - name: Build the wasm module
+      if: steps.wasm.outputs.cache-hit != 'true'
+      shell: bash
       run: npm run build:wasm
     - name: Generated protobuf codecs are up to date
       shell: bash
