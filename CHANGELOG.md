@@ -2,7 +2,23 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
-## v2.7.4
+## v2.8.0
+
+Beacon closes more gaps with the official Signal apps: notifications work the way they do on your phone, groups from strangers wait for your OK, and username QR codes scan. Install over v2.7.4; your chats and settings carry over, and chats you'd muted stay muted.
+
+### New
+
+- **Settings → Notifications.** Choose what notifications show (name and message, name only, or neither), turn the sound on or off, and get a notification when someone reacts to your message. **In muted chats** picks whether mentions, replies to you, and calls still notify; each chat can change these in its settings.
+- **Notification profiles.** Profiles from your main phone, like Work or Sleep, follow their schedule here and let through only the people and groups they allow. Turn one on for an hour or until you turn it off, or switch it off, from **Settings → Notifications**.
+- **Mute for a while.** Mute a chat for 1 hour, 8 hours, 1 day, 7 days, or always. Chat settings shows when the mute ends, and the chat unmutes on its own. Timed mutes set on your phone now carry over too.
+- **Username QR codes and links.** **New chat → Scan** reads someone's username QR code, and **Open link** on a `signal.me` link opens a chat with them.
+- **Polls in one-to-one chats.** **Create poll** now works in any chat.
+- **Group message requests.** A group someone you don't know adds you to waits as a request: **Accept** to join in, or **Delete** or **Block** it. Choices you make on another device apply here too.
+- **Asking your phone for old attachments.** When Signal's servers no longer have a photo or file, Beacon asks your main phone to upload it again, as Signal Desktop does.
+
+### Changed
+
+- Phone number links in chats (`signal.me/#p/`) open a chat in Beacon instead of the browser.
 
 Help in Beacon is shorter and easier to scan, with pictures, and points you to the full guide when you need more. Install over v2.7.3; your chats and settings carry over.
 
