@@ -149,6 +149,39 @@
   border-bottom-right-radius: 0.4rem;
 }
 
+/* Signal's chat bubble colors, set on the chat body or a picker swatch. */
+.chat-color-ultramarine { --bubble-out: linear-gradient(180deg, #0552f0, #2c6bed); }
+.chat-color-crimson { --bubble-out: #cf163e; }
+.chat-color-vermilion { --bubble-out: #c73f0a; }
+.chat-color-burlap { --bubble-out: #6f6a58; }
+.chat-color-forest { --bubble-out: #3b7845; }
+.chat-color-wintergreen { --bubble-out: #1d8663; }
+.chat-color-teal { --bubble-out: #077d92; }
+.chat-color-blue { --bubble-out: #336ba3; }
+.chat-color-indigo { --bubble-out: #6058ca; }
+.chat-color-violet { --bubble-out: #9932c8; }
+.chat-color-plum { --bubble-out: #aa377a; }
+.chat-color-taupe { --bubble-out: #8f616a; }
+.chat-color-steel { --bubble-out: #71717f; }
+.chat-color-ember { --bubble-out: linear-gradient(168deg, #e57c00, #5e0000); }
+.chat-color-midnight { --bubble-out: linear-gradient(180deg, #2c2c3a, #787891); }
+.chat-color-infrared { --bubble-out: linear-gradient(192deg, #f65560, #442ced); }
+.chat-color-lagoon { --bubble-out: linear-gradient(180deg, #004066, #32867d); }
+.chat-color-fluorescent { --bubble-out: linear-gradient(192deg, #ec13dd, #1b36c6); }
+.chat-color-basil { --bubble-out: linear-gradient(180deg, #2f9373, #077343); }
+.chat-color-sublime { --bubble-out: linear-gradient(180deg, #6281d5, #974460); }
+.chat-color-sea { --bubble-out: linear-gradient(180deg, #498fd4, #2c66a0); }
+.chat-color-tangerine { --bubble-out: linear-gradient(192deg, #db7133, #911231); }
+
+.swatch {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--bubble-out);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
 .notice.focused,
 .msg-in.focused .bubble {
   background: var(--accent);

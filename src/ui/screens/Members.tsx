@@ -1,17 +1,24 @@
 import { router } from '../app/router';
-import { Avatar } from '../components/Avatar';
+import { Avatar, OWN_PROFILE_PREFIX } from '../components/Avatar';
 import { confirm, DIVIDER, pickMany, prompt, showOptions } from '../components/Overlays';
 import { Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
 import { runAction } from '../components/setting-rows';
 import { toast } from '../components/Toast';
 import { signal } from '../data/api';
+import { config } from '../data/config';
 import * as store from '../data/store';
 import { friendlyError } from '../errors';
 import { S } from '../strings';
 import { ChatScreen } from './Chat';
 import { allowed, amAdmin, useGroupDetail } from './group-perms';
 import { SafetyNumberScreen } from './SafetyNumber';
+import { selfName } from './settings/Profile';
+
+/** A member's avatar; ours is our profile photo, not Note to Self. */
+export function memberAvatar(id: string) {
+  return <Avatar conv={store.isSelf(id) ? { id: OWN_PROFILE_PREFIX + config.number(), type: 'direct', name: selfName() || S.you } : { id, type: 'direct', name: store.displayName(id) }} />;
+}
 
 /** A group's members and pending invites. OK opens what you can do with a member; the right softkey adds people. */
 export function MembersScreen(props: { convId: string }) {
@@ -94,14 +101,14 @@ export function MembersScreen(props: { convId: string }) {
     key: (pending ? 'i:' : 'm:') + id,
     label: store.isSelf(id) ? S.you : store.displayName(id),
     sub: pending ? S.invited : admins.indexOf(id) >= 0 ? S.admin : undefined,
-    leading: <Avatar conv={{ id, type: 'direct', name: store.displayName(id) }} />,
+    leading: memberAvatar(id),
     onSelect: () => memberOptions(id, pending),
   });
   const requestRow = (id: string): Row => ({
     key: 'r:' + id,
     label: store.displayName(id),
     sub: S.wantsToJoin,
-    leading: <Avatar conv={{ id, type: 'direct', name: store.displayName(id) }} />,
+    leading: memberAvatar(id),
     onSelect: () => requestOptions(id),
   });
 

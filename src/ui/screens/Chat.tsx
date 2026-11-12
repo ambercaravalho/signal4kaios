@@ -17,6 +17,7 @@ import { muteItem } from '../components/setting-rows';
 import { TextField } from '../components/TextField';
 import { toast } from '../components/Toast';
 import { type GroupDetail, signal } from '../data/api';
+import { chatColorClass, chatColorOf } from '../data/chat-colors';
 import { fmtDay, fmtMsgTime } from '../data/format';
 import * as store from '../data/store';
 import type { Conversation, Message } from '../data/types';
@@ -204,7 +205,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   return (
     <Screen
       title={(conv && conv.name) || S.unknown}
-      bodyClass="chat-body"
+      bodyClass={['chat-body', chatColorClass(chatColorOf(conv))].filter(Boolean).join(' ')}
       banner={
         <>
           <ConnectionBanner />

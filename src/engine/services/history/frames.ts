@@ -4,9 +4,12 @@ import { fromBinary } from '@bufbuild/protobuf';
 
 import { toBase64 } from '../../bytes';
 import {
+  type AccountData,
   BackupInfoSchema,
   type Chat,
   type ChatItem,
+  type ChatStyle,
+  ChatStyle_BubbleColorPreset,
   type Contact,
   FrameSchema,
   type Group,
@@ -14,7 +17,7 @@ import {
 } from '../../gen/Backups_pb';
 import { attachmentJson, contactCardJson, reactionsOf, type RecipientLookup, standardJson, textInto, uuidOf } from './frame-content';
 import { updateInto } from './frame-updates';
-import type { CreateFrameMapper, HistoryChat, HistoryContact, HistoryGroup, HistoryItem, HistoryMessage, HistorySelf, HistoryStatus } from './types';
+import type { CreateFrameMapper, HistoryAccount, HistoryChat, HistoryContact, HistoryGroup, HistoryItem, HistoryMessage, HistorySelf, HistoryStatus } from './types';
 
 const BACKUP_VERSION = 1n;
 const MUTED_ALWAYS = Number.MAX_SAFE_INTEGER;
@@ -50,6 +53,18 @@ function sendStatus(list: SendStatus[]): HistoryStatus {
     if (status && STATUS_RANK[status] > STATUS_RANK[best]) best = status;
   }
   return best;
+}
+
+/** A bubble color preset's name, e.g. `tangerine` for GRADIENT_TANGERINE; automatic, custom, and unknown colors have none. */
+function bubbleColor(style: ChatStyle | undefined): string | undefined {
+  const b = style && style.bubbleColor;
+  if (!b || b.case !== 'bubbleColorPreset' || !(b.value >= ChatStyle_BubbleColorPreset.SOLID_ULTRAMARINE && b.value <= ChatStyle_BubbleColorPreset.GRADIENT_TANGERINE)) return undefined;
+  return ChatStyle_BubbleColorPreset[b.value].replace(/^(SOLID|GRADIENT)_/, '').toLowerCase();
+}
+
+function account(a: AccountData): HistoryAccount | null {
+  const chatColor = bubbleColor(a.accountSettings && a.accountSettings.defaultChatStyle);
+  return chatColor ? { t: 'account', chatColor } : null;
 }
 
 function mutedUntil(ms: bigint | undefined): number {
@@ -115,6 +130,8 @@ export const createFrameMapper: CreateFrameMapper = (self: HistorySelf, groupIdO
     if (c.notifyForMentionsIfMuted !== undefined) out.mentionsIfMuted = c.notifyForMentionsIfMuted;
     if (c.notifyForRepliesIfMuted !== undefined) out.repliesIfMuted = c.notifyForRepliesIfMuted;
     if (c.notifyForCallsIfMuted !== undefined) out.callsIfMuted = c.notifyForCallsIfMuted;
+    const chatColor = bubbleColor(c.style);
+    if (chatColor) out.chatColor = chatColor;
     return out;
   }
 
@@ -235,6 +252,8 @@ export const createFrameMapper: CreateFrameMapper = (self: HistorySelf, groupIdO
       }
       const f = fromBinary(FrameSchema, frame);
       switch (f.item.case) {
+        case 'account':
+          return account(f.item.value);
         case 'recipient':
           return f.item.value.destination.case ? recipient(f.item.value.id, f.item.value.destination) : null;
         case 'chat':

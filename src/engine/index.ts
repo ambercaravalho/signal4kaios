@@ -16,7 +16,7 @@ import { loadLibsignal } from './protocol/libsignal';
 export type { ChatFolderEdit } from './bridge/chat-folders';
 export type { MessageRef } from './bridge/delivery';
 export type { GroupLinkPreview } from './bridge/groups';
-export type { HistoryChat, HistoryContact, HistoryGroup, HistoryItem, HistoryMessage, TransferArchive } from './bridge/history';
+export type { HistoryAccount, HistoryChat, HistoryContact, HistoryGroup, HistoryItem, HistoryMessage, TransferArchive } from './bridge/history';
 
 export const signalBridge = {
   store,

@@ -126,7 +126,7 @@ A group opens as a request when someone who isn't in your contacts added or invi
 
 ## Chat settings, groups, and safety numbers
 
-- **For everyone**: **Media** is the first row; see [Media](#media).
+- **For everyone**: **Media** is the first row; see [Media](#media). **Chat color** gives this chat's bubbles one of Signal's colors, or **Default** to use the one in **Settings → Appearance**. Chat colors apply to this phone only.
 - **For a person**: Nickname (saved as a Signal nickname on all your devices), Disappearing messages, Mute (showing **Muted until** a time, or **Muted always**), View safety number, and Block or Unblock. While the chat is muted, **Notify for calls** still notifies you when they call.
 - **For a group**: the description, **Members**, and, as the group's permissions allow, the group name, description, and disappearing messages. While the group is muted, **Notify for mentions**, **Notify for replies to you**, and **Notify for calls** pick what still notifies you; each starts from your choice in **Settings → Notifications** and is kept in step with your other devices. Admins also get **Permissions** (who can add members, edit group info, and send messages) and **Group link** (off, on, or on with admin approval; show its QR code or reset it). **Block and leave group** and **Leave group** are at the bottom.
 - **Members**: OK on a member to message them or view their safety number; admins can make or remove admins, remove members, and cancel invites. Admins also see **Requests to join** at the top when people asked to join through the group link; OK on one to **Approve** or **Deny** it. The right softkey adds people from your contacts, or by username if you have none. People Signal can't add directly are invited.
@@ -141,7 +141,7 @@ A group opens as a request when someone who isn't in your contacts added or invi
 | **Chats** | Text formatting; Keep muted chats archived; Generate link previews; Chat folders (see [Chat folders](#chat-folders)) |
 | **Notifications** | Notification profile; Show; Sound; Reactions to your messages; what still notifies in muted chats (see [Notifications](#notifications)) |
 | **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Screen lock; Blocked; Proxy |
-| **Appearance** | Theme: light or dark; Text size: Small, Normal, Large, or Extra large (this phone only) |
+| **Appearance** | Theme: light or dark; Text size: Small, Normal, Large, or Extra large; Chat color: Automatic or one of Signal's 22 bubble colors, for every chat without its own (all on this phone only) |
 | **Help** | Short guides by topic, Source code, and the version |
 | **Debug** | Technical details for troubleshooting (see below) |
 
@@ -185,6 +185,8 @@ Keep Beacon open in the background to get notifications. Nothing is lost when it
 ## What lives on the phone
 
 Message history exists only on the phone. It starts with the history your main phone sent when you linked, if you chose **Transfer message history** there ([Setup](setup.md#message-history)), or else from when you linked. Each chat keeps about its **500 most recent messages**, and viewed media is kept in a small cache. **Settings → Linked device → Delete all data** removes everything.
+
+The transferred history also brings your chat colors: the default color and each chat's own, when they're one of Signal's preset colors. A chat with a custom color you made on your phone uses the default here.
 
 Photos and files in the transferred history download when you open them, as new ones do. Older ones that Signal's servers no longer keep show **Asking your phone…**, and your main phone uploads them again.
 

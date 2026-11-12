@@ -159,6 +159,8 @@ export interface Conversation {
   /** "Mark as unread" with nothing actually unread; opening the chat clears it. */
   markedUnread?: boolean;
   expireTimer?: number;
+  /** This chat's bubble color (a `CHAT_COLORS` name); unset follows the default. */
+  chatColor?: string;
   /** Unsent text in the composer, kept until it's sent or cleared. */
   draft?: string;
   draftMentions?: PickedMention[];

@@ -79,6 +79,8 @@ interface ConfigData {
   chatFolders?: HostChatFolder[];
   stickerPacks?: HostStickerPack[];
   textSize?: TextSize;
+  /** The bubble color chats use unless they have their own; on this phone only. */
+  chatColor?: string;
   sharePhoneNumber?: boolean;
   findableByNumber?: boolean;
   screenLock?: ScreenLockConfig;
@@ -222,6 +224,12 @@ export const config = {
   textSize(): TextSize {
     const v = read().textSize;
     return v && TEXT_SIZES.indexOf(v) >= 0 ? v : 'normal';
+  },
+
+  /** The default chat color's name, or '' for automatic; check it with `isChatColor`. */
+  chatColor(): string {
+    const v = read().chatColor;
+    return typeof v === 'string' ? v : '';
   },
 
   /** The Signal proxy's hostname, kept while the proxy is turned off. */

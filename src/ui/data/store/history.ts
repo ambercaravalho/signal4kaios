@@ -3,6 +3,7 @@
 import type { HistoryChat, HistoryItem, HistoryMessage } from '../../../engine';
 import { fromBase64 } from '../../../engine/bytes';
 import { signal } from '../api';
+import { isChatColor } from '../chat-colors';
 import { config, type HistorySync } from '../config';
 import { db, PRUNE_KEEP } from '../db';
 import type { MessageEvent, NoticeEvent, StoreEvent } from '../normalize/events';
@@ -50,6 +51,7 @@ export class HistoryImport {
     if (h.mentionsIfMuted !== undefined) c.mentionsIfMuted = h.mentionsIfMuted;
     if (h.repliesIfMuted !== undefined) c.repliesIfMuted = h.repliesIfMuted;
     if (h.callsIfMuted !== undefined) c.callsIfMuted = h.callsIfMuted;
+    if (isChatColor(h.chatColor)) c.chatColor = h.chatColor;
   }
 
   /** The notice for a timer change or ended poll, which the received-message path makes elsewhere. */
@@ -123,7 +125,9 @@ export class HistoryImport {
   async apply(items: HistoryItem[]): Promise<void> {
     const out: Message[] = [];
     for (const it of items) {
-      if (it.t === 'contact') {
+      if (it.t === 'account') {
+        if (isChatColor(it.chatColor)) config.set({ chatColor: it.chatColor });
+      } else if (it.t === 'contact') {
         const key = it.e164 || it.aci;
         if (it.name) for (const k of [it.e164, it.aci]) if (k) this.names.set(k, it.name);
         this.whitelisted.set(key, it.whitelisted);

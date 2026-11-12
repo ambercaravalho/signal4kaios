@@ -3,6 +3,7 @@ import { setTextSize, setTheme } from '../../app/theme';
 import { pick } from '../../components/Overlays';
 import { RowList } from '../../components/RowList';
 import { Screen } from '../../components/Screen';
+import { AUTOMATIC, chatColorLabel, chatColorOptions, defaultChatColor } from '../../data/chat-colors';
 import { config, type TextSize, type ThemeName } from '../../data/config';
 import { S } from '../../strings';
 
@@ -30,12 +31,21 @@ export function AppearanceScreen() {
       refresh();
     }
   }
+  const color = defaultChatColor();
+  async function chooseColor(): Promise<void> {
+    const v = await pick(S.chatColor, chatColorOptions({ value: AUTOMATIC, label: S.chatColorAutomatic, swatch: AUTOMATIC }), color);
+    if (v) {
+      config.set({ chatColor: v === AUTOMATIC ? undefined : v });
+      refresh();
+    }
+  }
   return (
     <Screen title={S.appearance}>
       <RowList
         rows={[
           { key: 'theme', label: S.theme, sub: theme === 'dark' ? S.dark : S.light, onSelect: choose },
           { key: 'text', label: S.textSize, sub: sizes.filter((s) => s.value === size)[0].label, onSelect: chooseSize },
+          { key: 'color', label: S.chatColor, sub: chatColorLabel(color), onSelect: chooseColor },
         ]}
       />
     </Screen>

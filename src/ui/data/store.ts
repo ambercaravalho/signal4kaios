@@ -4,7 +4,7 @@ export { on, type StoreEvents } from './store/events';
 export { contactByKey, contactName, contactsList, displayName, groupAvatarKey, groupsList, isSelf, isSelfConv, refreshDirectory, selfNumber } from './store/contacts';
 export { attachmentLabel, noticeText } from './store/previews';
 export { type MutedException, notificationText, notifiesWhileMuted, onNotificationClick, shouldNotify } from './store/notify';
-export { archivedConversations, chatMedia, connectionState, conversation, conversations, conversationWith, groupConversation, init, isReady, joinedGroupConversation, openConversationId, purgeExpired, purgeExpiredConv, setConnection, setConversationName, setConvExpire, setDraft, setOpenConv, typing } from './store/conversations';
+export { archivedConversations, chatMedia, connectionState, conversation, conversations, conversationWith, groupConversation, init, isReady, joinedGroupConversation, openConversationId, purgeExpired, purgeExpiredConv, setChatColor, setConnection, setConversationName, setConvExpire, setDraft, setOpenConv, typing } from './store/conversations';
 export { applyEvent, ingestRaw, MAX_EDITS } from './store/ingest';
 export { markAllRead, markRead, markViewed } from './store/read';
 export { forwardMessage, MAX_ATTACHMENTS, retryMessage, sendAttachments, sendEdit, sendText, type OutgoingFile } from './store/send';

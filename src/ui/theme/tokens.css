@@ -27,6 +27,7 @@
   --line: rgba(0, 0, 0, 0.12);
 
   --sep-bg: #e6e6e6;
+  --sep-bg-raised: #e6e6e6;
   --sep-text: #6a6a6a;
   --softkeys-bg: #cccccc;
   --softkeys-text: #323232;
@@ -52,6 +53,8 @@
   --line: rgba(255, 255, 255, 0.12);
 
   --sep-bg: #282828;
+  /* Separators on popups, whose background is --bg-raised (the same gray as --sep-bg in dark). */
+  --sep-bg-raised: #3a3a3a;
   --sep-text: rgba(255, 255, 255, 0.6);
   --softkeys-bg: #000000;
   --softkeys-text: #ffffff;

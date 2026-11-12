@@ -134,6 +134,16 @@ export function timerLine(conv: Conversation, author: string, seconds: number, t
   applyNotice({ type: 'notice', convId: conv.id, groupInternalId: null, author, timestamp, notice: { kind: 'timer', seconds } }, true);
 }
 
+/** The chat's own bubble color on this phone, or null to follow the default. */
+export function setChatColor(convId: string, color: string | null): void {
+  const conv = convs[convId];
+  if (!conv || (conv.chatColor || null) === color) return;
+  if (color) conv.chatColor = color;
+  else delete conv.chatColor;
+  persistConv(conv);
+  emit('conversations');
+}
+
 export function setConversationName(convId: string, name: string): void {
   const conv = convs[convId];
   if (!conv || !name) return;

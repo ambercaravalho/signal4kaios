@@ -6,9 +6,10 @@ import { renderToString } from 'preact-render-to-string';
 import { _stackForTest, router, RouterView } from '../src/ui/app/router';
 import { Avatar, AVATAR_COLORS, avatarColorIndex } from '../src/ui/components/Avatar';
 import { Badge, ListItem } from '../src/ui/components/List';
-import { confirm, DIVIDER, menuRows, showOptions } from '../src/ui/components/Overlays';
+import { confirm, DIVIDER, menuRows, pick, showOptions } from '../src/ui/components/Overlays';
 import { QrCode } from '../src/ui/components/Qr';
 import { RichText } from '../src/ui/components/RichText';
+import { AUTOMATIC, CHAT_COLORS, chatColorOptions } from '../src/ui/data/chat-colors';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import { GUIDES } from '../src/ui/data/guides';
@@ -19,13 +20,15 @@ import { ChatSettingsScreen } from '../src/ui/screens/ChatSettings';
 import { DebugScreen } from '../src/ui/screens/Debug';
 import { guideRow, openGuide } from '../src/ui/screens/Guide';
 import { ArchivedScreen, HomeScreen } from '../src/ui/screens/Home';
+import { memberAvatar } from '../src/ui/screens/Members';
 import { LinkScreen, WelcomeScreen } from '../src/ui/screens/Onboarding';
 import { NewChatScreen, SearchScreen } from '../src/ui/screens/SearchList';
 import { SettingsScreen } from '../src/ui/screens/Settings';
+import { AppearanceScreen } from '../src/ui/screens/settings/Appearance';
 import { HELP_TOPICS, HelpScreen } from '../src/ui/screens/settings/Help';
 import { NotificationsScreen } from '../src/ui/screens/settings/Notifications';
 import { StartupErrorScreen } from '../src/ui/screens/StartupError';
-import { DEBUG, S } from '../src/ui/strings';
+import { DEBUG, fmt, S } from '../src/ui/strings';
 import { settle } from './helpers';
 
 const ME = '+15550000';
@@ -276,5 +279,46 @@ describe('screens', () => {
     out = text(html());
     assert.ok(out.includes('🌙 Sleep'));
     config.set({ notificationProfiles: undefined, notificationProfileOverride: undefined });
+  });
+
+  it('colors a chat’s bubbles with its own color, else the default', () => {
+    const bodyClass = () => (html().match(/class="body (chat-body[^"]*)"/) || [])[1];
+    const shows = (screen: any, props: any, line: string) => {
+      router.reset(screen, props);
+      assert.ok(text(html()).replace(/\s+/g, ' ').includes(S.chatColor + ' ' + line), line);
+    };
+    router.reset(ChatScreen, { convId: ALICE });
+    assert.equal(bodyClass(), 'chat-body');
+    config.set({ chatColor: 'plum' });
+    router.reset(ChatScreen, { convId: ALICE });
+    assert.equal(bodyClass(), 'chat-body chat-color-plum');
+    shows(ChatSettingsScreen, { convId: ALICE }, fmt(S.chatColorDefault, { name: 'Plum' }));
+    store.setChatColor(ALICE, 'forest');
+    router.reset(ChatScreen, { convId: ALICE });
+    assert.equal(bodyClass(), 'chat-body chat-color-forest');
+    shows(ChatSettingsScreen, { convId: ALICE }, 'Forest');
+    shows(AppearanceScreen, {}, 'Plum');
+    store.setChatColor(ALICE, null);
+    config.set({ chatColor: undefined });
+    shows(AppearanceScreen, {}, S.chatColorAutomatic);
+  });
+
+  it('shows a swatch beside each chat color in the picker', () => {
+    router.reset(AppearanceScreen, {});
+    pick(S.chatColor, chatColorOptions({ value: AUTOMATIC, label: S.chatColorAutomatic, swatch: AUTOMATIC }), AUTOMATIC);
+    const out = html();
+    assert.match(out, /<span class="swatch"><\/span>[^]*Automatic/);
+    for (const c of CHAT_COLORS) assert.match(out, new RegExp('<span class="swatch chat-color-' + c + '">'), c);
+    router.pop();
+  });
+
+  it('shows our profile photo or initials for "You" in a member list, not the Note to Self icon', () => {
+    const NOTE = 'M6 3h12v18H6z';
+    assert.ok(renderToString(<Avatar conv={{ id: ME, type: 'direct', name: 'Note to Self' }} />).includes(NOTE));
+    config.set({ profileName: 'Mia Park' });
+    const out = renderToString(memberAvatar(config.aci()));
+    assert.ok(!out.includes(NOTE));
+    assert.match(out, />MP</);
+    config.set({ profileName: undefined });
   });
 });

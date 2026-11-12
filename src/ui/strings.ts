@@ -555,6 +555,9 @@ export const S = {
   textNormal: 'Normal',
   textLarge: 'Large',
   textExtraLarge: 'Extra large',
+  chatColor: 'Chat color',
+  chatColorAutomatic: 'Automatic',
+  chatColorDefault: 'Default ({name})',
   help: 'Help',
   version: 'Version',
   unofficial: 'Unofficial app. Not affiliated with Signal.',
@@ -630,6 +633,32 @@ export function fmt(s: string, vars: Record<string, string | number>): string {
 export function plural(n: number, one: string, many: string): string {
   return n + ' ' + (n === 1 ? one : many);
 }
+
+/** Signal's names for its chat bubble colors. */
+export const CHAT_COLOR_NAMES = {
+  ultramarine: 'Ultramarine',
+  crimson: 'Crimson',
+  vermilion: 'Vermilion',
+  burlap: 'Burlap',
+  forest: 'Forest',
+  wintergreen: 'Wintergreen',
+  teal: 'Teal',
+  blue: 'Blue',
+  indigo: 'Indigo',
+  violet: 'Violet',
+  plum: 'Plum',
+  taupe: 'Taupe',
+  steel: 'Steel',
+  ember: 'Ember',
+  midnight: 'Midnight',
+  infrared: 'Infrared',
+  lagoon: 'Lagoon',
+  fluorescent: 'Fluorescent',
+  basil: 'Basil',
+  sublime: 'Sublime',
+  sea: 'Sea',
+  tangerine: 'Tangerine',
+} as const;
 
 /** Strings only shown on Settings > Debug, where technical terms are expected. */
 export const DEBUG = {
