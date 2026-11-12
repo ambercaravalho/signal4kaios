@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
+import { revealInScroller } from '../app/focus';
 import { useStoreEvents } from '../app/hooks';
 import { router, useIsTop } from '../app/router';
 import { Bubble, authorName } from '../components/chat/Bubble';
@@ -40,6 +41,17 @@ function requestLine(conv: Conversation | undefined): string {
   return by ? fmt(S.addedYouBy, { name: store.displayName(by) }) : S.addedYou;
 }
 
+/** The newest pinned message under the header, and how many there are. */
+export function PinnedBar(props: { last: Message; count: number }) {
+  return (
+    <div class="pinned-bar">
+      <Icon name="pin" />
+      <span class="pinned-text">{store.previewOf(props.last)}</span>
+      {props.count > 1 && <span class="pinned-count">{props.count}</span>}
+    </div>
+  );
+}
+
 /** Only admins can send in an announcement-only group. */
 function canSendIn(group: GroupDetail | null): boolean {
   if (!group || !group.permissions || group.permissions.send_messages !== 'only-admins') return true;
@@ -75,6 +87,25 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     if (focusedId === null && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [msgs, focusedId, top, loading, quote, editing]);
 
+  const rowsRef = useRef<HTMLDivElement>(null);
+  const focusedRef = useRef(focusedId);
+  focusedRef.current = focusedId;
+  useEffect(() => {
+    const list = listRef.current;
+    const rowsEl = rowsRef.current;
+    if (!list || !rowsEl || typeof ResizeObserver === 'undefined') return;
+    // Photos and previews load after the list is laid out, so keep the bottom (or the focused message) in view as rows grow.
+    const ro = new ResizeObserver(() => {
+      if (focusedRef.current === null) list.scrollTop = list.scrollHeight;
+      else {
+        const el = rowsEl.querySelector('.msg.focused, .notice.focused') as HTMLElement | null;
+        if (el) revealInScroller(el);
+      }
+    });
+    ro.observe(rowsEl);
+    return () => ro.disconnect();
+  }, []);
+
   async function createPoll(): Promise<void> {
     const question = await prompt({ title: S.pollQuestion, maxLength: 100 });
     if (!question) return;
@@ -95,7 +126,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   async function showPinned(): Promise<void> {
     const id = await pick(
       S.pinnedMessages,
-      pinned.map((m) => ({ value: m.id, label: m.body || store.attachmentLabel(m.attachments), sub: authorName(m) + ' · ' + fmtMsgTime(m.timestamp) })),
+      pinned.map((m) => ({ value: m.id, label: store.previewOf(m), sub: authorName(m) + ' · ' + fmtMsgTime(m.timestamp) })),
       ''
     );
     const m = id && pinned.find((p) => p.id === id);
@@ -141,8 +172,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       request && { label: S.block, danger: true, onSelect: blockRequest },
       request && conv && conv.type === 'direct' && { label: S.reportSpam, danger: true, onSelect: reportSpam },
       DIVIDER,
-      canCompose && !editing && { label: S.attach, onSelect: () => composer.attach(false) },
-      canCompose && !editing && { label: S.attachViewOnce, onSelect: () => composer.attach(true) },
+      canCompose && !editing && { label: S.attach, onSelect: composer.attach },
       canCompose && !editing && { label: S.recordVoice, onSelect: composer.voiceMessage },
       tray.length > 0 && { label: S.removeAttachments, danger: true, onSelect: () => composer.setTray([]) },
       shownPreview && { label: S.removeLinkPreview, onSelect: composer.dismissPreview },
@@ -209,27 +239,23 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       banner={
         <>
           <ConnectionBanner />
-          {lastPinned && (
-            <div class="pinned-bar">
-              <Icon name="pin" />
-              <span class="pinned-text">{lastPinned.body || store.attachmentLabel(lastPinned.attachments)}</span>
-              {pinned.length > 1 && <span class="pinned-count">{pinned.length}</span>}
-            </div>
-          )}
+          {lastPinned && <PinnedBar last={lastPinned} count={pinned.length} />}
         </>
       }
     >
       <div class="chat-list" ref={listRef} role="list">
         {loading ? <Spinner /> : !msgs.length ? <div class="chat-empty">{S.noMessages}</div> : null}
         {loadingOlder && <Spinner label={S.earlierMessages} />}
-        {rows}
+        <div class="chat-rows" ref={rowsRef}>
+          {rows}
+        </div>
       </div>
       <div class={'composer' + (onComposer ? ' focused' : '')}>
         {typingName && <div class="composer-typing">{typingName}</div>}
         {(quote || editing) && (
           <div class="composer-ctx">
             <div class="composer-ctx-title">{editing ? S.editing : S.replyingTo + ' ' + authorName(quote!)}</div>
-            <div class="composer-ctx-text">{(editing || quote)!.body || store.attachmentLabel((editing || quote)!.attachments)}</div>
+            <div class="composer-ctx-text">{store.previewOf((editing || quote)!)}</div>
           </div>
         )}
         {tray.length > 0 && canCompose && (

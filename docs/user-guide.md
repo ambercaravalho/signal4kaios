@@ -60,7 +60,7 @@ OK on a message opens its options. The first one is what the message is most lik
 
 - **React**: pick from six quick reactions or any emoji; pick your current reaction again to remove it.
 - **Reply** and **Copy text**.
-- **Forward** sends the text (with its formatting) or the attachment to another chat, contact, or group after you confirm. View-once media and files sent from this phone can't be forwarded.
+- **Forward** sends the text (with its formatting) or the attachment to another chat, contact, or group after you confirm. View-once media and files sent from this phone before Beacon 2.9.3 can't be forwarded.
 - **Edit** (up to 10 times) and **Delete for everyone** on your own messages for 24 hours, as in Signal. Group admins also get **Delete for everyone** on other people's messages for 24 hours; those read **An admin deleted this message.**
 - **Pin message** (for everyone in the chat), **Message details**, and **Delete for me**, which also deletes the message on your other linked devices.
 - **Message details** shows the full text, when it was sent, its status, reactions, when it disappears, earlier versions of an edited message, and **Delivered privately** when **Private delivery icon** is on in **Settings → Privacy**.
@@ -68,7 +68,7 @@ OK on a message opens its options. The first one is what the message is most lik
 - **Link previews** show the page's title and site under the text, with its picture once it's downloaded. When you type a link, **Link preview** and the page's title appear above the message box after a moment, and the preview goes with the message; **Options → Remove link preview** sends just the link. Messages with attachments don't get previews. The phone fetches the page itself, as Signal does, so the website sees that it was opened; turn this off in **Settings → Chats → Generate link previews**.
 - **Polls** show their question, answers, and vote counts. OK → **Vote** picks your answer (or answers, when the poll allows several); vote again to change it, or **Remove my vote**. **View votes** lists who picked what, and the person who made the poll can **End poll**.
 
-**Options** in a chat: Attach, Attach view-once photo or video, Record voice message, Insert emoji, Mention (groups), Create poll, Pinned messages, Mute, and Chat settings.
+**Options** in a chat: Attach, Record voice message, Insert emoji, Mention (groups), Create poll, Pinned messages, Mute, and Chat settings.
 
 - **Create poll** asks for a question and 2 to 10 answers; leave an answer empty to finish. Then pick whether people can choose one answer or several. Polls work in groups and in one-to-one chats.
 
@@ -110,9 +110,9 @@ A group opens as a request when someone who isn't in your contacts added or invi
 - Signal's servers keep attachments for a limited time. When one is gone, Beacon shows **Asking your phone…** and asks your main phone to upload it again, as Signal Desktop does; this needs a recent Signal on the phone. If the phone doesn't have it either, it says **No longer available**. View-once media is never asked for.
 - Voice messages, audio, and video play in the viewer: OK plays or pauses. Video depends on the phone's codecs; H.264 MP4 is the safe choice.
 - **Save to phone** puts the file in the gallery, music, videos, or files.
-- View-once media can be viewed once, then it's gone, including when you open it on another device. **Options → Attach view-once photo or video** sends your own, without a caption.
+- View-once media can be viewed once, then it's gone, including when you open it on another device. To send your own, pick a photo or video with **Options → Attach**, then choose **Send as view-once**; it goes right away, without a caption. **Attach** instead adds it above the message box as usual.
 - Opening a voice message, video, or view-once media tells the sender you viewed it when read receipts are on.
-- **Chat settings → Media** lists a chat's photos, videos, voice messages, and files, newest first, with a thumbnail for photos already on the phone. OK opens one in the viewer. View-once media and files sent from this phone aren't listed.
+- **Chat settings → Media** lists a chat's photos, videos, voice messages, and files, newest first, with a thumbnail for photos already on the phone. OK opens one in the viewer. View-once media and files sent from this phone before Beacon 2.9.3 aren't listed.
 
 ## Starting a chat and searching
 
@@ -214,5 +214,5 @@ These work only partly:
 | --- | --- |
 | Starting a chat by phone number | Works for numbers in your synced contacts and for Signal usernames. Other numbers can't be looked up, because the phone can't run Signal's contact discovery yet ([details](development.md#phone-number-lookup-cdsi-spike-findings)). |
 | Holding the Call key to record a voice message | Works only on phones that pass a held Call key to apps. **Options → Record voice message** works everywhere. |
-| Forwarding files you sent from this phone | Not possible, because the phone doesn't keep a copy it can resend. They're also left out of **Media**. |
+| Forwarding files you sent from this phone before Beacon 2.9.3 | Not possible, because the phone didn't keep a copy it can resend. They're also left out of **Media**. Files sent since then can be forwarded. |
 | Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |

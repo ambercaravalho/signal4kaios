@@ -69,6 +69,20 @@ export function readDataUri(blob: Blob, filename?: string): Promise<string> {
   });
 }
 
+/** The bytes of a "data:<mime>;…;base64,…" URI from `readDataUri`, or null when it isn't one. */
+export function dataUriBlob(uri: string): Blob | null {
+  const m = /^data:([^;,]*)[^,]*;base64,/.exec(uri);
+  if (!m) return null;
+  try {
+    const bin = atob(uri.slice(m[0].length));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: m[1] || 'application/octet-stream' });
+  } catch (_) {
+    return null;
+  }
+}
+
 export function storageKindFor(type: string): string {
   if (type.indexOf('image/') === 0) return 'pictures';
   if (type.indexOf('audio/') === 0) return 'music';

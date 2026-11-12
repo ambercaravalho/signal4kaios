@@ -14,6 +14,7 @@ import {
   ReceiptMessage_Type,
   TypingMessage_Action,
 } from '../gen/SignalService_pb';
+import { pointerDescriptor } from '../net/incoming-json';
 import { create, isAci } from '../net/proto';
 import { applyAttachmentMeta, type AttachmentMeta } from '../services/attachment-meta';
 import { previewFieldsForSend } from '../services/link-previews';
@@ -130,14 +131,16 @@ export const outgoingMethods = {
   /**
    * Send an outgoing message, edit, or attachment. `message` is the plain body; `styles` are its formatting ranges.
    */
-  async send(payload: SendPayload): Promise<{ timestamp: number; sealed: boolean }> {
+  async send(payload: SendPayload): Promise<{ timestamp: number; sealed: boolean; attachments: string[] }> {
     const bodyText = payload.message || '';
+    let sent: AttachmentPointer[] = [];
     const res = await sendDataMessage(
       (payload.recipients && payload.recipients[0]) || '',
       async () => {
         const poll = payload.poll;
         if (poll && !validPoll(poll.question, poll.options, POLL_QUESTION_MAX_SEND)) throw new Error('Polls need a question and 2 to 10 options');
         const attachments = await uploadAttachments(payload);
+        sent = attachments;
         const preview = await outgoingPreview(payload.preview, bodyText, (payload.base64_attachments || []).length > 0);
         const mentions: NonNullable<SendPayload['mentions']> = [];
         for (const m of payload.mentions || []) {
@@ -167,7 +170,7 @@ export const outgoingMethods = {
       },
       { editTimestamp: payload.edit_timestamp }
     );
-    return { timestamp: res.timestamp, sealed: res.sealed };
+    return { timestamp: res.timestamp, sealed: res.sealed, attachments: sent.map((p) => pointerDescriptor(p, p.contentType || '', p.fileName || '')) };
   },
 
   async sendReaction(recipient: string, targetAuthor: string, targetTimestamp: number, emoji: string, remove: boolean): Promise<void> {

@@ -111,9 +111,10 @@ export const contactMethods = {
     const pkBytes = client.getPeerProfileKey(uuid) || (entry && entry.profileKey ? fromBase64(entry.profileKey) : undefined);
 
     const prof = await fetchAndDecryptProfile(store, httpJson, uuid, pkBytes, serverUrl());
-    if (prof && prof.fullName && entry && (!entry.name || entry.name === uuid)) {
-      entry.name = prof.fullName;
+    if (prof && prof.fullName && entry && entry.profile_name !== prof.fullName) {
+      entry.profile_name = prof.fullName;
       await saveSyncedContacts(contacts);
+      host().directoryChanged().catch(() => {});
     }
     if (!prof || !prof.avatarUrlPath || !pkBytes) throw new Error('No profile avatar available');
 
@@ -122,8 +123,10 @@ export const contactMethods = {
     return blob;
   },
 
-  async identities() {
-    return client.listIdentitiesWithSafetyNumbers();
+  /** `target` is a contact's ACI or phone number. */
+  async safetyNumber(target: string) {
+    const aci = (await resolveAci(target)) || (await store.getAllIdentities()).find((r) => !!target && r.number === target)?.uuid || '';
+    return aci ? client.safetyNumberFor(aci) : null;
   },
 
   async trustIdentity(target: string, opts?: { verified_safety_number?: string; trust_all_known_keys?: boolean }): Promise<void> {

@@ -44,7 +44,7 @@ export function useListNav(opts: { count: number; cols?: number; wrap?: boolean;
 const SCROLLERS = '.body, .sheet-body, .chat-list, .dialog-body';
 
 /** Scroll the nearest scrolling container just enough to show `from` through `to`. `scrollIntoView` would also scroll the stack and `#app`, which slides the whole screen while a menu animates in. */
-function revealInScroller(from: HTMLElement, to: HTMLElement = from): void {
+export function revealInScroller(from: HTMLElement, to: HTMLElement = from): void {
   const box = from.closest(SCROLLERS) as HTMLElement | null;
   if (!box) return;
   const view = box.getBoundingClientRect();

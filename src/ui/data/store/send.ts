@@ -2,6 +2,7 @@
 
 import { isValidLinkPreview } from '../../../engine/services/link-previews';
 import { signal } from '../api';
+import { ATTACHMENT_CACHE_KEEP, dataUriBlob } from '../attachments';
 import { config } from '../config';
 import { db } from '../db';
 import { type FetchedPreview, imageDataUri } from '../link-preview-fetch';
@@ -47,6 +48,7 @@ export function sendCore(conv: Conversation, rec: Message, payload: SendPayload,
       }
       rec.status = 'sent';
       if (res && res.sealed) rec.sealed = true;
+      keepSentAttachments(rec, payload, res && res.attachments);
       db.putMessage(rec);
       emit('message-updated', rec, oldId);
       return rec;
@@ -59,6 +61,19 @@ export function sendCore(conv: Conversation, rec: Message, payload: SendPayload,
       throw err;
     }
   );
+}
+
+/** Gives sent attachments the ids Signal can download them by, and caches the bytes so this phone opens them without asking the phone. View-once media stays without an id, since the sender can't open it. */
+function keepSentAttachments(rec: Message, payload: SendPayload, ids: unknown): void {
+  if (payload.view_once || !Array.isArray(ids)) return;
+  const uris = payload.base64_attachments || [];
+  rec.attachments.forEach((att, i) => {
+    const id = ids[i];
+    if (typeof id !== 'string' || !id || att.id) return;
+    att.id = id;
+    const blob = uris[i] ? dataUriBlob(uris[i]) : null;
+    if (blob) db.putAttachment(id, blob, att.contentType).then(() => db.pruneAttachments(ATTACHMENT_CACHE_KEEP), () => {});
+  });
 }
 
 export function newOutgoingRec(conv: Conversation, extras: Partial<Message>): Message {

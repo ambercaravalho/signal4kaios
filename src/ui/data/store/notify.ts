@@ -60,6 +60,8 @@ export function notificationText(conv: Conversation, body: string): { title: str
   return { title: conv.name || 'Beacon', body: show === 'name' ? S.newMessage : body };
 }
 
+const shown: Record<string, Notification> = {};
+
 function show(conv: Conversation, text: string): void {
   if (!document.hidden || typeof Notification === 'undefined') return;
   const { title, body } = notificationText(conv, text);
@@ -71,6 +73,7 @@ function show(conv: Conversation, text: string): void {
   }
   try {
     const n = new Notification(title, opts);
+    shown[conv.id] = n;
     n.onclick = () => {
       window.focus();
       if (state.notificationClick) state.notificationClick(conv.id);
@@ -79,6 +82,20 @@ function show(conv: Conversation, text: string): void {
   } catch (e: any) {
     dbg('notify failed ' + (e && e.message));
   }
+}
+
+/** Close the chat's notification, once it was read on another device. */
+export function dismissNotifications(convId: string): void {
+  const n = shown[convId];
+  if (n) {
+    delete shown[convId];
+    n.close();
+  }
+  if (!hasServiceWorker() || !navigator.serviceWorker) return;
+  navigator.serviceWorker.ready
+    .then((reg) => reg.getNotifications({ tag: convId }))
+    .then((list) => list.forEach((x) => x.close()))
+    .catch((e) => dbg('dismiss notification failed ' + (e && e.message)));
 }
 
 export function notify(conv: Conversation, rec: Message, mentioned?: string[]): void {

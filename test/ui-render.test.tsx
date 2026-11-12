@@ -15,7 +15,8 @@ import { db } from '../src/ui/data/db';
 import { GUIDES } from '../src/ui/data/guides';
 import * as store from '../src/ui/data/store';
 import type { Message } from '../src/ui/data/types';
-import { Bubble, ChatScreen, mainActions } from '../src/ui/screens/Chat';
+import { askViewOnce } from '../src/ui/components/chat/useChatComposer';
+import { Bubble, ChatScreen, mainActions, PinnedBar } from '../src/ui/screens/Chat';
 import { ChatSettingsScreen } from '../src/ui/screens/ChatSettings';
 import { DebugScreen } from '../src/ui/screens/Debug';
 import { guideRow, openGuide } from '../src/ui/screens/Guide';
@@ -168,6 +169,32 @@ describe('screens', () => {
     const m = { id: 'm3', convId: ALICE, author: ALICE, timestamp: 1000, incoming: true, status: 'received', attachments: [], reactions: {}, body: 'read https://signal.org/blog/x', preview: { url: 'https://signal.org/blog/x', title: 'Signal blog' } } as unknown as Message;
     router.reset(() => <Bubble m={m} focused={false} showAuthor={false} onClipped={() => {}} />, {});
     assert.match(html(), /class="msg-link-title">Signal blog<\/div><div class="msg-link-domain">signal\.org</);
+  });
+
+  it('names a pinned poll or photo in the pinned bar', () => {
+    const base = { id: 'p1', convId: ALICE, author: ALICE, timestamp: 1000, incoming: true, status: 'received', attachments: [], reactions: {}, body: '' };
+    const poll = { ...base, poll: { question: 'Lunch?', options: ['Yes', 'No'], allowMultiple: false, votes: {} } } as unknown as Message;
+    router.reset(() => <PinnedBar last={poll} count={2} />, {});
+    let out = text(html());
+    assert.ok(out.includes(fmt(S.pollPreview, { question: 'Lunch?' })), out);
+    assert.ok(out.includes('2'));
+    const photo = { ...base, attachments: [{ id: 'a', contentType: 'image/jpeg', filename: 'a.jpg', size: 3 }] } as unknown as Message;
+    router.reset(() => <PinnedBar last={photo} count={1} />, {});
+    out = text(html());
+    assert.ok(out.includes(S.photo), out);
+    assert.doesNotMatch(html(), /pinned-count/);
+  });
+
+  it('asks whether a picked photo or video goes view-once, instead of a separate menu item', async () => {
+    assert.equal((S as any).attachViewOnce, undefined);
+    assert.equal(await askViewOnce('application/pdf'), false);
+    for (const [type, title] of [['image/jpeg', S.photo], ['video/mp4', S.video]]) {
+      router.reset(HomeScreen, {});
+      askViewOnce(type);
+      const out = text(html());
+      for (const s of [title, S.attachNormal, S.sendViewOnce]) assert.ok(out.includes(s), s);
+      router.pop();
+    }
   });
 
   it('opens a chat with its title and message box', () => {

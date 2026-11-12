@@ -3,7 +3,8 @@
 import { toBase64 } from '../bytes';
 import { host } from '../host';
 import { isAci } from '../net/proto';
-import { client } from './context';
+import { client, store } from './context';
+import { queuePeerName } from './peer-names';
 
 /** A `syncedContacts` entry; fields come from contact sync, Storage Service, and profiles, so every one is optional. */
 export type SyncedContactRow = Record<string, any>;
@@ -39,6 +40,8 @@ export async function mergeSyncedContacts<T>(items: T[], idOf: (item: T) => stri
 
 /** A contact's ACI and phone number from either one, via `syncedContacts`. */
 export async function contactIds(id: string): Promise<{ aci: string; e164: string }> {
+  const acc = await store.getAccount();
+  if (acc && id && (id === acc.number || id === acc.aci)) return { aci: acc.aci, e164: acc.number || '' };
   const contacts = await syncedContacts();
   const hit = contacts.find((c) => (id && c.uuid === id) || (id && c.number === id));
   const aci = isAci(id) ? id : hit && isAci(hit.uuid) ? hit.uuid : '';
@@ -92,9 +95,11 @@ export async function recordPeerProfileKey(senderUuid: string, senderE164: strin
   const list = await syncedContacts();
   let found = false;
   let changed = false;
+  let named = false;
   for (const c of list) {
     if (c.uuid === senderUuid || (senderE164 && c.number === senderE164)) {
       found = true;
+      if (c.profile_name) named = true;
       if (c.profileKey !== b64) {
         c.profileKey = b64;
         changed = true;
@@ -106,4 +111,5 @@ export async function recordPeerProfileKey(senderUuid: string, senderE164: strin
     changed = true;
   }
   if (changed) await saveSyncedContacts(list);
+  if (changed || !named) queuePeerName(senderUuid);
 }
