@@ -209,6 +209,8 @@ Group edits are Groups V2 changes, built and signed as in Signal-Desktop's `grou
 
 The server returns the signed `GroupChange`, which the bridge sends as `DataMessage.groupV2 { masterKey, revision, groupChange }` to everyone in the group before and after the change, plus a sync copy to your other devices. Adding someone joins them directly when their profile key credential can be fetched (`GET /v1/profile/{aci}/{version}/{request}?credentialType=expiringProfileKey`), and invites them otherwise.
 
+Group photos follow Signal-Desktop's `decryptGroupAvatar`: the decoded state keeps `Group.avatarUrl` (a `groups/…` key on CDN 0), and [`services/group-avatar.ts`](../src/engine/services/group-avatar.ts) downloads that blob and decrypts it as a `GroupAttributeBlob` with the group's secret params. The bridge caches the photo per avatar key under `avatar:group:<id>`, so a changed photo is fetched again; groups saved before 2.9.1 get one state refresh to learn their key.
+
 ## Linking
 
 ```mermaid
@@ -303,6 +305,7 @@ Every libsignal call that touches protocol state goes through [`src/engine/proto
 | [`services/profiles.ts`](../src/engine/services/profiles.ts) | Versioned profile fetch and decrypt, profile upload, username lookup, expiring profile key credentials; the cipher and avatars are in `profile-crypto.ts` and `profile-avatar.ts` |
 | [`services/groups-v2.ts`](../src/engine/services/groups-v2.ts) | zkgroup group IDs, `GroupContextV2`, group state fetch and decode, invite links |
 | [`services/group-changes.ts`](../src/engine/services/group-changes.ts) | Groups V2 change builders and `applyGroupChange` |
+| [`services/group-avatar.ts`](../src/engine/services/group-avatar.ts) | Group photo download and decrypt |
 | [`services/group-send.ts`](../src/engine/services/group-send.ts) | Group send endorsements and tokens, per-group sender key distribution IDs, and which member devices have our sender key |
 | [`services/usernames.ts`](../src/engine/services/usernames.ts) | Username reserve, confirm, delete, and link URLs |
 | [`crypto/`](../src/engine/crypto) | WebCrypto AES and [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) HMAC/HKDF for attachments, profiles, and storage |

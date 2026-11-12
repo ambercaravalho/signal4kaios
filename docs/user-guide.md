@@ -31,7 +31,7 @@ Beacon follows the KaiOS layout: the bar at the bottom names what the left softk
 
 ## Chats list
 
-Each row shows the avatar (profile photo, or initials on the person's Signal color), the name, the time, a preview, "Typing…", or your unsent **Draft:**, and an unread count (a plain dot for a chat you marked as unread). Pinned (📌) chats sort first; muted chats show a muted icon. Your own number appears as **Note to Self**. A strip under the header says **Connecting…** or **No connection** while Beacon isn't connected.
+Each row shows the avatar (the profile or group photo, or initials on the chat's Signal color), the name, the time, a preview, "Typing…", or your unsent **Draft:**, and an unread count (a plain dot for a chat you marked as unread). Pinned (📌) chats sort first; muted chats show a muted icon. Your own number appears as **Note to Self**. A strip under the header says **Connecting…** or **No connection** while Beacon isn't connected.
 
 As in Signal for Android, archived chats sit behind an **Archived chats** row at the bottom of the list, which shows how many there are and appears only when you have some. Open it to see them; **Options** there has Chat settings, Unarchive, Mute, Mark as read or unread, and Delete chat.
 
