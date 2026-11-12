@@ -16,3 +16,4 @@ export { isMuted, MUTED_ALWAYS, mutedForever } from './store/mute';
 export { activeProfile, type NotificationProfile, scheduleStart, setProfileOverride } from './store/profiles';
 export { applyChatState, MAX_PINNED_CHATS, setArchived, setConvPinned, setMarkedUnread, setMuted, setNotifyIfMuted } from './store/chat-state';
 export { SELF_NAME } from './store/state';
+export { type ChatFolder, deleteFolder, FOLDER_NAME_MAX, folderIncludes, foldersInOrder, graphemeCount, moveFolder, named as folderNames, saveFolder } from './store/folders';

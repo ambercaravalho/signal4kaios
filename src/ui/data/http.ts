@@ -168,7 +168,7 @@ function request(method: string, path: string, body: unknown, opts: HostHttpOpti
 /** A raw binary request (CDN attachments, Storage Service protobufs). Rejects on non-2xx with `status` set. */
 function rawRequest(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<HostRawResponse> {
   return send(method, url, headers || {}, body || null, timeout || 60000).then((res) => {
-    if (res.status >= 200 && res.status < 300) return { status: res.status, body: res.body, location: res.header('Location') };
+    if (res.status >= 200 && res.status < 300) return { status: res.status, body: res.body, location: res.header('Location'), range: res.header('Content-Range') };
     const err: HttpError = new Error('HTTP ' + res.status);
     err.kind = 'http';
     err.status = res.status;

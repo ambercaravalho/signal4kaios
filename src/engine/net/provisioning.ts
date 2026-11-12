@@ -1,7 +1,7 @@
 /* Linked Device QR Provisioning & Initial PreKey Registration, following Signal-Desktop (ts/textsecure/AccountManager, WebAPI linkDevice).
  *
  * 1. Connect to wss://chat.signal.org/v1/websocket/provisioning/ and create a libsignal provisioning receiver (ephemeral key pair).
- * 2. Receive `PUT /v1/address` -> ProvisioningAddress { address } and show `sgnl://linkdevice?uuid=<address>&pub_key=<base64(pubKey)>` as a QR code.
+ * 2. Receive `PUT /v1/address` -> ProvisioningAddress { address } and show `sgnl://linkdevice?uuid=<address>&pub_key=<base64(pubKey)>&capabilities=backup5` as a QR code.
  * 3. Receive `PUT /v1/message` -> ProvisionEnvelope, decrypted by libsignal's provisioning cipher into a ProvisionMessage.
  * 4. Link via `PUT /v1/devices/link` (Basic auth aci:newPassword) with the encrypted device name and signed + last-resort Kyber PreKeys for both identities.
  * 5. Upload one-time PreKeys via `PUT /v2/keys?identity=aci|pni` and persist AccountCredentials.
@@ -18,6 +18,9 @@ import { create, decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocket
 import type { AccountCredentials, KeyPair, SignalProtocolStore } from '../protocol/store';
 import { accountBasicAuth, asObject, DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SIGNAL_USER_AGENT, SignalHttpJsonFn } from './http';
 import { net, SOCKET_OPEN, SocketLike } from './transport';
+
+/** What the link URL tells the phone this device can do: `backup5` asks it to offer sending message history (Signal-Desktop `linkDeviceRoute`). */
+const LINK_CAPABILITIES = 'backup5';
 
 /** Signal-Desktop `getCapabilities` for a linked device without a PIN. */
 function linkedDeviceCapabilities(hasE164: boolean): Record<string, boolean> {
@@ -82,7 +85,8 @@ export interface ProvisioningCallbacks {
   onStatus?: (statusText: string) => void;
   /** Runs after the ProvisionMessage is decrypted and before anything is written to the store, so the app can point the store at the linked account's database. */
   beforeLinking?: (account: { aci: string; number: string }) => Promise<void> | void;
-  onLinked: (account: AccountCredentials) => void;
+  /** `ephemeralBackupKey` is set when the phone offered to send message history (link-and-sync). SECURITY-REVIEW: it decrypts that archive; keep it only until the import ends. */
+  onLinked: (account: AccountCredentials, link: { ephemeralBackupKey?: Uint8Array }) => void;
   onError: (err: Error) => void;
 }
 
@@ -276,7 +280,7 @@ export function startDeviceProvisioning(
         if (req.path === '/v1/address' && req.body.length > 0) {
           const uuid = fromBinary(ProvisioningAddressSchema, req.body).address;
           const pubKeyB64 = toBase64(receiver.publicKey());
-          callbacks.onQrUrl(`sgnl://linkdevice?uuid=${encodeURIComponent(uuid)}&pub_key=${encodeURIComponent(pubKeyB64)}`);
+          callbacks.onQrUrl(`sgnl://linkdevice?uuid=${encodeURIComponent(uuid)}&pub_key=${encodeURIComponent(pubKeyB64)}&capabilities=${LINK_CAPABILITIES}`);
         } else if (req.path === '/v1/message' && req.body.length > 0) {
           if (callbacks.onStatus) callbacks.onStatus('Decrypting link credentials\u2026');
           const prov = fromBinary(ProvisionMessageSchema, receiver.decryptEnvelope(req.body));
@@ -290,7 +294,7 @@ export function startDeviceProvisioning(
               return finishLinking(store, httpRequest, prov, deviceName, httpBase, callbacks.onStatus);
             })
             .then(
-              (creds) => callbacks.onLinked(creds),
+              (creds) => callbacks.onLinked(creds, { ephemeralBackupKey: prov.ephemeralBackupKey.length === 32 ? prov.ephemeralBackupKey : undefined }),
               (err) => {
                 store.forgetCachedAccount();
                 callbacks.onError(err instanceof Error ? err : new Error(String(err)));

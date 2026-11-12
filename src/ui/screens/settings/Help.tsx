@@ -6,7 +6,7 @@ import { appVersion } from '../../data/platform';
 import { APP_NAME, S } from '../../strings';
 import { openGuide } from '../Guide';
 
-export const HELP_TOPICS: GuideTopic[] = ['setup', 'keys', 'chats', 'groups', 'settings', 'proxy', 'notifications', 'limitations', 'troubleshooting'];
+export const HELP_TOPICS: GuideTopic[] = ['setup', 'history', 'keys', 'chats', 'folders', 'groups', 'settings', 'proxy', 'notifications', 'limitations', 'troubleshooting'];
 
 /** Short pointers into the full guide; each topic shows a QR code and can open in the browser. */
 export function HelpScreen() {

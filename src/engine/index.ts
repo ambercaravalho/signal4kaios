@@ -2,16 +2,20 @@
 
 import { accountMethods } from './bridge/account';
 import { backfillMethods } from './bridge/backfill';
+import { chatFolderMethods } from './bridge/chat-folders';
 import { contactMethods } from './bridge/contact-actions';
 import { client, store } from './bridge/context';
 import { groupMethods } from './bridge/groups';
+import { historyMethods } from './bridge/history';
 import { incomingMethods } from './bridge/incoming';
 import { outgoingMethods } from './bridge/outgoing';
 import { net } from './net/transport';
 import { loadLibsignal } from './protocol/libsignal';
 
+export type { ChatFolderEdit } from './bridge/chat-folders';
 export type { MessageRef } from './bridge/delivery';
 export type { GroupLinkPreview } from './bridge/groups';
+export type { HistoryChat, HistoryContact, HistoryGroup, HistoryItem, HistoryMessage, TransferArchive } from './bridge/history';
 
 export const signalBridge = {
   store,
@@ -29,6 +33,8 @@ export const signalBridge = {
   ...contactMethods,
   ...groupMethods,
   ...backfillMethods,
+  ...historyMethods,
+  ...chatFolderMethods,
 };
 
 export type SignalBridge = typeof signalBridge;

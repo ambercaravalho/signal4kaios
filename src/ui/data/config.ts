@@ -1,6 +1,6 @@
 /* Account and app settings in localStorage (`s4k.config`). The active account's credentials sit at the top level; `accounts` holds every saved account so the user can switch, and each account has its own IndexedDB. */
 
-import type { HostNotificationProfile, HostProfileOverride } from '../../engine/host';
+import type { HostChatFolder, HostNotificationProfile, HostProfileOverride, HostStickerPack } from '../../engine/host';
 
 const KEY = 's4k.config';
 const DEFAULT_SIGNAL_SERVER = 'https://chat.signal.org';
@@ -31,6 +31,16 @@ export interface ScreenLockConfig {
   lockAfter: number;
   failures: number;
   retryAt: number;
+}
+
+/** Message history the phone offered when this account was linked, until it is imported or skipped. `chunks` were downloaded so far; `downloaded` once the whole archive is in. */
+export interface HistorySync {
+  aci: string;
+  /** SECURITY-REVIEW: the ephemeral backup key (base64) that decrypts the archive; dropped once the import ends. */
+  key: string;
+  archive?: { cdn: number; key: string };
+  chunks?: number;
+  downloaded?: boolean;
 }
 
 interface ConfigData {
@@ -66,6 +76,8 @@ interface ConfigData {
   /** Notification profiles from the phone, through Storage Service. */
   notificationProfiles?: HostNotificationProfile[];
   notificationProfileOverride?: HostProfileOverride;
+  chatFolders?: HostChatFolder[];
+  stickerPacks?: HostStickerPack[];
   textSize?: TextSize;
   sharePhoneNumber?: boolean;
   findableByNumber?: boolean;
@@ -189,6 +201,18 @@ export const config = {
     return Array.isArray(v) ? v.filter((p) => p && typeof p.id === 'string' && Array.isArray(p.allowed)) : [];
   },
 
+  /** Chat folders from Storage Service, in display order. */
+  chatFolders(): HostChatFolder[] {
+    const v = read().chatFolders;
+    return Array.isArray(v) ? v.filter((f) => f && typeof f.id === 'string' && Array.isArray(f.included) && Array.isArray(f.excluded)) : [];
+  },
+
+  /** Installed sticker packs from Storage Service and the phone; kept for a later sticker picker. */
+  stickerPacks(): HostStickerPack[] {
+    const v = read().stickerPacks;
+    return Array.isArray(v) ? v.filter((p) => p && typeof p.id === 'string' && typeof p.key === 'string') : [];
+  },
+
   notificationProfileOverride(): HostProfileOverride {
     const v = read().notificationProfileOverride;
     return v && typeof v === 'object' ? v : null;
@@ -215,6 +239,19 @@ export const config = {
       failures: typeof s.failures === 'number' && s.failures > 0 ? s.failures : 0,
       retryAt: typeof s.retryAt === 'number' && s.retryAt > 0 ? s.retryAt : 0,
     };
+  },
+
+  /** The active account's pending message history, if any. */
+  historySync(): HistorySync | null {
+    const h = read().historySync as HistorySync | undefined;
+    return h && typeof h.key === 'string' && h.key && h.aci === config.aci() ? h : null;
+  },
+
+  setHistorySync(h: HistorySync | null): void {
+    const c = read();
+    if (h) c.historySync = h;
+    else delete c.historySync;
+    write(c);
   },
 
   isConfigured(): boolean {

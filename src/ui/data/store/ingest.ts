@@ -20,8 +20,8 @@ import { convs, state, typingMap } from './state';
 
 const STATUS_RANK: Record<string, number> = { pending: 0, failed: 0, sent: 1, delivered: 2, read: 3 };
 
-function applyMessage(ev: MessageEvent, silent: boolean): void {
-  const conv = ensureConv(ev);
+/** The stored message for a received or synced one, before reactions, receipts, or edits. */
+export function messageRecord(ev: MessageEvent): Message {
   const rec: Message = {
     id: msgId(ev.convId, ev.timestamp, ev.author),
     convId: ev.convId,
@@ -43,11 +43,17 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   if (ev.preview) rec.preview = ev.preview;
   if (ev.sealed) rec.sealed = true;
   if (ev.serverGuid) rec.serverGuid = ev.serverGuid;
-  if (ev.reportToken && conv.type === 'direct') conv.reportToken = ev.reportToken;
   if (ev.expiresInSeconds) {
     rec.expireSecs = ev.expiresInSeconds;
     rec.expiresAt = Date.now() + ev.expiresInSeconds * 1000;
   }
+  return rec;
+}
+
+function applyMessage(ev: MessageEvent, silent: boolean): void {
+  const conv = ensureConv(ev);
+  const rec = messageRecord(ev);
+  if (ev.reportToken && conv.type === 'direct') conv.reportToken = ev.reportToken;
   if ((conv.expireTimer || 0) !== ev.expiresInSeconds) conv.expireTimer = ev.expiresInSeconds;
   if (!ev.incoming) delete conv.request;
   db.putMessage(rec);
@@ -69,13 +75,10 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   if (ev.incoming && state.openConvId === conv.id) markRead(conv.id);
 }
 
-const ALERTING_NOTICES: NoticeKind[] = ['missedCall', 'payment', 'storyReaction'];
+export const ALERTING_NOTICES: NoticeKind[] = ['missedCall', 'payment', 'storyReaction'];
 
-/** Calls, payments, and reactions to your story count as unread and notify, as in Signal, unless they came from one of your own devices; other notices only show in the chat. */
-export function applyNotice(ev: NoticeEvent, silent: boolean): void {
-  if ((ev.notice.kind === 'safetyNumber' || ev.notice.kind === 'groupUpdate') && !convs[ev.convId]) return;
-  const conv = ensureConv({ convId: ev.convId, groupInternalId: ev.groupInternalId, incoming: true, authorName: '' });
-  const rec: Message = {
+export function noticeRecord(ev: NoticeEvent): Message {
+  return {
     id: msgId(ev.convId, ev.timestamp, ev.author),
     convId: ev.convId,
     incoming: true,
@@ -92,6 +95,13 @@ export function applyNotice(ev: NoticeEvent, silent: boolean): void {
     edited: false,
     notice: ev.notice,
   };
+}
+
+/** Calls, payments, and reactions to your story count as unread and notify, as in Signal, unless they came from one of your own devices; other notices only show in the chat. */
+export function applyNotice(ev: NoticeEvent, silent: boolean): void {
+  if ((ev.notice.kind === 'safetyNumber' || ev.notice.kind === 'groupUpdate') && !convs[ev.convId]) return;
+  const conv = ensureConv({ convId: ev.convId, groupInternalId: ev.groupInternalId, incoming: true, authorName: '' });
+  const rec = noticeRecord(ev);
   db.putMessage(rec);
   const alerts = ALERTING_NOTICES.indexOf(ev.notice.kind) >= 0 && !isSelfKey(ev.author);
   if (ev.timestamp >= (conv.lastTs || 0)) {

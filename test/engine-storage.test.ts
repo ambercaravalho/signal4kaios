@@ -1,172 +1,31 @@
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { concatBytes, randomBytes, toBase64 } from '../src/engine/bytes';
-import { aesGcmEncrypt } from '../src/engine/crypto/primitives';
+import { randomBytes, toBase64, toHex } from '../src/engine/bytes';
 import { joinedGroupMutation } from '../src/engine/services/group-changes';
 import {
   AccountRecord_PhoneNumberSharingMode,
   ContactRecord_NameSchema,
-  ContactRecordSchema,
   ManifestRecord_Identifier_Type,
-  ManifestRecordSchema,
   NotificationProfile_DayOfWeek,
   NotificationProfileSchema,
-  ReadOperationSchema,
-  StorageItemsSchema,
-  StorageManifestSchema,
   StorageRecordSchema,
-  WriteOperationSchema,
 } from '../src/engine/gen/SignalStorage_pb';
 import { adoptOwnProfileKey } from '../src/engine/services/profiles';
-import { create, fromBinary, toBinary } from '../src/engine/net/proto';
-import {
-  decryptStorageValue,
-  deriveStorageItemKey,
-  deriveStorageManifestKey,
-  deriveStorageServiceKey,
-  mutateStorage,
-  pullFromStorageService,
-  setPhoneNumberPrivacy,
-  StorageWriteQueue,
-  toOptionalBool,
-} from '../src/engine/services/storage';
+import { create, fromBinary } from '../src/engine/net/proto';
+import { mutateStorage, pullFromStorageService, setPhoneNumberPrivacy, StorageWriteQueue, toOptionalBool } from '../src/engine/services/storage';
 import { profileOverrideRecord, readNotificationProfile, readProfileOverride } from '../src/engine/services/storage/notification-profiles';
 import { groupIdFromMasterKey } from '../src/engine/services/groups-v2';
 import { MemorySignalStore } from '../src/engine/protocol/store';
 import { ALICE, BOB } from './helpers';
+import { hasBytes, serveStorage, storageStore, UNKNOWN_FIELD } from './storage-fixture';
 import { loadWasmForTests } from './support';
 
 before(() => {
   loadWasmForTests();
 });
 
-async function gcm(key: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
-  const iv = randomBytes(12);
-  return concatBytes(iv, await aesGcmEncrypt(key, iv, plaintext));
-}
-
 describe('Storage Service (Signal-Desktop key derivation)', () => {
-  /** A field number no Signal schema uses, so it must survive a read-modify-write as an unknown field. */
-  const UNKNOWN_FIELD = new Uint8Array([0xa0, 0x06, 0x01]);
-
-  /** Wraps raw ContactRecord bytes in a StorageRecord by hand so they can carry an unknown field. */
-  function rawContactRecord(contactBytes: Uint8Array): Uint8Array {
-    return concatBytes(new Uint8Array([0x0a, contactBytes.length]), contactBytes);
-  }
-
-  function hasBytes(haystack: Uint8Array, needle: Uint8Array): boolean {
-    outer: for (let i = 0; i + needle.length <= haystack.length; i++) {
-      for (let j = 0; j < needle.length; j++) if (haystack[i + j] !== needle[j]) continue outer;
-      return true;
-    }
-    return false;
-  }
-
-  /** In-memory storage.signal.org: GET manifest, PUT read, and PUT /v1/storage with version checks. */
-  async function serveStorage(masterKey: Uint8Array, recordIkm?: Uint8Array) {
-    const storageKey = deriveStorageServiceKey(masterKey);
-    const contactKey = randomBytes(16);
-    const groupKey = randomBytes(16);
-    const accountKey = randomBytes(16);
-    const stickerKey = randomBytes(16);
-    const groupMasterKey = randomBytes(32);
-    const profileKey = randomBytes(32);
-
-    let version = 7n;
-    let identifiers: Array<{ raw: Uint8Array; type: ManifestRecord_Identifier_Type }> = [
-      { raw: contactKey, type: ManifestRecord_Identifier_Type.CONTACT },
-      { raw: groupKey, type: ManifestRecord_Identifier_Type.GROUPV2 },
-      { raw: accountKey, type: ManifestRecord_Identifier_Type.ACCOUNT },
-      { raw: stickerKey, type: ManifestRecord_Identifier_Type.STICKER_PACK },
-    ];
-    let manifest = new Uint8Array(0);
-    const encodeManifest = async () => {
-      const mr = create(ManifestRecordSchema, { version, sourceDevice: 1, recordIkm, identifiers });
-      manifest = toBinary(
-        StorageManifestSchema,
-        create(StorageManifestSchema, { version, value: await gcm(deriveStorageManifestKey(storageKey, version), toBinary(ManifestRecordSchema, mr)) })
-      );
-    };
-    await encodeManifest();
-
-    const records = new Map<string, Uint8Array>();
-    const putRaw = async (key: Uint8Array, bytes: Uint8Array) => {
-      records.set(toBase64(key), await gcm(deriveStorageItemKey(storageKey, key, recordIkm), bytes));
-    };
-    const put = (key: Uint8Array, record: any) => putRaw(key, toBinary(StorageRecordSchema, create(StorageRecordSchema, { record })));
-    const contactBytes = toBinary(
-      ContactRecordSchema,
-      create(ContactRecordSchema, { aci: ALICE, e164: '+15553334444', givenName: 'Clara', familyName: 'Oswald', profileKey, blocked: true, systemGivenName: 'Clara' })
-    );
-    await putRaw(contactKey, rawContactRecord(concatBytes(contactBytes, UNKNOWN_FIELD)));
-    await put(groupKey, { case: 'groupV2', value: { masterKey: groupMasterKey, archived: true, markedUnread: true } });
-    await put(accountKey, { case: 'account', value: { givenName: 'Me', readReceipts: true, linkPreviews: true, sealedSenderIndicators: true, noteToSelfMarkedUnread: true, universalExpireTimer: 86400 } });
-    records.set(toBase64(stickerKey), randomBytes(40));
-
-    const urls: string[] = [];
-    let conflicts = 0;
-    const httpJson = async (_m: string, path: string) => {
-      assert.equal(path, '/v1/storage/auth');
-      return { username: 'storage-user', password: 'storage-pass' };
-    };
-    const httpBinary = async (method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>) => {
-      urls.push(`${method} ${url}`);
-      assert.equal(headers!.Authorization, 'Basic ' + btoa('storage-user:storage-pass'));
-      if (url.endsWith('/v1/storage/manifest')) return manifest;
-      if (url.endsWith('/v1/storage/read')) {
-        const keys = fromBinary(ReadOperationSchema, body!).readKey;
-        return toBinary(StorageItemsSchema, create(StorageItemsSchema, { items: keys.map((k) => ({ key: k, value: records.get(toBase64(k))! })) }));
-      }
-      assert.ok(url.endsWith('/v1/storage'));
-      if (conflicts > 0) {
-        conflicts--;
-        throw Object.assign(new Error('HTTP 409'), { status: 409 });
-      }
-      const op = fromBinary(WriteOperationSchema, body!);
-      if (op.manifest!.version !== version + 1n) throw Object.assign(new Error('HTTP 409'), { status: 409 });
-      const mr = fromBinary(ManifestRecordSchema, await decryptStorageValue(deriveStorageManifestKey(storageKey, op.manifest!.version), op.manifest!.value));
-      assert.equal(mr.sourceDevice, 2);
-      assert.deepEqual(mr.recordIkm, recordIkm || new Uint8Array(0));
-      for (const k of op.deleteKey) records.delete(toBase64(k));
-      for (const item of op.insertItem) records.set(toBase64(item.key), item.value);
-      for (const id of mr.identifiers) assert.ok(records.has(toBase64(id.raw)), 'manifest names only stored keys');
-      version = op.manifest!.version;
-      identifiers = mr.identifiers.map((i) => ({ raw: i.raw, type: i.type }));
-      await encodeManifest();
-      return new Uint8Array(0);
-    };
-    const readRecord = async (type: ManifestRecord_Identifier_Type) => {
-      const id = identifiers.find((i) => i.type === type)!;
-      return decryptStorageValue(deriveStorageItemKey(storageKey, id.raw, recordIkm), records.get(toBase64(id.raw))!);
-    };
-    return {
-      httpJson,
-      httpBinary,
-      urls,
-      groupMasterKey,
-      profileKey,
-      stickerKey,
-      readRecord,
-      identifiers: () => identifiers,
-      version: () => version,
-      conflictNext: (n: number) => { conflicts = n; },
-    };
-  }
-
-  function storageStore(masterKey: Uint8Array) {
-    return new MemorySignalStore({
-      aci: ALICE,
-      number: '',
-      deviceId: 2,
-      password: 'pw',
-      registrationId: 1,
-      pniRegistrationId: 2,
-      aciIdentityKeyPair: { pubKey: new Uint8Array(33), privKey: new Uint8Array(32) },
-      masterKey,
-    });
-  }
-
   for (const withIkm of [false, true]) {
     const label = withIkm ? 'recordIkm' : 'legacy';
 
@@ -194,6 +53,7 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(res.account?.sealedSenderIndicators, true);
       assert.equal(res.account?.universalExpireTimer, 86400);
       assert.equal(res.account?.noteToSelfMarkedUnread, true);
+      assert.deepEqual(res.stickerPacks, [{ id: toHex(srv.stickerPackId), key: toHex(srv.stickerPackKey), position: 3 }]);
 
       srv.urls.length = 0;
       await pullFromStorageService(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org');
@@ -217,8 +77,8 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(srv.version(), 8n);
 
       const after = srv.identifiers().map((i) => toBase64(i.raw));
-      assert.equal(after.length, 5);
-      assert.ok(after.includes(toBase64(srv.stickerKey)), 'unknown record types stay in the manifest');
+      assert.equal(after.length, 6);
+      assert.ok(after.includes(toBase64(srv.unknownKey)), 'unknown record types stay in the manifest');
       assert.ok(after.includes(before[1]), 'the untouched group keeps its key');
       assert.ok(!after.includes(before[0]) && !after.includes(before[2]), 'changed records get new keys');
 

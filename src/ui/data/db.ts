@@ -9,6 +9,8 @@ import type { Contact, Conversation, Message } from './types';
 const DB_VERSION = 4;
 const SIGNAL_STORES = ['signal_keystore', 'signal_identities', 'signal_sessions', 'signal_prekeys', 'signal_sender_keys'];
 const MAX_TS = 9007199254740991;
+/** How many messages each chat keeps; older ones are pruned. */
+export const PRUNE_KEEP = 500;
 
 let opened: Promise<IDBDatabase> | null = null;
 let signalStateReset = false;
@@ -145,6 +147,12 @@ export const db = {
   putMessage(rec: Message): Promise<void> {
     return tx('messages', 'readwrite', (s) => {
       s.put(rec);
+    });
+  },
+
+  putMessages(recs: Message[]): Promise<void> {
+    return tx('messages', 'readwrite', (s) => {
+      for (const r of recs) s.put(r);
     });
   },
 

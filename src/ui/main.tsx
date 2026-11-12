@@ -5,7 +5,7 @@ import { SoftkeyBar } from './components/Screen';
 import { toast, ToastHost } from './components/Toast';
 import { signal } from './data/api';
 import { config } from './data/config';
-import { db } from './data/db';
+import { db, PRUNE_KEEP } from './data/db';
 import { installEngineHost, onNumberChange } from './data/engine-host';
 import * as http from './data/http';
 import { dbg } from './data/log';
@@ -18,13 +18,13 @@ import { reloadUnderServiceWorker } from './data/wasm-reload';
 import * as ws from './data/ws';
 import { fmt, S } from './strings';
 import { openChat } from './screens/Chat';
+import { HistoryScreen } from './screens/History';
 import { HomeScreen } from './screens/Home';
 import { LockGate } from './screens/Lock';
 import { LinkScreen, WelcomeScreen } from './screens/Onboarding';
 import { StartupErrorScreen } from './screens/StartupError';
 import './theme/index.css';
 
-const PRUNE_KEEP = 500;
 const PENDING_CONV_KEY = '/__s4k_pending_conv';
 const PENDING_MAX_AGE_MS = 60000;
 
@@ -88,6 +88,11 @@ function start(): void {
   store.on('storage-error', () => toast(S.storageError, 4000));
   onNumberChange((number) => toast(fmt(S.numberChanged, { number }), 5000));
 
+  // Message history from linking is imported before the first connection, so nothing new lands in the middle of it.
+  if (config.isConfigured() && config.historySync()) {
+    router.reset(HistoryScreen, {});
+    return;
+  }
   if (config.isConfigured()) router.reset(HomeScreen, {});
   else if (config.number() || config.aci()) router.reset(LinkScreen, { mode: 'relink' as const });
   else router.reset(WelcomeScreen, {});

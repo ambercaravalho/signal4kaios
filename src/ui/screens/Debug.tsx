@@ -8,6 +8,7 @@ import { Screen } from '../components/Screen';
 import { toast } from '../components/Toast';
 import { net } from '../../engine/net/transport';
 import { signal } from '../data/api';
+import { config } from '../data/config';
 import { db } from '../data/db';
 import { fmtBytes, fmtTimeFull } from '../data/format';
 import { logLines, redactedLog } from '../data/log';
@@ -75,6 +76,8 @@ export function DebugScreen() {
     info('last', DEBUG.lastMessage, last ? fmtTimeFull(last) : DEBUG.never),
     info('db', DEBUG.database, db.name()),
     info('store', DEBUG.storage, storage || DEBUG.unavailable),
+    info('stickers', DEBUG.stickerPacks, String(config.stickerPacks().length)),
+    info('folders', DEBUG.chatFolders, String(config.chatFolders().length)),
     { section: '' },
     { key: 'refresh', label: DEBUG.refreshPreKeys, onSelect: () => action(() => signal.replenishPreKeys().then(loadDiag), DEBUG.preKeysRefreshed) },
     { key: 'sync', label: DEBUG.requestSync, onSelect: () => action(() => signal.requestSync(), DEBUG.syncRequested) },

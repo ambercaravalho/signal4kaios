@@ -2,7 +2,7 @@
 
 import { constantTimeEqual, fromBase64, toBase64 } from '../bytes';
 import { decryptAttachment, encryptAttachment } from '../crypto/attachment';
-import { padMessagePlaintext } from '../crypto/primitives';
+import { hashSha256, padMessagePlaintext } from '../crypto/primitives';
 import {
   AttachmentPointer,
   AttachmentPointerSchema,
@@ -521,6 +521,7 @@ export class SignalClient {
     const encryptedBytes = await this.httpBinary('GET', `${cdnBase}/attachments/${encodeURIComponent(desc.cdnKey)}`, null, {}, 60000);
     const decrypted = await decryptAttachment(encryptedBytes, desc.key, desc.digest);
     const bytes = desc.size > 0 && desc.size <= decrypted.length ? decrypted.subarray(0, desc.size) : decrypted;
+    if (!desc.digest && desc.plaintextHash && !constantTimeEqual(hashSha256(bytes), desc.plaintextHash)) throw new Error('Attachment plaintext hash mismatch');
     return { bytes, contentType: desc.contentType };
   }
 

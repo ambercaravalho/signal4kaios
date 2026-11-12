@@ -4,7 +4,12 @@ import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as official from '@signalapp/libsignal-client';
-import { AccountEntropyPool } from '@signalapp/libsignal-client/dist/AccountKeys.js';
+import { createCipheriv, createHmac } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
+
+import { AccountEntropyPool, BackupKey } from '@signalapp/libsignal-client/dist/AccountKeys.js';
+import { Aci } from '@signalapp/libsignal-client/dist/Address.js';
+import { MessageBackupKey } from '@signalapp/libsignal-client/dist/MessageBackup.js';
 import { encryptProvisionMessage, RecvProvisionCiphertextState } from '@signalapp/libsignal-client/dist/Provisioning.js';
 import * as zk from '@signalapp/libsignal-client/zkgroup';
 
@@ -360,6 +365,60 @@ describe('Interop: usernames', () => {
     const kept = libsignal.usernameLinkCreate('kaios.43', ours.entropy) as { entropy: Uint8Array; encryptedUsername: Uint8Array };
     assert.deepEqual(kept.entropy, ours.entropy);
     assert.throws(() => libsignal.usernameLinkDecrypt(randomBytes(32), kept.encryptedUsername), (e: any) => e.name === 'UsernameLinkError');
+  });
+});
+
+describe('Interop: link-and-sync archives', () => {
+  const aci = '659aa5f4-a28d-fcc1-1ea1-b997537a3d95';
+
+  /** Builds an archive the way Signal-Desktop's export does: delimited frames, gzip, AES-256-CBC, then an HMAC over iv and ciphertext. */
+  function archive(key: Uint8Array, frames: Uint8Array[], padding = 0): Uint8Array {
+    const official = new MessageBackupKey({ backupKey: new BackupKey(Buffer.from(key)), backupId: new BackupKey(Buffer.from(key)).deriveBackupId(Aci.fromUuid(aci)) });
+    const plain = Buffer.concat(frames.flatMap((f) => [varint(f.length), Buffer.from(f)]));
+    const gz = Buffer.concat([gzipSync(plain), Buffer.alloc(padding)]);
+    const iv = randomBytes(16);
+    const cipher = createCipheriv('aes-256-cbc', official.aesKey, iv);
+    const body = Buffer.concat([iv, cipher.update(gz), cipher.final()]);
+    return Buffer.concat([body, createHmac('sha256', official.hmacKey).update(body).digest()]);
+  }
+
+  function varint(n: number): Buffer {
+    const out: number[] = [];
+    for (; n > 0x7f; n >>>= 7) out.push((n & 0x7f) | 0x80);
+    out.push(n);
+    return Buffer.from(out);
+  }
+
+  function readAll(key: Uint8Array, file: Uint8Array, decrypt: boolean, chunk: number): Uint8Array[] {
+    const reader = new libsignal.BackupReader(key, aci, decrypt);
+    const frames: Uint8Array[] = [];
+    for (let i = 0; i < file.length; i += chunk) frames.push(...(reader.push(file.subarray(i, i + chunk)) as Uint8Array[]));
+    frames.push(...(reader.finish() as Uint8Array[]));
+    return frames;
+  }
+
+  it('derives the same message backup keys as the official library', () => {
+    const key = randomBytes(32);
+    const official = new MessageBackupKey({ backupKey: new BackupKey(Buffer.from(key)), backupId: new BackupKey(Buffer.from(key)).deriveBackupId(Aci.fromUuid(aci)) });
+    const ours = libsignal.messageBackupKey(key, aci) as { hmacKey: Uint8Array; aesKey: Uint8Array };
+    assert.equal(toHex(ours.hmacKey), toHex(u8(official.hmacKey)));
+    assert.equal(toHex(ours.aesKey), toHex(u8(official.aesKey)));
+  });
+
+  it('reads frames from an archive in any chunk size, with gzip padding, and rejects a tampered one', () => {
+    const key = randomBytes(32);
+    const frames = [randomBytes(3), randomBytes(200), new Uint8Array(0), Uint8Array.from({ length: 70000 }, (_, i) => (i * 31) & 0xff)];
+    const file = archive(key, frames, 37);
+    for (const chunk of [1, 15, 16, 1000, 65536, file.length]) {
+      assert.deepEqual(readAll(key, file, false, chunk), [], 'MAC-only pass ' + chunk);
+      assert.deepEqual(readAll(key, file, true, chunk).map(toHex), frames.map(toHex), 'chunk ' + chunk);
+    }
+    const bad = file.slice();
+    bad[40] ^= 1;
+    assert.throws(() => readAll(key, bad, false, 4096), (e: any) => e.name === 'BackupBadMac');
+    assert.throws(() => readAll(randomBytes(32), file, false, 4096), (e: any) => e.name === 'BackupBadMac');
+    assert.throws(() => readAll(key, file.subarray(0, 20), true, 4096), (e: any) => e.name === 'BackupCorrupt');
+    assert.throws(() => new libsignal.BackupReader(key, aci, false).push(Buffer.from('SBACKUP\x01xxxxxxxx')), (e: any) => e.name === 'BackupUnsupported');
   });
 });
 

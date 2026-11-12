@@ -6,6 +6,7 @@ import { Pictogram } from '../components/Pictogram';
 import { QrCode } from '../components/Qr';
 import { Screen } from '../components/Screen';
 import { toast } from '../components/Toast';
+import { toBase64 } from '../../engine/bytes';
 import type { ProvisioningSession } from '../../engine/net/provisioning';
 import { signal } from '../data/api';
 import { config } from '../data/config';
@@ -65,11 +66,13 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
         switched = true;
         return db.useAccount(account.number || account.aci);
       },
-      onLinked: (creds) => {
+      onLinked: (creds, link) => {
         session.current = null;
         // SECURITY-REVIEW: the device password goes to config storage only; it is never logged or shown.
         config.set({ number: creds.number || creds.aci, dbNumber: creds.number || creds.aci, aci: creds.aci, deviceId: creds.deviceId, deviceToken: creds.password, deviceName });
         config.saveActiveAccount();
+        // SECURITY-REVIEW: the ephemeral backup key is kept in config only until the history import ends.
+        config.setHistorySync(link.ephemeralBackupKey ? { aci: creds.aci, key: toBase64(link.ephemeralBackupKey) } : null);
         setState('syncing');
         signal
           .requestSync()
