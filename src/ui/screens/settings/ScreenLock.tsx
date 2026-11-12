@@ -7,6 +7,7 @@ import { toggleRow } from '../../components/setting-rows';
 import { toast } from '../../components/Toast';
 import * as screenLock from '../../data/screen-lock';
 import { fmt, S } from '../../strings';
+import { guideRow } from '../Guide';
 
 export function lockAfterLabel(secs: number): string {
   if (secs === 0) return S.lockImmediately;
@@ -67,6 +68,8 @@ export function ScreenLockScreen() {
   const rows: Row[] = [
     toggleRow('lock', S.screenLock, on, (v) => void (v ? turnOn() : turnOff()), S.screenLockHint),
     on && { key: 'after', label: S.lockAfter, sub: lockAfterLabel(screenLock.lockAfter()), onSelect: chooseLockAfter },
+    { section: '' },
+    guideRow('settings'),
   ];
   return (
     <Screen title={S.screenLock}>

@@ -11,15 +11,18 @@ import { QrCode } from '../src/ui/components/Qr';
 import { RichText } from '../src/ui/components/RichText';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
+import { GUIDES } from '../src/ui/data/guides';
 import * as store from '../src/ui/data/store';
 import type { Message } from '../src/ui/data/types';
 import { Bubble, ChatScreen, mainActions } from '../src/ui/screens/Chat';
 import { ChatSettingsScreen } from '../src/ui/screens/ChatSettings';
 import { DebugScreen } from '../src/ui/screens/Debug';
+import { guideRow, openGuide } from '../src/ui/screens/Guide';
 import { ArchivedScreen, HomeScreen } from '../src/ui/screens/Home';
 import { LinkScreen, WelcomeScreen } from '../src/ui/screens/Onboarding';
 import { NewChatScreen, SearchScreen } from '../src/ui/screens/SearchList';
 import { SettingsScreen } from '../src/ui/screens/Settings';
+import { HELP_TOPICS, HelpScreen } from '../src/ui/screens/settings/Help';
 import { StartupErrorScreen } from '../src/ui/screens/StartupError';
 import { DEBUG, S } from '../src/ui/strings';
 import { settle } from './helpers';
@@ -195,6 +198,7 @@ describe('screens', () => {
       [NewChatScreen, {}],
       [SearchScreen, {}],
       [SettingsScreen, {}],
+      [HelpScreen, {}],
       [WelcomeScreen, {}],
       [StartupErrorScreen, { reason: 'blocked', detail: 'LibsignalUnavailableError: wasm blocked' }],
     ];
@@ -211,6 +215,35 @@ describe('screens', () => {
     assert.ok(!text(html()).includes(DEBUG.tls));
     router.reset(DebugScreen, {});
     assert.ok(text(html()).includes(DEBUG.tls));
+  });
+
+  it('shows a guide as a pictogram and a QR code of its page', () => {
+    router.reset(HomeScreen, {});
+    openGuide('proxy');
+    assert.equal(_stackForTest().length, 2);
+    const out = html();
+    assert.ok(text(out).includes(GUIDES.proxy.title));
+    assert.ok(text(out).includes(S.guideScan));
+    assert.match(out, /class="pictogram pictogram-sm"/);
+    assert.match(out, /class="qr"[^]*<svg/);
+    const row = guideRow('settings');
+    assert.equal(row.label, S.learnMore);
+    assert.equal(row.end, 'chevron');
+  });
+
+  it('lists every help topic, then the source and version', () => {
+    router.reset(HelpScreen, {});
+    const out = text(html());
+    for (const topic of HELP_TOPICS) assert.ok(out.includes(GUIDES[topic].title), topic);
+    assert.ok(out.includes(S.sourceCode));
+    assert.ok(out.includes(S.unofficial));
+  });
+
+  it('draws a pictogram on empty lists', () => {
+    for (const [C, name] of [[SearchScreen, 'search'], [ArchivedScreen, 'archive'], [WelcomeScreen, 'welcome']] as const) {
+      router.reset(C as any, {});
+      assert.match(html(), /<svg class="pictogram"/, name);
+    }
   });
 
   it('shows chat settings for a person', () => {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { Spinner } from '../../components/List';
+import { EmptyState, Spinner } from '../../components/List';
 import { confirm } from '../../components/Overlays';
 import { RowList } from '../../components/RowList';
 import { Screen } from '../../components/Screen';
@@ -50,7 +50,7 @@ export function BlockedScreen() {
       ) : (
         <RowList
           rows={list.map((e) => ({ key: e.kind + e.id, label: e.name, sub: e.sub, action: S.unblock, onSelect: () => unblock(e) }))}
-          empty={<div class="empty">{S.noBlocked}</div>}
+          empty={<EmptyState title={S.noBlocked} pictogram="blocked" />}
         />
       )}
     </Screen>

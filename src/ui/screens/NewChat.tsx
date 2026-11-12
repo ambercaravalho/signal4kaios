@@ -91,7 +91,7 @@ export function NewChatScreen() {
       rows={rows}
       right={S.scan}
       onRight={scan}
-      empty={busy ? <Spinner /> : !q ? <EmptyState title={S.noContacts} body={S.noContactsHint} /> : null}
+      empty={busy ? <Spinner /> : !q ? <EmptyState title={S.noContacts} body={S.noContactsHint} pictogram="contacts" /> : null}
     />
   );
 }

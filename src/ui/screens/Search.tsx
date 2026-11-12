@@ -47,6 +47,6 @@ export function SearchScreen() {
       })
     );
 
-  const empty = !q ? <EmptyState title={S.search} body={S.searchHint} /> : q.length >= 2 && found === null ? <Spinner /> : <EmptyState title={S.noResults} />;
+  const empty = !q ? <EmptyState title={S.search} body={S.searchHint} pictogram="search" /> : q.length >= 2 && found === null ? <Spinner /> : <EmptyState title={S.noResults} />;
   return <SearchList title={S.search} placeholder={S.searchPlaceholder} query={query} onQuery={setQuery} rows={rows} empty={empty} />;
 }

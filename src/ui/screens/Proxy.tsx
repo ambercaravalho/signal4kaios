@@ -10,6 +10,7 @@ import { config } from '../data/config';
 import { isProxyLink, parseProxyLink, saveProxy } from '../data/proxy';
 import * as ws from '../data/ws';
 import { fmt, S } from '../strings';
+import { guideRow } from './Guide';
 
 export { isProxyLink };
 
@@ -67,6 +68,8 @@ export function ProxyScreen() {
   const rows: Row[] = [
     toggleRow('use', S.useProxy, enabled, () => void toggle(), S.useProxyHint),
     { key: 'addr', label: S.proxyAddress, sub: address || S.usernameNone, onSelect: editAddress },
+    { section: '' },
+    guideRow('proxy'),
   ];
   return (
     <Screen title={S.proxy}>

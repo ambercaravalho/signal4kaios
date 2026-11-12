@@ -684,6 +684,27 @@
   color: var(--text-2);
 }
 
+/* Guide topics */
+.guide {
+  padding: 1rem var(--pad) 0;
+  text-align: center;
+}
+
+.guide-line {
+  font-size: var(--fs-secondary);
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+.guide .qr {
+  padding: 0.6rem 0 0;
+}
+
+.guide .qr svg {
+  width: 16rem;
+  height: 16rem;
+}
+
 /* Onboarding, linking, startup error */
 .welcome,
 .link-screen {
@@ -693,11 +714,8 @@
   line-height: 1.45;
 }
 
-.welcome-logo {
-  width: 7.2rem;
-  height: 7.2rem;
-  margin: 0.4rem auto 0.8rem;
-  display: block;
+.welcome .pictogram {
+  margin-top: 0.8rem;
 }
 
 .welcome-title {

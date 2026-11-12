@@ -9,16 +9,16 @@ import { Screen } from './Screen';
 import { toast } from './Toast';
 
 /** A QR code drawn as one SVG path of dark modules, on a white quiet zone so phones can scan it in dark mode too. */
-export function QrCode(props: { text: string }) {
+export function QrCode(props: { text: string; ecc?: 'low' | 'medium' }) {
   const { d, size } = useMemo(() => {
-    const grid = encodeQR(props.text, 'raw', { ecc: 'medium', border: 2 });
+    const grid = encodeQR(props.text, 'raw', { ecc: props.ecc || 'medium', border: 2 });
     let path = '';
     for (let y = 0; y < grid.length; y++) {
       const row = grid[y];
       for (let x = 0; x < row.length; x++) if (row[x]) path += 'M' + x + ' ' + y + 'h1v1h-1z';
     }
     return { d: path, size: grid.length };
-  }, [props.text]);
+  }, [props.text, props.ecc]);
   return (
     <div class="qr">
       <svg viewBox={'0 0 ' + size + ' ' + size} shape-rendering="crispEdges" role="img">

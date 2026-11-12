@@ -20,7 +20,7 @@ export { PrivacyScreen } from './settings/Privacy';
 export { lockAfterLabel, pinWaitMessage, ScreenLockScreen } from './settings/ScreenLock';
 export { PhoneNumberScreen } from './settings/PhoneNumber';
 export { AppearanceScreen } from './settings/Appearance';
-export { GUIDE_URL, HelpScreen, SOURCE_URL } from './settings/Help';
+export { HelpScreen } from './settings/Help';
 export { BlockedScreen } from './settings/Blocked';
 
 /** Top-level settings, grouped like Signal's. */
@@ -32,10 +32,10 @@ export function SettingsScreen() {
     { key: 'profile', label: name || S.yourName, sub: uname ? '@' + uname : config.number(), leading: <Avatar conv={{ id: OWN_PROFILE_PREFIX + config.number(), type: 'direct', name: name || config.number() }} />, end: 'chevron', onSelect: () => router.push(ProfileScreen, {}) },
     { section: '' },
     { key: 'linked', label: S.linkedDevice, icon: 'lock', end: 'chevron', onSelect: () => router.push(LinkedDeviceScreen, {}) },
-    { key: 'chats', label: S.chatsSection, icon: 'note', end: 'chevron', onSelect: () => router.push(ChatsSettingsScreen, {}) },
+    { key: 'chats', label: S.chatsSection, icon: 'chat', end: 'chevron', onSelect: () => router.push(ChatsSettingsScreen, {}) },
     { key: 'privacy', label: S.privacy, icon: 'verified', end: 'chevron', onSelect: () => router.push(PrivacyScreen, {}) },
     { key: 'appearance', label: S.appearance, icon: 'photo', end: 'chevron', onSelect: () => router.push(AppearanceScreen, {}) },
-    { key: 'help', label: S.help, icon: 'alert', end: 'chevron', onSelect: () => router.push(HelpScreen, {}) },
+    { key: 'help', label: S.help, icon: 'help', end: 'chevron', onSelect: () => router.push(HelpScreen, {}) },
     { key: 'debug', label: S.debug, icon: 'file', end: 'chevron', onSelect: () => router.push(DebugScreen, {}) },
   ];
   return (
