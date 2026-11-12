@@ -17,6 +17,7 @@ use rand::TryRngCore;
 use wasm_bindgen::prelude::*;
 
 mod account;
+mod backup;
 mod fingerprint;
 mod group;
 mod keys;

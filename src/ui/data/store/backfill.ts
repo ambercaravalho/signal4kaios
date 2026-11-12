@@ -56,11 +56,11 @@ function isGone(e: unknown): boolean {
   return status === 404 || status === 403;
 }
 
-/** `loadAttachment`, asking our phone for a fresh copy when Signal's servers no longer have it; `onAsking` runs once the request goes out. */
+/** `loadAttachment`, asking our phone for a fresh copy when Signal's servers no longer have it, or never had one we know of (history from linking that was older than the CDN keeps); `onAsking` runs once the request goes out. */
 export function loadOrAskPhone(att: Attachment, msg: Message | undefined, onAsking: () => void): Promise<Blob> {
   return loadAttachment(att).catch((e) => {
-    const index = msg && !att.viewOnce ? msg.attachments.findIndex((a) => a.id === att.id) : -1;
-    if (!msg || index < 0 || !isGone(e)) throw e;
+    const index = msg && !att.viewOnce ? msg.attachments.findIndex((a) => a === att || (!!att.id && a.id === att.id)) : -1;
+    if (!msg || index < 0 || !(isGone(e) || !att.id)) throw e;
     onAsking();
     return askPhoneForAttachment(msg, index).then(loadAttachment);
   });

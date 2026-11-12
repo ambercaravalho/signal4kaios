@@ -15,6 +15,7 @@ import { applyPniChangeNumber, type NumberChange } from '../services/change-numb
 import { deriveGroupV2Keys } from '../services/groups-v2';
 import { adoptOwnProfileKey } from '../services/profiles';
 import { pullFromStorageService } from '../services/storage';
+import { applyStickerPackOperations } from '../services/storage/sticker-packs';
 import { usernameLinkUrl } from '../services/usernames';
 import { invalidateBlocked } from './blocked';
 import { client, httpBinary, httpJson, OWN_AVATAR_PATH, serverUrl, store } from './context';
@@ -128,6 +129,7 @@ export async function syncFromStorageService(): Promise<boolean> {
     if (acc && account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!account.noteToSelfArchived, markedUnread: !!account.noteToSelfMarkedUnread });
   }
 
+  host().config.set({ chatFolders: res.chatFolders, stickerPacks: res.stickerPacks });
   invalidateBlocked();
   await host().directoryChanged().catch(() => {});
   const pinned =
@@ -183,6 +185,8 @@ export async function handleIncomingSyncMessage(env: IncomingEnvelope, content: 
   const acc = await store.getAccount();
   // Sync messages are only meaningful from our own devices
   if (!acc || env.sourceUuid !== acc.aci) return;
+  const ops = content.content.value.stickerPackOperation;
+  if (ops.length) host().config.set({ stickerPacks: applyStickerPackOperations(host().config.stickerPacks(), ops) });
   const c = content.content.value.content;
 
   switch (c.case) {

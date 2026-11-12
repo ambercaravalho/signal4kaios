@@ -12,6 +12,8 @@ export interface HostRawResponse {
   status: number;
   body: Uint8Array;
   location: string | null;
+  /** The `Content-Range` header of a partial response. */
+  range?: string | null;
 }
 
 export interface HostHttp {
@@ -47,6 +49,7 @@ export interface HostConfig {
   aci(): string;
   profileName(): string;
   sharePhoneNumber(): boolean;
+  stickerPacks(): HostStickerPack[];
   set(patch: Record<string, unknown>): void;
 }
 
@@ -66,6 +69,30 @@ export interface ChatStateEntry {
 }
 
 export type PinnedChat = { uuid?: string; number?: string; groupInternalId?: string };
+
+/** A chat folder (Storage `ChatFolderRecord`), shared by all the account's devices. `all` is the built-in "All chats" folder. Chats are named like notification profiles: ACIs, numbers, and `g:` + group internal IDs. */
+export interface HostChatFolder {
+  /** Base64 of the folder's 16-byte ID. */
+  id: string;
+  name: string;
+  position: number;
+  all: boolean;
+  showOnlyUnread: boolean;
+  showMutedChats: boolean;
+  includeAllIndividualChats: boolean;
+  includeAllGroupChats: boolean;
+  included: string[];
+  excluded: string[];
+}
+
+/** An installed sticker pack (Storage `StickerPackRecord`); stickers are received only, so Beacon just keeps the list. */
+export interface HostStickerPack {
+  /** Hex of the pack ID, as sticker messages name it. */
+  id: string;
+  /** SECURITY-REVIEW: hex of the pack key that decrypts the pack. */
+  key: string;
+  position: number;
+}
 
 /** A notification profile made on the primary phone (Storage `NotificationProfile`). */
 export interface HostNotificationProfile {

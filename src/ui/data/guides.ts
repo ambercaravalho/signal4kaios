@@ -19,6 +19,8 @@ export const GUIDES = {
   linking: { title: S.guideLinking, url: SETUP_URL + '#2-link-your-signal-account', icon: 'lock', pictogram: 'link' },
   keys: { title: S.guideKeys, url: GUIDE_URL + '#keys', icon: 'note', pictogram: 'keys' },
   chats: { title: S.guideChats, url: GUIDE_URL + '#inside-a-chat', icon: 'chat', pictogram: 'chats' },
+  folders: { title: S.guideFolders, url: GUIDE_URL + '#chat-folders', icon: 'archive', pictogram: 'chats' },
+  history: { title: S.guideHistory, url: SETUP_URL + '#message-history', icon: 'clock', pictogram: 'link' },
   groups: { title: S.guideGroups, url: GUIDE_URL + '#chat-settings-groups-and-safety-numbers', icon: 'group', pictogram: 'safety' },
   settings: { title: S.guideSettings, url: GUIDE_URL + '#settings', icon: 'gear', pictogram: 'settings' },
   proxy: { title: S.guideProxy, url: GUIDE_URL + '#proxy', icon: 'verified', pictogram: 'proxy' },

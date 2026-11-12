@@ -26,6 +26,7 @@ export function installEngineHost(): void {
       aci: () => config.aci(),
       profileName: () => config.profileName(),
       sharePhoneNumber: () => config.sharePhoneNumber(),
+      stickerPacks: () => config.stickerPacks(),
       set: (patch) => config.set(patch),
     },
     dbg: (msg) => dbg(msg),

@@ -5,7 +5,7 @@ export const DEFAULT_SIGNAL_WS = 'wss://chat.signal.org';
 export const DEFAULT_SIGNAL_CDN = 'https://cdn.signal.org';
 export const DEFAULT_STORAGE_SERVER = 'https://storage.signal.org';
 
-export const SIGNAL_USER_AGENT = 'Signal4KaiOS/2.8.0';
+export const SIGNAL_USER_AGENT = 'Signal4KaiOS/2.9.0';
 
 /** Signal-Desktop config/production.json `cdn` map. */
 export const SIGNAL_CDNS: Record<number, string> = {
@@ -55,11 +55,11 @@ export type SignalHttpBinaryFn = (
   timeout?: number
 ) => Promise<Uint8Array>;
 
-/** Raw CDN request that also exposes the status and `Location` header (resumable CDN2 uploads). */
+/** Raw CDN request that also exposes the status and the `Location` (resumable CDN2 uploads) and `Content-Range` (resumable downloads) headers. */
 export type SignalHttpRawFn = (
   method: string,
   url: string,
   body?: Uint8Array | null,
   headers?: Record<string, string>,
   timeout?: number
-) => Promise<{ status: number; body: Uint8Array; location: string | null }>;
+) => Promise<{ status: number; body: Uint8Array; location: string | null; range?: string | null }>;

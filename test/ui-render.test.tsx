@@ -226,7 +226,7 @@ describe('screens', () => {
     const out = html();
     assert.ok(text(out).includes(GUIDES.proxy.title));
     assert.ok(text(out).includes(S.guideScan));
-    assert.match(out, /class="pictogram pictogram-sm"/);
+    assert.match(out, /class="guide-head"><svg class="pictogram guide-pictogram"/);
     assert.match(out, /class="qr"[^]*<svg/);
     const row = guideRow('settings');
     assert.equal(row.label, S.learnMore);

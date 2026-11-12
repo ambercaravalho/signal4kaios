@@ -2,6 +2,26 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.9.0
+
+Beacon can bring your message history over when you link it, and follows your chat folders. Install over v2.8.0; your chats and settings carry over. To get your history on a phone that's already linked, unlink it and link again (see below).
+
+### New
+
+- **Message history when linking.** When you link, choose **Transfer message history** on your main phone, and Beacon brings over your recent chats and messages, with reactions, edits, quotes, polls, and photos and files to download when you open them. **Skip** goes on without it; if the download stops, **Retry**, or open Beacon again to pick up where it left off. Each chat keeps its 500 most recent messages. Beacon only receives the history while linking, so to transfer it to a phone that's already linked, use **Settings → Linked device → Unlink this phone** and link again; unlinking deletes what Beacon has on the phone, and the transfer brings it back.
+- **Chat folders.** Folders you made on your phone show here: **Left** and **Right** on the chats list move between them, and the header names the folder you're in. **Settings → Chats → Chat folders** adds folders (Unread, One-to-one chats, Groups, or your own), edits which chats they hold, reorders them, and deletes them, and your other devices follow.
+- **Sticker packs** installed on your phone are now kept in step with Beacon, ready for sending stickers later. Stickers you receive show as before.
+
+### Changed
+
+- **Help** has guides on message history and chat folders, and **Learn more** at the bottom of **Chat folders**.
+- **Debug** shows how many sticker packs and chat folders your account has.
+- New links are named **Beacon for KaiOS** in your phone's linked devices list. You can still type a different name when you link.
+
+### Fixed
+
+- **Help** guides fit on the screen at every text size: the picture sits beside the caption and the QR code takes the rest of the page.
+
 ## v2.8.0
 
 Beacon closes more gaps with the official Signal apps: notifications work the way they do on your phone, groups from strangers wait for your OK, and username QR codes scan. Install over v2.7.4; your chats and settings carry over, and chats you'd muted stay muted.
@@ -19,6 +39,8 @@ Beacon closes more gaps with the official Signal apps: notifications work the wa
 ### Changed
 
 - Phone number links in chats (`signal.me/#p/`) open a chat in Beacon instead of the browser.
+
+## v2.7.4
 
 Help in Beacon is shorter and easier to scan, with pictures, and points you to the full guide when you need more. Install over v2.7.3; your chats and settings carry over.
 

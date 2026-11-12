@@ -19,8 +19,10 @@ export function GuideScreen(props: { topic: GuideTopic }) {
   });
   return (
     <Screen title={guide.title} bodyClass="guide">
-      <Pictogram name={guide.pictogram} class="pictogram-sm" />
-      <div class="guide-line">{S.guideScan}</div>
+      <div class="guide-head">
+        <Pictogram name={guide.pictogram} class="guide-pictogram" />
+        <div class="guide-line">{S.guideScan}</div>
+      </div>
       {/* Low error correction keeps long guide links to fewer, larger modules on the small screen. */}
       <QrCode text={guide.url} ecc="low" />
     </Screen>

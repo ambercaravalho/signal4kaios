@@ -5,6 +5,8 @@ import { sealGcm } from '../../crypto/primitives';
 import {
   type AccountRecord,
   AccountRecord_PhoneNumberSharingMode,
+  type ChatFolderRecord,
+  ChatFolderRecord_FolderType,
   type ContactRecord,
   type GroupV2Record,
   ManifestRecord_Identifier_Type,
@@ -37,7 +39,9 @@ export function setNotifyForMentionsIfMuted(g: GroupV2Record, notify: boolean | 
 export type StorageMutation =
   | { type: 'contact'; aci?: string; e164?: string; update: (c: ContactRecord) => void }
   | { type: 'groupV2'; masterKey: Uint8Array; update: (g: GroupV2Record) => void }
-  | { type: 'account'; update: (a: AccountRecord) => void };
+  | { type: 'account'; update: (a: AccountRecord) => void }
+  /** A chat folder by its 16-byte ID, or with `allChats` the "All chats" folder, whatever its ID (a new one gets a random ID). With `existing`, a folder that isn't there is left alone rather than created. */
+  | { type: 'chatFolder'; id?: Uint8Array; allChats?: boolean; existing?: boolean; update: (f: ChatFolderRecord) => void };
 
 /** Who sees and who can find us by our number, written like Signal-Desktop: sharing with everybody also makes the number findable. */
 export function setPhoneNumberPrivacy(a: AccountRecord, share: boolean, findable: boolean): void {
@@ -56,6 +60,11 @@ function findWorking(list: WorkingRecord[], m: StorageMutation): WorkingRecord |
   return list.find(({ record: { record: r } }) => {
     if (m.type === 'account') return r.case === 'account';
     if (m.type === 'groupV2') return r.case === 'groupV2' && constantTimeEqual(r.value.masterKey, m.masterKey);
+    if (m.type === 'chatFolder') {
+      if (r.case !== 'chatFolder') return false;
+      if (m.allChats) return r.value.folderType === ChatFolderRecord_FolderType.ALL && r.value.deletedAtTimestampMs === 0n;
+      return !!m.id && constantTimeEqual(r.value.id, m.id);
+    }
     if (r.case !== 'contact') return false;
     const aci = serviceIdFrom(r.value.aci, r.value.aciBinary);
     if (aci && m.aci) return aci === m.aci;
@@ -65,6 +74,15 @@ function findWorking(list: WorkingRecord[], m: StorageMutation): WorkingRecord |
 
 function newWorking(m: StorageMutation): WorkingRecord {
   if (m.type === 'account') throw new Error('Storage Service has no account record yet');
+  if (m.type === 'chatFolder') {
+    const id = m.id && m.id.length === 16 ? m.id : randomBytes(16);
+    return {
+      key: null,
+      type: ManifestRecord_Identifier_Type.CHAT_FOLDER,
+      record: create(StorageRecordSchema, { record: { case: 'chatFolder', value: { id } } }),
+      before: null,
+    };
+  }
   if (m.type === 'groupV2') {
     return {
       key: null,
@@ -92,6 +110,7 @@ function applyMutation(w: WorkingRecord, m: StorageMutation): void {
   if (m.type === 'contact' && r.case === 'contact') m.update(r.value);
   else if (m.type === 'groupV2' && r.case === 'groupV2') m.update(r.value);
   else if (m.type === 'account' && r.case === 'account') m.update(r.value);
+  else if (m.type === 'chatFolder' && r.case === 'chatFolder') m.update(r.value);
 }
 
 /**
@@ -120,6 +139,7 @@ export async function mutateStorage(
     for (const m of mutations) {
       let w = findWorking(working, m);
       if (!w) {
+        if (m.type === 'chatFolder' && m.existing) continue;
         w = newWorking(m);
         working.push(w);
       }

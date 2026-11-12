@@ -1,3 +1,4 @@
+import { useState } from 'preact/hooks';
 import { useStoreEvents } from '../app/hooks';
 import { router } from '../app/router';
 import { Avatar } from '../components/Avatar';
@@ -14,7 +15,7 @@ import { fmtTime } from '../data/format';
 import * as store from '../data/store';
 import type { Conversation } from '../data/types';
 import { friendlyError } from '../errors';
-import { APP_NAME, S } from '../strings';
+import { APP_NAME, fmt, S } from '../strings';
 import { openChat } from './Chat';
 import { ChatSettingsScreen } from './ChatSettings';
 import { NewChatScreen, SearchScreen } from './SearchList';
@@ -85,19 +86,40 @@ function homeOptions(conv: Conversation | undefined): void {
   ]);
 }
 
-/** The chat list. Archived chats sit behind a row at the bottom, as in Signal for Android. */
+/** The folder the chat list shows, kept while the app runs; null is "All chats". */
+let shownFolder: string | null = null;
+
+/** The chat list, one chat folder at a time (Left and Right switch). Archived chats sit behind a row at the bottom of "All chats", as in Signal for Android. */
 export function HomeScreen() {
   useStoreEvents(['conversations', 'typing']);
-  const list = store.conversations();
-  const archivedCount = store.archivedConversations().length;
+  const [, setShown] = useState(shownFolder);
+  const folders = store.foldersInOrder();
+  const folder = folders.find((f) => !f.all && f.id === shownFolder) || folders.find((f) => f.all);
+  const custom = !!folder && !folder.all;
+  const list = custom ? store.conversations().filter((c) => store.folderIncludes(folder!, c)) : store.conversations();
+  const archivedCount = custom ? 0 : store.archivedConversations().length;
   const rows: Row[] = list.map((c) => convRow(c, false));
   if (archivedCount)
     rows.push({ key: ARCHIVED_ROW, label: S.archivedChats, icon: 'archive', meta: String(archivedCount), action: S.open, onSelect: () => router.push(ArchivedScreen, {}) });
 
-  const empty = !store.isReady() ? <Spinner /> : <EmptyState title={S.noChats} body={S.noChatsHint} pictogram="chats" />;
+  function switchFolder(by: number): void {
+    const i = folder ? folders.indexOf(folder) : -1;
+    const next = folders[(i + by + folders.length) % folders.length];
+    shownFolder = next.all ? null : next.id;
+    setShown(shownFolder);
+  }
+
+  const empty = !store.isReady() ? (
+    <Spinner />
+  ) : custom ? (
+    <EmptyState title={S.noChatsInFolder} body={S.noChatsInFolderHint} pictogram="chats" />
+  ) : (
+    <EmptyState title={S.noChats} body={S.noChatsHint} pictogram="chats" />
+  );
+  const name = custom ? folder!.name : folders.length > 1 ? S.allChats : APP_NAME;
 
   return (
-    <Screen title={APP_NAME} banner={<ConnectionBanner />}>
+    <Screen title={folders.length > 1 ? fmt(S.folderTitle, { name }) : name} banner={<ConnectionBanner />}>
       <RowList
         rows={rows}
         empty={empty}
@@ -105,6 +127,7 @@ export function HomeScreen() {
         onKey={(e, row) => {
           if (e.key === 'SoftLeft') router.push(NewChatScreen, {});
           else if (e.key === 'SoftRight') homeOptions(row && row.key !== ARCHIVED_ROW ? store.conversation(row.key!) : undefined);
+          else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && folders.length > 1) switchFolder(e.key === 'ArrowLeft' ? -1 : 1);
           else return false;
           return true;
         }}

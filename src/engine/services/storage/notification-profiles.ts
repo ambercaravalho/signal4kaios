@@ -23,7 +23,8 @@ function clockTime(v: number): number {
   return h >= 0 && h < 24 && m >= 0 && m < 60 ? v : 0;
 }
 
-function recipientKeys(r: Recipient): string[] {
+/** The keys a Storage `Recipient` goes by: a contact's ACI and number, or `g:` + a group's internal ID. */
+export function recipientKeys(r: Recipient): string[] {
   const id = r.identifier;
   if (id.case === 'contact') {
     const aci = serviceIdFrom(id.value.serviceId, id.value.serviceIdBinary);

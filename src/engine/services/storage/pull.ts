@@ -1,4 +1,4 @@
-/* Reading the Storage Service: credentials, the encrypted manifest, and the contact, Groups V2, account, and notification profile records we use, read the way Signal-Desktop's services/storage.preload.ts does. */
+/* Reading the Storage Service: credentials, the encrypted manifest, and the contact, Groups V2, account, notification profile, chat folder, and sticker pack records we use, read the way Signal-Desktop's services/storage.preload.ts does. */
 
 import { toBase64 } from '../../bytes';
 import {
@@ -16,10 +16,12 @@ import {
 } from '../../gen/SignalStorage_pb';
 import { accountBasicAuth, asObject, DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../../net/http';
 import { create, fromBinary, num, serviceIdFrom, toBinary } from '../../net/proto';
-import type { HostNotificationProfile, HostProfileOverride } from '../../host';
+import type { HostChatFolder, HostNotificationProfile, HostProfileOverride, HostStickerPack } from '../../host';
 import type { SignalProtocolStore, TrustLevel } from '../../protocol/store';
 import { decryptStorageValue, deriveStorageItemKey, deriveStorageManifestKey, deriveStorageServiceKey } from './crypto';
+import { readChatFolder } from './chat-folders';
 import { readNotificationProfile, readProfileOverride } from './notification-profiles';
+import { readStickerPack, sortStickerPacks } from './sticker-packs';
 
 const READ_BATCH = 1024;
 const STATE_KEY = 'storageServiceRecords';
@@ -121,6 +123,9 @@ interface StorageSyncResult {
   groupsV2: StorageGroupV2Record[];
   account?: StorageAccountRecord;
   notificationProfiles: HostNotificationProfile[];
+  /** Folders in display order. */
+  chatFolders: HostChatFolder[];
+  stickerPacks: HostStickerPack[];
 }
 
 function identityStateToTrust(state: ContactRecord_IdentityState): TrustLevel {
@@ -140,6 +145,8 @@ const WANTED_TYPES = new Set([
   ManifestRecord_Identifier_Type.GROUPV2,
   ManifestRecord_Identifier_Type.ACCOUNT,
   ManifestRecord_Identifier_Type.NOTIFICATION_PROFILE,
+  ManifestRecord_Identifier_Type.CHAT_FOLDER,
+  ManifestRecord_Identifier_Type.STICKER_PACK,
 ]);
 
 export interface StorageSession {
@@ -239,7 +246,7 @@ export async function saveRecordCache(store: SignalProtocolStore, records: Map<s
 }
 
 function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unreported: Set<string>): StorageSyncResult {
-  const result: StorageSyncResult = { version: num(version), contacts: [], groupsV2: [], notificationProfiles: [] };
+  const result: StorageSyncResult = { version: num(version), contacts: [], groupsV2: [], notificationProfiles: [], chatFolders: [], stickerPacks: [] };
   for (const [key, { record: rec }] of records) {
     const changed = unreported.has(key);
     if (rec.case === 'contact') {
@@ -321,8 +328,16 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
     } else if (rec.case === 'notificationProfile') {
       const p = readNotificationProfile(rec.value);
       if (p) result.notificationProfiles.push(p);
+    } else if (rec.case === 'chatFolder') {
+      const f = readChatFolder(rec.value);
+      if (f) result.chatFolders.push(f);
+    } else if (rec.case === 'installedStickerPack') {
+      const s = readStickerPack(rec.value);
+      if (s) result.stickerPacks.push(s);
     }
   }
+  result.chatFolders.sort((a, b) => a.position - b.position || (a.id < b.id ? -1 : 1));
+  result.stickerPacks = sortStickerPacks(result.stickerPacks);
   return result;
 }
 

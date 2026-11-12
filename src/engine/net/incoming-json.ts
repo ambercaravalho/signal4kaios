@@ -1,6 +1,6 @@
 /* Decrypted Content to the JSON frames the app's normalizer (`src/ui/data/normalize.ts`) consumes. Every field is copied from an untrusted message, so lengths and shapes are checked here or there. */
 
-import { fromBase64, toBase64 } from '../bytes';
+import { toBase64 } from '../bytes';
 import {
   type AddressableMessage,
   type AttachmentPointer,
@@ -24,8 +24,11 @@ import { receivedMeta } from '../services/attachment-meta';
 import { groupIdFromMasterKey } from '../services/groups-v2';
 import { isValidLinkPreview } from '../services/link-previews';
 import { POLL_OPTIONS_MAX, POLL_QUESTION_MAX_RECEIVE, validPoll } from '../services/polls';
+import { encodeAttachmentDescriptor } from './attachment-descriptor';
 import { isAci, num, serviceIdFrom } from './proto';
 import type { IncomingEnvelope } from './receive';
+
+export { type AttachmentDescriptor, decodeAttachmentDescriptor } from './attachment-descriptor';
 
 const MAX_CONTACT_CARDS = 5;
 const MAX_CARD_FIELDS = 5;
@@ -50,22 +53,13 @@ export function attachmentCdnKey(att: AttachmentPointer): string {
   return '';
 }
 
-function encodeAttachmentDescriptor(att: AttachmentPointer, contentType: string, fileName: string): string {
-  const meta = {
-    cdnKey: attachmentCdnKey(att),
-    cdnNumber: att.cdnNumber || 0,
-    key: toBase64(att.key),
-    digest: att.digest.length ? toBase64(att.digest) : '',
-    contentType,
-    fileName,
-    size: att.size || 0,
-  };
-  return 's4katt:' + toBase64(new TextEncoder().encode(JSON.stringify(meta)));
+function pointerDescriptor(att: AttachmentPointer, contentType: string, fileName: string): string {
+  return encodeAttachmentDescriptor({ cdnKey: attachmentCdnKey(att), cdnNumber: att.cdnNumber || 0, key: att.key, digest: att.digest, contentType, fileName, size: att.size || 0 });
 }
 
 function attachmentJson(ptr: AttachmentPointer, contentType: string, fileName: string, viewOnce: boolean) {
   return {
-    id: encodeAttachmentDescriptor(ptr, contentType, fileName),
+    id: pointerDescriptor(ptr, contentType, fileName),
     contentType,
     filename: fileName,
     size: ptr.size || 0,
@@ -85,35 +79,6 @@ function backfillSlots(r: SyncMessage_AttachmentBackfillResponse): Array<ReturnT
     }
     return d.data.case === 'status' && d.data.value === SyncMessage_AttachmentBackfillResponse_AttachmentData_Status.PENDING ? 'pending' : 'failed';
   });
-}
-
-export interface AttachmentDescriptor {
-  cdnKey: string;
-  cdnNumber: number;
-  key: Uint8Array;
-  digest?: Uint8Array;
-  contentType: string;
-  fileName: string;
-  size: number;
-}
-
-export function decodeAttachmentDescriptor(id: string): AttachmentDescriptor | null {
-  if (!id || !id.startsWith('s4katt:')) return null;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(fromBase64(id.slice(7))));
-    if (typeof parsed.cdnKey !== 'string' || !parsed.cdnKey) return null;
-    return {
-      cdnKey: parsed.cdnKey,
-      cdnNumber: typeof parsed.cdnNumber === 'number' ? parsed.cdnNumber : 0,
-      key: fromBase64(parsed.key || ''),
-      digest: parsed.digest ? fromBase64(parsed.digest) : undefined,
-      contentType: parsed.contentType || 'application/octet-stream',
-      fileName: parsed.fileName || '',
-      size: typeof parsed.size === 'number' ? parsed.size : 0,
-    };
-  } catch {
-    return null;
-  }
 }
 
 function styleName(style: BodyRange_Style): string | null {
@@ -194,7 +159,7 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
       title: (preview.title || '').slice(0, MAX_PREVIEW_TEXT),
       description: (preview.description || '').slice(0, MAX_PREVIEW_TEXT),
       image: img
-        ? { id: encodeAttachmentDescriptor(img, img.contentType, img.fileName || ''), contentType: img.contentType, filename: img.fileName || '', size: img.size || 0 }
+        ? { id: pointerDescriptor(img, img.contentType, img.fileName || ''), contentType: img.contentType, filename: img.fileName || '', size: img.size || 0 }
         : undefined,
     };
   }

@@ -1,4 +1,4 @@
-// Bundle the app (src/ui/main.tsx) into src/app/build/app.js and app.css for KaiOS 3.0+ (Gecko 84).
+// Bundle the app (src/ui/main.tsx) into src/app/build/app.js and app.css for KaiOS 3.0+ (Gecko 84), and the archive decoder into src/app/build/backup.js.
 // `node scripts/build.mjs --analyze` also writes dist/meta.json and prints the largest inputs.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as esbuild from 'esbuild';
@@ -25,22 +25,29 @@ const slimEmoji = {
   },
 };
 
-const result = await esbuild.build({
-  entryPoints: ['src/ui/main.tsx'],
-  outfile: 'src/app/build/app.js',
+const common = {
   bundle: true,
   format: 'iife',
   target: 'firefox84',
-  jsx: 'automatic',
-  jsxImportSource: 'preact',
   minify: true,
   legalComments: 'none',
   metafile: analyze,
   define: { 'process.env.NODE_ENV': '"production"' },
   logOverride: { 'empty-import-meta': 'silent' },
-  plugins: [slimEmoji],
   logLevel: 'info',
+};
+
+const result = await esbuild.build({
+  ...common,
+  entryPoints: ['src/ui/main.tsx'],
+  outfile: 'src/app/build/app.js',
+  jsx: 'automatic',
+  jsxImportSource: 'preact',
+  plugins: [slimEmoji],
 });
+
+// The link-and-sync archive decoder (Backups codecs), loaded only while message history is imported.
+await esbuild.build({ ...common, entryPoints: ['src/engine/services/history/bundle.ts'], outfile: 'src/app/build/backup.js', metafile: false });
 
 if (analyze) {
   await mkdir('dist', { recursive: true });
