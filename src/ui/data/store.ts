@@ -1,7 +1,7 @@
 /* App state and its event hub, split across `./store/`. Flow: WebSocket frame, then `parseFrame`, then `applyEvent`, then IndexedDB, then an event screens subscribe to. */
 
 export { on, type StoreEvents } from './store/events';
-export { contactByKey, contactName, contactsList, displayName, groupsList, isSelf, isSelfConv, refreshDirectory, selfNumber } from './store/contacts';
+export { contactByKey, contactName, contactsList, displayName, groupAvatarKey, groupsList, isSelf, isSelfConv, refreshDirectory, selfNumber } from './store/contacts';
 export { attachmentLabel, noticeText } from './store/previews';
 export { type MutedException, notificationText, notifiesWhileMuted, onNotificationClick, shouldNotify } from './store/notify';
 export { archivedConversations, chatMedia, connectionState, conversation, conversations, conversationWith, groupConversation, init, isReady, joinedGroupConversation, openConversationId, purgeExpired, purgeExpiredConv, setConnection, setConversationName, setConvExpire, setDraft, setOpenConv, typing } from './store/conversations';

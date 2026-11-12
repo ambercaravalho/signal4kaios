@@ -88,6 +88,7 @@ export async function refreshDirectory(): Promise<boolean> {
     const entry: (typeof state.groupsByInternal)[string] = { id: g.id, name: g.name || 'Group' };
     if (g.messageRequest) entry.request = true;
     if (g.addedBy) entry.addedBy = g.addedBy;
+    if (typeof g.avatar === 'string') entry.avatar = g.avatar;
     state.groupsByInternal[g.internal_id] = entry;
   }
   db.kvSet('groups', state.groupsByInternal);
@@ -151,6 +152,12 @@ export function groupsList(): GroupRef[] {
   return Object.keys(state.groupsByInternal)
     .map((k) => ({ internal_id: k, id: state.groupsByInternal[k].id, name: state.groupsByInternal[k].name }))
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+
+/** A group photo's CDN key: '' when the group has none, undefined when it isn't known yet. */
+export function groupAvatarKey(internalId: string | undefined): string | undefined {
+  const g = internalId ? state.groupsByInternal[internalId] : undefined;
+  return g ? g.avatar : undefined;
 }
 
 export function selfNumber(): string {

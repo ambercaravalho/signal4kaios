@@ -5,6 +5,7 @@ import { backfillMethods } from './bridge/backfill';
 import { chatFolderMethods } from './bridge/chat-folders';
 import { contactMethods } from './bridge/contact-actions';
 import { client, store } from './bridge/context';
+import { groupAvatarMethods } from './bridge/group-avatar';
 import { groupMethods } from './bridge/groups';
 import { historyMethods } from './bridge/history';
 import { incomingMethods } from './bridge/incoming';
@@ -32,6 +33,7 @@ export const signalBridge = {
   ...outgoingMethods,
   ...contactMethods,
   ...groupMethods,
+  ...groupAvatarMethods,
   ...backfillMethods,
   ...historyMethods,
   ...chatFolderMethods,

@@ -2,6 +2,14 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.9.1
+
+A small fix release. Install over v2.9.0; your chats and settings carry over.
+
+### Fixed
+
+- **Group photos.** Group chats now show their group photo in the chats list, search, Forward, and Chat settings, instead of only initials. A new photo set on another device shows here too.
+
 ## v2.9.0
 
 Beacon can bring your message history over when you link it, and follows your chat folders. Install over v2.8.0; your chats and settings carry over. To get your history on a phone that's already linked, unlink it and link again (see below).

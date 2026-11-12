@@ -39,6 +39,8 @@ export interface GroupV2Metadata {
   revision: number;
   name: string;
   description?: string;
+  /** The group photo's CDN key (`Group.avatarUrl`), empty when the group has none; absent on groups saved before 2.9.1. */
+  avatar?: string;
   members: string[];
   admins: string[];
   /** Invited users who haven't accepted yet (service IDs). */
@@ -288,6 +290,7 @@ export function decodeGroupState(keys: DerivedGroupV2Keys, group: Group): GroupV
     revision: group.version,
     name: title && title.case === 'title' ? title.value : 'Group',
     description: description && description.case === 'descriptionText' ? description.value : '',
+    avatar: group.avatarUrl,
     members,
     admins,
     pending,

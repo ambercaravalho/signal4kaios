@@ -6,7 +6,7 @@ import { signal } from '../data/api';
 import { db } from '../data/db';
 import { initials } from '../data/format';
 import { loadOwnPhoto, onOwnPhotoChange } from '../data/own-photo';
-import { contactByKey, isSelfConv } from '../data/store';
+import { contactByKey, groupAvatarKey, isSelfConv } from '../data/store';
 import type { Conversation } from '../data/types';
 import { Icon } from './Icon';
 
@@ -55,46 +55,60 @@ function avatarColorFor(conv: Pick<Conversation, 'id' | 'type' | 'groupInternalI
   return avatarColorIndex({ aci, e164: aci ? undefined : (c && c.number) || conv.id });
 }
 
-/* Object URLs per chat for this session; null means "known to have no photo". */
+/* Object URLs per photo for this session; null means "known to have no photo". */
 const photoUrl: Record<string, string | null> = {};
 const pending: Record<string, Promise<string | null>> = {};
 
-function ensureImage(blob: Blob | undefined): Blob {
+function ensureImage(blob: Blob | null | undefined): Blob {
   if (!blob || !blob.size || (blob.type || '').indexOf('image/') !== 0) throw new Error('not an image');
   return blob;
 }
 
 function fetchPhoto(conv: AvatarSubject): Promise<Blob> {
-  if (conv.type === 'group') return Promise.reject(new Error('no photo'));
   const c = contactByKey(conv.id);
   if (!c || c.hasAvatar === false || !c.uuid) return Promise.reject(new Error('no photo'));
   return signal.fetchContactAvatarBlob(c.uuid).then(ensureImage);
 }
 
+/** Groups are cached per avatar key, so a new group photo shows in the same session. */
+function photoKey(conv: AvatarSubject): string {
+  return conv.type === 'group' ? conv.id + '#' + (groupAvatarKey(conv.groupInternalId) ?? '?') : conv.id;
+}
+
+/** The engine caches group photos by avatar key, so they skip the per-chat cache below. */
+function loadGroupPhoto(conv: AvatarSubject): Promise<string | null> {
+  if (!conv.groupInternalId || groupAvatarKey(conv.groupInternalId) === '') return Promise.resolve(null);
+  return signal.groupAvatarBlob(conv.groupInternalId).then((blob) => URL.createObjectURL(ensureImage(blob)));
+}
+
+function loadDirectPhoto(conv: AvatarSubject): Promise<string | null> {
+  const key = 'avatar:' + conv.id;
+  return db.getAttachment(key).then((row) => {
+    if (row && row.blob && row.blob.size) return URL.createObjectURL(row.blob);
+    return fetchPhoto(conv).then((blob) => {
+      db.putAttachment(key, blob, blob.type);
+      return URL.createObjectURL(blob);
+    });
+  });
+}
+
 /** The subject for our own profile (the Settings and Profile rows), as opposed to the Note to Self chat. */
 export const OWN_PROFILE_PREFIX = 'profile:';
 
-function loadPhoto(conv: AvatarSubject): Promise<string | null> {
+/** An object URL for the subject's photo, or null when it has none; remembered for the session. */
+export function loadPhoto(conv: AvatarSubject): Promise<string | null> {
   if (conv.id.indexOf(OWN_PROFILE_PREFIX) === 0) return loadOwnPhoto();
-  if (conv.id in photoUrl) return Promise.resolve(photoUrl[conv.id]);
-  if (!pending[conv.id]) {
-    const key = 'avatar:' + conv.id;
-    pending[conv.id] = db
-      .getAttachment(key)
-      .then((row) => {
-        if (row && row.blob && row.blob.size) return URL.createObjectURL(row.blob);
-        return fetchPhoto(conv).then((blob) => {
-          db.putAttachment(key, blob, blob.type);
-          return URL.createObjectURL(blob);
-        });
-      })
+  const key = photoKey(conv);
+  if (key in photoUrl) return Promise.resolve(photoUrl[key]);
+  if (!pending[key]) {
+    pending[key] = (conv.type === 'group' ? loadGroupPhoto(conv) : loadDirectPhoto(conv))
       .catch(() => null)
       .then((url) => {
-        photoUrl[conv.id] = url;
+        photoUrl[key] = url;
         return url;
       });
   }
-  return pending[conv.id];
+  return pending[key];
 }
 
 /** A round avatar: the profile or group photo when there is one, otherwise initials on the person's Signal color. */
@@ -102,7 +116,8 @@ export function Avatar(props: { conv: AvatarSubject; size?: 'md' | 'lg' }) {
   const { conv } = props;
   const self = isSelfConv(conv);
   const own = conv.id.indexOf(OWN_PROFILE_PREFIX) === 0;
-  const [url, setUrl] = useState<string | null>(own ? null : photoUrl[conv.id] || null);
+  const key = own ? conv.id : photoKey(conv);
+  const [url, setUrl] = useState<string | null>(own ? null : photoUrl[key] || null);
   const [ownVersion, setOwnVersion] = useState(0);
   useEffect(() => (own ? onOwnPhotoChange(() => setOwnVersion((n) => n + 1)) : undefined), [own]);
   useEffect(() => {
@@ -114,7 +129,7 @@ export function Avatar(props: { conv: AvatarSubject; size?: 'md' | 'lg' }) {
     return () => {
       live = false;
     };
-  }, [conv.id, self, ownVersion]);
+  }, [key, self, ownVersion]);
 
   const [bg, fg] = AVATAR_COLORS[avatarColorFor(conv)];
   const cls = 'avatar' + (props.size === 'lg' ? ' avatar-lg' : '');

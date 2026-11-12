@@ -5,7 +5,7 @@ export const DEFAULT_SIGNAL_WS = 'wss://chat.signal.org';
 export const DEFAULT_SIGNAL_CDN = 'https://cdn.signal.org';
 export const DEFAULT_STORAGE_SERVER = 'https://storage.signal.org';
 
-export const SIGNAL_USER_AGENT = 'Signal4KaiOS/2.9.0';
+export const SIGNAL_USER_AGENT = 'Signal4KaiOS/2.9.1';
 
 /** Signal-Desktop config/production.json `cdn` map. */
 export const SIGNAL_CDNS: Record<number, string> = {
