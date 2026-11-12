@@ -2,6 +2,19 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.9.2
+
+Chats get Signal's bubble colors, plus two fixes. Install over v2.9.1; your chats and settings carry over.
+
+### New
+
+- **Chat colors.** **Settings → Appearance → Chat color** picks the color of your message bubbles: Automatic, or one of Signal's 22 colors and gradients. Each chat can have its own in **Chat settings → Chat color**, or follow the default. When you link with **Transfer message history**, the colors you chose on your phone come along.
+
+### Fixed
+
+- **Dividers in menus** now show in dark mode, and so does the title bar of menus and dialogs.
+- **Your photo in member lists.** The **You** row in a group's members list shows your profile photo or initials instead of the Note to Self icon.
+
 ## v2.9.1
 
 A small fix release. Install over v2.9.0; your chats and settings carry over.

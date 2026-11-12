@@ -3,6 +3,7 @@ import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { HistoryItem, HistoryMessage } from '../src/engine';
+import { AUTOMATIC, CHAT_COLORS, chatColorClass, chatColorOf } from '../src/ui/data/chat-colors';
 import { config } from '../src/ui/data/config';
 import { db, PRUNE_KEEP } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
@@ -72,6 +73,44 @@ describe('message history import', () => {
     assert.equal(await db.countMessages(id), PRUNE_KEEP);
     const newest = await db.getMessagesPage(id, Infinity, 1);
     assert.equal(newest[0].timestamp, 10_000 + total - 1);
+  });
+
+  it('takes the default and per-chat bubble colors, ignoring names Beacon has no class for', async () => {
+    const run = new HistoryImport([], ME);
+    const chat = (convId: string, chatColor?: string): HistoryItem => ({ t: 'chat', convId, groupInternalId: null, archived: false, pinned: true, mutedUntil: 0, markedUnread: false, expireTimer: 0, chatColor });
+    await run.apply([{ t: 'account', chatColor: 'ember' }, chat('+15550101', 'sea'), chat('+15550102', 'chartreuse" onload="x'), chat('+15550103')]);
+    await run.finish();
+    assert.equal(config.chatColor(), 'ember');
+    const convs = await db.allConversations();
+    assert.deepEqual(['+15550101', '+15550102', '+15550103'].map((id) => convs.find((c) => c.id === id)!.chatColor), ['sea', undefined, undefined]);
+    await run.apply([{ t: 'account', chatColor: 'nope' }]);
+    assert.equal(config.chatColor(), 'ember');
+    config.set({ chatColor: undefined });
+  });
+});
+
+describe('chat colors', () => {
+  it('uses the chat\'s own color, then the default, then automatic', () => {
+    config.set({ chatColor: undefined });
+    assert.equal(chatColorOf({ chatColor: 'basil' }), 'basil');
+    assert.equal(chatColorOf({}), AUTOMATIC);
+    assert.equal(chatColorOf(undefined), AUTOMATIC);
+    config.set({ chatColor: 'plum' });
+    assert.equal(chatColorOf({}), 'plum');
+    assert.equal(chatColorOf({ chatColor: 'unknown' }), 'plum');
+    assert.equal(chatColorOf({ chatColor: 'teal' }), 'teal');
+    config.set({ chatColor: 'unknown' });
+    assert.equal(chatColorOf({}), AUTOMATIC);
+    config.set({ chatColor: undefined });
+  });
+
+  it('follows the protocol\'s preset order', () => {
+    assert.equal(CHAT_COLORS.length, 22);
+    assert.equal(CHAT_COLORS[0], 'ultramarine');
+    assert.equal(CHAT_COLORS[13], 'ember');
+    assert.equal(CHAT_COLORS[21], 'tangerine');
+    assert.equal(chatColorClass(AUTOMATIC), '');
+    assert.equal(chatColorClass('violet'), 'chat-color-violet');
   });
 });
 

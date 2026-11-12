@@ -13,7 +13,7 @@ import { mergeSyncedContacts, saveSyncedGroups, syncedGroups } from './contacts'
 import { client, httpJson, serverUrl, store } from './context';
 
 export type { TransferArchive } from '../services/history/transfer';
-export type { HistoryChat, HistoryContact, HistoryGroup, HistoryItem, HistoryMessage } from '../services/history/types';
+export type { HistoryAccount, HistoryChat, HistoryContact, HistoryGroup, HistoryItem, HistoryMessage } from '../services/history/types';
 
 const chunkKey = (i: number) => 'historyChunk:' + i;
 

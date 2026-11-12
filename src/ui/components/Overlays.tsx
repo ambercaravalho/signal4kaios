@@ -94,6 +94,8 @@ export interface PickOption<T> {
   value: T;
   label: string;
   sub?: string;
+  /** Classes for a small colored dot before the label. */
+  swatch?: string;
 }
 
 function PickerView<T>(props: { title: string; options: PickOption<T>[]; value: T; resolve(v: T | undefined): void }) {
@@ -104,6 +106,7 @@ function PickerView<T>(props: { title: string; options: PickOption<T>[]; value: 
   const rows: ActionRow[] = props.options.map((o) => ({
     label: o.label,
     sub: o.sub,
+    leading: o.swatch ? <span class={o.swatch} /> : undefined,
     end: 'radio',
     checked: o.value === props.value,
     onSelect: () => {

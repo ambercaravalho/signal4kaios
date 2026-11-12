@@ -5,6 +5,7 @@ import { Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
 import { muteLabel, pickTimer, runAction, toggleMute, toggleRow } from '../components/setting-rows';
 import { type GroupDetail, renameContact, signal } from '../data/api';
+import { chatColorLabel, chatColorOptions, defaultChatColor, followDefaultLabel, isChatColor } from '../data/chat-colors';
 import { expireLabel } from '../data/format';
 import * as store from '../data/store';
 import type { Conversation } from '../data/types';
@@ -32,6 +33,17 @@ async function chooseTimer(conv: Conversation): Promise<void> {
   if (secs === undefined || !conv.sendId) return;
   const p: Promise<unknown> = conv.type === 'group' ? signal.updateGroup(conv.sendId, { expiration_time: secs }) : signal.setDirectExpireTimer(conv.sendId, secs);
   await runAction(p, S.disappearingMessages + ': ' + expireLabel(secs), () => store.setConvExpire(conv.id, secs));
+}
+
+const FOLLOW_DEFAULT = 'default';
+
+function chatColorRow(conv: Conversation): Row {
+  const own = isChatColor(conv.chatColor) ? conv.chatColor : null;
+  async function choose(): Promise<void> {
+    const v = await pick(S.chatColor, chatColorOptions({ value: FOLLOW_DEFAULT, label: followDefaultLabel(), swatch: defaultChatColor() }), own || FOLLOW_DEFAULT);
+    if (v) store.setChatColor(conv.id, v === FOLLOW_DEFAULT ? null : v);
+  }
+  return { key: 'color', label: S.chatColor, sub: own ? chatColorLabel(own) : followDefaultLabel(), onSelect: choose };
 }
 
 function muteRow(conv: Conversation): Row {
@@ -74,6 +86,7 @@ function directRows(conv: Conversation): Row[] {
     !self && { key: 'timer', label: S.disappearingMessages, sub: expireLabel(conv.expireTimer || 0), onSelect: () => chooseTimer(conv) },
     muteRow(conv),
     ...(self ? [] : exceptionRows(conv)),
+    chatColorRow(conv),
     !self && { key: 'safety', label: S.viewSafetyNumber, onSelect: () => router.push(SafetyNumberScreen, { target: recipient, name: conv.name }) },
     !self && { key: 'block', label: blocked ? S.unblock : S.block, danger: !blocked, onSelect: toggleBlock },
   ];
@@ -81,7 +94,7 @@ function directRows(conv: Conversation): Row[] {
 
 function groupRows(conv: Conversation, d: GroupDetail | null, reload: () => void): Row[] {
   const sendId = conv.sendId;
-  if (!sendId) return [{ key: 'wait', label: S.groupNotReady }, muteRow(conv), ...exceptionRows(conv)];
+  if (!sendId) return [{ key: 'wait', label: S.groupNotReady }, muteRow(conv), ...exceptionRows(conv), chatColorRow(conv)];
   const admin = amAdmin(d);
   const canEdit = allowed(d, 'edit_group');
   const perms = (d && d.permissions) || PERM_DEFAULTS;
@@ -140,6 +153,7 @@ function groupRows(conv: Conversation, d: GroupDetail | null, reload: () => void
     { key: 'timer', label: S.disappearingMessages, sub: expireLabel(conv.expireTimer || 0), onSelect: canEdit ? () => chooseTimer(conv) : undefined },
     muteRow(conv),
     ...exceptionRows(conv),
+    chatColorRow(conv),
     admin && { section: S.permissions },
     admin && { key: 'p-add', label: S.addMembersPermission, sub: permLabel(perms.add_members), onSelect: () => setPerm('add_members', S.addMembersPermission) },
     admin && { key: 'p-edit', label: S.editGroupPermission, sub: permLabel(perms.edit_group), onSelect: () => setPerm('edit_group', S.editGroupPermission) },

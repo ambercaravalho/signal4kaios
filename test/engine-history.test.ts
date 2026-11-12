@@ -6,7 +6,7 @@ import { createCipheriv, createHmac } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 
 import { randomBytes, uuidToBytes } from '../src/engine/bytes';
-import { BackupInfoSchema, BodyRange_Style, FrameSchema } from '../src/engine/gen/Backups_pb';
+import { BackupInfoSchema, BodyRange_Style, ChatStyle_BubbleColorPreset, FrameSchema } from '../src/engine/gen/Backups_pb';
 import { decodeAttachmentDescriptor } from '../src/engine/net/attachment-descriptor';
 import { create, toBinary } from '../src/engine/net/proto';
 import { libsignal } from '../src/engine/protocol/libsignal';
@@ -140,6 +140,28 @@ describe('link-and-sync frames (Signal-Desktop backups/import)', () => {
     assert.deepEqual(timer.notice, { kind: 'timer', seconds: 3600 });
     assert.deepEqual(change.groupUpdates, [{ change: 'title', text: 'Books' }]);
     assert.equal(change.convId, 'g:grp9');
+  });
+
+  it('keeps bubble color presets for the account and each chat, and drops automatic, custom, and unknown colors', () => {
+    const style = (bubbleColor: any) => ({ bubbleColor });
+    const preset = (value: number) => style({ case: 'bubbleColorPreset', value });
+    const account = (chatStyle: any) => frame({ case: 'account', value: { accountSettings: { defaultChatStyle: chatStyle } } });
+    const chat = (id: bigint, chatStyle: any) => frame({ case: 'chat', value: { id, recipientId: 2n, style: chatStyle } });
+    const items = mapAll([
+      info(),
+      account(preset(ChatStyle_BubbleColorPreset.GRADIENT_TANGERINE)),
+      frame({ case: 'recipient', value: { id: 2n, destination: { case: 'contact', value: { aci: uuidToBytes(BOB) } } } }),
+      chat(10n, preset(ChatStyle_BubbleColorPreset.SOLID_ULTRAMARINE)),
+      chat(11n, preset(ChatStyle_BubbleColorPreset.SOLID_STEEL)),
+      chat(12n, style({ case: 'autoBubbleColor', value: {} })),
+      chat(13n, style({ case: 'customColorId', value: 7n })),
+      chat(14n, preset(23)),
+      chat(15n, preset(0)),
+      chat(16n, undefined),
+    ]);
+    assert.deepEqual(items[0], { t: 'account', chatColor: 'tangerine' });
+    assert.deepEqual(items.filter((i) => i.t === 'chat').map((c: any) => c.chatColor), ['ultramarine', 'steel', undefined, undefined, undefined, undefined, undefined]);
+    for (const s of [style({ case: 'autoBubbleColor', value: {} }), style({ case: 'customColorId', value: 1n }), preset(99), undefined]) assert.deepEqual(mapAll([info(), account(s)]), []);
   });
 
   it('rejects an archive of another version, and throws on a frame that is not protobuf so the import can skip it', () => {

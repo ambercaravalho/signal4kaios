@@ -34,6 +34,15 @@ export interface HistoryChat {
   mentionsIfMuted?: boolean;
   repliesIfMuted?: boolean;
   callsIfMuted?: boolean;
+  /** The chat's bubble color preset, lowercase without its SOLID_ or GRADIENT_ prefix; absent for automatic and custom colors. */
+  chatColor?: string;
+}
+
+/** The account's settings Beacon keeps. */
+export interface HistoryAccount {
+  t: 'account';
+  /** The default bubble color preset, named as in `HistoryChat.chatColor`. */
+  chatColor?: string;
 }
 
 export type HistoryStatus = 'received' | 'sent' | 'delivered' | 'read' | 'failed';
@@ -74,7 +83,7 @@ export interface HistoryMessage {
   pollEnded?: boolean;
 }
 
-export type HistoryItem = HistoryContact | HistoryGroup | HistoryChat | HistoryMessage;
+export type HistoryItem = HistoryAccount | HistoryContact | HistoryGroup | HistoryChat | HistoryMessage;
 
 export interface HistorySelf {
   aci: string;
