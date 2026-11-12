@@ -84,6 +84,19 @@ describe('Sync and service IDs', () => {
     assert.deepEqual(frame({ timestamp: 1000n, pollTerminate: { targetSentTimestamp: 42n } }).pollTerminate, { targetSentTimestamp: 42 });
   });
 
+  it('turns our phone’s attachment backfill answer into fresh pointers, still-uploading, and gone slots', () => {
+    const env = { sourceUuid: ALICE, sourceDevice: 1, timestamp: 1000 } as any;
+    const sync = (value: any) => contentToNormalizedFrame(env, create(ContentSchema, { content: { case: 'syncMessage', value: { content: { case: 'attachmentBackfillResponse', value } } } })).envelope.syncMessage.attachmentBackfill;
+    const target = { targetMessage: { author: { case: 'authorServiceId', value: BOB }, sentTimestamp: 42n }, targetConversation: { identifier: { case: 'threadServiceId', value: BOB } } };
+    const pointer = { cdnNumber: 3, attachmentIdentifier: { case: 'cdnKey', value: 'fresh' }, key: new Uint8Array(64).fill(1), contentType: 'image/jpeg', size: 10 };
+    const answer = sync({ ...target, data: { case: 'attachments', value: { attachments: [{ data: { case: 'attachment', value: pointer } }, { data: { case: 'status', value: 0 } }, { data: { case: 'status', value: 1 } }] } } });
+    assert.deepEqual(answer.conversation, { uuid: BOB });
+    assert.deepEqual(answer.message, { author: BOB, timestamp: 42 });
+    assert.equal(decodeAttachmentDescriptor(answer.attachments[0].id)!.cdnKey, 'fresh');
+    assert.deepEqual(answer.attachments.slice(1), ['pending', 'failed']);
+    assert.equal(sync({ ...target, data: { case: 'error', value: 0 } }).attachments, null);
+  });
+
   it('keeps a link preview only for a safe https link in the message text, as Signal-Desktop does', () => {
     const guid = '0f6c2a1e-4b7d-4c3a-9a8e-2d1f5b6c7e8f';
     const env = { sourceUuid: BOB, sourceDevice: 1, timestamp: 1000, serverGuid: guid.toUpperCase(), reportSpamToken: new Uint8Array([1, 2, 3]) } as any;

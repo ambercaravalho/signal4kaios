@@ -7,7 +7,8 @@ import { dbg } from '../log';
 import type { Conversation } from '../types';
 import { persistConv } from './conversations';
 import { emit } from './events';
-import { mentionsNotifyWhileMuted } from './notify';
+import { isMuted, scheduleUnmute } from './mute';
+import { type MutedException, notifiesWhileMuted } from './notify';
 import { convs } from './state';
 
 export const MAX_PINNED_CHATS = 4;
@@ -15,11 +16,15 @@ export const MAX_PINNED_CHATS = 4;
 /* Local archive, mute, and pin changes are published to Storage Service; changes that came from there go through applyChatState and never echo back. */
 interface ChatStateFields {
   archived?: boolean;
-  muted?: boolean;
+  mutedUntil?: number;
   markedUnread?: boolean;
   pinned?: boolean;
   mentionsIfMuted?: boolean;
+  repliesIfMuted?: boolean;
+  callsIfMuted?: boolean;
 }
+
+const EXCEPTION_FIELDS = ['mentionsIfMuted', 'repliesIfMuted', 'callsIfMuted'] as const;
 
 export function syncChatState(conv: Conversation, fields: ChatStateFields): void {
   if (!conv.sendId) return;
@@ -40,17 +45,19 @@ export function applyChatState(states: ChatStateEntry[], pinned: PinnedChat[] | 
       conv.archived = s.archived;
       changed[conv.id] = conv;
     }
-    if (s.muted !== undefined && !!conv.muted !== s.muted) {
-      conv.muted = s.muted;
+    if (s.mutedUntil !== undefined && (conv.mutedUntil || 0) !== s.mutedUntil) {
+      conv.mutedUntil = s.mutedUntil;
       changed[conv.id] = conv;
     }
     if (s.markedUnread !== undefined && !!conv.markedUnread !== s.markedUnread) {
       conv.markedUnread = s.markedUnread;
       changed[conv.id] = conv;
     }
-    if (s.mentionsIfMuted !== undefined && conv.mentionsIfMuted !== (s.mentionsIfMuted === null ? undefined : s.mentionsIfMuted)) {
-      if (s.mentionsIfMuted === null) delete conv.mentionsIfMuted;
-      else conv.mentionsIfMuted = s.mentionsIfMuted;
+    for (const f of EXCEPTION_FIELDS) {
+      const v = s[f];
+      if (v === undefined || conv[f] === (v === null ? undefined : v)) continue;
+      if (v === null) delete conv[f];
+      else conv[f] = v;
       changed[conv.id] = conv;
     }
   }
@@ -69,12 +76,15 @@ export function applyChatState(states: ChatStateEntry[], pinned: PinnedChat[] | 
   }
   const ids = Object.keys(changed);
   for (const k of ids) persistConv(changed[k]);
-  if (ids.length) emit('conversations');
+  if (ids.length) {
+    emit('conversations');
+    scheduleUnmute();
+  }
 }
 
 /** New activity brings a chat out of the archive; muted chats stay archived unless the user turned that off, as in Signal. */
 export function unarchiveOnActivity(conv: Conversation): void {
-  if (!conv.archived || (config.keepMutedArchived() && conv.muted)) return;
+  if (!conv.archived || (config.keepMutedArchived() && isMuted(conv))) return;
   conv.archived = false;
   syncChatState(conv, { archived: false });
 }
@@ -87,7 +97,7 @@ function changeChatState(conv: Conversation, fields: ChatStateFields): void {
   syncChatState(conv, fields);
 }
 
-type ChatFlag = 'archived' | 'muted' | 'markedUnread' | 'pinned';
+type ChatFlag = 'archived' | 'markedUnread' | 'pinned';
 
 function setChatFlag(convId: string, flag: ChatFlag, val: boolean): void {
   const conv = convs[convId];
@@ -95,14 +105,23 @@ function setChatFlag(convId: string, flag: ChatFlag, val: boolean): void {
 }
 
 export const setArchived = (convId: string, val: boolean): void => setChatFlag(convId, 'archived', val);
-export const setMuted = (convId: string, val: boolean): void => setChatFlag(convId, 'muted', val);
+
+/** Mute a chat until `until` (ms, or `MUTED_ALWAYS`); 0 unmutes. */
+export function setMuted(convId: string, until: number): void {
+  const conv = convs[convId];
+  const val = until > Date.now() ? until : 0;
+  if (!conv || (conv.mutedUntil || 0) === val) return;
+  changeChatState(conv, { mutedUntil: val });
+  scheduleUnmute();
+}
 /** Flag a chat as unread without touching its messages, as Signal's "Mark as unread". */
 export const setMarkedUnread = (convId: string, val: boolean): void => setChatFlag(convId, 'markedUnread', val);
 
-/** Whether mentions of us notify while this group is muted, kept on the account's other devices too. */
-export function setMentionsIfMuted(convId: string, val: boolean): void {
+/** Whether mentions, replies to us, or calls notify while this chat is muted, kept on the account's other devices too. */
+export function setNotifyIfMuted(convId: string, kind: MutedException, val: boolean): void {
   const conv = convs[convId];
-  if (conv && conv.type === 'group' && mentionsNotifyWhileMuted(conv) !== val) changeChatState(conv, { mentionsIfMuted: val });
+  if (!conv || (kind !== 'calls' && conv.type !== 'group') || notifiesWhileMuted(conv, kind) === val) return;
+  changeChatState(conv, { [kind + 'IfMuted']: val });
 }
 
 /** Pin a chat to the top of the list; false when Signal's limit is reached. */

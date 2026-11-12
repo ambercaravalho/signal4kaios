@@ -51,8 +51,12 @@ export type StoreEvent =
   | { type: 'adminDelete'; convId: string; admin: string; targetAuthor: string; targetTimestamp: number; timestamp: number }
   | { type: 'deleteSync'; messages: Array<{ chat: ChatRef; items: SyncRef[] }>; chats: ChatDelete[] }
   | { type: 'requestResponse'; chat: ChatRef; response: RequestResponse }
+  | { type: 'backfill'; chat: ChatRef; author: string; timestamp: number; slots: BackfillSlot[] | null }
   | { type: 'pollVote'; convId: string; voter: string; targetAuthor: string; targetTimestamp: number; options: number[]; voteCount: number; timestamp: number }
   | { type: 'pollEnd'; convId: string; author: string; targetTimestamp: number; timestamp: number };
+
+/** One attachment in our phone's answer to a backfill request: a fresh copy, still uploading, or gone. */
+export type BackfillSlot = Attachment | 'pending' | 'failed';
 
 export type RequestResponse = 'accept' | 'delete' | 'block' | 'blockAndDelete' | 'spam' | 'blockAndSpam';
 /** A message our other device read or opened: who sent it and when. */

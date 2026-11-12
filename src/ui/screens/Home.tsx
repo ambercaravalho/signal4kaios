@@ -7,6 +7,7 @@ import { confirm, DIVIDER, showOptions } from '../components/Overlays';
 import { EmojiText } from '../components/RichText';
 import { ActionRow, Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
+import { muteItem } from '../components/setting-rows';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { toast } from '../components/Toast';
 import { fmtTime } from '../data/format';
@@ -30,7 +31,7 @@ function convRow(conv: Conversation, archived: boolean): ActionRow {
     meta: (
       <>
         {conv.pinned && !archived && <Icon name="pin" class="meta-icon" />}
-        {conv.muted && <Icon name="mute" class="meta-icon" />}
+        {store.isMuted(conv) && <Icon name="mute" class="meta-icon" />}
         {fmtTime(conv.lastTs)}
       </>
     ),
@@ -72,7 +73,7 @@ function homeOptions(conv: Conversation | undefined): void {
     conv && { label: S.chatSettings, onSelect: () => router.push(ChatSettingsScreen, { convId: conv.id }) },
     conv && { label: conv.pinned ? S.unpinChat : S.pinChat, onSelect: () => store.setConvPinned(conv.id, !conv.pinned) || toast(S.pinLimit) },
     conv && { label: S.archive, onSelect: () => store.setArchived(conv.id, true) },
-    conv && { label: conv.muted ? S.unmute : S.muteNotifications, onSelect: () => store.setMuted(conv.id, !conv.muted) },
+    conv && muteItem(conv),
     conv && readToggle(conv),
     DIVIDER,
     { label: S.markAllRead, onSelect: () => store.markAllRead() },
@@ -128,7 +129,7 @@ export function ArchivedScreen() {
           showOptions([
             { label: S.chatSettings, onSelect: () => router.push(ChatSettingsScreen, { convId: conv.id }) },
             { label: S.unarchive, onSelect: () => store.setArchived(conv.id, false) },
-            { label: conv.muted ? S.unmute : S.muteNotifications, onSelect: () => store.setMuted(conv.id, !conv.muted) },
+            muteItem(conv),
             readToggle(conv),
             DIVIDER,
             deleteChatItem(conv),

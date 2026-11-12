@@ -3,15 +3,16 @@
 import type { MessageInitShape } from '@bufbuild/protobuf';
 
 import { bytesToBlob, constantTimeEqual, fromBase64, toBase64, uuidToBytes } from '../bytes';
-import { type AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema } from '../gen/SignalStorage_pb';
-import { host } from '../host';
+import { type AccountRecord_PinnedConversation, AccountRecord_PinnedConversationSchema, AccountRecord_UsernameLinkSchema, type OptionalBool } from '../gen/SignalStorage_pb';
+import { host, type HostProfileOverride } from '../host';
 import { accountBasicAuth, asObject } from '../net/http';
 import { create, serviceIdFrom } from '../net/proto';
 import { type ProvisioningCallbacks, type ProvisioningSession, startDeviceProvisioning } from '../net/provisioning';
 import { generatePreKeyUpload } from '../protocol/prekeys';
 import { downloadAndDecryptProfileAvatar, fetchAndDecryptProfile, resolveSignalUsername, uploadOwnProfile } from '../services/profiles';
-import { setNotifyForMentionsIfMuted, setPhoneNumberPrivacy, type StorageMutation } from '../services/storage';
-import { deleteUsername as deleteAccountUsername, setUsername as setAccountUsername, usernameLinkUrl } from '../services/usernames';
+import { setNotifyForMentionsIfMuted, setPhoneNumberPrivacy, type StorageMutation, toOptionalBool } from '../services/storage';
+import { profileOverrideRecord } from '../services/storage/notification-profiles';
+import { deleteUsername as deleteAccountUsername, resolveUsernameLink, setUsername as setAccountUsername, usernameLinkUrl } from '../services/usernames';
 import { client, httpBinary, httpJson, OWN_AVATAR_CACHE, OWN_AVATAR_CACHED_FOR, OWN_AVATAR_PATH, serverUrl, storageQueue, store, updateAccountRecord } from './context';
 import { contactIds } from './contacts';
 import { groupMasterKey } from './group-state';
@@ -103,26 +104,38 @@ export const accountMethods = {
   },
 
   /** Publish a chat's archive, mute, marked-unread, or pinned state to Storage Service so the account's other devices match. Only the fields that are set change. */
-  async syncChatState(chat: { type: 'direct' | 'group'; sendId: string; archived?: boolean; muted?: boolean; markedUnread?: boolean; pinned?: boolean; mentionsIfMuted?: boolean }): Promise<void> {
+  async syncChatState(chat: {
+    type: 'direct' | 'group';
+    sendId: string;
+    archived?: boolean;
+    mutedUntil?: number;
+    markedUnread?: boolean;
+    pinned?: boolean;
+    mentionsIfMuted?: boolean;
+    repliesIfMuted?: boolean;
+    callsIfMuted?: boolean;
+  }): Promise<void> {
     const mutations: StorageMutation[] = [];
-    const setState = (r: { archived: boolean; mutedUntilTimestamp: bigint; markedUnread: boolean }) => {
+    const setState = (r: { archived: boolean; mutedUntilTimestamp: bigint; markedUnread: boolean; notifyForCallsIfMuted: OptionalBool }) => {
       if (chat.archived !== undefined) r.archived = chat.archived;
-      if (chat.muted !== undefined) r.mutedUntilTimestamp = chat.muted ? BigInt(Number.MAX_SAFE_INTEGER) : 0n;
+      if (chat.mutedUntil !== undefined) r.mutedUntilTimestamp = BigInt(Math.max(0, Math.min(Math.floor(chat.mutedUntil) || 0, Number.MAX_SAFE_INTEGER)));
       if (chat.markedUnread !== undefined) r.markedUnread = chat.markedUnread;
+      if (chat.callsIfMuted !== undefined) r.notifyForCallsIfMuted = toOptionalBool(chat.callsIfMuted);
     };
-    const stateChanged = chat.archived !== undefined || chat.muted !== undefined || chat.markedUnread !== undefined;
+    const stateChanged = chat.archived !== undefined || chat.mutedUntil !== undefined || chat.markedUnread !== undefined || chat.callsIfMuted !== undefined;
     let isPin: (p: AccountRecord_PinnedConversation) => boolean;
     let pin: MessageInitShape<typeof AccountRecord_PinnedConversationSchema>;
 
     if (chat.type === 'group') {
       const masterKey = await groupMasterKey(chat.sendId);
-      if (stateChanged || chat.mentionsIfMuted !== undefined) {
+      if (stateChanged || chat.mentionsIfMuted !== undefined || chat.repliesIfMuted !== undefined) {
         mutations.push({
           type: 'groupV2',
           masterKey,
           update: (g) => {
             setState(g);
             if (chat.mentionsIfMuted !== undefined) setNotifyForMentionsIfMuted(g, chat.mentionsIfMuted);
+            if (chat.repliesIfMuted !== undefined) g.notifyForRepliesIfMuted = toOptionalBool(chat.repliesIfMuted);
           },
         });
       }
@@ -164,6 +177,23 @@ export const accountMethods = {
       });
     }
     await storageQueue.enqueue(mutations);
+  },
+
+  /** The account's notification defaults (`AccountRecord` fields 55 to 58), shared with our other devices. Only the fields that are set change. */
+  async setNotificationDefaults(d: { reactions?: boolean; mentionsIfMuted?: boolean; repliesIfMuted?: boolean; callsIfMuted?: boolean }): Promise<void> {
+    await updateAccountRecord((a) => {
+      if (d.reactions !== undefined) a.reactionNotifications = toOptionalBool(d.reactions);
+      if (d.mentionsIfMuted !== undefined) a.notifyForMentionsIfMuted = toOptionalBool(d.mentionsIfMuted);
+      if (d.repliesIfMuted !== undefined) a.notifyForRepliesIfMuted = toOptionalBool(d.repliesIfMuted);
+      if (d.callsIfMuted !== undefined) a.notifyForCallsIfMuted = toOptionalBool(d.callsIfMuted);
+    });
+  },
+
+  /** Turn a notification profile on or every profile off, like the phone's manual switch, shared with our other devices. */
+  async setNotificationProfileOverride(override: NonNullable<HostProfileOverride>): Promise<void> {
+    await updateAccountRecord((a) => {
+      a.notificationProfileManualOverride = profileOverrideRecord(override);
+    });
   },
 
   /** The disappearing-message timer new 1:1 chats start with (`AccountRecord.universalExpireTimer`), shared with our other devices. */
@@ -219,6 +249,12 @@ export const accountMethods = {
 
   async lookupUsername(rawUsername: string): Promise<{ uuid: string; username: string } | null> {
     return resolveSignalUsername(store, httpJson, rawUsername, serverUrl());
+  },
+
+  /** Who a `signal.me/#eu/…` username link belongs to; null when the link was reset or the username is gone. */
+  async lookupUsernameLink(url: string): Promise<{ uuid: string; username: string } | null> {
+    const username = await resolveUsernameLink(httpJson, url, serverUrl());
+    return username ? resolveSignalUsername(store, httpJson, username, serverUrl()) : null;
   },
 
   /** Account facts and the server's count of unused one-time PreKeys, for Settings > Debug. Never includes keys or passwords. */

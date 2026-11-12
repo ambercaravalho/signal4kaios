@@ -8,9 +8,8 @@ import type { Attachment, Conversation, Message } from '../../data/types';
 import { friendlyError, sendError } from '../../errors';
 import { openChat } from '../../screens/Chat';
 import { ForwardScreen } from '../../screens/Forward';
-import { isGroupLink, JoinGroupScreen } from '../../screens/JoinGroup';
 import { MessageDetailsScreen, PollVotesScreen } from '../../screens/MessageDetails';
-import { askUseProxy, isProxyLink } from '../../screens/Proxy';
+import { openSignalLink } from '../../screens/open-link';
 import { SafetyNumberScreen } from '../../screens/SafetyNumber';
 import { ViewerScreen } from '../../screens/Viewer';
 import { fmt, S } from '../../strings';
@@ -73,7 +72,7 @@ export interface MessageOptionsContext {
 }
 
 function openAttachment(m: Message, att: Attachment): void {
-  router.push(ViewerScreen, { att, title: authorName(m), onOpened: () => store.markViewed(m) });
+  router.push(ViewerScreen, { att, msg: m, title: authorName(m), onOpened: () => store.markViewed(m) });
 }
 
 async function pickAttachment(m: Message): Promise<void> {
@@ -94,9 +93,7 @@ async function react(m: Message): Promise<void> {
 
 async function openLinks(urls: string[]): Promise<void> {
   const url = urls.length === 1 ? urls[0] : await pick(S.openLink, urls.map((u) => ({ value: u, label: u })), '');
-  if (url && isGroupLink(url)) router.push(JoinGroupScreen, { url });
-  else if (url && isProxyLink(url)) void askUseProxy(url);
-  else if (url) openUrl(url).catch(() => toast(S.errGeneric));
+  if (url && !openSignalLink(url)) openUrl(url).catch(() => toast(S.errGeneric));
 }
 
 /** Copies to the clipboard where KaiOS has one; otherwise the text goes into the composer. */

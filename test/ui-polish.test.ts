@@ -47,16 +47,72 @@ describe('mentions in muted chats', () => {
   });
 
   it('lets a mention of us through a muted group unless that is turned off', () => {
+    const muted = (extra: Partial<Conversation> = {}) => group({ mutedUntil: store.MUTED_ALWAYS, ...extra });
     assert.equal(store.shouldNotify(group()), true);
-    assert.equal(store.shouldNotify(group({ muted: true })), false);
-    assert.equal(store.shouldNotify(group({ muted: true }), ['aci-other']), false);
-    assert.equal(store.shouldNotify(group({ muted: true }), ['aci-me']), true);
-    assert.equal(store.shouldNotify(group({ muted: true, mentionsIfMuted: false }), ['aci-me']), false);
+    assert.equal(store.shouldNotify(muted()), false);
+    assert.equal(store.shouldNotify(muted(), { mentioned: ['aci-other'] }), false);
+    assert.equal(store.shouldNotify(muted(), { mentioned: ['aci-me'] }), true);
+    assert.equal(store.shouldNotify(muted({ mentionsIfMuted: false }), { mentioned: ['aci-me'] }), false);
     config.set({ notifyMentionsIfMuted: false });
-    assert.equal(store.shouldNotify(group({ muted: true }), ['aci-me']), false);
-    assert.equal(store.shouldNotify(group({ muted: true, mentionsIfMuted: true }), ['aci-me']), true);
+    assert.equal(store.shouldNotify(muted(), { mentioned: ['aci-me'] }), false);
+    assert.equal(store.shouldNotify(muted({ mentionsIfMuted: true }), { mentioned: ['aci-me'] }), true);
     config.set({ notifyMentionsIfMuted: undefined });
-    assert.equal(store.shouldNotify({ ...group({ muted: true }), type: 'direct' }, ['aci-me']), false);
+    assert.equal(store.shouldNotify({ ...muted(), type: 'direct' }, { mentioned: ['aci-me'] }), false);
+  });
+
+  it('lets replies through muted groups and calls through only when turned on, per chat or for the account', () => {
+    const muted = (extra: Partial<Conversation> = {}) => group({ mutedUntil: store.MUTED_ALWAYS, ...extra });
+    const direct = (extra: Partial<Conversation> = {}) => ({ ...muted(extra), type: 'direct' as const });
+    assert.equal(store.shouldNotify(muted(), { reply: true }), true);
+    assert.equal(store.shouldNotify(muted({ repliesIfMuted: false }), { reply: true }), false);
+    assert.equal(store.shouldNotify(direct(), { reply: true }), false);
+    assert.equal(store.shouldNotify(muted(), { call: true }), false);
+    assert.equal(store.shouldNotify(direct({ callsIfMuted: true }), { call: true }), true);
+    config.set({ notifyCallsIfMuted: true, notifyRepliesIfMuted: false });
+    assert.equal(store.shouldNotify(muted(), { call: true }), true);
+    assert.equal(store.shouldNotify(muted({ callsIfMuted: false }), { call: true }), false);
+    assert.equal(store.shouldNotify(muted(), { reply: true }), false);
+    config.set({ notifyCallsIfMuted: undefined, notifyRepliesIfMuted: undefined });
+    assert.equal(store.shouldNotify(group({ mutedUntil: Date.now() - 1 })), true);
+  });
+
+  it('follows notification profiles: schedules past midnight, the manual switch, and who they let through', () => {
+    const local = (day: number, h: number, m = 0) => new Date(2026, 10, day, h, m).getTime();
+    const sleep: store.NotificationProfile = { id: 'c2xlZXA=', name: 'Sleep', emoji: '', createdAt: 1, allowAllCalls: true, allowAllMentions: false, allowed: ['g:X'], schedule: { start: 2200, end: 700, days: [3] } };
+    const work: store.NotificationProfile = { id: 'd29yaw==', name: 'Work', emoji: '', createdAt: 2, allowAllCalls: false, allowAllMentions: true, allowed: [], schedule: null };
+    // 11 Nov 2026 is a Wednesday (3).
+    assert.equal(store.scheduleStart(sleep, local(11, 23)), local(11, 22));
+    assert.equal(store.scheduleStart(sleep, local(12, 6, 59)), local(11, 22));
+    assert.equal(store.scheduleStart(sleep, local(12, 7)), 0);
+    assert.equal(store.scheduleStart(sleep, local(12, 23)), 0);
+
+    config.set({ notificationProfiles: [sleep, work], notificationProfileOverride: null });
+    assert.equal(store.activeProfile(local(11, 23))!.name, 'Sleep');
+    config.set({ notificationProfileOverride: { disabledAt: local(11, 22, 30) } });
+    assert.equal(store.activeProfile(local(11, 23)), null);
+    config.set({ notificationProfileOverride: { enabledId: work.id, endAt: local(11, 23, 30) } });
+    assert.equal(store.activeProfile(local(11, 23))!.name, 'Work');
+    assert.equal(store.activeProfile(local(11, 23, 45))!.name, 'Sleep');
+
+    config.set({ notificationProfileOverride: { enabledId: sleep.id, endAt: 0 } });
+    assert.equal(store.shouldNotify(group()), true);
+    assert.equal(store.shouldNotify(group({ id: 'g:Y' })), false);
+    assert.equal(store.shouldNotify(group({ id: 'g:Y' }), { call: true }), true);
+    assert.equal(store.shouldNotify(group({ mutedUntil: store.MUTED_ALWAYS })), false);
+    config.set({ notificationProfileOverride: { enabledId: work.id, endAt: 0 } });
+    assert.equal(store.shouldNotify(group({ id: 'g:Y' }), { mentioned: ['aci-me'] }), true);
+    assert.equal(store.shouldNotify(group({ id: 'g:Y' }), { call: true }), false);
+    config.set({ notificationProfiles: undefined, notificationProfileOverride: undefined });
+  });
+
+  it('hides the sender or the message when Show says so', () => {
+    const g = group({ name: 'Team' });
+    assert.deepEqual(store.notificationText(g, 'Dave: hi'), { title: 'Team', body: 'Dave: hi' });
+    config.set({ notifyShow: 'name' });
+    assert.deepEqual(store.notificationText(g, 'Dave: hi'), { title: 'Team', body: 'New message' });
+    config.set({ notifyShow: 'none' });
+    assert.deepEqual(store.notificationText(g, 'Dave: hi'), { title: 'Beacon', body: 'New message' });
+    config.set({ notifyShow: undefined });
   });
 
   it('reads who a message mentions', () => {
@@ -73,18 +129,22 @@ describe('mentions in muted chats', () => {
     await settle();
     const conv = store.conversation('g:TUVO')!;
     conv.sendId = 'group.TUVO';
-    store.setMuted(conv.id, true);
-    store.setMentionsIfMuted(conv.id, false);
+    store.setMuted(conv.id, store.MUTED_ALWAYS);
+    store.setNotifyIfMuted(conv.id, 'mentions', false);
     assert.equal(conv.mentionsIfMuted, false);
     assert.deepEqual(synced[synced.length - 1], { type: 'group', sendId: 'group.TUVO', mentionsIfMuted: false });
-    store.setMentionsIfMuted(conv.id, false);
+    store.setNotifyIfMuted(conv.id, 'mentions', false);
     assert.equal(synced.filter((s) => 'mentionsIfMuted' in s).length, 1);
+    store.setNotifyIfMuted(conv.id, 'calls', true);
+    assert.deepEqual(synced[synced.length - 1], { type: 'group', sendId: 'group.TUVO', callsIfMuted: true });
 
-    store.applyChatState([{ groupInternalId: 'TUVO', archived: false, mentionsIfMuted: true }], null);
+    store.applyChatState([{ groupInternalId: 'TUVO', archived: false, mentionsIfMuted: true, repliesIfMuted: false }], null);
     assert.equal(conv.mentionsIfMuted, true);
-    store.applyChatState([{ groupInternalId: 'TUVO', archived: false, mentionsIfMuted: null }], null);
+    assert.equal(conv.repliesIfMuted, false);
+    store.applyChatState([{ groupInternalId: 'TUVO', archived: false, mentionsIfMuted: null, repliesIfMuted: null }], null);
     assert.equal(conv.mentionsIfMuted, undefined);
-    assert.equal(store.mentionsNotifyWhileMuted(conv), true);
+    assert.equal(store.notifiesWhileMuted(conv, 'mentions'), true);
+    assert.equal(store.notifiesWhileMuted(conv, 'replies'), true);
   });
 });
 

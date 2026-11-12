@@ -68,7 +68,7 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
           </div>
         )}
         {attachments.map((a, i) => (
-          <AttachmentView key={a.id || i} att={a} meta={metaOnAttachment && i === attachments.length - 1 ? meta : null} />
+          <AttachmentView key={a.id || i} att={a} msg={m} meta={metaOnAttachment && i === attachments.length - 1 ? meta : null} />
         ))}
         {m.contactCard && !m.deleted && <ContactCardView card={m.contactCard} />}
         {m.poll && !m.deleted && <PollView poll={m.poll} />}

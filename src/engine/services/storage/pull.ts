@@ -1,4 +1,4 @@
-/* Reading the Storage Service: credentials, the encrypted manifest, and the contact, Groups V2, and account records we use, read the way Signal-Desktop's services/storage.preload.ts does. */
+/* Reading the Storage Service: credentials, the encrypted manifest, and the contact, Groups V2, account, and notification profile records we use, read the way Signal-Desktop's services/storage.preload.ts does. */
 
 import { toBase64 } from '../../bytes';
 import {
@@ -16,8 +16,10 @@ import {
 } from '../../gen/SignalStorage_pb';
 import { accountBasicAuth, asObject, DEFAULT_STORAGE_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../../net/http';
 import { create, fromBinary, num, serviceIdFrom, toBinary } from '../../net/proto';
+import type { HostNotificationProfile, HostProfileOverride } from '../../host';
 import type { SignalProtocolStore, TrustLevel } from '../../protocol/store';
 import { decryptStorageValue, deriveStorageItemKey, deriveStorageManifestKey, deriveStorageServiceKey } from './crypto';
+import { readNotificationProfile, readProfileOverride } from './notification-profiles';
 
 const READ_BATCH = 1024;
 const STATE_KEY = 'storageServiceRecords';
@@ -44,6 +46,8 @@ interface StorageContactRecord {
   archived?: boolean;
   markedUnread?: boolean;
   mutedUntilTimestamp?: number;
+  /** Whether calls still notify while the chat is muted; unset follows the account's default. */
+  notifyForCallsIfMuted?: boolean;
   nicknameGivenName?: string;
   nicknameFamilyName?: string;
 }
@@ -56,8 +60,10 @@ interface StorageGroupV2Record {
   archived?: boolean;
   markedUnread?: boolean;
   mutedUntilTimestamp?: number;
-  /** Whether a mention still notifies while the group is muted; unset follows the account's default. */
+  /** Whether a mention, a reply to us, or a call still notifies while the group is muted; unset follows the account's default. */
   notifyForMentionsIfMuted?: boolean;
+  notifyForRepliesIfMuted?: boolean;
+  notifyForCallsIfMuted?: boolean;
 }
 
 interface StoragePinnedConversation {
@@ -87,8 +93,15 @@ interface StorageAccountRecord {
   sharePhoneNumber: boolean;
   /** Whether people who have our number can find us by it. */
   findableByNumber: boolean;
-  /** The default for mentions in muted chats; Signal treats unset as on. */
+  /** The defaults for muted chats: mentions and replies are on unless turned off, calls are off unless turned on. */
   notifyForMentionsIfMuted: boolean;
+  notifyForRepliesIfMuted: boolean;
+  notifyForCallsIfMuted: boolean;
+  /** Reactions to our messages notify unless turned off. */
+  reactionNotifications: boolean;
+  notificationProfileOverride: HostProfileOverride;
+  /** The phone keeps its notification profiles to itself. */
+  notificationProfileSyncDisabled: boolean;
 }
 
 function fromOptionalBool(v: OptionalBool): boolean | undefined {
@@ -107,6 +120,7 @@ interface StorageSyncResult {
   contacts: StorageContactRecord[];
   groupsV2: StorageGroupV2Record[];
   account?: StorageAccountRecord;
+  notificationProfiles: HostNotificationProfile[];
 }
 
 function identityStateToTrust(state: ContactRecord_IdentityState): TrustLevel {
@@ -125,6 +139,7 @@ const WANTED_TYPES = new Set([
   ManifestRecord_Identifier_Type.CONTACT,
   ManifestRecord_Identifier_Type.GROUPV2,
   ManifestRecord_Identifier_Type.ACCOUNT,
+  ManifestRecord_Identifier_Type.NOTIFICATION_PROFILE,
 ]);
 
 export interface StorageSession {
@@ -224,7 +239,7 @@ export async function saveRecordCache(store: SignalProtocolStore, records: Map<s
 }
 
 function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unreported: Set<string>): StorageSyncResult {
-  const result: StorageSyncResult = { version: num(version), contacts: [], groupsV2: [] };
+  const result: StorageSyncResult = { version: num(version), contacts: [], groupsV2: [], notificationProfiles: [] };
   for (const [key, { record: rec }] of records) {
     const changed = unreported.has(key);
     if (rec.case === 'contact') {
@@ -246,6 +261,7 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
         archived: c.archived,
         markedUnread: c.markedUnread,
         mutedUntilTimestamp: num(c.mutedUntilTimestamp),
+        notifyForCallsIfMuted: fromOptionalBool(c.notifyForCallsIfMuted),
         nicknameGivenName: c.nickname ? opt(c.nickname.given, '') : undefined,
         nicknameFamilyName: c.nickname ? opt(c.nickname.family, '') : undefined,
       });
@@ -261,6 +277,8 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
         markedUnread: g.markedUnread,
         mutedUntilTimestamp: num(g.mutedUntilTimestamp),
         notifyForMentionsIfMuted: resolveLegacyNotifyForMentionsIfMuted(g.dontNotifyForMentionsIfMuted, fromOptionalBool(g.notifyForMentionsIfMuted)),
+        notifyForRepliesIfMuted: fromOptionalBool(g.notifyForRepliesIfMuted),
+        notifyForCallsIfMuted: fromOptionalBool(g.notifyForCallsIfMuted),
       });
     } else if (rec.case === 'account') {
       const a = rec.value;
@@ -294,7 +312,15 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
         sharePhoneNumber: a.phoneNumberSharingMode === AccountRecord_PhoneNumberSharingMode.EVERYBODY,
         findableByNumber: !a.unlistedPhoneNumber,
         notifyForMentionsIfMuted: a.notifyForMentionsIfMuted !== OptionalBool.DISABLED,
+        notifyForRepliesIfMuted: a.notifyForRepliesIfMuted !== OptionalBool.DISABLED,
+        notifyForCallsIfMuted: a.notifyForCallsIfMuted === OptionalBool.ENABLED,
+        reactionNotifications: a.reactionNotifications !== OptionalBool.DISABLED,
+        notificationProfileOverride: readProfileOverride(a.notificationProfileManualOverride),
+        notificationProfileSyncDisabled: a.notificationProfileSyncDisabled,
       };
+    } else if (rec.case === 'notificationProfile') {
+      const p = readNotificationProfile(rec.value);
+      if (p) result.notificationProfiles.push(p);
     }
   }
   return result;

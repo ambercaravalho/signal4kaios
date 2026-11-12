@@ -54,7 +54,7 @@ export function MediaScreen(props: { convId: string }) {
     sub: senderName(msg) + ' · ' + fmtTime(msg.timestamp),
     leading: <Thumb att={att} />,
     action: S.open,
-    onSelect: () => router.push(ViewerScreen, { att, title: senderName(msg), onOpened: () => store.markViewed(msg) }),
+    onSelect: () => router.push(ViewerScreen, { att, msg, title: senderName(msg), onOpened: () => store.markViewed(msg) }),
   }));
   return (
     <Screen title={S.media}>

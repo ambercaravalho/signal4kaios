@@ -7,7 +7,7 @@ import { concatBytes, fromBase64, randomBytes, uuidToBytes } from '../src/engine
 import { libsignal } from '../src/engine/protocol/libsignal';
 import { avatarUploadBody, decryptProfile, decryptProfileName, encryptProfileName, uploadOwnProfile } from '../src/engine/services/profiles';
 import { MemorySignalStore } from '../src/engine/protocol/store';
-import { deleteUsername, setUsername, usernameCandidates, usernameLinkUrl } from '../src/engine/services/usernames';
+import { deleteUsername, parseUsernameLink, resolveUsernameLink, setUsername, usernameCandidates, usernameLinkUrl } from '../src/engine/services/usernames';
 import { ALICE } from './helpers';
 import { loadWasmForTests } from './support';
 
@@ -219,6 +219,26 @@ describe('Usernames (reserve, confirm, link)', () => {
     const url = usernameLinkUrl(res.entropy, uuidToBytes(HANDLE));
     assert.ok(url.startsWith('https://signal.me/#eu/'));
     assert.deepEqual(fromBase64(url.slice('https://signal.me/#eu/'.length)), concatBytes(res.entropy, uuidToBytes(HANDLE)));
+  });
+
+  it('opens a username link made by the official library, and reports a reset one', async () => {
+    const made = official.usernames.createUsernameLink('kaios.42');
+    const url = usernameLinkUrl(new Uint8Array(made.entropy), uuidToBytes(HANDLE));
+    assert.deepEqual(parseUsernameLink(url.replace('https://', 'sgnl://'))!.serverId, HANDLE);
+    assert.equal(parseUsernameLink('https://signal.me/#eu/short'), null);
+    assert.equal(parseUsernameLink('https://evil.example/#eu/' + url.split('#eu/')[1]), null);
+    const calls: any[] = [];
+    const httpJson = (async (method: string, path: string, _body: any, opts: any) => {
+      calls.push({ method, path, opts });
+      if (path.endsWith(HANDLE)) return { usernameLinkEncryptedValue: Buffer.from(made.encryptedUsername).toString('base64url') };
+      throw Object.assign(new Error('not found'), { status: 404 });
+    }) as any;
+    assert.equal(await resolveUsernameLink(httpJson, url), 'kaios.42');
+    assert.equal(calls[0].method, 'GET');
+    assert.equal(calls[0].path, '/v1/accounts/username_link/' + HANDLE);
+    assert.equal(calls[0].opts.noAuth, true);
+    const other = usernameLinkUrl(new Uint8Array(made.entropy), uuidToBytes('00000000-0000-4000-8000-00000000abcd'));
+    assert.equal(await resolveUsernameLink(httpJson, other), null);
   });
 
   it('takes a typed number as-is and keeps the link entropy across changes', async () => {

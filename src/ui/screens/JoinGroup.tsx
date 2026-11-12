@@ -13,10 +13,6 @@ import { ChatScreen } from './Chat';
 
 type LinkInfo = Awaited<ReturnType<typeof signal.groupLinkInfo>>;
 
-export function isGroupLink(url: string): boolean {
-  return /^(https|sgnl):\/\/signal\.group\/#/.test((url || '').trim());
-}
-
 /** A group someone shared a link to: its name, size, and description, with Join, Request to join, or Cancel request. */
 export function JoinGroupScreen(props: { url: string }) {
   const [info, setInfo] = useState<LinkInfo | null | undefined>(undefined);

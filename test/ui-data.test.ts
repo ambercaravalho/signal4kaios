@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { expireLabel, fmtDuration, formatSafetyNumber, initials } from '../src/ui/data/format';
 import { dbg, redactedLog } from '../src/ui/data/log';
+import { signalLink } from '../src/ui/data/links';
 import { fetchLinkPreview, previewCandidate } from '../src/ui/data/link-preview-fetch';
 import { previewFieldsForSend } from '../src/engine/services/link-previews';
 import { applyMentions, parseFrame } from '../src/ui/data/normalize';
@@ -372,5 +373,18 @@ describe('debug log', () => {
     assert.ok(!out.includes('123456789abc'));
     assert.ok(!out.includes('A'.repeat(40)));
     assert.ok(out.includes('+…67'));
+  });
+});
+
+describe('Signal links', () => {
+  it('tells groups, proxies, usernames, and numbers apart, and leaves other links alone', () => {
+    assert.deepEqual(signalLink(' https://signal.group/#CjQKIA '), { kind: 'group', url: 'https://signal.group/#CjQKIA' });
+    assert.equal(signalLink('https://signal.tube/#proxy.example.com')!.kind, 'proxy');
+    assert.equal(signalLink('https://signal.me/#eu/AbC-_9')!.kind, 'username');
+    assert.equal(signalLink('sgnl://signal.me/#eu/AbC-_9')!.kind, 'username');
+    assert.deepEqual(signalLink('https://signal.me/#p/15550001234'), { kind: 'phone', number: '+15550001234' });
+    assert.equal(signalLink('https://signal.me/#p/12'), null);
+    assert.equal(signalLink('https://signal.me.evil.example/#eu/AbC'), null);
+    assert.equal(signalLink('https://signal.org/blog'), null);
   });
 });

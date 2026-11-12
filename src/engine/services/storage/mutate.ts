@@ -23,7 +23,7 @@ import { loadRemoteState, openSession, saveRecordCache } from './pull';
 
 const WRITE_ATTEMPTS = 3;
 
-function toOptionalBool(v: boolean | undefined): OptionalBool {
+export function toOptionalBool(v: boolean | undefined): OptionalBool {
   return v === true ? OptionalBool.ENABLED : v === false ? OptionalBool.DISABLED : OptionalBool.UNSET;
 }
 

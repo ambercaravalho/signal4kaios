@@ -50,19 +50,40 @@ export interface HostConfig {
   set(patch: Record<string, unknown>): void;
 }
 
-/** Archive, mute, and marked-unread state for one chat, keyed the way the app's store finds conversations (a contact's ACI or number, or a group's internal ID). `muted` is left out where Signal has no mute state (Note to Self). */
+/** Archive, mute, and marked-unread state for one chat, keyed the way the app's store finds conversations (a contact's ACI or number, or a group's internal ID). `mutedUntil` is left out where Signal has no mute state (Note to Self). */
 export interface ChatStateEntry {
   uuid?: string;
   number?: string;
   groupInternalId?: string;
   archived: boolean;
-  muted?: boolean;
+  /** Muted until this time in ms; 0 when not muted. */
+  mutedUntil?: number;
   markedUnread?: boolean;
-  /** A group's mentions-while-muted setting; null follows the account's default. */
+  /** What still notifies while the chat is muted (mentions and replies are groups only); null follows the account's default. */
   mentionsIfMuted?: boolean | null;
+  repliesIfMuted?: boolean | null;
+  callsIfMuted?: boolean | null;
 }
 
 export type PinnedChat = { uuid?: string; number?: string; groupInternalId?: string };
+
+/** A notification profile made on the primary phone (Storage `NotificationProfile`). */
+export interface HostNotificationProfile {
+  /** Base64 of the profile's ID bytes. */
+  id: string;
+  name: string;
+  emoji: string;
+  createdAt: number;
+  allowAllCalls: boolean;
+  allowAllMentions: boolean;
+  /** Chats that still notify: ACIs, numbers, and `g:` + group internal IDs. */
+  allowed: string[];
+  /** Times are 24-hour clock ints (930 is 09:30); days run 1 (Monday) to 7 (Sunday). */
+  schedule: { start: number; end: number; days: number[] } | null;
+}
+
+/** The account's manual override: every profile off since `disabledAt`, or one profile on until `endAt` (0 until turned off). */
+export type HostProfileOverride = { disabledAt: number } | { enabledId: string; endAt: number } | null;
 
 export interface EngineHost {
   http: HostHttp;

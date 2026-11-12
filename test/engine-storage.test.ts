@@ -10,6 +10,8 @@ import {
   ContactRecordSchema,
   ManifestRecord_Identifier_Type,
   ManifestRecordSchema,
+  NotificationProfile_DayOfWeek,
+  NotificationProfileSchema,
   ReadOperationSchema,
   StorageItemsSchema,
   StorageManifestSchema,
@@ -27,7 +29,10 @@ import {
   pullFromStorageService,
   setPhoneNumberPrivacy,
   StorageWriteQueue,
+  toOptionalBool,
 } from '../src/engine/services/storage';
+import { profileOverrideRecord, readNotificationProfile, readProfileOverride } from '../src/engine/services/storage/notification-profiles';
+import { groupIdFromMasterKey } from '../src/engine/services/groups-v2';
 import { MemorySignalStore } from '../src/engine/protocol/store';
 import { ALICE, BOB } from './helpers';
 import { loadWasmForTests } from './support';
@@ -281,6 +286,54 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
     assert.equal(account.value!.givenName, 'Me', 'the rest of the record is kept');
     const res = await pullFromStorageService(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org');
     assert.equal(res!.account?.avatarUrlPath, 'profiles/abc_DEF-1');
+  });
+
+  it('reads and writes notification settings, timed mutes, and the notification profile switch', async () => {
+    const masterKey = randomBytes(32);
+    const store = storageStore(masterKey);
+    const srv = await serveStorage(masterKey);
+    const first = await pullFromStorageService(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org');
+    assert.equal(first!.account?.reactionNotifications, true);
+    assert.equal(first!.account?.notifyForRepliesIfMuted, true);
+    assert.equal(first!.account?.notifyForCallsIfMuted, false);
+    assert.equal(first!.account?.notificationProfileOverride, null);
+    assert.equal(first!.groupsV2[0].notifyForCallsIfMuted, undefined);
+
+    const until = Date.now() + 3600000;
+    await mutateStorage(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org', [
+      { type: 'account', update: (a) => { a.reactionNotifications = toOptionalBool(false); a.notifyForCallsIfMuted = toOptionalBool(true); a.notificationProfileManualOverride = profileOverrideRecord({ enabledId: 'c2xlZXA=', endAt: until }); } },
+      { type: 'groupV2', masterKey: srv.groupMasterKey, update: (g) => { g.notifyForRepliesIfMuted = toOptionalBool(false); g.notifyForCallsIfMuted = toOptionalBool(true); g.mutedUntilTimestamp = BigInt(until); } },
+    ]);
+    const res = await pullFromStorageService(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org');
+    assert.equal(res!.account?.reactionNotifications, false);
+    assert.equal(res!.account?.notifyForCallsIfMuted, true);
+    assert.deepEqual(res!.account?.notificationProfileOverride, { enabledId: 'c2xlZXA=', endAt: until });
+    assert.equal(res!.groupsV2[0].notifyForRepliesIfMuted, false);
+    assert.equal(res!.groupsV2[0].notifyForCallsIfMuted, true);
+    assert.equal(res!.groupsV2[0].mutedUntilTimestamp, until);
+    assert.deepEqual(readProfileOverride(profileOverrideRecord({ disabledAt: 42 })), { disabledAt: 42 });
+  });
+
+  it('reads notification profiles from the phone and skips deleted ones', () => {
+    const groupKey = randomBytes(32);
+    const profile = create(NotificationProfileSchema, {
+      id: new Uint8Array([1, 2, 3]),
+      name: 'Sleep',
+      emoji: '🌙',
+      allowAllCalls: true,
+      allowedMembers: [{ identifier: { case: 'contact', value: { serviceId: ALICE, e164: '+15550001111' } } }, { identifier: { case: 'groupMasterKey', value: groupKey } }],
+      scheduleEnabled: true,
+      scheduleStartTime: 2200,
+      scheduleEndTime: 700,
+      scheduleDaysEnabled: [NotificationProfile_DayOfWeek.UNKNOWN, NotificationProfile_DayOfWeek.SUNDAY],
+    });
+    const p = readNotificationProfile(profile)!;
+    assert.equal(p.id, toBase64(new Uint8Array([1, 2, 3])));
+    assert.deepEqual(p.allowed, [ALICE, '+15550001111', 'g:' + groupIdFromMasterKey(groupKey)]);
+    assert.deepEqual(p.schedule, { start: 2200, end: 700, days: [1, 7] });
+    assert.equal(p.allowAllCalls, true);
+    profile.deletedAtTimestampMs = 5n;
+    assert.equal(readNotificationProfile(profile), null);
   });
 
   it('re-reads and retries after a 409, and skips no-op writes', async () => {

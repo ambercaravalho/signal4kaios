@@ -15,6 +15,8 @@ import {
   DataMessage_Payment_Activation_Type,
   Envelope_Type,
   ReceiptMessage_Type,
+  type SyncMessage_AttachmentBackfillResponse,
+  SyncMessage_AttachmentBackfillResponse_AttachmentData_Status,
   SyncMessage_MessageRequestResponse_Type,
   TypingMessage_Action,
 } from '../gen/SignalService_pb';
@@ -28,6 +30,7 @@ import type { IncomingEnvelope } from './receive';
 const MAX_CONTACT_CARDS = 5;
 const MAX_CARD_FIELDS = 5;
 const MAX_PREVIEW_TEXT = 300;
+const MAX_BACKFILL_SLOTS = 100;
 
 const REQUEST_RESPONSES: Record<number, string> = {
   [SyncMessage_MessageRequestResponse_Type.ACCEPT]: 'accept',
@@ -58,6 +61,30 @@ function encodeAttachmentDescriptor(att: AttachmentPointer, contentType: string,
     size: att.size || 0,
   };
   return 's4katt:' + toBase64(new TextEncoder().encode(JSON.stringify(meta)));
+}
+
+function attachmentJson(ptr: AttachmentPointer, contentType: string, fileName: string, viewOnce: boolean) {
+  return {
+    id: encodeAttachmentDescriptor(ptr, contentType, fileName),
+    contentType,
+    filename: fileName,
+    size: ptr.size || 0,
+    voiceNote: ((ptr.flags || 0) & AttachmentPointer_Flags.VOICE_MESSAGE) !== 0,
+    viewOnce,
+    ...receivedMeta(ptr),
+  };
+}
+
+/** A backfill answer's attachment slots: a fresh pointer, `pending` while the phone uploads, or `failed`. Null when the phone no longer has the message. */
+function backfillSlots(r: SyncMessage_AttachmentBackfillResponse): Array<ReturnType<typeof attachmentJson> | 'pending' | 'failed'> | null {
+  if (r.data.case !== 'attachments') return null;
+  return r.data.value.attachments.slice(0, MAX_BACKFILL_SLOTS).map((d) => {
+    if (d.data.case === 'attachment') {
+      const p = d.data.value;
+      return attachmentJson(p, p.contentType || 'application/octet-stream', p.fileName || '', false);
+    }
+    return d.data.case === 'status' && d.data.value === SyncMessage_AttachmentBackfillResponse_AttachmentData_Status.PENDING ? 'pending' : 'failed';
+  });
 }
 
 export interface AttachmentDescriptor {
@@ -133,7 +160,7 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
   }));
   if (dm.sticker && dm.sticker.data) {
     const st = dm.sticker.data;
-    rawAttachments.push({ ptr: st, contentType: st.contentType || 'image/webp', fileName: st.fileName || 'sticker.webp' });
+    rawAttachments.unshift({ ptr: st, contentType: st.contentType || 'image/webp', fileName: st.fileName || 'sticker.webp' });
   }
 
   const out: any = {
@@ -144,15 +171,7 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
     mentions,
     textStyles,
     groupInfo: groupInfoFor(dm.groupV2 && dm.groupV2.masterKey),
-    attachments: rawAttachments.map((a) => ({
-      id: encodeAttachmentDescriptor(a.ptr, a.contentType, a.fileName),
-      contentType: a.contentType,
-      filename: a.fileName,
-      size: a.ptr.size || 0,
-      voiceNote: ((a.ptr.flags || 0) & AttachmentPointer_Flags.VOICE_MESSAGE) !== 0,
-      viewOnce: !!dm.isViewOnce,
-      ...receivedMeta(a.ptr),
-    })),
+    attachments: rawAttachments.map((a) => attachmentJson(a.ptr, a.contentType, a.fileName, !!dm.isViewOnce)),
   };
 
   if (dm.contact.length > 0) {
@@ -396,6 +415,14 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
               isFullDelete: !!cd.isFullDelete,
             }))
             .concat(d.localOnlyConversationDeletes.map((ld) => ({ conversation: chatRef(ld.conversation), mostRecent: [], mostRecentNonExpiring: [], isFullDelete: true }))),
+        };
+      }
+      if (sm.content.case === 'attachmentBackfillResponse') {
+        const r = sm.content.value;
+        syncOut.attachmentBackfill = {
+          conversation: chatRef(r.targetConversation),
+          message: r.targetMessage ? messageRef(r.targetMessage) : null,
+          attachments: backfillSlots(r),
         };
       }
       frameEnv.syncMessage = syncOut;

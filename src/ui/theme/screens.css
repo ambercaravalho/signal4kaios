@@ -276,7 +276,8 @@
   white-space: nowrap;
 }
 
-.msg-file-size {
+.msg-file-size,
+.msg-att-note {
   opacity: 0.7;
   font-size: var(--fs-small);
 }

@@ -12,8 +12,7 @@ import * as store from '../data/store';
 import { friendlyError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatScreen } from './Chat';
-import { isGroupLink, JoinGroupScreen } from './JoinGroup';
-import { askUseProxy, isProxyLink } from './Proxy';
+import { openPhone, openSignalLink } from './open-link';
 
 function normalizeNumber(v: string): string {
   const n = v.replace(/[\s()-]/g, '');
@@ -49,25 +48,10 @@ export function NewChatScreen() {
     }
   }
 
-  function findByPhone(raw: string): void {
-    const n = normalizeNumber(raw);
-    const c = store.contactsList().find((x) => x.number === n && !!x.uuid);
-    if (c) open(store.conversationWith(c).id);
-    else alertDialog(S.phoneNotFound, S.phoneNotFoundBody);
-  }
-
   async function scan(): Promise<void> {
     const text = await scanQr(S.scanCode);
-    if (!text) return;
-    if (isGroupLink(text)) {
-      router.push(JoinGroupScreen, { url: text.trim() });
-      return;
-    }
-    if (isProxyLink(text)) {
-      void askUseProxy(text);
-      return;
-    }
-    const m = /signal\.me\/#p\/(\+?\d+)/.exec(text) || /^(\+?\d[\d\s()-]{5,})$/.exec(text.trim());
+    if (!text || openSignalLink(text, true)) return;
+    const m = /^(\+?\d[\d\s()-]{5,})$/.exec(text.trim());
     if (m) setQuery(m[1]);
     else toast(S.scanUnsupported, 4000);
   }
@@ -76,7 +60,7 @@ export function NewChatScreen() {
   const groups = store.groupsList().filter((g) => !lq || matches(g.name, lq));
   const rows: Row[] = [];
   if (q) {
-    if (looksLikeNumber(q)) rows.push({ key: '__phone', label: S.findByPhone, sub: normalizeNumber(q), icon: 'person', onSelect: () => findByPhone(q) });
+    if (looksLikeNumber(q)) rows.push({ key: '__phone', label: S.findByPhone, sub: normalizeNumber(q), icon: 'person', onSelect: () => openPhone(normalizeNumber(q), true) });
     else rows.push({ key: '__user', label: S.findByUsername, sub: '@' + q.replace(/^@/, ''), icon: 'person', onSelect: () => findByUsername(q) });
   }
   if (contacts.length) rows.push({ section: S.contacts }, ...contacts.map((c) => contactRow(c, () => open(store.conversationWith(c).id))));

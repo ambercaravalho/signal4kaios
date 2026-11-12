@@ -1,11 +1,11 @@
 import type { VNode } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useObjectUrl } from '../../app/hooks';
-import { autoDownloads, cachedAttachment, isImage, loadAttachment } from '../../data/attachments';
+import { autoDownloads, cachedAttachment, isImage } from '../../data/attachments';
 import { blurHashUrl } from '../../data/blurhash';
 import { fmtBytes, fmtLength } from '../../data/format';
 import * as store from '../../data/store';
-import type { Attachment } from '../../data/types';
+import type { Attachment, Message } from '../../data/types';
 import { waveformBars } from '../../data/voice-recorder';
 import { S } from '../../strings';
 import { attachmentIcon } from '../attachment-icon';
@@ -13,11 +13,12 @@ import { Icon } from '../Icon';
 
 const VOICE_BARS = 32;
 
-/** An inline photo once it's downloaded; anything else is a labelled row that opens in the viewer. `meta` sits over the photo's corner, or below a file row. */
-export function AttachmentView(props: { att: Attachment; meta?: VNode | null; photoOnly?: boolean }) {
+/** An inline photo once it's downloaded; anything else is a labelled row that opens in the viewer. `meta` sits over the photo's corner, or below a file row. A photo from message `msg` that Signal's servers dropped is asked for from our phone. */
+export function AttachmentView(props: { att: Attachment; msg?: Message; meta?: VNode | null; photoOnly?: boolean }) {
   const { att } = props;
   const ref = useRef<HTMLDivElement>(null);
   const [url, showBlob] = useObjectUrl(att.id);
+  const [note, setNote] = useState('');
   useEffect(() => {
     if (!isImage(att) || att.viewOnce || !att.id) return;
     let live = true;
@@ -25,10 +26,13 @@ export function AttachmentView(props: { att: Attachment; meta?: VNode | null; ph
     const show = (b: Blob | null) => {
       if (live && b) showBlob(b);
     };
+    const failed = (e: unknown) => {
+      if (live) setNote(e instanceof store.NoLongerAvailableError ? S.noLongerAvailable : '');
+    };
     cachedAttachment(att).then((b) => {
       if (b) return show(b);
       if (!autoDownloads(att) || !live) return;
-      const start = () => loadAttachment(att).then(show, () => {});
+      const start = () => store.loadOrAskPhone(att, props.msg, () => live && setNote(S.askingPhone)).then(show, failed);
       const el = ref.current;
       if (el && typeof IntersectionObserver !== 'undefined') {
         io = new IntersectionObserver(
@@ -60,6 +64,7 @@ export function AttachmentView(props: { att: Attachment; meta?: VNode | null; ph
       <div class="msg-media msg-media-blur" ref={ref}>
         <img src={placeholder} alt="" />
         {!isImage(att) && <Icon name="play" class="msg-media-play" />}
+        {note && <div class="msg-att-note">{note}</div>}
         {props.meta}
       </div>
     );
@@ -84,7 +89,7 @@ export function AttachmentView(props: { att: Attachment; meta?: VNode | null; ph
       <div class="msg-file" ref={ref}>
         <Icon name={attachmentIcon(att)} />
         <span class="msg-file-name">{att.viewOnce ? S.viewOnceMedia : store.attachmentLabel([att])}</span>
-        {!att.viewOnce && att.size ? <span class="msg-file-size">{fmtBytes(att.size)}</span> : null}
+        {note ? <span class="msg-att-note">{note}</span> : !att.viewOnce && att.size ? <span class="msg-file-size">{fmtBytes(att.size)}</span> : null}
       </div>
       {props.meta}
     </>
