@@ -585,7 +585,7 @@ export const S = {
   linkTitle: 'Link this phone',
   linkSteps: 'On your main phone: Signal › Settings › Linked devices › Link new device',
   deviceName: 'Device name',
-  defaultDeviceName: 'KaiOS phone',
+  defaultDeviceName: 'Beacon for KaiOS',
   linkFinishing: 'Finishing up…',
   linkSyncing: 'Getting your contacts and groups…',
   linkFailed: 'Couldn’t link this phone',

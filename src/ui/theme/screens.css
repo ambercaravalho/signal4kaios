@@ -685,25 +685,50 @@
   color: var(--text-2);
 }
 
-/* Guide topics */
+/* Guide topics: a short line beside the picture, then the QR code in whatever height is left, at every text size. */
 .guide {
-  padding: 1rem var(--pad) 0;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0.8rem var(--pad);
+}
+
+.guide-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.guide .guide-pictogram {
+  flex: none;
+  width: 3.6rem;
+  height: 3.6rem;
+  margin: 0;
 }
 
 .guide-line {
+  flex: 1;
+  min-width: 0;
   font-size: var(--fs-secondary);
   color: var(--text-2);
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .guide .qr {
-  padding: 0.6rem 0 0;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  margin-top: 0.8rem;
+  padding: 0;
 }
 
 .guide .qr svg {
-  width: 16rem;
-  height: 16rem;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* Onboarding, linking, startup error */

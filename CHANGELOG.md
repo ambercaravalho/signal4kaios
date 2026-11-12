@@ -16,6 +16,11 @@ Beacon can bring your message history over when you link it, and follows your ch
 
 - **Help** has guides on message history and chat folders, and **Learn more** at the bottom of **Chat folders**.
 - **Debug** shows how many sticker packs and chat folders your account has.
+- New links are named **Beacon for KaiOS** in your phone's linked devices list. You can still type a different name when you link.
+
+### Fixed
+
+- **Help** guides fit on the screen at every text size: the picture sits beside the caption and the QR code takes the rest of the page.
 
 ## v2.8.0
 

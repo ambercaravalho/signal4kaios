@@ -302,12 +302,6 @@
   stroke-linejoin: round;
 }
 
-.pictogram-sm {
-  width: 4rem;
-  height: 4rem;
-  margin-bottom: 0.6rem;
-}
-
 .pictogram-base {
   stroke: var(--text-2);
 }
