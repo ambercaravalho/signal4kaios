@@ -10,6 +10,7 @@ import { confirm, DIVIDER, menuRows, pick, showOptions } from '../src/ui/compone
 import { QrCode } from '../src/ui/components/Qr';
 import { RichText } from '../src/ui/components/RichText';
 import { AUTOMATIC, CHAT_COLORS, chatColorOptions } from '../src/ui/data/chat-colors';
+import { signal } from '../src/ui/data/api';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import { GUIDES } from '../src/ui/data/guides';
@@ -23,6 +24,7 @@ import { guideRow, openGuide } from '../src/ui/screens/Guide';
 import { ArchivedScreen, HomeScreen } from '../src/ui/screens/Home';
 import { memberAvatar } from '../src/ui/screens/Members';
 import { LinkScreen, WelcomeScreen } from '../src/ui/screens/Onboarding';
+import { openPhone } from '../src/ui/screens/open-link';
 import { NewChatScreen, SearchScreen } from '../src/ui/screens/SearchList';
 import { SettingsScreen } from '../src/ui/screens/Settings';
 import { AppearanceScreen } from '../src/ui/screens/settings/Appearance';
@@ -204,6 +206,36 @@ describe('screens', () => {
     assert.equal(_stackForTest().length, 2);
     assert.match(out, /entry hidden/);
     assert.match(out, /placeholder="Message"/);
+  });
+
+  it('looks up a number that is not a synced contact before opening its chat', async () => {
+    const BOB = '+15550002';
+    const asked: string[] = [];
+    let answer: (n: string) => Promise<{ uuid: string; number: string } | null> = async (n) => ({ uuid: '11111111-1111-4111-8111-111111111111', number: n });
+    (signal as any).lookupNumber = (n: string) => {
+      asked.push(n);
+      return answer(n);
+    };
+    router.reset(HomeScreen, {});
+    await openPhone(BOB);
+    assert.deepEqual(asked, [BOB]);
+    assert.equal(_stackForTest().length, 2);
+    assert.equal(_stackForTest()[1].Component, ChatScreen);
+    assert.ok(store.conversation(BOB));
+
+    router.reset(HomeScreen, {});
+    answer = async () => null;
+    await openPhone('+15550003');
+    assert.equal(_stackForTest().length, 2);
+    assert.ok(_stackForTest()[1].overlay);
+    assert.ok(text(html()).includes(S.phoneNotFound));
+
+    router.reset(HomeScreen, {});
+    answer = async () => {
+      throw Object.assign(new Error('rate limited'), { retryAfterSeconds: 90, status: 429 });
+    };
+    await openPhone('+15550004');
+    assert.equal(_stackForTest().length, 1);
   });
 
   it('draws options and dialogs as overlays above the screen', () => {

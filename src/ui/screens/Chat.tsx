@@ -94,7 +94,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     const list = listRef.current;
     const rowsEl = rowsRef.current;
     if (!list || !rowsEl || typeof ResizeObserver === 'undefined') return;
-    // Photos and previews load after the list is laid out, so keep the bottom (or the focused message) in view as rows grow.
+    // Photos, previews, and the pinned bar arrive after the list is laid out, so keep the bottom (or the focused message) in view as the rows or the list itself change size.
     const ro = new ResizeObserver(() => {
       if (focusedRef.current === null) list.scrollTop = list.scrollHeight;
       else {
@@ -103,6 +103,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       }
     });
     ro.observe(rowsEl);
+    ro.observe(list);
     return () => ro.disconnect();
   }, []);
 

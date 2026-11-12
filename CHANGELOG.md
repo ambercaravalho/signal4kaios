@@ -2,6 +2,18 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.9.4
+
+Find people by phone number, plus a fix. Install over v2.9.3; your chats and settings carry over.
+
+### New
+
+- **Find by phone number** now works for any number, not only your synced contacts ([#9](https://github.com/ambercaravalho/signal4kaios/issues/9)). Beacon asks Signal's contact discovery service, which runs in a secure enclave that the phone checks before it sends the number, as Signal's own apps do. A number that isn't on Signal, or whose owner chose not to be found by number, shows **Not found on Signal**. After many lookups, Beacon says how many minutes to wait.
+
+### Fixed
+
+- **Pinned messages.** Opening a chat with a pinned message now stays at the newest message when the pinned bar appears, instead of scrolling up a little.
+
 ## v2.9.3
 
 A bug fix release. Install over v2.9.2; your chats and settings carry over.

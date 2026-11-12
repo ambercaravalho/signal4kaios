@@ -18,6 +18,8 @@ libsignal-message-backup = { git = "https://github.com/signalapp/libsignal", rev
 libsignal-provisioning = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
 usernames = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
 zkgroup = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
+# Contact discovery attestation (src/cdsi.rs). It links BoringSSL, which build.sh compiles for WASI with wasi-sdk.
+attest = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
 
 async-trait = "0.1.79"
 futures-util = { version = "=0.3.32", default-features = false }
@@ -44,6 +46,11 @@ hmac = "0.13.0"
 sha2 = "0.11"
 subtle = "2.6"
 flate2 = { version = "1.1.1", default-features = false, features = ["rust_backend"] }
+
+# `boring` and `attest` take C types from libc, which has none for wasm32-unknown-unknown. build.sh downloads the locked
+# libc release into vendor/libc and adds wasm32-unknown-unknown to its WASI branch, matching the wasi-libc BoringSSL links.
+[patch.crates-io]
+libc = { path = "vendor/libc" }
 
 [profile.release]
 opt-level = "z"

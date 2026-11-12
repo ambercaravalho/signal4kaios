@@ -5,8 +5,10 @@ import { ContentSchema, DataMessage_Flags, SyncMessage_MessageRequestResponse_Ty
 import { ContactRecord_NameSchema } from '../gen/SignalStorage_pb';
 import { host } from '../host';
 import { create, isAci } from '../net/proto';
+import { net } from '../net/transport';
 import { compareScannedSafetyNumber } from '../protocol/protocol';
 import type { TrustLevel } from '../protocol/store';
+import { cdsiLookup } from '../services/cdsi';
 import { downloadAndDecryptProfileAvatar, fetchAndDecryptProfile } from '../services/profiles';
 import { reportSpam as reportSpamMessages } from '../services/report-spam';
 import { invalidateBlocked, sendBlockedSync } from './blocked';
@@ -121,6 +123,22 @@ export const contactMethods = {
     const blob = bytesToBlob(await downloadAndDecryptProfileAvatar(httpBinary, prof.avatarUrlPath, pkBytes), 'image/jpeg');
     await host().db.putAttachment('avatar:' + uuidOrNumber, blob, 'image/jpeg');
     return blob;
+  },
+
+  /** Who a phone number (E.164) belongs to, through contact discovery; the account joins the directory like a synced contact. Null when the number has no account or its owner hides it from discovery. */
+  async lookupNumber(e164: string): Promise<{ uuid: string; number: string } | null> {
+    if (!net.pinnedTlsAvailable()) throw Object.assign(new Error('phone number lookup needs a pinned TLS connection'), { kind: 'network' });
+    const records = await cdsiLookup(store, { httpJson, openWebSocket: (url, opts) => net.openWebSocket(url, opts), serverUrl: serverUrl() }, [e164]);
+    const hit = records.find((r) => r.e164 === e164 && !!r.aci);
+    if (!hit || !hit.aci) return null;
+    const aci = hit.aci;
+    await updateSyncedContact({ aci, e164 }, (c) => {
+      c.uuid = aci;
+      c.number = e164;
+      if (hit.pni) c.pni = hit.pni;
+    });
+    host().directoryChanged().catch(() => {});
+    return { uuid: aci, number: e164 };
   },
 
   /** `target` is a contact's ACI or phone number. */
