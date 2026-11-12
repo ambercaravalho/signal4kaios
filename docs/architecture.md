@@ -94,7 +94,7 @@ The first launch after an install or update can load before the new worker contr
 src/
   app/                    the packaged KaiOS app (zipped as-is)
     index.html            loads build/app.js and build/app.css
-    build/                esbuild output (gitignored)
+    build/                esbuild output (gitignored): app.js, app.css, and backup.js
     assets/icons/         beacon.svg and the launcher PNGs rendered from it
     vendor/               libsignal_wasm_bg.wasm
     sw.js                 ServiceWorker: KaiOS 4.0 WebAssembly policy, wake alarms, notification taps
@@ -115,7 +115,7 @@ src/
     protocol/             libsignal loader, protocol operations, PreKeys, protocol store
     net/                  HTTP shapes, protobuf helpers, provisioning, receive, send client
     net/transport/        pinned TLS over TCPSocket: HTTP/1.1 and WebSocket clients
-    services/             Storage Service (storage/), profiles, Groups V2
+    services/             Storage Service (storage/), message history from linking (history/), profiles, Groups V2
     crypto/               attachment and profile cipher primitives
     gen/                  generated protobuf codecs (never hand-edited)
   native/libsignal-wasm/  Rust wrapper crate (AGPL-3.0-only)
@@ -127,7 +127,7 @@ docs/                     these guides
 
 ## The app
 
-The app is a single Preact tree built for Gecko 84, the oldest engine it supports (KaiOS 3.0). [`scripts/build.mjs`](../scripts/build.mjs) bundles `src/ui/main.tsx`, the engine, and the CSS into `src/app/build/`, so `index.html` loads one script and one stylesheet, with no inline code for the privileged CSP to reject.
+The app is a single Preact tree built for Gecko 84, the oldest engine it supports (KaiOS 3.0). [`scripts/build.mjs`](../scripts/build.mjs) bundles `src/ui/main.tsx`, the engine, and the CSS into `src/app/build/`, so `index.html` loads one script and one stylesheet, with no inline code for the privileged CSP to reject. A second bundle, `backup.js`, holds the large Backups codec and the archive frame mapper; it loads with a `<script src>` tag only while message history is imported after linking (see [Message history](#message-history)), so it costs nothing at startup.
 
 | Piece | Role |
 | --- | --- |
@@ -181,7 +181,7 @@ Pins (`DataMessage.pinMessage` / `unpinMessage`), disappearing-timer updates in 
 
 ## Storage Service writes
 
-Contact nicknames, blocking, archive, mute, pinned chats, and the username are account state that Signal keeps in the encrypted [Storage Service](https://github.com/signalapp/Signal-Desktop/blob/main/protos/SignalStorage.proto). Edits go through `mutateStorage` in [`services/storage/mutate.ts`](../src/engine/services/storage/mutate.ts), following Signal-Desktop's `storage.ts`:
+Contact nicknames, blocking, archive, mute, pinned chats, chat folders, and the username are account state that Signal keeps in the encrypted [Storage Service](https://github.com/signalapp/Signal-Desktop/blob/main/protos/SignalStorage.proto). Edits go through `mutateStorage` in [`services/storage/mutate.ts`](../src/engine/services/storage/mutate.ts), following Signal-Desktop's `storage.ts`:
 
 ```mermaid
 sequenceDiagram
@@ -230,6 +230,27 @@ sequenceDiagram
 
 This follows Signal-Desktop's linking flow ([`AccountManager`](https://github.com/signalapp/Signal-Desktop/tree/main/ts/textsecure)). Afterwards the engine pulls contacts and groups from the [Storage Service](https://github.com/signalapp/Signal-Desktop/blob/main/protos/SignalStorage.proto) and group state from `storage.signal.org/v2/groups/`.
 
+### Message history
+
+Beacon ports Signal-Desktop's link-and-sync. The QR code carries `capabilities=backup5`, so the main phone offers **Transfer message history**; its `ProvisionMessage` then includes a 32-byte `ephemeralBackupKey`, which the app keeps in config only until the import ends and never logs.
+
+```mermaid
+flowchart LR
+  poll["GET /v1/devices/transfer_archive (5 min per request, 1 hour in all)"] -->|"cdn, key"| dl["Range GETs from cdnN/attachments/key, 1 MiB chunks into IndexedDB"]
+  poll -->|CONTINUE_WITHOUT_UPLOAD| none[Start empty]
+  poll -->|RELINK_REQUESTED| relink[Back to the QR code]
+  dl --> mac["Pass 1: HMAC only"]
+  mac --> dec["Pass 2: AES-CBC, gunzip, delimited Frames"]
+  dec --> map["backup.js maps frames to Beacon records"]
+  map --> db["Bulk writes, pruned to 500 per chat"]
+  db --> start[Reload and connect]
+```
+
+- **Keys and reading.** `backup.rs` derives the `MessageBackupKey` with libsignal's `libsignal-account-keys` (`BackupKey::derive_backup_id`, then `MessageBackupKey::derive` with the legacy domain separator, as Desktop does for link-and-sync). Its streaming `BackupReader` takes the archive chunk by chunk: HMAC-SHA256 over everything but the last 32 bytes, AES-256-CBC, gzip (`flate2` on `miniz_oxide`), and varint-delimited frames. Gecko 84 has neither streaming WebCrypto nor `DecompressionStream`, so this all runs in wasm. The first pass only checks the MAC, so nothing is imported from a tampered or truncated file.
+- **Mapping.** [`services/history/frames.ts`](../src/engine/services/history/frames.ts) follows Desktop's `backups/import`. Recipients become contacts (profile keys go to the profile cache) and groups (master keys go to the synced groups); chats carry archive, pin, mute, marked unread, and the timer; chat items become messages with text, styles, mentions, quotes, link previews, reactions, edits, send status, pins, polls, and deletions, or notices for timer changes, safety numbers, calls, payments, and group changes. Expired disappearing messages, stories, call links, and records Storage Service supplies (notification profiles, chat folders, sticker packs) are skipped. Every frame is untrusted: lengths are capped, unknown cases dropped, and a frame that fails to decode costs only that frame.
+- **Attachments.** A pointer with a transit CDN copy becomes an attachment descriptor that downloads like a received one, checked against `encryptedDigest`, or for archive pointers against the plaintext SHA-256 in `plaintextHash`. One without a transit copy gets an empty ID, so opening it asks the phone to upload it again.
+- **The app's side.** [`data/store/history.ts`](../src/ui/data/store/history.ts) runs the steps and records each one in config, so a reload resumes the download from the next chunk and restarts the import, whose writes are idempotent. Messages go through the same normalizer as received ones but straight to IndexedDB, with no notifications or receipts. The History screen shows at startup while a sync is pending and the message WebSocket stays closed, so new messages wait on the server, as on Desktop, and nothing arrives mid-import.
+
 ## The libsignal wrapper
 
 The wrapper is record-in, record-out: libsignal never touches IndexedDB directly.
@@ -256,6 +277,7 @@ Every libsignal call that touches protocol state goes through [`src/engine/proto
 | `fingerprint.rs` | Safety numbers and scannable fingerprints |
 | `provisioning.rs` | The linking cipher |
 | `account.rs` | Account Entropy Pool to master key, and username hashes |
+| `backup.rs` | Message backup keys and the streaming link-and-sync archive reader (see [Message history](#message-history)) |
 | `username.rs` | Username candidates, zero-knowledge proofs, and encrypted username links |
 | `zk.rs` | Profile key version, commitment, and access key; Groups V2 params, blob and member decryption, profile key encryption, auth and expiring profile key credential presentations; group send endorsements and tokens |
 | `tls.rs` | TLS client for Signal's hosts with libsignal's pinned roots (see [Network](#network)) |
@@ -276,7 +298,8 @@ Every libsignal call that touches protocol state goes through [`src/engine/proto
 | [`net/incoming-json.ts`](../src/engine/net/incoming-json.ts) | Decoded `Content` → the JSON frames the app normalizes; attachment descriptors |
 | [`net/client.ts`](../src/engine/net/client.ts) | `SignalClient`: device fanout, Sealed Sender, retry receipts, attachment upload and download |
 | [`net/transport/`](../src/engine/net/transport) | `signalBridge.net`: pinned TLS, HTTP/1.1, and WebSocket for Signal's hosts |
-| [`services/storage/`](../src/engine/services/storage) | Storage Service key derivation (`crypto.ts`), pull (`pull.ts`), and writes (`mutate.ts`: `mutateStorage`, `StorageWriteQueue`), following Signal-Desktop |
+| [`services/storage/`](../src/engine/services/storage) | Storage Service key derivation (`crypto.ts`), pull (`pull.ts`), and writes (`mutate.ts`: `mutateStorage`, `StorageWriteQueue`), following Signal-Desktop; chat folders (`chat-folders.ts`, read and written) and installed sticker packs (`sticker-packs.ts`, read only) |
+| [`services/history/`](../src/engine/services/history) | Link-and-sync: the transfer archive poll, ranged download, two-pass import, and the frame mapper bundled into `backup.js` |
 | [`services/profiles.ts`](../src/engine/services/profiles.ts) | Versioned profile fetch and decrypt, profile upload, username lookup, expiring profile key credentials; the cipher and avatars are in `profile-crypto.ts` and `profile-avatar.ts` |
 | [`services/groups-v2.ts`](../src/engine/services/groups-v2.ts) | zkgroup group IDs, `GroupContextV2`, group state fetch and decode, invite links |
 | [`services/group-changes.ts`](../src/engine/services/group-changes.ts) | Groups V2 change builders and `applyGroupChange` |
@@ -291,7 +314,7 @@ Each account has its own IndexedDB database ([`src/ui/data/db.ts`](../src/ui/dat
 | Store | Holds |
 | --- | --- |
 | `messages`, `conversations`, `contacts` | Chat history and the conversation list |
-| `kv` | Synced contacts and groups, credentials caches, and settings |
+| `kv` | Synced contacts and groups, credentials caches, settings, and the downloaded history archive's chunks until the import ends |
 | `attachments` | Cached decrypted media (LRU) |
 | `signal_keystore`, `signal_identities`, `signal_sessions`, `signal_prekeys`, `signal_sender_keys` | Serialized libsignal records and remote identity keys |
 

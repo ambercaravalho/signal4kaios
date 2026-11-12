@@ -39,8 +39,19 @@ APPSCMD=/path/to/appscmd sh scripts/install.sh
 1. Open **Beacon** and press **Start** on the welcome screen. The phone shows a QR code.
 2. On your main phone, open Signal → **Settings → Linked devices → Link a new device** ([Signal's guide](https://support.signal.org/hc/en-us/articles/360007320551)).
 3. Scan the QR code on the KaiOS screen.
+4. When your main phone asks, choose **Transfer message history** to bring your recent messages to Beacon, or **Don't transfer** to start empty.
 
-The KaiOS phone then finishes linking and opens your chats.
+The KaiOS phone then finishes linking. With a transfer, it shows **Message history** while the history arrives (see below); otherwise it opens your chats.
+
+### Message history
+
+After you choose **Transfer message history**, Beacon says **Waiting for your phone…** while your main phone prepares the history, then **Downloading messages…** and **Adding messages…** with how far along it is. Keep both phones open and online; a long history takes a few minutes. New messages wait on Signal's servers meanwhile and arrive once Beacon opens your chats.
+
+- **Skip** (right softkey) goes on without the history.
+- If the download stops, for example when the phone loses its connection, press **Retry**. Closing Beacon in the middle is fine too: it picks up where it stopped the next time it opens.
+- If your main phone asks to link again, Beacon says so and **Link again** returns to the QR code.
+
+Each chat keeps its 500 most recent messages, as it does for new ones.
 
 ## 3. Contacts and groups sync
 
@@ -83,6 +94,6 @@ Run **Settings → Linked device → Sync with your phone** while your main phon
 <details>
 <summary><strong>Messages from before linking are missing</strong></summary>
 
-Expected. Signal doesn't keep message history on its servers, so a linked device only has messages from the moment it was linked. Messages sent while the KaiOS phone is off are queued by Signal and arrive when you open the app.
+Signal doesn't keep message history on its servers. Beacon only gets older messages when your main phone transfers them while linking: choose **Transfer message history** on the phone ([Message history](#message-history)). If you skipped it, **Settings → Linked device → Unlink this phone** and link again to transfer it; unlinking deletes what Beacon has on the phone, and the transfer brings it back. Messages sent while the KaiOS phone is off are queued by Signal and arrive when you open the app.
 
 </details>

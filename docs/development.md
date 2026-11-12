@@ -39,7 +39,7 @@ npm run package      # bundle + checks -> dist/signal4kaios.zip and dist/signal4
 | Script | Does |
 | --- | --- |
 | `build:wasm` | `cargo build` → `wasm-bindgen --target web` → optional `wasm-opt` → copy to `src/app/vendor/` |
-| `build` | [`scripts/build.mjs`](../scripts/build.mjs): esbuild bundles [`src/ui/main.tsx`](../src/ui/main.tsx) with the engine, the wasm-bindgen glue, and the CSS into `src/app/build/app.js` and `app.css` (IIFE, `firefox84`). It keeps only the emoji KaiOS 3.x can draw |
+| `build` | [`scripts/build.mjs`](../scripts/build.mjs): esbuild bundles [`src/ui/main.tsx`](../src/ui/main.tsx) with the engine, the wasm-bindgen glue, and the CSS into `src/app/build/app.js` and `app.css` (IIFE, `firefox84`). It keeps only the emoji KaiOS 3.x can draw. A second entry bundles the Backups codec and the history frame mapper into `backup.js`, which the app loads only while it imports message history after linking. `--analyze` prints what makes up `app.js` |
 | `icons` | [`scripts/icons.mjs`](../scripts/icons.mjs): renders [`beacon.svg`](../src/app/assets/icons/beacon.svg) to the 56 and 112 px launcher PNGs. Run it after editing the SVG and commit the PNGs |
 | `typecheck` | `tsc --noEmit` over `src/engine/`, `src/ui/`, and `test/` |
 | `test` | Bundles `test/*.test.ts` and `test/*.test.tsx` and runs them with `node --test`. The UI tests render screens with `preact-render-to-string` over `fake-indexeddb`, and check that everyday wording stays free of technical terms |
@@ -49,7 +49,7 @@ npm run package      # bundle + checks -> dist/signal4kaios.zip and dist/signal4
 
 `build:wasm` must run before `typecheck` and `test`: TypeScript imports the generated glue from `src/native/libsignal-wasm/pkg/`, and the tests load the compiled module.
 
-The interop tests ([`test/interop.test.ts`](../test/interop.test.ts)) run our wasm build against Signal's official Node library, [`@signalapp/libsignal-client`](https://www.npmjs.com/package/@signalapp/libsignal-client), pinned to the same libsignal release and never bundled. They exchange sessions, Sealed Sender, and Sender Key messages in both directions, and compare safety numbers, username hashes, zkgroup values, Kyber records, and provisioning envelopes. [`test/group-send.test.ts`](../test/group-send.test.ts) has the official library play the server for group sends: it issues group send endorsements, verifies our `Group-Send-Token`, and splits our multi-recipient Sealed Sender messages per recipient. The official library ships prebuilt binaries for Linux, macOS, and Windows on x64 and arm64.
+The interop tests ([`test/interop.test.ts`](../test/interop.test.ts)) run our wasm build against Signal's official Node library, [`@signalapp/libsignal-client`](https://www.npmjs.com/package/@signalapp/libsignal-client), pinned to the same libsignal release and never bundled. They exchange sessions, Sealed Sender, and Sender Key messages in both directions, and compare safety numbers, username hashes, zkgroup values, Kyber records, provisioning envelopes, and message backup keys, and read link-and-sync archives encrypted with the official library's keys. [`test/group-send.test.ts`](../test/group-send.test.ts) has the official library play the server for group sends: it issues group send endorsements, verifies our `Group-Send-Token`, and splits our multi-recipient Sealed Sender messages per recipient. The official library ships prebuilt binaries for Linux, macOS, and Windows on x64 and arm64.
 
 > [!NOTE]
 > Storage Service and profile known-answer vectors were computed from Signal-Desktop's formulas, since Desktop publishes none; they guard against regressions rather than prove server compatibility.
@@ -74,7 +74,7 @@ Test KaiOS 4.0 with `api-daemon`'s stock policy, with no `'wasm-unsafe-eval'` ad
 
 | Folder | Source |
 | --- | --- |
-| `src/protos/signal-desktop/` | [Signal-Desktop](https://github.com/signalapp/Signal-Desktop/tree/main/protos) v8.34.0 |
+| `src/protos/signal-desktop/` | [Signal-Desktop](https://github.com/signalapp/Signal-Desktop/tree/main/protos) v8.34.0 (`Backups.proto`, `DeviceMessages.proto`, `DeviceName.proto`, `Groups.proto`, `SignalService.proto`, `SignalStorage.proto`) |
 | `src/protos/libsignal/` | [libsignal](https://github.com/signalapp/libsignal/tree/main/rust/net/src/proto) v0.106.2 (`chat_websocket.proto`) |
 
 To update, copy the same files from the new tags, update `buf.yaml`, and run `npm run gen:protos`. [buf](https://buf.build/docs/) and [protoc-gen-es](https://github.com/bufbuild/protobuf-es) regenerate `src/engine/gen/`, which is committed; CI fails if it differs from a fresh generation.

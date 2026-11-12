@@ -20,7 +20,7 @@ Beacon follows the KaiOS layout: the bar at the bottom names what the left softk
 | Key | Chats list | Inside a chat |
 | --- | --- | --- |
 | **Up / Down** | Move between chats | Move between messages and the message box |
-| **Left / Right** | Not used | Move the cursor while typing |
+| **Left / Right** | Switch chat folders, when you have some | Move the cursor while typing |
 | **OK** | Open the chat | **Send** from the message box, or open a message's options |
 | **Left softkey** | **New chat** | **Back**, or **Cancel** a reply or edit |
 | **Right softkey** | **Options** | **Options** |
@@ -38,6 +38,19 @@ As in Signal for Android, archived chats sit behind an **Archived chats** row at
 **Options** on a chat: Chat settings, Pin or Unpin chat (up to 4), Archive, Mute or Unmute, Mark as read or Mark as unread, Mark all as read, Search, Settings, and Delete chat. **Mute** asks for how long: 1 hour, 8 hours, 1 day, 7 days, or Always; the chat unmutes on its own when the time is up. **Delete chat** removes the chat and its messages from this phone and your other linked devices.
 
 A new chat from someone who isn't in your contacts, or a group someone you don't know added you to, shows **Message request** under its name. See [Message requests](#message-requests).
+
+### Chat folders
+
+Chat folders you made on your main phone, like Unread, Groups, or Family, show here too. With folders, the header names the folder you're in, between arrows: **‹ All chats ›**. **Left** and **Right** move to the previous or next folder, in the same order as on your phone, and the list shows only that folder's chats. Archived chats stay in **All chats**.
+
+**Settings → Chats → Chat folders** lists your folders and how many chats each holds. **Add a folder** offers **Unread**, **One-to-one chats**, **Groups**, or **Custom folder**. OK on a folder edits it:
+
+- **Folder name**, up to 32 characters.
+- **Chats in this folder**: **Choose chats** picks chats one by one, and **All one-to-one chats** and **All groups** take in every chat of that kind.
+- **Chats left out**: **Choose chats** picks chats the folder never shows.
+- **Only unread chats** and **Show muted chats** narrow it further.
+
+**Save** (right softkey) keeps the changes. **Options** on a folder has **Move up**, **Move down**, and **Delete folder**; deleting a folder doesn't delete its chats. Folders are kept in step with your phone and other devices.
 
 ## Inside a chat
 
@@ -109,7 +122,7 @@ A group opens as a request when someone who isn't in your contacts added or invi
 
 **Joining a group by its link**: **Open link** on a `signal.group` link in a chat, or scanning a group's QR code, shows the group's name, how many members it has, and its description. **Join** adds you right away; when the group needs an admin's approval it's **Request to join** instead, and the same screen then offers **Cancel request** until an admin decides. Once you're in, the group opens with a **You joined the group via the group link** line.
 
-**Search** (in the chats list's Options) finds chats by name and messages by text. Messages are searched on this phone only, because Signal doesn't keep your history on its servers.
+**Search** (in the chats list's Options) finds chats by name and messages by text. Messages are searched on this phone only, because Signal doesn't keep your history on its servers; the history your phone transferred when linking is searched too.
 
 ## Chat settings, groups, and safety numbers
 
@@ -125,14 +138,14 @@ A group opens as a request when someone who isn't in your contacts added or invi
 | --- | --- |
 | **Profile** (top row) | Your photo, name, About, and About emoji (Signal requires a name), Username, your **QR code or link**, and Delete username |
 | **Linked device** | Which number this phone is linked as, Sync with your phone, saved accounts (OK switches), Add account, Unlink this phone, and Delete all data |
-| **Chats** | Text formatting; Keep muted chats archived; Generate link previews |
+| **Chats** | Text formatting; Keep muted chats archived; Generate link previews; Chat folders (see [Chat folders](#chat-folders)) |
 | **Notifications** | Notification profile; Show; Sound; Reactions to your messages; what still notifies in muted chats (see [Notifications](#notifications)) |
 | **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Screen lock; Blocked; Proxy |
 | **Appearance** | Theme: light or dark; Text size: Small, Normal, Large, or Extra large (this phone only) |
 | **Help** | Short guides by topic, Source code, and the version |
 | **Debug** | Technical details for troubleshooting (see below) |
 
-**Help** lists guides on getting started, keys, chats and messages, groups and safety numbers, settings, the proxy, notifications, what Beacon can't do yet, and troubleshooting. Each opens a page with a QR code for the matching section of these docs: scan it with another phone, or press **Open** to read it in the phone's browser. **Learn more** at the bottom of Privacy, Chats, Notifications, Phone number, Screen lock, and Proxy, and in the safety number's **Options**, opens the same kind of page, as do **Help** on the welcome screen and when Beacon can't start, and **How to link** in the linking screen's **Options**.
+**Help** lists guides on getting started, message history, keys, chats and messages, chat folders, groups and safety numbers, settings, the proxy, notifications, what Beacon can't do yet, and troubleshooting. Each opens a page with a QR code for the matching section of these docs: scan it with another phone, or press **Open** to read it in the phone's browser. **Learn more** at the bottom of Privacy, Chats, Chat folders, Notifications, Phone number, Screen lock, and Proxy, and in the safety number's **Options**, opens the same kind of page, as do **Help** on the welcome screen and when Beacon can't start, and **How to link** in the linking screen's **Options**.
 
 **Profile → Photo** picks a picture from the gallery or camera, crops the middle square, and saves it at 512 by 512 pixels; with a photo set, it offers **Choose photo** and **Remove photo**. Your photo is encrypted with your profile key like the rest of your profile, and your main phone and other devices pick up the change. A photo set on your main phone shows here too.
 
@@ -154,7 +167,7 @@ Each account has its own history on the phone, and switching accounts restarts B
 
 If you change your number on your main phone, Beacon follows: it shows **Your number changed to …**, keeps your chats and history, and stays linked. Messages sent to your new number arrive as usual.
 
-**Debug** shows the details a bug report needs: app and library versions, account and device IDs, how many one-time keys the server holds, the connection state, when the last message arrived, and storage use. It can refresh keys, ask your main phone to sync, reconnect, show the log, and **Share debug log**. The shared log has phone numbers, account IDs, and keys removed.
+**Debug** shows the details a bug report needs: app and library versions, account and device IDs, how many one-time keys the server holds, the connection state, when the last message arrived, storage use, and how many sticker packs and chat folders your account has. It can refresh keys, ask your main phone to sync, reconnect, show the log, and **Share debug log**. The shared log has phone numbers, account IDs, and keys removed.
 ## Notifications
 
 With Beacon in the background, new messages raise a notification unless the chat is muted; group notifications start with the sender's name. Selecting one opens the chat. **Settings → Notifications** has:
@@ -171,9 +184,11 @@ Keep Beacon open in the background to get notifications. Nothing is lost when it
 
 ## What lives on the phone
 
-Message history exists only on the phone, starting from when you linked. Each chat keeps about its **500 most recent messages**, and viewed media is kept in a small cache. **Settings → Linked device → Delete all data** removes everything.
+Message history exists only on the phone. It starts with the history your main phone sent when you linked, if you chose **Transfer message history** there ([Setup](setup.md#message-history)), or else from when you linked. Each chat keeps about its **500 most recent messages**, and viewed media is kept in a small cache. **Settings → Linked device → Delete all data** removes everything.
 
-Archive, mute and how long it lasts, what notifies in muted chats, notification profiles, mark as unread, pinned chats, accepted groups, the default timer for new chats, the private delivery icon setting, and phone number privacy sync with your other devices through Signal's encrypted storage; Signal allows 4 pinned chats.
+Photos and files in the transferred history download when you open them, as new ones do. Older ones that Signal's servers no longer keep show **Asking your phone…**, and your main phone uploads them again.
+
+Archive, mute and how long it lasts, what notifies in muted chats, notification profiles, chat folders, mark as unread, pinned chats, accepted groups, the default timer for new chats, the private delivery icon setting, and phone number privacy sync with your other devices through Signal's encrypted storage; Signal allows 4 pinned chats.
 
 ## Known limitations
 
