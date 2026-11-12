@@ -76,6 +76,7 @@ export class SignalClient {
   log: (message: string) => void = () => {};
   private deviceLists = new Map<string, number[]>();
   private profileKeys = new Map<string, Uint8Array>();
+  private safetyNumbers = new Map<string, { safetyNumber: string; scannable: string }>();
   private cachedSenderCert: { cert: Uint8Array; expiresAt: number } | null = null;
   private decryptQueue: Promise<any> = Promise.resolve();
 
@@ -583,36 +584,33 @@ export class SignalClient {
     });
   }
 
-  /**
-   * Compute safety numbers for all known remote ACI identities, for the safety number screen.
-   */
-  async listIdentitiesWithSafetyNumbers(): Promise<
-    Array<{
-      uuid?: string;
-      number?: string;
-      safety_number: string;
-      scannable_safety_number: string;
-      trust_level: TrustLevel;
-      added_timestamp: number;
-    }>
-  > {
+  /** One contact's safety number and trust, for the safety number screen. The fingerprint is cached per pair of identity keys, since it takes seconds on a phone. */
+  async safetyNumberFor(aci: string): Promise<{
+    uuid: string;
+    number?: string;
+    safety_number: string;
+    scannable_safety_number: string;
+    trust_level: TrustLevel;
+    added_timestamp: number;
+  } | null> {
     const acc = await this.store.getAccount();
-    if (!acc) return [];
-    const all = await this.store.getAllIdentities();
-    const out = [];
-    for (const id of all) {
-      const aci = id.uuid || id.address;
-      if (aci === acc.aci || !isAci(aci)) continue;
-      const sn = safetyNumber(acc.aci, acc.aciIdentityKeyPair.pubKey, aci, id.publicKey);
-      out.push({
-        uuid: aci,
-        number: id.number,
-        safety_number: sn.safetyNumber,
-        scannable_safety_number: toBase64(sn.scannable),
-        trust_level: id.trustLevel,
-        added_timestamp: id.addedTimestamp,
-      });
+    if (!acc || !isAci(aci) || aci === acc.aci) return null;
+    const id = (await this.store.getIdentity(aci)) || (await this.store.getAllIdentities()).find((r) => r.uuid === aci) || null;
+    if (!id) return null;
+    const cacheKey = aci + ':' + toBase64(acc.aciIdentityKeyPair.pubKey) + ':' + toBase64(id.publicKey);
+    let sn = this.safetyNumbers.get(cacheKey);
+    if (!sn) {
+      const r = safetyNumber(acc.aci, acc.aciIdentityKeyPair.pubKey, aci, id.publicKey);
+      sn = { safetyNumber: r.safetyNumber, scannable: toBase64(r.scannable) };
+      this.safetyNumbers.set(cacheKey, sn);
     }
-    return out;
+    return {
+      uuid: aci,
+      number: id.number,
+      safety_number: sn.safetyNumber,
+      scannable_safety_number: sn.scannable,
+      trust_level: id.trustLevel,
+      added_timestamp: id.addedTimestamp,
+    };
   }
 }

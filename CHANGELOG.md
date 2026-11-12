@@ -2,6 +2,20 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.9.3
+
+A bug fix release. Install over v2.9.2; your chats and settings carry over.
+
+### Fixed
+
+- **Pinned polls and photos.** The pinned message bar, **Pinned messages**, and the reply and edit line above the message box now say what a message without text is, such as **Poll: Lunch?** or **Photo**, instead of showing an empty space.
+- **Names in groups.** People you only know from a group now show their profile name soon after their first message, instead of a long ID.
+- **View-once.** **Options → Attach** now asks, after you pick a photo or video, whether to **Attach** it or **Send as view-once**. The separate **Attach view-once photo or video** option is gone.
+- **Opening a chat** with photos in it now stays at the newest message while the photos load, instead of stopping partway up.
+- **Your own attachments.** Photos, voice messages, and files you send now open on this phone without asking your main phone for them, including in Note to Self. They can be forwarded and show in **Media**. Attachments sent before this version can now be fetched from your phone in Note to Self too.
+- **Safety numbers** open much faster, since Beacon now works out only the one you're looking at.
+- **Read on another device.** Reading a chat in Signal on your phone or computer now clears it here right away, in groups too, and closes its notification. Messages that came after the one you read stay unread.
+
 ## v2.9.2
 
 Chats get Signal's bubble colors, plus two fixes. Install over v2.9.1; your chats and settings carry over.

@@ -358,6 +358,13 @@ describe('store helpers', () => {
     assert.equal(contactName({ uuid: 'u', number: '', name: '' }), 'u');
   });
 
+  it('prefers a profile name over a name that is just the ACI or number', () => {
+    assert.equal(contactName({ uuid: 'u', number: '', name: 'u', profile_name: 'Bea Ortiz' }), 'Bea Ortiz');
+    assert.equal(contactName({ uuid: 'u', number: '+1', name: '+1', profile_name: 'Bea Ortiz' }), 'Bea Ortiz');
+    assert.equal(contactName({ uuid: 'u', number: '+1', name: '+1' }), '+1');
+    assert.equal(contactName({ uuid: 'u', number: '+1', name: 'Bea from work', profile_name: 'Bea Ortiz' }), 'Bea from work');
+  });
+
   it('labels attachment-only messages', () => {
     assert.equal(attachmentLabel([{ id: '', contentType: 'image/jpeg', filename: '', size: 0 }]), 'Photo');
     assert.equal(attachmentLabel([{ id: '', contentType: 'audio/aac', filename: '', size: 0, voiceNote: true }]), 'Voice message');

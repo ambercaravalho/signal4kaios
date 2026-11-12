@@ -14,7 +14,7 @@ import { applyAdminDelete, applyDeleteSync } from './message-actions';
 import { notify, notifyReaction } from './notify';
 import { applyPollEnd, applyPollVote } from './polls';
 import { messageText, previewOf } from './previews';
-import { applyReadSync, applyViewedSync, markRead } from './read';
+import { alreadyRead, applyReadSync, applyViewedSync, markRead } from './read';
 import { applyRequestResponse } from './requests';
 import { convs, state, typingMap } from './state';
 
@@ -61,7 +61,8 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
   conv.lastPreview = previewOf(rec);
   unarchiveOnActivity(conv);
-  if (ev.incoming && state.openConvId !== conv.id) conv.unread = (conv.unread || 0) + 1;
+  const read = ev.incoming && state.openConvId !== conv.id && alreadyRead(conv.id, ev.author, ev.timestamp);
+  if (ev.incoming && state.openConvId !== conv.id && !read) conv.unread = (conv.unread || 0) + 1;
   if (typingMap[conv.id]) {
     delete typingMap[conv.id];
     emit('typing', conv.id);
@@ -71,7 +72,7 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   emit('message', rec);
   emit('conversations');
   // Draining the offline queue (silent) must not notify per message: the queue replays on every reconnect.
-  if (ev.incoming && !silent) notify(conv, rec, ev.mentioned);
+  if (ev.incoming && !silent && !read) notify(conv, rec, ev.mentioned);
   if (ev.incoming && state.openConvId === conv.id) markRead(conv.id);
 }
 

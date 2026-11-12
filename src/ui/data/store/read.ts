@@ -7,27 +7,76 @@ import { dbg } from '../log';
 import type { SyncRef } from '../normalize';
 import type { Attachment, Message } from '../types';
 import { syncChatState } from './chat-state';
-import { altKeyOf } from './contacts';
+import { altKeyOf, isSelfKey, self } from './contacts';
 import { persistConv } from './conversations';
 import { emit } from './events';
-import { enqueueMutation, findMessage } from './ingest';
+import { ALERTING_NOTICES, enqueueMutation, findMessage } from './ingest';
+import { dismissNotifications } from './notify';
 import { convs } from './state';
 
-export function applyReadSync(entries: Array<{ sender: string; timestamp: number }>): void {
-  let changed = false;
-  for (const entry of entries) {
-    for (const cid of [entry.sender, altKeyOf(entry.sender)]) {
-      const conv = cid ? convs[cid] : null;
-      if (!conv) continue;
-      if (conv.unread > 0) {
-        conv.unread = 0;
-        changed = true;
-      }
-      if (entry.timestamp > (conv.lastReadTs || 0)) conv.lastReadTs = entry.timestamp;
-      persistConv(conv);
-    }
+const UNREAD_PAGE = 50;
+const PENDING_READS_MAX = 200;
+
+/** Read syncs for messages that haven't arrived here yet, newest last. */
+const pendingReads: Array<{ authors: string[]; timestamp: number }> = [];
+
+function readAuthors(sender: string): string[] {
+  const out = [sender, altKeyOf(sender) || ''];
+  if (isSelfKey(sender)) out.push(self());
+  return out.filter((a, i) => !!a && out.indexOf(a) === i);
+}
+
+function countsAsUnread(m: Message): boolean {
+  if (!m.incoming) return false;
+  return !m.notice || (ALERTING_NOTICES.indexOf(m.notice.kind) >= 0 && !isSelfKey(m.author));
+}
+
+/** Another of our devices read up to `ts` in this chat: what came after it stays unread. */
+async function readUpTo(convId: string, ts: number): Promise<void> {
+  const conv = convs[convId];
+  if (!conv) return;
+  conv.lastReadTs = Math.max(conv.lastReadTs || 0, ts);
+  const before = conv.unread || 0;
+  if (before > 0) {
+    const rows = await db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, UNREAD_PAGE);
+    const left = rows.filter((r) => countsAsUnread(r) && r.timestamp > conv.lastReadTs!).length;
+    if (left < UNREAD_PAGE) conv.unread = Math.min(before, left);
   }
-  if (changed) emit('conversations');
+  persistConv(conv);
+  if (conv.unread !== before) emit('conversations');
+  if (!conv.unread) dismissNotifications(convId);
+}
+
+/** Read syncs name the message's author and timestamp, so find which chat it's in, as for viewed syncs. */
+export function applyReadSync(entries: Array<{ sender: string; timestamp: number }>): void {
+  for (const entry of entries) {
+    const authors = readAuthors(entry.sender);
+    const candidates = authors.concat(Object.keys(convs).filter((cid) => convs[cid].type === 'group'));
+    enqueueMutation(async () => {
+      let rec: Message | undefined;
+      for (const cid of candidates) {
+        if (convs[cid] && (rec = await findMessage(cid, entry.timestamp, authors))) break;
+      }
+      if (rec) return readUpTo(rec.convId, rec.timestamp);
+      pendingReads.push({ authors, timestamp: entry.timestamp });
+      if (pendingReads.length > PENDING_READS_MAX) pendingReads.splice(0, pendingReads.length - PENDING_READS_MAX);
+    });
+  }
+}
+
+/** Whether a message arriving now was already read on another device: a read sync came first, or the chat was read past it. */
+export function alreadyRead(convId: string, author: string, ts: number): boolean {
+  const conv = convs[convId];
+  if (conv && conv.lastReadTs && ts <= conv.lastReadTs) return true;
+  const i = pendingReads.findIndex((p) => p.timestamp === ts && (p.authors.indexOf(author) >= 0 || p.authors.indexOf(altKeyOf(author) || '') >= 0));
+  if (i < 0) return false;
+  pendingReads.splice(i, 1);
+  if (conv) conv.lastReadTs = Math.max(conv.lastReadTs || 0, ts);
+  return true;
+}
+
+export function resetPendingReadsForTest(): void {
+  pendingReads.length = 0;
 }
 
 /** Another of our devices opened these; view-once media also loses its copy here. */

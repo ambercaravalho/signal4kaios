@@ -3,6 +3,7 @@ import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { signal, updateProfile } from '../src/ui/data/api';
+import { cachedAttachment } from '../src/ui/data/attachments';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
@@ -198,6 +199,10 @@ describe('store', () => {
     assert.equal(page[page.length - 1].status, 'failed');
 
     store.ingestRaw({ envelope: { sourceNumber: ME, syncMessage: { readMessages: [{ senderNumber: ALICE, timestamp: 1000 }] } } });
+    await settle();
+    assert.equal(store.conversation(ALICE)!.unread, 3, 'messages after the read one stay unread');
+    store.ingestRaw({ envelope: { sourceNumber: ME, syncMessage: { readMessages: [{ senderNumber: ALICE, timestamp: 1900 }] } } });
+    await settle();
     assert.equal(store.conversation(ALICE)!.unread, 0);
   });
 
@@ -761,5 +766,59 @@ describe('store', () => {
     await updateProfile({ name: 'Me', emoji: '🌻' });
     assert.equal(config.profileAboutEmoji(), '🌻');
     assert.deepEqual(uploaded, [{ name: 'Me', emoji: '🌻' }]);
+  });
+
+  it('keeps the download id and bytes of attachments we send, so this phone opens them itself', async () => {
+    (signal as any).send = async () => ({ timestamp: 8400, attachments: ['desc-photo'] });
+    const rec = await store.sendAttachments(ALICE, [{ dataUri: 'data:image/jpeg;filename=a.jpg;base64,AQID', contentType: 'image/jpeg', filename: 'a.jpg', size: 3 }], '');
+    assert.equal(rec.attachments[0].id, 'desc-photo');
+    assert.equal((await db.getMessage(rec.id))!.attachments[0].id, 'desc-photo');
+    await settle();
+    const cached = await cachedAttachment(rec.attachments[0]);
+    assert.ok(cached);
+    assert.deepEqual(Array.from(new Uint8Array(await cached.arrayBuffer())), [1, 2, 3]);
+
+    (signal as any).send = async () => ({ timestamp: 8500, attachments: ['desc-once'] });
+    const once = await store.sendAttachments(ALICE, [{ dataUri: 'data:image/jpeg;base64,AQID', contentType: 'image/jpeg' }], '', { viewOnce: true });
+    assert.equal(once.attachments[0].id, '', 'we can’t open our own view-once media');
+  });
+
+  it('applies read syncs to the chat the message is in, leaving newer messages unread', async () => {
+    await db.kvSet('syncedContacts', [{ uuid: 'aci-erin', number: '+15550020', name: 'Erin' }, { uuid: 'aci-finn', number: '', name: 'aci-finn' }]);
+    await db.kvSet('syncedGroups', [{ id: 'group.R1RS', internal_id: 'R1RS', masterKey: '', revision: 1, name: 'Club', members: ['aci-me', 'aci-erin'], admins: [], pending: [], expireTimer: 0, blocked: false, link_mode: 'disabled', invite_link: '' }]);
+    await store.refreshDirectory();
+    const ts = Date.now() + 100000;
+    const inGroup = (at: number) => ({ envelope: { sourceNumber: '+15550020', sourceUuid: 'aci-erin', timestamp: at, dataMessage: { timestamp: at, groupInfo: { groupId: 'R1RS' }, message: 'hi ' + at } } });
+    const readSync = (sender: string, at: number) => store.ingestRaw({ envelope: { sourceNumber: ME, syncMessage: { readMessages: [{ senderUuid: sender, timestamp: at }] } } });
+    store.ingestRaw(inGroup(ts));
+    store.ingestRaw(inGroup(ts + 1));
+    await settle();
+    const group = () => store.conversation('g:R1RS')!;
+    assert.equal(group().unread, 2);
+
+    let refreshed = 0;
+    const off = store.on('conversations', () => refreshed++);
+    readSync('aci-erin', ts);
+    await settle();
+    assert.equal(group().unread, 1, 'the newer message stays unread');
+    assert.ok(refreshed > 0, 'the chat list refreshes');
+    readSync('aci-erin', ts + 1);
+    await settle();
+    assert.equal(group().unread, 0);
+    off();
+
+    readSync('aci-erin', ts + 2);
+    await settle();
+    store.ingestRaw(inGroup(ts + 2));
+    await settle();
+    assert.equal(group().unread, 0, 'read on another device before it got here');
+
+    store.ingestRaw({ envelope: { sourceUuid: 'aci-finn', timestamp: ts + 3, dataMessage: { timestamp: ts + 3, message: 'yo' } } });
+    await settle();
+    const finn = store.conversations().find((c) => c.sendId === 'aci-finn')!;
+    assert.equal(finn.unread, 1);
+    readSync('aci-finn', ts + 3);
+    await settle();
+    assert.equal(store.conversation(finn.id)!.unread, 0, 'a contact known only by ACI');
   });
 });

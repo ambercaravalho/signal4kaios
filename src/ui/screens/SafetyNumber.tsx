@@ -14,35 +14,37 @@ import { fmt, S } from '../strings';
 import { openGuide } from './Guide';
 import { QrScreen } from './QrScreen';
 
-type Identity = Awaited<ReturnType<typeof signal.identities>>[number];
+type Identity = NonNullable<Awaited<ReturnType<typeof signal.safetyNumber>>>;
 
 /** Compare a contact's safety number, show or scan the code, and mark them verified. */
 export function SafetyNumberScreen(props: { target: string; name: string }) {
   const [entry, setEntry] = useState<Identity | null | undefined>(undefined);
   const body = useRef<HTMLDivElement>(null);
 
-  const load = () => {
+  useEffect(() => {
+    let live = true;
     const c = contactByKey(props.target);
-    const ids = [props.target, c && c.uuid, c && c.number].filter(Boolean);
-    signal.identities().then(
-      (all) => setEntry(all.find((e) => ids.indexOf(e.uuid || '') >= 0 || ids.indexOf(e.number || '') >= 0) || null),
+    signal.safetyNumber((c && c.uuid) || props.target).then(
+      (e) => live && setEntry(e || null),
       (e) => {
+        if (!live) return;
         toast(friendlyError(e));
         setEntry(null);
       }
     );
-  };
-  useEffect(load, [props.target]);
+    return () => {
+      live = false;
+    };
+  }, [props.target]);
 
   const verified = !!entry && entry.trust_level === 'TRUSTED_VERIFIED';
 
   function setVerified(on: boolean): void {
     if (!entry) return;
-    const target = entry.uuid || entry.number || props.target;
-    signal.trustIdentity(target, on ? { verified_safety_number: entry.safety_number, trust_all_known_keys: true } : undefined).then(
+    signal.trustIdentity(entry.uuid, on ? { verified_safety_number: entry.safety_number, trust_all_known_keys: true } : undefined).then(
       () => {
         toast(on ? S.markedVerified : S.verificationCleared);
-        load();
+        setEntry({ ...entry, trust_level: on ? 'TRUSTED_VERIFIED' : 'TRUSTED_UNVERIFIED' });
       },
       (e) => toast(friendlyError(e))
     );

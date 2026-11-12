@@ -53,7 +53,7 @@ export function attachmentCdnKey(att: AttachmentPointer): string {
   return '';
 }
 
-function pointerDescriptor(att: AttachmentPointer, contentType: string, fileName: string): string {
+export function pointerDescriptor(att: AttachmentPointer, contentType: string, fileName: string): string {
   return encodeAttachmentDescriptor({ cdnKey: attachmentCdnKey(att), cdnNumber: att.cdnNumber || 0, key: att.key, digest: att.digest, contentType, fileName, size: att.size || 0 });
 }
 

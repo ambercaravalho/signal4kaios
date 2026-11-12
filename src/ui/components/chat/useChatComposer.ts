@@ -21,6 +21,21 @@ const TYPING_IDLE_MS = 5000;
 const DRAFT_SAVE_MS = 800;
 const PREVIEW_DEBOUNCE_MS = 1000;
 
+/** After picking a photo or video, whether it goes view-once; other files never do. Undefined when cancelled. */
+export async function askViewOnce(type: string): Promise<boolean | undefined> {
+  const media = type.indexOf('image/') === 0 ? S.photo : type.indexOf('video/') === 0 ? S.video : '';
+  if (!media) return false;
+  const choice = await pick(
+    media,
+    [
+      { value: 'attach', label: S.attachNormal, sub: S.attachNormalSub },
+      { value: 'viewOnce', label: S.sendViewOnce, sub: S.sendViewOnceSub },
+    ],
+    'attach'
+  );
+  return choice === undefined ? undefined : choice === 'viewOnce';
+}
+
 /** The composer of an open chat: its draft (saved as the chat's draft), reply or edit context, attachment tray, link preview, typing indicators, and sending. */
 export function useChatComposer(convId: string, conv: Conversation | undefined, canCompose: boolean, setFocusedId: (id: string | null) => void) {
   const convRef = useRef(conv);
@@ -180,13 +195,14 @@ export function useChatComposer(convId: string, conv: Conversation | undefined, 
     store.sendText(convId, text, q, mentions, preview).catch((e) => toast(sendError(e)));
   }
 
-  /** Photos, videos, and files wait above the message box until Send; view-once media and voice messages go alone right away. View-once media goes without a caption, so the draft stays in the composer. */
-  async function attach(viewOnce: boolean): Promise<void> {
-    const file = await chooseFile(viewOnce ? 'image/*,video/*' : undefined);
+  /** Photos, videos, and files wait above the message box until Send; view-once media and voice messages go alone right away. A photo or video asks whether it goes view-once, which is sent without a caption, so the draft stays in the composer. */
+  async function attach(): Promise<void> {
+    const file = await chooseFile();
     if (!file) return;
     const type = file.type || 'application/octet-stream';
-    if (viewOnce && type.indexOf('image/') !== 0 && type.indexOf('video/') !== 0) return toast(S.viewOnceOnlyMedia);
     if (file.size > MAX_FILE_BYTES) return toast(S.fileTooLarge);
+    const viewOnce = await askViewOnce(type);
+    if (viewOnce === undefined) return;
     const alone = viewOnce || type.indexOf('audio/') === 0;
     if (!alone && tray.length >= store.MAX_ATTACHMENTS) return toast(fmt(S.tooManyAttachments, { n: store.MAX_ATTACHMENTS }));
     if (!alone && tray.reduce((sum, f) => sum + (f.size || 0), 0) + file.size > MAX_FILE_BYTES) return toast(S.attachmentsTooLarge);

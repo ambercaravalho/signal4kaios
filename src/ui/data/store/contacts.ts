@@ -56,7 +56,8 @@ export function altKeyOf(key: string): string | null {
 
 /** The best name across the places Signal keeps names: nickname or address book, profile, username, then number. */
 export function contactName(c: SyncedContact): string {
-  if (c.name && c.name !== SELF_NAME) return c.name;
+  const placeholder = c.name === c.uuid || c.name === c.number;
+  if (c.name && c.name !== SELF_NAME && !placeholder) return c.name;
   const nick = c.nickname || {};
   if (nick.name) return nick.name;
   const nn = [nick.given_name, nick.family_name].filter(Boolean).join(' ');
