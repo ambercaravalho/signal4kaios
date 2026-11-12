@@ -263,6 +263,15 @@ export function approveRequestsActions(snap: GroupSnapshot, ids: string[]): Grou
   return promoteMembersPendingAdminApproval.length ? { promoteMembersPendingAdminApproval } : null;
 }
 
+/** Accept our invite with our profile key credential, as Signal-Desktop's buildPromoteMemberChange; an invite to our phone number promotes the PNI entry. Null when we're already a member. */
+export function acceptInviteActions(snap: GroupSnapshot, presentation: Uint8Array, selfPni: string): GroupActionsInit | null {
+  if (snap.members.has(snap.selfAci)) return null;
+  if (snap.pending.has(snap.selfAci)) return { promoteMembersPendingProfileKey: [{ presentation }] };
+  const pni = selfPni.replace(/^PNI:/i, '');
+  if (pni && (snap.pending.has('PNI:' + pni) || snap.pending.has(pni))) return { promoteMembersPendingPniAciProfileKey: [{ presentation }] };
+  throw new GroupChangeError('NotAMember', 'You are not invited to this group');
+}
+
 export function roleActions(snap: GroupSnapshot, ids: string[], admin: boolean): GroupActionsInit | null {
   const modifyMemberRoles: RoleInit[] = [];
   for (const id of ids) {

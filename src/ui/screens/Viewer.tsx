@@ -5,28 +5,29 @@ import { Icon } from '../components/Icon';
 import { Spinner } from '../components/List';
 import { Screen } from '../components/Screen';
 import { toast } from '../components/Toast';
-import { fileNameFor, loadAttachment, NotDownloadableError, storageKindFor, ViewedOnceError } from '../data/attachments';
+import { fileNameFor, NotDownloadableError, storageKindFor, ViewedOnceError } from '../data/attachments';
 import { fmtBytes } from '../data/format';
 import { dbg } from '../data/log';
 import { saveToDevice } from '../data/platform';
-import { attachmentLabel } from '../data/store';
-import type { Attachment } from '../data/types';
+import { attachmentLabel, loadOrAskPhone, NoLongerAvailableError } from '../data/store';
+import type { Attachment, Message } from '../data/types';
 import { friendlyError } from '../errors';
 import { S } from '../strings';
 
-/** A photo, video, voice message, or file from a message. OK plays and pauses; the right softkey saves it to the phone. `onOpened` runs once the content is on screen. */
-export function ViewerScreen(props: { att: Attachment; title: string; onOpened?: () => void }) {
+/** A photo, video, voice message, or file from message `msg`. OK plays and pauses; the right softkey saves it to the phone. `onOpened` runs once the content is on screen. */
+export function ViewerScreen(props: { att: Attachment; msg?: Message; title: string; onOpened?: () => void }) {
   const { att } = props;
   const [blob, setBlob] = useState<Blob | null>(null);
   const [url, showBlob] = useObjectUrl(att.id);
   const [error, setError] = useState('');
+  const [asking, setAsking] = useState(false);
   const [playing, setPlaying] = useState(false);
   const media = useRef<HTMLMediaElement | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let live = true;
-    loadAttachment(att).then(
+    loadOrAskPhone(att, props.msg, () => live && setAsking(true)).then(
       (b) => {
         if (!live) return;
         setBlob(b);
@@ -37,6 +38,7 @@ export function ViewerScreen(props: { att: Attachment; title: string; onOpened?:
         if (!live) return;
         if (e instanceof ViewedOnceError) setError(S.alreadyViewed);
         else if (e instanceof NotDownloadableError) setError(S.sentFromThisPhone);
+        else if (e instanceof NoLongerAvailableError) setError(S.noLongerAvailable);
         else setError(friendlyError(e, S.attachmentFailed));
       }
     );
@@ -98,7 +100,7 @@ export function ViewerScreen(props: { att: Attachment; title: string; onOpened?:
 
   let content;
   if (error) content = <div class="viewer-note">{error}</div>;
-  else if (!url) content = <Spinner label={S.downloading} />;
+  else if (!url) content = <Spinner label={asking ? S.askingPhone : S.downloading} />;
   else if (isImg) content = <img class="viewer-img" src={url} alt="" />;
   else if (isVideo) content = <video class="viewer-video" src={url} ref={(el) => {
           media.current = el;

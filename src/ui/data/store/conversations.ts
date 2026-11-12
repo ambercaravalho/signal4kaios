@@ -9,6 +9,7 @@ import type { Attachment, Connection, Conversation, Message } from '../types';
 import { altKeyOf, contactByKey, directName, displayName, isSelfKey, refreshDirectory, self } from './contacts';
 import { emit } from './events';
 import { applyNotice, ingestRaw } from './ingest';
+import { migrateMute, scheduleUnmute } from './mute';
 import { contactsByKey, convs, state, typingMap } from './state';
 
 export function msgId(convId: string, ts: number, author: string): string {
@@ -31,6 +32,7 @@ export function ensureConv(ev: Pick<MessageEvent, 'convId' | 'groupInternalId' |
   if (ev.groupInternalId) {
     const g = state.groupsByInternal[ev.groupInternalId];
     conv = newConv(ev.convId, 'group', g ? g.name : 'Group', g ? g.id : null, ev.groupInternalId);
+    if (g && g.request) conv.request = true;
     if (!g) refreshDirectory().catch(() => {});
   } else {
     const known = displayName(ev.convId);
@@ -186,9 +188,13 @@ export async function init(): Promise<void> {
     }
     const groups = await db.kvGet('groups');
     state.groupsByInternal = groups && typeof groups === 'object' ? (groups as typeof state.groupsByInternal) : {};
-    for (const c of await db.allConversations()) convs[c.id] = c;
+    for (const c of await db.allConversations()) {
+      convs[c.id] = c;
+      if (migrateMute(c)) persistConv(c);
+    }
     state.ready = true;
     emit('conversations');
+    scheduleUnmute();
     purgeExpired();
     if (!state.purgeTimer) state.purgeTimer = setInterval(purgeExpired, 30000);
     if (config.isConfigured()) refreshDirectory().catch((e) => dbg('directory refresh failed: ' + (e && e.message)));

@@ -13,6 +13,7 @@ import { Icon } from '../components/Icon';
 import { Spinner } from '../components/List';
 import { confirm, DIVIDER, pick, prompt, showOptions } from '../components/Overlays';
 import { Screen } from '../components/Screen';
+import { muteItem } from '../components/setting-rows';
 import { TextField } from '../components/TextField';
 import { toast } from '../components/Toast';
 import { type GroupDetail, signal } from '../data/api';
@@ -29,6 +30,13 @@ export { mainActions, type MainAction } from '../components/chat/message-options
 
 export function openChat(convId: string, targetTs?: number): void {
   router.push(ChatScreen, { convId, targetTs });
+}
+
+/** Who the message request is from: the person, or whoever added us to the group. */
+function requestLine(conv: Conversation | undefined): string {
+  if (!conv || conv.type !== 'group') return fmt(S.wantsToMessage, { name: (conv && conv.name) || S.unknown });
+  const by = store.groupAddedBy(conv);
+  return by ? fmt(S.addedYouBy, { name: store.displayName(by) }) : S.addedYou;
 }
 
 /** Only admins can send in an announcement-only group. */
@@ -54,7 +62,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   const { msgs, focusedId, setFocusedId, pinned, group, loading, loadingOlder } = session;
 
   const contact = conv && conv.type === 'direct' ? store.contactByKey(conv.id) : undefined;
-  const blocked = !!(contact && contact.blocked);
+  const blocked = !!(contact && contact.blocked) || !!(group && group.blocked);
   const request = !blocked && !!(conv && conv.request);
   const readOnly = !blocked && !request && !canSendIn(group);
   const canCompose = !blocked && !request && !readOnly;
@@ -106,7 +114,8 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   }
 
   async function blockRequest(): Promise<void> {
-    if (!(await confirm({ title: S.block, body: S.blockConfirm, ok: S.block, danger: true }))) return;
+    const isGroup = !!conv && conv.type === 'group';
+    if (!(await confirm({ title: S.block, body: isGroup ? S.blockGroupConfirm : S.blockConfirm, ok: S.block, danger: true }))) return;
     store.blockRequest(convId).then(
       () => toast(S.blocked),
       (e) => toast(friendlyError(e))
@@ -129,7 +138,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       request && { label: S.accept, onSelect: acceptRequest },
       request && { label: S.delete, danger: true, onSelect: deleteRequest },
       request && { label: S.block, danger: true, onSelect: blockRequest },
-      request && { label: S.reportSpam, danger: true, onSelect: reportSpam },
+      request && conv && conv.type === 'direct' && { label: S.reportSpam, danger: true, onSelect: reportSpam },
       DIVIDER,
       canCompose && !editing && { label: S.attach, onSelect: () => composer.attach(false) },
       canCompose && !editing && { label: S.attachViewOnce, onSelect: () => composer.attach(true) },
@@ -138,11 +147,11 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       shownPreview && { label: S.removeLinkPreview, onSelect: composer.dismissPreview },
       canCompose && { label: S.insertEmoji, onSelect: () => pickEmoji().then((e) => e && insertText(e)) },
       canCompose && conv && conv.type === 'group' && { label: S.mention, onSelect: composer.mention },
-      canCompose && conv && conv.type === 'group' && { label: S.createPoll, onSelect: createPoll },
+      canCompose && conv && !store.isSelfConv(conv) && { label: S.createPoll, onSelect: createPoll },
       DIVIDER,
       pinned.length > 0 && { label: S.pinnedMessages, onSelect: showPinned },
       DIVIDER,
-      conv && { label: conv.muted ? S.unmute : S.muteNotifications, onSelect: () => store.setMuted(convId, !conv.muted) },
+      conv && muteItem(conv),
       { label: S.chatSettings, onSelect: () => router.push(ChatSettingsScreen, { convId }) },
     ]);
   }
@@ -238,8 +247,8 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
           <div class="composer-blocked">{S.blockedChat}</div>
         ) : request ? (
           <div class="composer-blocked">
-            <div class="composer-request">{fmt(S.wantsToMessage, { name: (conv && conv.name) || S.unknown })}</div>
-            {S.requestHint}
+            <div class="composer-request">{requestLine(conv)}</div>
+            {conv && conv.type === 'group' ? S.groupRequestHint : S.requestHint}
           </div>
         ) : readOnly ? (
           <div class="composer-blocked">{S.onlyAdminsCanSend}</div>

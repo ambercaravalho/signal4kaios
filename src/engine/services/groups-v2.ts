@@ -55,6 +55,14 @@ export interface GroupV2Metadata {
   };
   link_mode: GroupLinkMode;
   invite_link: string;
+  /** Who invited each pending member (`MemberPendingProfileKey.addedByUserId`); dropped once merged into `addedBy`. */
+  invitedBy?: Record<string, string>;
+  /** Profile sharing is on for the group (Storage Service `GroupV2Record.whitelisted`). */
+  whitelisted?: boolean;
+  /** Who added or invited us, when we know. */
+  addedBy?: string;
+  /** Someone we don't know added us, so the group waits as a message request until we answer it. */
+  messageRequest?: boolean;
 }
 
 export type GroupLinkMode = 'disabled' | 'enabled' | 'enabled-with-approval';
@@ -258,6 +266,12 @@ export function decodeGroupState(keys: DerivedGroupV2Keys, group: Group): GroupV
     keys,
     group.membersPendingAdminApproval.map((p) => p.userId)
   );
+  const invitedBy: Record<string, string> = {};
+  for (const p of group.membersPendingProfileKey) {
+    const [id] = p.member ? decryptMemberIds(keys, [p.member.userId]) : [];
+    const [by] = decryptMemberIds(keys, [p.addedByUserId]);
+    if (id && by) invitedBy[id] = by;
+  }
 
   const access = group.accessControl;
   const adminOnly = (v: AccessControl_AccessRequired | undefined) =>
@@ -287,6 +301,7 @@ export function decodeGroupState(keys: DerivedGroupV2Keys, group: Group): GroupV
     },
     link_mode: !linkOn ? 'disabled' : linkAccess === AccessControl_AccessRequired.ADMINISTRATOR ? 'enabled-with-approval' : 'enabled',
     invite_link: linkOn ? groupInviteLink(keys.masterKey, group.inviteLinkPassword) : '',
+    invitedBy,
   };
 }
 

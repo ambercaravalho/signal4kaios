@@ -1,8 +1,10 @@
 /* Changing groups: settings, members, admins, group links, leaving, and blocking. */
 
+import { ContentSchema, SyncMessage_MessageRequestResponse_Type } from '../gen/SignalService_pb';
 import { host } from '../host';
-import { isAci } from '../net/proto';
+import { create, isAci } from '../net/proto';
 import {
+  acceptInviteActions,
   addMembersActions,
   applyGroupChange,
   approveRequestsActions,
@@ -183,6 +185,36 @@ export const groupMethods = {
   /** Leave a group, decline its invite, or cancel a join request. */
   async leaveGroup(groupSendId: string): Promise<void> {
     await changeGroup(groupSendId, (snap) => leaveActions(snap));
+  },
+
+  /**
+   * Answer a group message request like Signal-Desktop: accepting joins through a pending invite and turns on profile sharing; deleting leaves; blocking leaves and blocks. Our other devices hear about it through the MessageRequestResponse sync.
+   */
+  async answerGroupRequest(groupSendId: string, response: 'accept' | 'delete' | 'block'): Promise<void> {
+    const masterKey = await groupMasterKey(groupSendId);
+    const internalId = deriveGroupV2Keys(masterKey).internalId;
+    if (response === 'accept') {
+      const acc = await store.getAccount();
+      if (!acc || !acc.profileKey) throw new Error('This phone is not linked to a Signal account');
+      const group = (await syncedGroups()).find((g) => g.internal_id === internalId);
+      if (group && !(group.members || []).includes(acc.aci)) {
+        const cred = await fetchExpiringProfileKeyCredential(store, httpJson, SERVER_PUBLIC_PARAMS, acc.aci, acc.profileKey, serverUrl());
+        await changeGroup(groupSendId, (snap) => acceptInviteActions(snap, libsignal.groupProfileKeyCredentialPresentation(SERVER_PUBLIC_PARAMS, snap.keys.secretParams, cred), acc.pni || ''));
+      }
+      await updateSyncedGroup(internalId, (g) => {
+        g.whitelisted = true;
+        delete g.messageRequest;
+      });
+      await storageQueue.enqueue([joinedGroupMutation(masterKey)]).catch((e: any) => host().dbg('group storage record failed: ' + (e && e.message)));
+    } else if (response === 'block') {
+      await groupMethods.setGroupBlocked(groupSendId, true);
+    } else {
+      await changeGroup(groupSendId, (snap) => leaveActions(snap)).catch((e: any) => {
+        if (!e || (e.name !== 'NotAMember' && e.status !== 403)) throw e;
+      });
+    }
+    const type = { accept: SyncMessage_MessageRequestResponse_Type.ACCEPT, delete: SyncMessage_MessageRequestResponse_Type.DELETE, block: SyncMessage_MessageRequestResponse_Type.BLOCK }[response];
+    await client.sendSyncMessage(create(ContentSchema, { content: { case: 'syncMessage', value: { content: { case: 'messageRequestResponse', value: { groupId: fromBase64(internalId), type } } } } }));
   },
 
   /** Block a group like Signal-Desktop's "Block and leave": leave it if we're still in it, then `GroupV2Record.blocked` in Storage Service and the Blocked sync. Unblocking only clears the block. */

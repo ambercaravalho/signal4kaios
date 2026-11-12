@@ -44,7 +44,6 @@ export function applyPollEnd(ev: Extract<StoreEvent, { type: 'pollEnd' }>): void
   });
 }
 
-/** Start a poll in a group; Signal-Desktop doesn't send polls in 1:1 chats yet. */
 export function sendPoll(convId: string, question: string, options: string[], allowMultiple: boolean): Promise<Message> {
   let conv: Conversation;
   try {
@@ -52,7 +51,6 @@ export function sendPoll(convId: string, question: string, options: string[], al
   } catch (e) {
     return Promise.reject(e);
   }
-  if (conv.type !== 'group') return Promise.reject(new Error('Polls only work in groups'));
   const rec = newOutgoingRec(conv, { poll: { question, options, allowMultiple, votes: {} } });
   const payload: SendPayload = { ...basePayload(conv, ''), poll: { question, options, allow_multiple: allowMultiple } };
   return sendCore(conv, rec, payload, previewOf(rec));
@@ -61,7 +59,7 @@ export function sendPoll(convId: string, question: string, options: string[], al
 /** Vote (or, with no options, take our vote back); the vote shows at once and is undone if it can't be sent. */
 export async function votePoll(rec: Message, options: number[]): Promise<void> {
   const conv = convs[rec.convId];
-  if (!conv || !conv.sendId || !rec.poll) throw new Error('group not ready');
+  if (!conv || !conv.sendId || !rec.poll) throw new Error('chat not ready');
   const me = self();
   let prev: PollVote | undefined;
   let vote: PollVote | undefined;
@@ -93,7 +91,7 @@ export async function votePoll(rec: Message, options: number[]): Promise<void> {
 /** End our own poll for everyone. */
 export async function endPoll(rec: Message): Promise<void> {
   const conv = convs[rec.convId];
-  if (!conv || !conv.sendId || !rec.poll || rec.incoming) throw new Error('group not ready');
+  if (!conv || !conv.sendId || !rec.poll || rec.incoming) throw new Error('chat not ready');
   const ts = await signal.sendPollTerminate(conv.sendId, rec.timestamp);
   applyPollEnd({ type: 'pollEnd', convId: rec.convId, author: self(), targetTimestamp: rec.timestamp, timestamp: ts });
 }

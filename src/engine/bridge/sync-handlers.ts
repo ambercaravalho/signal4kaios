@@ -18,7 +18,7 @@ import { pullFromStorageService } from '../services/storage';
 import { usernameLinkUrl } from '../services/usernames';
 import { invalidateBlocked } from './blocked';
 import { client, httpBinary, httpJson, OWN_AVATAR_PATH, serverUrl, store } from './context';
-import { contactIds, mergeSyncedContacts, saveSyncedContacts, saveSyncedGroups, syncedContacts, syncedGroups, updateSyncedContact } from './contacts';
+import { contactIds, mergeSyncedContacts, saveSyncedContacts, saveSyncedGroups, syncedContacts, syncedGroups, updateSyncedContact, updateSyncedGroup } from './contacts';
 import { refreshGroup } from './group-state';
 
 const MAX_DEVICE_NAME = 64;
@@ -39,7 +39,7 @@ export async function syncFromStorageService(): Promise<boolean> {
         await store.saveIdentity(sc.aci, sc.identityKey, { uuid: sc.aci, number: sc.e164 });
         if (sc.identityState) await store.setIdentityTrust(sc.aci, sc.identityState);
       }
-      if (sc.changed) chatState.push({ uuid: sc.aci || '', number: sc.e164 || '', archived: !!sc.archived, muted: (sc.mutedUntilTimestamp || 0) > Date.now(), markedUnread: !!sc.markedUnread });
+      if (sc.changed) chatState.push({ uuid: sc.aci || '', number: sc.e164 || '', archived: !!sc.archived, mutedUntil: sc.mutedUntilTimestamp || 0, markedUnread: !!sc.markedUnread, callsIfMuted: sc.notifyForCallsIfMuted ?? null });
     }
     await mergeSyncedContacts(
       res.contacts,
@@ -74,8 +74,20 @@ export async function syncFromStorageService(): Promise<boolean> {
         members: prev.members || [],
         blocked: gv2.blocked ?? prev.blocked ?? false,
         archived: gv2.archived ?? prev.archived ?? false,
+        whitelisted: !!gv2.whitelisted,
+        messageRequest: gv2.whitelisted ? undefined : prev.messageRequest,
       });
-      if (gv2.changed) chatState.push({ groupInternalId: keys.internalId, archived: !!gv2.archived, muted: (gv2.mutedUntilTimestamp || 0) > Date.now(), markedUnread: !!gv2.markedUnread, mentionsIfMuted: gv2.notifyForMentionsIfMuted ?? null });
+      if (gv2.changed) {
+        chatState.push({
+          groupInternalId: keys.internalId,
+          archived: !!gv2.archived,
+          mutedUntil: gv2.mutedUntilTimestamp || 0,
+          markedUnread: !!gv2.markedUnread,
+          mentionsIfMuted: gv2.notifyForMentionsIfMuted ?? null,
+          repliesIfMuted: gv2.notifyForRepliesIfMuted ?? null,
+          callsIfMuted: gv2.notifyForCallsIfMuted ?? null,
+        });
+      }
     }
     await saveSyncedGroups(Array.from(byGrpId.values()));
     for (const gv2 of res.groupsV2) {
@@ -106,6 +118,11 @@ export async function syncFromStorageService(): Promise<boolean> {
     patch.sharePhoneNumber = account.sharePhoneNumber;
     patch.findableByNumber = account.findableByNumber;
     patch.notifyMentionsIfMuted = account.notifyForMentionsIfMuted;
+    patch.notifyRepliesIfMuted = account.notifyForRepliesIfMuted;
+    patch.notifyCallsIfMuted = account.notifyForCallsIfMuted;
+    patch.notifyReactions = account.reactionNotifications;
+    patch.notificationProfileOverride = account.notificationProfileOverride;
+    patch.notificationProfiles = account.notificationProfileSyncDisabled ? [] : res.notificationProfiles;
     host().config.set(patch);
     const acc = await store.getAccount();
     if (acc && account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!account.noteToSelfArchived, markedUnread: !!account.noteToSelfMarkedUnread });
@@ -210,7 +227,13 @@ export async function handleIncomingSyncMessage(env: IncomingEnvelope, content: 
     }
     case 'messageRequestResponse': {
       const aci = serviceIdFrom(c.value.threadAci, c.value.threadAciBinary);
-      if (c.value.type === SyncMessage_MessageRequestResponse_Type.ACCEPT && isAci(aci)) {
+      const accepted = c.value.type === SyncMessage_MessageRequestResponse_Type.ACCEPT;
+      if (c.value.groupId && c.value.groupId.length) {
+        await updateSyncedGroup(toBase64(c.value.groupId), (g) => {
+          if (accepted) g.whitelisted = true;
+          delete g.messageRequest;
+        });
+      } else if (accepted && isAci(aci)) {
         await updateSyncedContact(await contactIds(aci), (ct) => {
           ct.whitelisted = true;
         });

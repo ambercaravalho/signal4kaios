@@ -6,6 +6,7 @@ import { signal, updateProfile } from '../src/ui/data/api';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
+import { migrateMute, MUTED_ALWAYS } from '../src/ui/data/store/mute';
 import { settle } from './helpers';
 
 const ME = '+15550000';
@@ -247,13 +248,13 @@ describe('store', () => {
   it('archives, keeps muted chats archived, and limits pinned chats', async () => {
     (signal as any).syncChatState = async () => {};
     store.setArchived(ALICE, true);
-    store.setMuted(ALICE, true);
+    store.setMuted(ALICE, store.MUTED_ALWAYS);
     assert.deepEqual(store.conversations(), []);
     store.ingestRaw(incoming(6000, 'still archived'));
     await settle();
     assert.equal(store.archivedConversations().length, 1);
 
-    store.setMuted(ALICE, false);
+    store.setMuted(ALICE, 0);
     store.ingestRaw(incoming(7000, 'back'));
     await settle();
     assert.equal(store.conversations().length, 1);
@@ -263,6 +264,38 @@ describe('store', () => {
       assert.equal(store.setConvPinned(c.id, true), true);
     }
     assert.equal(store.setConvPinned(ALICE, true), false);
+  });
+
+  it('mutes a chat until a time, publishes it, and refreshes the list when the mute runs out', async () => {
+    const synced: any[] = [];
+    (signal as any).syncChatState = async (s: any) => {
+      synced.push(s);
+    };
+    const conv = store.conversation(ALICE)!;
+    const until = Date.now() + 80;
+    store.setMuted(ALICE, until);
+    assert.equal(store.isMuted(conv), true);
+    assert.equal(store.mutedForever(conv), false);
+    assert.equal(synced[synced.length - 1].mutedUntil, until);
+    let refreshed = 0;
+    const off = store.on('conversations', () => refreshed++);
+    await new Promise((r) => setTimeout(r, 700));
+    off();
+    assert.equal(store.isMuted(conv), false);
+    assert.ok(refreshed >= 1);
+
+    store.applyChatState([{ number: ALICE, archived: false, mutedUntil: 9.2e18 }], null);
+    assert.equal(store.mutedForever(conv), true);
+    store.applyChatState([{ number: ALICE, archived: false, mutedUntil: 0 }], null);
+    assert.equal(store.isMuted(conv), false);
+
+    const legacy: any = { id: 'x', muted: true };
+    assert.equal(migrateMute(legacy), true);
+    assert.deepEqual({ ...legacy }, { id: 'x', mutedUntil: MUTED_ALWAYS });
+    const unmuted: any = { id: 'y', muted: false };
+    migrateMute(unmuted);
+    assert.equal(store.isMuted(unmuted), false);
+    assert.equal(migrateMute(legacy), false);
   });
 
   it('marks a chat unread, syncs it, and clears it when the chat is read', () => {
@@ -502,6 +535,27 @@ describe('store', () => {
     assert.equal(store.noticeText(line.notice!, line.author), 'Dave ended the poll “Lunch?”');
   });
 
+  it('sends, votes in, and ends a poll in a one-to-one chat', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 7100 };
+    };
+    const votes: any[] = [];
+    (signal as any).sendPollVote = async (...args: any[]) => {
+      votes.push(args);
+    };
+    (signal as any).sendPollTerminate = async () => 7200;
+    const rec = await store.sendPoll(ALICE, 'Tea?', ['Yes', 'No'], false);
+    assert.deepEqual(sent[0].poll, { question: 'Tea?', options: ['Yes', 'No'], allow_multiple: false });
+    assert.deepEqual(sent[0].recipients, [ALICE]);
+    await store.votePoll(rec, [1]);
+    assert.deepEqual(votes[0].slice(0, 4), [ALICE, ME, rec.timestamp, [1]]);
+    await store.endPoll(rec);
+    await settle();
+    assert.equal((await db.getMessage(rec.id))!.poll!.ended, true);
+  });
+
   it('shows group changes and timer changes as lines that don’t count as unread', async () => {
     const ts = Date.now() + 5000;
     const before = store.conversation('g:R1JQ')!.unread;
@@ -583,6 +637,65 @@ describe('store', () => {
     assert.deepEqual(responses, [[ERIN, 'accept']]);
     assert.equal(store.conversation(ERIN)!.request, undefined);
     assert.deepEqual(receipts, [[ERIN, 50000]]);
+  });
+
+  it('holds a group a stranger added us to as a request until we accept or delete it', async () => {
+    const group = (internal: string, extra: Record<string, unknown>) => ({ id: 'group.' + internal, internal_id: internal, masterKey: '', revision: 1, name: 'Deals ' + internal, members: ['aci-me', 'aci-zed'], admins: [], pending: [], expireTimer: 0, blocked: false, link_mode: 'disabled', invite_link: '', ...extra });
+    await db.kvSet('syncedGroups', [group('R1RQ', { messageRequest: true, addedBy: 'aci-zed' }), group('R1RD', { messageRequest: true })]);
+    await store.refreshDirectory();
+    const answers: any[] = [];
+    (signal as any).answerGroupRequest = async (sendId: string, response: string) => {
+      answers.push([sendId, response]);
+    };
+    for (const g of ['R1RQ', 'R1RD']) store.ingestRaw({ envelope: { sourceNumber: '+15550010', sourceUuid: 'aci-zed', timestamp: 53000, dataMessage: { timestamp: 53000, groupInfo: { groupId: g }, message: 'great offer' } } });
+    await settle();
+    const conv = store.conversation('g:R1RQ')!;
+    assert.equal(conv.request, true);
+    assert.equal(store.groupAddedBy(conv), 'aci-zed');
+    await store.acceptRequest('g:R1RQ');
+    await store.deleteRequest('g:R1RD');
+    assert.deepEqual(answers, [['group.R1RQ', 'accept'], ['group.R1RD', 'delete']]);
+    assert.equal(store.conversation('g:R1RQ')!.request, undefined);
+    assert.equal(store.conversation('g:R1RD'), undefined);
+
+    await db.kvSet('syncedGroups', [group('R1RQ', {})]);
+    await store.refreshDirectory();
+    assert.equal(store.conversation('g:R1RQ')!.request, undefined);
+  });
+
+  it('asks our phone for attachments the servers dropped, and gives up when the phone no longer has the message', async () => {
+    const IVY = '+15550011';
+    const asked: any[] = [];
+    (signal as any).requestAttachmentBackfill = async (_sendId: string, ref: any) => {
+      asked.push(ref);
+      return true;
+    };
+    (signal as any).downloadAttachmentBlob = async (id: string) => {
+      if (id.endsWith(':old')) throw Object.assign(new Error('HTTP 404'), { status: 404 });
+      return new Blob(['fresh']);
+    };
+    const att = (id: string) => ({ id, contentType: 'application/pdf', filename: 'a.pdf', size: 5 });
+    store.ingestRaw({ envelope: { sourceNumber: IVY, timestamp: 54000, dataMessage: { timestamp: 54000, attachments: [att('s4katt:a:old'), att('s4katt:b:old')] } } });
+    await settle();
+    const id = IVY + '|54000|' + IVY;
+    const msg = (await db.getMessage(id))!;
+    let asking = 0;
+    const loaded = store.loadOrAskPhone(msg.attachments[0], msg, () => asking++);
+    await settle();
+    assert.equal(asking, 1);
+    assert.deepEqual(asked, [{ author: IVY, timestamp: 54000 }]);
+
+    const answer = (attachments: unknown) => ({ envelope: { sourceNumber: ME, syncMessage: { attachmentBackfill: { conversation: { number: IVY }, message: { author: IVY, timestamp: 54000 }, attachments } } } });
+    store.ingestRaw(answer([att('s4katt:a:new'), 'pending']));
+    assert.equal(await (await loaded).text(), 'fresh');
+    await settle();
+    const updated = (await db.getMessage(id))!;
+    assert.deepEqual(updated.attachments.map((a) => a.id), ['s4katt:a:new', 's4katt:b:old']);
+
+    const gone = store.loadOrAskPhone(updated.attachments[1], updated, () => {});
+    await settle();
+    store.ingestRaw(answer(null));
+    await assert.rejects(gone, (e: unknown) => e instanceof store.NoLongerAvailableError);
   });
 
   it('starts requests for contacts we don’t share our profile with, and clears or deletes them from other devices', async () => {

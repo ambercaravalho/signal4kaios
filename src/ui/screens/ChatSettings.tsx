@@ -3,7 +3,7 @@ import { Avatar } from '../components/Avatar';
 import { confirm, DIVIDER, pick, prompt, showOptions } from '../components/Overlays';
 import { Row, RowList } from '../components/RowList';
 import { Screen } from '../components/Screen';
-import { pickTimer, runAction, toggleRow } from '../components/setting-rows';
+import { muteLabel, pickTimer, runAction, toggleMute, toggleRow } from '../components/setting-rows';
 import { type GroupDetail, renameContact, signal } from '../data/api';
 import { expireLabel } from '../data/format';
 import * as store from '../data/store';
@@ -35,13 +35,16 @@ async function chooseTimer(conv: Conversation): Promise<void> {
 }
 
 function muteRow(conv: Conversation): Row {
-  return toggleRow('mute', S.muteNotifications, !!conv.muted, (v) => store.setMuted(conv.id, v));
+  return { key: 'mute', label: store.isMuted(conv) ? S.unmute : S.muteNotifications, sub: muteLabel(conv), onSelect: () => toggleMute(conv) };
 }
 
-function mentionsRow(conv: Conversation): Row | false {
-  if (!conv.muted) return false;
-  const on = store.mentionsNotifyWhileMuted(conv);
-  return toggleRow('mentions', S.notifyForMentions, on, (v) => store.setMentionsIfMuted(conv.id, v), S.notifyForMentionsHint);
+const EXCEPTION_LABELS: Record<store.MutedException, string> = { mentions: S.notifyForMentions, replies: S.notifyForReplies, calls: S.notifyForCalls };
+
+/** While a chat is muted: what still notifies (mentions and replies are groups only). */
+function exceptionRows(conv: Conversation): Row[] {
+  if (!store.isMuted(conv)) return [];
+  const kinds: store.MutedException[] = conv.type === 'group' ? ['mentions', 'replies', 'calls'] : ['calls'];
+  return kinds.map((k) => toggleRow(k, EXCEPTION_LABELS[k], store.notifiesWhileMuted(conv, k), (v) => store.setNotifyIfMuted(conv.id, k, v)));
 }
 
 function directRows(conv: Conversation): Row[] {
@@ -70,6 +73,7 @@ function directRows(conv: Conversation): Row[] {
     !self && { key: 'nick', label: S.nickname, sub: conv.name, onSelect: rename },
     !self && { key: 'timer', label: S.disappearingMessages, sub: expireLabel(conv.expireTimer || 0), onSelect: () => chooseTimer(conv) },
     muteRow(conv),
+    ...(self ? [] : exceptionRows(conv)),
     !self && { key: 'safety', label: S.viewSafetyNumber, onSelect: () => router.push(SafetyNumberScreen, { target: recipient, name: conv.name }) },
     !self && { key: 'block', label: blocked ? S.unblock : S.block, danger: !blocked, onSelect: toggleBlock },
   ];
@@ -77,7 +81,7 @@ function directRows(conv: Conversation): Row[] {
 
 function groupRows(conv: Conversation, d: GroupDetail | null, reload: () => void): Row[] {
   const sendId = conv.sendId;
-  if (!sendId) return [{ key: 'wait', label: S.groupNotReady }, muteRow(conv), mentionsRow(conv)];
+  if (!sendId) return [{ key: 'wait', label: S.groupNotReady }, muteRow(conv), ...exceptionRows(conv)];
   const admin = amAdmin(d);
   const canEdit = allowed(d, 'edit_group');
   const perms = (d && d.permissions) || PERM_DEFAULTS;
@@ -135,7 +139,7 @@ function groupRows(conv: Conversation, d: GroupDetail | null, reload: () => void
     canEdit && { key: 'name', label: S.groupName, sub: (d && d.name) || conv.name, onSelect: () => edit('name') },
     { key: 'timer', label: S.disappearingMessages, sub: expireLabel(conv.expireTimer || 0), onSelect: canEdit ? () => chooseTimer(conv) : undefined },
     muteRow(conv),
-    mentionsRow(conv),
+    ...exceptionRows(conv),
     admin && { section: S.permissions },
     admin && { key: 'p-add', label: S.addMembersPermission, sub: permLabel(perms.add_members), onSelect: () => setPerm('add_members', S.addMembersPermission) },
     admin && { key: 'p-edit', label: S.editGroupPermission, sub: permLabel(perms.edit_group), onSelect: () => setPerm('edit_group', S.editGroupPermission) },

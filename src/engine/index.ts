@@ -1,6 +1,7 @@
 /* The on-device Signal engine's public surface (`signalBridge`), imported by the app in `src/ui/`. The app installs an `EngineHost` (`./host`) before calling it. Each method group lives in `./bridge/`. */
 
 import { accountMethods } from './bridge/account';
+import { backfillMethods } from './bridge/backfill';
 import { contactMethods } from './bridge/contact-actions';
 import { client, store } from './bridge/context';
 import { groupMethods } from './bridge/groups';
@@ -27,6 +28,7 @@ export const signalBridge = {
   ...outgoingMethods,
   ...contactMethods,
   ...groupMethods,
+  ...backfillMethods,
 };
 
 export type SignalBridge = typeof signalBridge;

@@ -8,7 +8,7 @@ import { chatFor, persistConv, removeChat } from './conversations';
 import { emit } from './events';
 import { enqueueMutation } from './ingest';
 import { markRead } from './read';
-import { convs } from './state';
+import { convs, state } from './state';
 
 function clearRequest(conv: Conversation): void {
   if (!conv.request) return;
@@ -17,32 +17,42 @@ function clearRequest(conv: Conversation): void {
   emit('conversations');
 }
 
-/** Accept a message request: our other devices hear about it, they get our profile, and what we've read gets its read receipts. */
+/** Who added or invited us to a group, when the engine knows. */
+export function groupAddedBy(conv: Conversation): string {
+  const g = conv.groupInternalId ? state.groupsByInternal[conv.groupInternalId] : undefined;
+  return (g && g.addedBy) || '';
+}
+
+function answer(conv: Conversation, response: 'accept' | 'delete' | 'block'): Promise<void> {
+  const sendId = conv.sendId!;
+  if (conv.type === 'group') return signal.answerGroupRequest(sendId, response);
+  const sent = signal.sendMessageRequestResponse(sendId, response);
+  return response === 'block' ? sent.then(() => signal.setContactBlocked(sendId, true)) : sent;
+}
+
+function requestChat(convId: string): Promise<Conversation> {
+  const conv = convs[convId];
+  return conv && conv.sendId ? Promise.resolve(conv) : Promise.reject(new Error('unknown chat'));
+}
+
+/** Accept a message request: our other devices hear about it, they get our profile, and what we've read gets its read receipts. Accepting a group invite joins the group. */
 export function acceptRequest(convId: string): Promise<void> {
-  const conv = convs[convId];
-  if (!conv || !conv.sendId) return Promise.reject(new Error('unknown chat'));
-  return signal.sendMessageRequestResponse(conv.sendId, 'accept').then(() => {
-    clearRequest(conv);
-    markRead(convId);
-  });
+  return requestChat(convId).then((conv) =>
+    answer(conv, 'accept').then(() => {
+      clearRequest(conv);
+      markRead(convId);
+    })
+  );
 }
 
-/** Delete a message request; the response tells our other devices to delete it too. */
+/** Delete a message request, leaving the group if it is one; the response tells our other devices to delete it too. */
 export function deleteRequest(convId: string): Promise<void> {
-  const conv = convs[convId];
-  if (!conv || !conv.sendId) return Promise.reject(new Error('unknown chat'));
-  return signal.sendMessageRequestResponse(conv.sendId, 'delete').then(() => removeChat(conv));
+  return requestChat(convId).then((conv) => answer(conv, 'delete').then(() => removeChat(conv)));
 }
 
-/** Block the person behind a message request. The chat stays, blocked. */
+/** Block the person or group behind a message request; a blocked group is also left. The chat stays, blocked. */
 export function blockRequest(convId: string): Promise<void> {
-  const conv = convs[convId];
-  if (!conv || !conv.sendId) return Promise.reject(new Error('unknown chat'));
-  const sendId = conv.sendId;
-  return signal
-    .sendMessageRequestResponse(sendId, 'block')
-    .then(() => signal.setContactBlocked(sendId, true))
-    .then(() => clearRequest(conv));
+  return requestChat(convId).then((conv) => answer(conv, 'block').then(() => clearRequest(conv)));
 }
 
 /** Signal-Desktop reports a chat's 3 most recent incoming messages that carry a server GUID. */

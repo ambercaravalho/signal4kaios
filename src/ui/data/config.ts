@@ -1,5 +1,7 @@
 /* Account and app settings in localStorage (`s4k.config`). The active account's credentials sit at the top level; `accounts` holds every saved account so the user can switch, and each account has its own IndexedDB. */
 
+import type { HostNotificationProfile, HostProfileOverride } from '../../engine/host';
+
 const KEY = 's4k.config';
 const DEFAULT_SIGNAL_SERVER = 'https://chat.signal.org';
 
@@ -17,6 +19,9 @@ export type ThemeName = 'light' | 'dark';
 
 export type TextSize = 'small' | 'normal' | 'large' | 'xlarge';
 const TEXT_SIZES: TextSize[] = ['small', 'normal', 'large', 'xlarge'];
+
+/** A notification shows the sender and message, the sender only, or neither. */
+export type NotifyShow = 'all' | 'name' | 'none';
 
 /** The screen lock PIN's salted hash, how long the app may sit in the background before locking, and the wrong-PIN count. */
 export interface ScreenLockConfig {
@@ -50,8 +55,17 @@ interface ConfigData {
   /** Seconds; the disappearing-message timer new 1:1 chats start with. */
   defaultExpireTimer?: number;
   keepMutedArchived?: boolean;
-  /** The account's default for mentions in muted chats, from Storage Service. */
+  /** The account's defaults for muted chats and reactions, shared through Storage Service. */
   notifyMentionsIfMuted?: boolean;
+  notifyRepliesIfMuted?: boolean;
+  notifyCallsIfMuted?: boolean;
+  notifyReactions?: boolean;
+  /** What a notification shows, on this phone only. */
+  notifyShow?: NotifyShow;
+  notifySound?: boolean;
+  /** Notification profiles from the phone, through Storage Service. */
+  notificationProfiles?: HostNotificationProfile[];
+  notificationProfileOverride?: HostProfileOverride;
   textSize?: TextSize;
   sharePhoneNumber?: boolean;
   findableByNumber?: boolean;
@@ -75,7 +89,20 @@ function write(c: ConfigData): void {
 }
 
 type StringKey = 'number' | 'aci' | 'deviceToken' | 'deviceName' | 'username' | 'usernameLink' | 'profileName' | 'profileAbout' | 'profileAboutEmoji' | 'proxyAddress';
-type FlagKey = 'sendReadReceipts' | 'styledText' | 'typingIndicators' | 'linkPreviews' | 'sealedSenderIndicators' | 'keepMutedArchived' | 'notifyMentionsIfMuted' | 'sharePhoneNumber' | 'proxyEnabled';
+type FlagKey =
+  | 'sendReadReceipts'
+  | 'styledText'
+  | 'typingIndicators'
+  | 'linkPreviews'
+  | 'sealedSenderIndicators'
+  | 'keepMutedArchived'
+  | 'notifyMentionsIfMuted'
+  | 'notifyRepliesIfMuted'
+  | 'notifyCallsIfMuted'
+  | 'notifyReactions'
+  | 'notifySound'
+  | 'sharePhoneNumber'
+  | 'proxyEnabled';
 
 const text = (k: StringKey) => (): string => {
   const v = read()[k];
@@ -145,8 +172,27 @@ export const config = {
 
   /** Muted chats stay archived when new messages arrive, as in Signal. */
   keepMutedArchived: onUnlessOff('keepMutedArchived'),
-  /** Mentions notify in muted chats unless turned off, as in Signal. */
+  /** In muted chats, mentions and replies to us notify unless turned off and calls only if turned on, as in Signal. */
   notifyMentionsIfMuted: onUnlessOff('notifyMentionsIfMuted'),
+  notifyRepliesIfMuted: onUnlessOff('notifyRepliesIfMuted'),
+  notifyCallsIfMuted: offUnlessOn('notifyCallsIfMuted'),
+  notifyReactions: onUnlessOff('notifyReactions'),
+  notifySound: onUnlessOff('notifySound'),
+
+  notifyShow(): NotifyShow {
+    const v = read().notifyShow;
+    return v === 'name' || v === 'none' ? v : 'all';
+  },
+
+  notificationProfiles(): HostNotificationProfile[] {
+    const v = read().notificationProfiles;
+    return Array.isArray(v) ? v.filter((p) => p && typeof p.id === 'string' && Array.isArray(p.allowed)) : [];
+  },
+
+  notificationProfileOverride(): HostProfileOverride {
+    const v = read().notificationProfileOverride;
+    return v && typeof v === 'object' ? v : null;
+  },
 
   /** Text size on this phone only. */
   textSize(): TextSize {

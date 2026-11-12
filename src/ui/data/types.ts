@@ -147,9 +147,14 @@ export interface Conversation {
   unread: number;
   lastReadTs: number;
   archived?: boolean;
+  /** Muted until this time in ms, or `MUTED_ALWAYS`; check with `isMuted`. */
+  mutedUntil?: number;
+  /** The on/off mute saved before 2.8.0, turned into `mutedUntil` on load. */
   muted?: boolean;
-  /** A group's choice of whether mentions notify while it's muted; unset follows the account's default. */
+  /** The chat's own choice of what still notifies while it's muted (mentions and replies are groups only); unset follows the account's default. */
   mentionsIfMuted?: boolean;
+  repliesIfMuted?: boolean;
+  callsIfMuted?: boolean;
   pinned?: boolean;
   /** "Mark as unread" with nothing actually unread; opening the chat clears it. */
   markedUnread?: boolean;
@@ -157,7 +162,7 @@ export interface Conversation {
   /** Unsent text in the composer, kept until it's sent or cleared. */
   draft?: string;
   draftMentions?: PickedMention[];
-  /** A message request: someone we don't share our profile with started this 1:1 chat. */
+  /** A message request: someone we don't share our profile with started this 1:1 chat, or added us to this group. */
   request?: boolean;
   /** SECURITY-REVIEW: the server's spam reporting token for this person (base64), sent only with a spam report. */
   reportToken?: string;

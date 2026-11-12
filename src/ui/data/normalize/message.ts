@@ -222,7 +222,7 @@ export function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: 
 const MAX_WAVEFORM = 100;
 const MAX_EDGE = 20000;
 
-function attachmentOf(a: any, viewOnce: boolean): Attachment {
+export function attachmentOf(a: any, viewOnce: boolean): Attachment {
   const out: Attachment = { id: str(a.id), contentType: str(a.contentType), filename: str(a.filename), size: num(a.size), voiceNote: !!a.voiceNote, viewOnce: !!(a.viewOnce || viewOnce) };
   if (Array.isArray(a.waveform) && a.waveform.length) out.waveform = a.waveform.slice(0, MAX_WAVEFORM).map((v: unknown) => Math.max(0, Math.min(255, num(v))));
   const duration = Number(a.duration);

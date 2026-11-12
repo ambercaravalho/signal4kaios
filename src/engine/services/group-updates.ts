@@ -95,6 +95,12 @@ export function diffGroupState(prev: GroupV2Metadata, next: GroupV2Metadata, aut
   return out.slice(0, MAX_UPDATES);
 }
 
+/** Signal-Desktop's isFromOrAddedByTrustedContact for a group: a message request unless profile sharing is on, or whoever added us is us, a system contact, or someone whose request we accepted. */
+export function groupIsRequest(whitelisted: boolean, addedBy: string, selfAci: string, adder: { whitelisted?: boolean; systemContact?: boolean } | undefined): boolean {
+  if (whitelisted || (!!addedBy && addedBy === selfAci)) return false;
+  return !adder || (!adder.whitelisted && !adder.systemContact);
+}
+
 /** The service ID that made a signed group change, when the change is for `revision`. */
 export function groupChangeAuthor(keys: DerivedGroupV2Keys, groupChange: Uint8Array, revision: number): string {
   if (!groupChange.length) return '';

@@ -5,9 +5,9 @@ import type { Conv, NameOf, RequestResponse, StoreEvent } from './normalize/even
 import { num, str } from './normalize/fields';
 import { groupUpdateEvents } from './normalize/group';
 import { dataMessageEvents, editEvent, noticeEvent, peerKey } from './normalize/message';
-import { chatRef, deleteSyncEvent, REQUEST_RESPONSES, syncRefs } from './normalize/sync';
+import { backfillEvent, chatRef, deleteSyncEvent, REQUEST_RESPONSES, syncRefs } from './normalize/sync';
 
-export { type ChatDelete, type ChatRef, type MessageEvent, type NoticeEvent, type RequestResponse, type StoreEvent, type SyncRef } from './normalize/events';
+export { type BackfillSlot, type ChatDelete, type ChatRef, type MessageEvent, type NoticeEvent, type RequestResponse, type StoreEvent, type SyncRef } from './normalize/events';
 export { applyMentions } from './normalize/message';
 
 /** Events for one decrypted frame. `selfNumber` is the author of messages synced from our other devices; `nameOf` names mentioned people. */
@@ -72,6 +72,10 @@ function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEven
     if (sm.deleteForMe && typeof sm.deleteForMe === 'object') {
       const del = deleteSyncEvent(sm.deleteForMe);
       if (del) out.push(del);
+    }
+    if (sm.attachmentBackfill && typeof sm.attachmentBackfill === 'object') {
+      const backfill = backfillEvent(sm.attachmentBackfill);
+      if (backfill) out.push(backfill);
     }
     if (!out.length) dbg('normalize: unhandled sync message ' + Object.keys(sm).join(','));
     return out;

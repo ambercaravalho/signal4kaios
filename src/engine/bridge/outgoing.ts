@@ -134,9 +134,9 @@ export const outgoingMethods = {
     const bodyText = payload.message || '';
     const res = await sendDataMessage(
       (payload.recipients && payload.recipients[0]) || '',
-      async (target) => {
+      async () => {
         const poll = payload.poll;
-        if (poll && (!target.isGroup || !validPoll(poll.question, poll.options, POLL_QUESTION_MAX_SEND))) throw new Error('Polls need a group, a question, and 2 to 10 options');
+        if (poll && !validPoll(poll.question, poll.options, POLL_QUESTION_MAX_SEND)) throw new Error('Polls need a question and 2 to 10 options');
         const attachments = await uploadAttachments(payload);
         const preview = await outgoingPreview(payload.preview, bodyText, (payload.base64_attachments || []).length > 0);
         const mentions: NonNullable<SendPayload['mentions']> = [];
@@ -231,18 +231,16 @@ export const outgoingMethods = {
     });
   },
 
-  /** Vote in a group poll (Signal-Desktop's PollVote); `voteCount` rises with each of our votes so the newest one wins everywhere. No options clears our vote. */
-  async sendPollVote(groupSendId: string, pollAuthor: string, pollTimestamp: number, optionIndexes: number[], voteCount: number): Promise<void> {
-    await sendDataMessage(
-      groupSendId,
-      async () => ({ pollVote: { targetAuthorAciBinary: uuidToBytes(await authorAci(pollAuthor)), targetSentTimestamp: BigInt(pollTimestamp), optionIndexes, voteCount } }),
-      { groupOnly: 'Polls only work in groups' }
-    );
+  /** Vote in a poll (Signal-Desktop's PollVote); `voteCount` rises with each of our votes so the newest one wins everywhere. No options clears our vote. */
+  async sendPollVote(sendId: string, pollAuthor: string, pollTimestamp: number, optionIndexes: number[], voteCount: number): Promise<void> {
+    await sendDataMessage(sendId, async () => ({
+      pollVote: { targetAuthorAciBinary: uuidToBytes(await authorAci(pollAuthor)), targetSentTimestamp: BigInt(pollTimestamp), optionIndexes, voteCount },
+    }));
   },
 
-  /** End our own group poll (Signal-Desktop's PollTerminate). Resolves to when it ended. */
-  async sendPollTerminate(groupSendId: string, pollTimestamp: number): Promise<number> {
-    const res = await sendDataMessage(groupSendId, () => ({ pollTerminate: { targetSentTimestamp: BigInt(pollTimestamp) } }), { groupOnly: 'Polls only work in groups' });
+  /** End our own poll (Signal-Desktop's PollTerminate). Resolves to when it ended. */
+  async sendPollTerminate(sendId: string, pollTimestamp: number): Promise<number> {
+    const res = await sendDataMessage(sendId, () => ({ pollTerminate: { targetSentTimestamp: BigInt(pollTimestamp) } }));
     return res.timestamp;
   },
 

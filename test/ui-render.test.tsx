@@ -23,6 +23,7 @@ import { LinkScreen, WelcomeScreen } from '../src/ui/screens/Onboarding';
 import { NewChatScreen, SearchScreen } from '../src/ui/screens/SearchList';
 import { SettingsScreen } from '../src/ui/screens/Settings';
 import { HELP_TOPICS, HelpScreen } from '../src/ui/screens/settings/Help';
+import { NotificationsScreen } from '../src/ui/screens/settings/Notifications';
 import { StartupErrorScreen } from '../src/ui/screens/StartupError';
 import { DEBUG, S } from '../src/ui/strings';
 import { settle } from './helpers';
@@ -198,6 +199,7 @@ describe('screens', () => {
       [NewChatScreen, {}],
       [SearchScreen, {}],
       [SettingsScreen, {}],
+      [NotificationsScreen, {}],
       [HelpScreen, {}],
       [WelcomeScreen, {}],
       [StartupErrorScreen, { reason: 'blocked', detail: 'LibsignalUnavailableError: wasm blocked' }],
@@ -252,5 +254,27 @@ describe('screens', () => {
     assert.match(out, new RegExp(S.disappearingMessages));
     assert.match(out, new RegExp(S.viewSafetyNumber));
     assert.match(out, new RegExp('>' + S.block + '<'));
+    assert.ok(!out.includes(S.notifyForCalls), 'call exceptions only show while muted');
+  });
+
+  it('shows how long a chat is muted and what still gets through', () => {
+    store.setMuted(ALICE, Date.now() + 3600000);
+    router.reset(ChatSettingsScreen, { convId: ALICE });
+    const out = text(html());
+    assert.ok(out.includes(S.mutedUntil.replace('{time}', '')));
+    assert.ok(out.includes(S.notifyForCalls));
+    assert.ok(!out.includes(S.notifyForMentions), 'mentions are for groups');
+    store.setMuted(ALICE, 0);
+  });
+
+  it('lists notification settings, with profiles from the phone', () => {
+    router.reset(NotificationsScreen, {});
+    let out = text(html());
+    for (const s of [S.notifyShow, S.showNameAndMessage, S.reactionNotifications, S.inMutedChats, S.notifyForReplies, S.noProfiles]) assert.ok(out.includes(s), s);
+    config.set({ notificationProfiles: [{ id: 'eA==', name: 'Sleep', emoji: '🌙', createdAt: 1, allowAllCalls: false, allowAllMentions: false, allowed: [], schedule: null }], notificationProfileOverride: { enabledId: 'eA==', endAt: 0 } });
+    router.reset(NotificationsScreen, {});
+    out = text(html());
+    assert.ok(out.includes('🌙 Sleep'));
+    config.set({ notificationProfiles: undefined, notificationProfileOverride: undefined });
   });
 });

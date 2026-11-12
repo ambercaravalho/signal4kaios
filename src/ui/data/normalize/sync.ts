@@ -1,11 +1,13 @@
-/* Sync messages from our other devices: read, viewed, delete-for-me, and message request responses. */
+/* Sync messages from our other devices: read, viewed, delete-for-me, message request responses, and attachment backfill answers. */
 
-import type { ChatDelete, ChatRef, RequestResponse, StoreEvent, SyncRef } from './events';
+import type { BackfillSlot, ChatDelete, ChatRef, RequestResponse, StoreEvent, SyncRef } from './events';
 import { num, str } from './fields';
+import { attachmentOf } from './message';
 
 export const REQUEST_RESPONSES: RequestResponse[] = ['accept', 'delete', 'block', 'blockAndDelete', 'spam', 'blockAndSpam'];
 
 const MAX_SYNC_DELETES = 500;
+const MAX_BACKFILL_SLOTS = 100;
 
 export function syncRefs(list: unknown): SyncRef[] {
   if (!Array.isArray(list)) return [];
@@ -41,4 +43,15 @@ export function deleteSyncEvent(d: any): StoreEvent | null {
     if (chat) chats.push({ chat, mostRecent: addressed(cd.mostRecent), mostRecentNonExpiring: addressed(cd.mostRecentNonExpiring), isFullDelete: !!cd.isFullDelete });
   }
   return messages.length || chats.length ? { type: 'deleteSync', messages, chats } : null;
+}
+
+/** Our phone's answer to a backfill request; `slots` is null when it no longer has the message. */
+export function backfillEvent(b: any): StoreEvent | null {
+  const chat = chatRef(b.conversation);
+  const [target] = addressed(b.message ? [b.message] : []);
+  if (!chat || !target) return null;
+  const slots: BackfillSlot[] | null = Array.isArray(b.attachments)
+    ? b.attachments.slice(0, MAX_BACKFILL_SLOTS).map((a: any) => (a === 'pending' ? 'pending' : a && typeof a === 'object' && str(a.id) ? attachmentOf(a, false) : 'failed'))
+    : null;
+  return { type: 'backfill', chat, author: target.sender, timestamp: target.timestamp, slots };
 }

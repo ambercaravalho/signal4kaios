@@ -18,6 +18,7 @@ import {
   MemberPendingAdminApprovalSchema,
 } from '../src/engine/gen/Groups_pb';
 import {
+  acceptInviteActions,
   addMembersActions,
   applyGroupChange,
   approveRequestsActions,
@@ -35,7 +36,7 @@ import { create, fromBinary, toBinary } from '../src/engine/net/proto';
 import { MemorySignalStore } from '../src/engine/protocol/store';
 import { ALICE, BOB, CAROL, DAVE, ERIN } from './helpers';
 import { loadWasmForTests } from './support';
-import { diffGroupState, groupChangeAuthor, isDecodedGroup } from '../src/engine/services/group-updates';
+import { diffGroupState, groupChangeAuthor, groupIsRequest, isDecodedGroup } from '../src/engine/services/group-updates';
 
 before(() => {
   loadWasmForTests();
@@ -218,6 +219,31 @@ describe('Groups V2 changes (PATCH /v2/groups/)', () => {
     assert.deepEqual(approveRequestsActions(snap, [DAVE, BOB]), { promoteMembersPendingAdminApproval: [{ userId: requested, role: Member_Role.DEFAULT }] });
     assert.equal(approveRequestsActions(snap, [BOB]), null);
     assert.deepEqual(removeMembersActions(snap, [DAVE])!.deleteMembersPendingAdminApproval, [{ deletedUserId: requested }]);
+  });
+
+  it('accepts an invite to our account or our number, and reads who invited us', () => {
+    const srv = serveGroup();
+    const enc = (id: string) => libsignal.groupEncryptServiceId(srv.keys.secretParams, id);
+    srv.group.membersPendingProfileKey = [
+      { member: { userId: enc(CAROL), role: Member_Role.DEFAULT }, addedByUserId: enc(ALICE) },
+      { member: { userId: enc('PNI:' + PNI), role: Member_Role.DEFAULT }, addedByUserId: enc(BOB) },
+    ] as any;
+    assert.deepEqual(decodeGroupState(srv.keys, srv.group).invitedBy, { [CAROL]: ALICE, ['PNI:' + PNI]: BOB });
+    const presentation = new Uint8Array([9, 9]);
+    assert.deepEqual(acceptInviteActions(snapshotGroup(srv.keys, srv.group, CAROL), presentation, ''), { promoteMembersPendingProfileKey: [{ presentation }] });
+    assert.deepEqual(acceptInviteActions(snapshotGroup(srv.keys, srv.group, DAVE), presentation, PNI), { promoteMembersPendingPniAciProfileKey: [{ presentation }] });
+    assert.equal(acceptInviteActions(snapshotGroup(srv.keys, srv.group, BOB), presentation, ''), null);
+    assert.throws(() => acceptInviteActions(snapshotGroup(srv.keys, srv.group, ERIN), presentation, ''), (e: any) => e.name === 'NotAMember');
+  });
+
+  it('treats a group as a message request unless we trust whoever added us', () => {
+    assert.equal(groupIsRequest(false, BOB, ALICE, undefined), true);
+    assert.equal(groupIsRequest(false, '', ALICE, undefined), true);
+    assert.equal(groupIsRequest(false, BOB, ALICE, { whitelisted: false }), true);
+    assert.equal(groupIsRequest(false, BOB, ALICE, { whitelisted: true }), false);
+    assert.equal(groupIsRequest(false, BOB, ALICE, { systemContact: true }), false);
+    assert.equal(groupIsRequest(false, ALICE, ALICE, undefined), false);
+    assert.equal(groupIsRequest(true, BOB, ALICE, undefined), false);
   });
 
   it('reads who made a signed group change only for the revision it claims', () => {

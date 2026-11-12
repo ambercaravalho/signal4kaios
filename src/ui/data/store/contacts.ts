@@ -83,16 +83,24 @@ export async function refreshDirectory(): Promise<boolean> {
   db.putContacts(records);
 
   state.groupsByInternal = {};
-  for (const g of groups) if (g.internal_id) state.groupsByInternal[g.internal_id] = { id: g.id, name: g.name || 'Group' };
+  for (const g of groups) {
+    if (!g.internal_id) continue;
+    const entry: (typeof state.groupsByInternal)[string] = { id: g.id, name: g.name || 'Group' };
+    if (g.messageRequest) entry.request = true;
+    if (g.addedBy) entry.addedBy = g.addedBy;
+    state.groupsByInternal[g.internal_id] = entry;
+  }
   db.kvSet('groups', state.groupsByInternal);
 
   let changed = false;
   for (const conv of Object.values(convs)) {
     if (conv.type === 'group') {
       const g = conv.groupInternalId ? state.groupsByInternal[conv.groupInternalId] : undefined;
-      if (g && (conv.name !== g.name || conv.sendId !== g.id)) {
+      if (g && (conv.name !== g.name || conv.sendId !== g.id || !!conv.request !== !!g.request)) {
         conv.name = g.name;
         conv.sendId = g.id;
+        if (g.request) conv.request = true;
+        else delete conv.request;
         persistConv(conv);
         changed = true;
       }

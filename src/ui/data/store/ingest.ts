@@ -5,12 +5,13 @@ import { db } from '../db';
 import { dbg } from '../log';
 import { type MessageEvent, type NoticeEvent, parseFrame, type StoreEvent } from '../normalize';
 import type { Message, NoticeKind } from '../types';
+import { applyBackfill } from './backfill';
 import { unarchiveOnActivity } from './chat-state';
 import { altKeyOf, displayName, isSelfKey, self } from './contacts';
 import { ensureConv, msgId, persistConv, timerLine } from './conversations';
 import { emit } from './events';
 import { applyAdminDelete, applyDeleteSync } from './message-actions';
-import { notify } from './notify';
+import { notify, notifyReaction } from './notify';
 import { applyPollEnd, applyPollVote } from './polls';
 import { messageText, previewOf } from './previews';
 import { applyReadSync, applyViewedSync, markRead } from './read';
@@ -204,8 +205,11 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
     case 'reaction':
       return updateTarget(ev.convId, ev.targetTimestamp, [ev.targetAuthor, altKeyOf(ev.targetAuthor), self()], 'reaction', (rec) => {
         rec.reactions = rec.reactions || {};
+        const fresh = !ev.remove && rec.reactions[ev.reactor] !== ev.emoji;
         if (ev.remove) delete rec.reactions[ev.reactor];
         else rec.reactions[ev.reactor] = ev.emoji;
+        const conv = convs[ev.convId];
+        if (fresh && conv && !silent) notifyReaction(conv, ev.reactor, ev.emoji, rec);
       });
     case 'remoteDelete':
       return updateTarget(ev.convId, ev.targetTimestamp, [ev.author, altKeyOf(ev.author)], 'delete', (rec) => {
@@ -242,6 +246,8 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
       return applyAdminDelete(ev);
     case 'requestResponse':
       return applyRequestResponse(ev);
+    case 'backfill':
+      return applyBackfill(ev);
     case 'pollVote':
       return applyPollVote(ev);
     case 'pollEnd':

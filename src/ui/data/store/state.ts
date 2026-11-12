@@ -11,7 +11,7 @@ export const convs: Record<string, Conversation> = {};
 export const typingMap: Record<string, { author: string; until: number }> = {};
 
 export const state = {
-  groupsByInternal: {} as Record<string, { id: string; name: string }>,
+  groupsByInternal: {} as Record<string, { id: string; name: string; request?: boolean; addedBy?: string }>,
   openConvId: null as string | null,
   connection: 'closed' as Connection,
   ready: false,

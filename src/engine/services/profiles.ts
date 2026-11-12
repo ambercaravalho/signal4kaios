@@ -22,6 +22,15 @@ export interface DecryptedProfile {
   phoneNumberSharing?: string;
   unidentifiedAccess?: string;
   unrestrictedUnidentifiedAccess?: boolean;
+  /** Features the account's devices support, as `GET /v1/profile` reports them; the server sets them from the primary phone. */
+  capabilities: Record<string, boolean>;
+}
+
+function capabilitiesOf(raw: unknown): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  const caps = asObject(raw);
+  if (caps) for (const k of Object.keys(caps)) if (typeof caps[k] === 'boolean') out[k] = caps[k] as boolean;
+  return out;
 }
 
 /**
@@ -59,6 +68,7 @@ export async function fetchAndDecryptProfile(
     phoneNumberSharing: typeof res.phoneNumberSharing === 'string' ? res.phoneNumberSharing : undefined,
     unidentifiedAccess: typeof res.unidentifiedAccess === 'string' ? res.unidentifiedAccess : undefined,
     unrestrictedUnidentifiedAccess: !!res.unrestrictedUnidentifiedAccess,
+    capabilities: capabilitiesOf(res.capabilities),
   };
 
   if (hasKey) {
