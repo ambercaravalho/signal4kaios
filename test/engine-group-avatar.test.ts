@@ -1,7 +1,7 @@
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { randomBytes } from '../src/engine/bytes';
+import { randomBytes, toWebSafeBase64 } from '../src/engine/bytes';
 import { GroupAttributeBlobSchema, GroupSchema } from '../src/engine/gen/Groups_pb';
 import { create, toBinary } from '../src/engine/net/proto';
 import { libsignal } from '../src/engine/protocol/libsignal';
@@ -13,11 +13,18 @@ before(() => {
   loadWasmForTests();
 });
 
-const KEY = 'groups/AbCdEfGhIjKlMnOpQrStUv';
+const KEY = 'groups/' + toWebSafeBase64(randomBytes(32)).replace(/=+$/, '') + '/' + toWebSafeBase64(randomBytes(16)).replace(/=+$/, '');
 
 describe('group avatars', () => {
   const keys = () => deriveGroupV2Keys(randomBytes(32));
   const blob = (secretParams: Uint8Array, content: any) => libsignal.groupEncryptBlob(secretParams, toBinary(GroupAttributeBlobSchema, create(GroupAttributeBlobSchema, { content })), 0);
+
+  it('accepts the key shape Signal uses: the group identifier, then random bytes', () => {
+    assert.equal(KEY.length, 73);
+    assert.equal(isGroupAvatarKey(KEY), true);
+    assert.equal(isGroupAvatarKey('groups/a/b'), true);
+    assert.equal(isGroupAvatarKey('groups/AbCdEfGhIjKlMnOpQrStUv'), true);
+  });
 
   it('records the avatar key from the group state, empty when there is none', () => {
     const k = keys();
@@ -44,7 +51,7 @@ describe('group avatars', () => {
       calls++;
       return body;
     };
-    for (const bad of ['', 'groups/', '../profiles/x', 'groups/../x', 'https://evil.example/x', 'groups/a/b', 'profiles/abc']) {
+    for (const bad of ['', 'groups', 'groups/', 'groups//x', 'groups/x/', 'groups/a/b/c', '../profiles/x', 'groups/../x', 'groups/a/..', 'groups/a.b', 'https://evil.example/x', 'groups/a:b', 'profiles/abc', '/groups/a']) {
       assert.equal(isGroupAvatarKey(bad), false, bad);
       await assert.rejects(downloadAndDecryptGroupAvatar(serve(new Uint8Array(0)), bad, k.secretParams), /Not a group avatar key/);
     }

@@ -14,15 +14,17 @@ const subject = (internalId: string, name: string) => ({ id: 'g:' + internalId, 
 
 describe('group avatars in the app', () => {
   const asked: string[] = [];
+  const failOnce = new Set<string>();
 
   before(async () => {
     config.set({ number: '+15550000', aci: '00000000-0000-4000-8000-000000000000', deviceId: 2, deviceToken: 'test-only' });
     await db.ready();
     (signal as any).groupAvatarBlob = async (internalId: string) => {
       asked.push(internalId);
+      if (failOnce.delete(internalId)) throw new Error('offline');
       return new Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: 'image/jpeg' });
     };
-    await db.kvSet('syncedGroups', [group('RkFN', 'Family', 'groups/one'), group('Q0hT', 'Chess', ''), group('T0xE', 'Old')]);
+    await db.kvSet('syncedGroups', [group('RkFN', 'Family', 'groups/one'), group('Q0hT', 'Chess', ''), group('T0xE', 'Old'), group('V2Fs', 'Walk', 'groups/walk')]);
     await store.refreshDirectory();
   });
 
@@ -43,10 +45,17 @@ describe('group avatars in the app', () => {
     assert.ok(asked.includes('T0xE'));
   });
 
+  it('tries again after a failed download instead of showing initials all session', async () => {
+    failOnce.add('V2Fs');
+    assert.equal(await loadPhoto(subject('V2Fs', 'Walk')), null);
+    assert.match((await loadPhoto(subject('V2Fs', 'Walk'))) || '', /^blob:/);
+    assert.equal(asked.filter((id) => id === 'V2Fs').length, 2);
+  });
+
   it('loads the new photo when the group photo changes', async () => {
     await loadPhoto(subject('RkFN', 'Family'));
     assert.equal(asked.filter((id) => id === 'RkFN').length, 1);
-    await db.kvSet('syncedGroups', [group('RkFN', 'Family', 'groups/two'), group('Q0hT', 'Chess', ''), group('T0xE', 'Old')]);
+    await db.kvSet('syncedGroups', [group('RkFN', 'Family', 'groups/two'), group('Q0hT', 'Chess', ''), group('T0xE', 'Old'), group('V2Fs', 'Walk', 'groups/walk')]);
     await store.refreshDirectory();
     await loadPhoto(subject('RkFN', 'Family'));
     assert.equal(asked.filter((id) => id === 'RkFN').length, 2);

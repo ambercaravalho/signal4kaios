@@ -78,18 +78,22 @@ function photoKey(conv: AvatarSubject): string {
 /** The engine caches group photos by avatar key, so they skip the per-chat cache below. */
 function loadGroupPhoto(conv: AvatarSubject): Promise<string | null> {
   if (!conv.groupInternalId || groupAvatarKey(conv.groupInternalId) === '') return Promise.resolve(null);
-  return signal.groupAvatarBlob(conv.groupInternalId).then((blob) => URL.createObjectURL(ensureImage(blob)));
+  return signal.groupAvatarBlob(conv.groupInternalId).then((blob) => (blob ? URL.createObjectURL(ensureImage(blob)) : null));
 }
 
+/** The engine can't tell "no photo" from a failed fetch for people, so any failure counts as no photo. */
 function loadDirectPhoto(conv: AvatarSubject): Promise<string | null> {
   const key = 'avatar:' + conv.id;
-  return db.getAttachment(key).then((row) => {
-    if (row && row.blob && row.blob.size) return URL.createObjectURL(row.blob);
-    return fetchPhoto(conv).then((blob) => {
-      db.putAttachment(key, blob, blob.type);
-      return URL.createObjectURL(blob);
-    });
-  });
+  return db
+    .getAttachment(key)
+    .then((row) => {
+      if (row && row.blob && row.blob.size) return URL.createObjectURL(row.blob);
+      return fetchPhoto(conv).then((blob) => {
+        db.putAttachment(key, blob, blob.type);
+        return URL.createObjectURL(blob);
+      });
+    })
+    .catch(() => null);
 }
 
 /** The subject for our own profile (the Settings and Profile rows), as opposed to the Note to Self chat. */
@@ -101,12 +105,16 @@ export function loadPhoto(conv: AvatarSubject): Promise<string | null> {
   const key = photoKey(conv);
   if (key in photoUrl) return Promise.resolve(photoUrl[key]);
   if (!pending[key]) {
-    pending[key] = (conv.type === 'group' ? loadGroupPhoto(conv) : loadDirectPhoto(conv))
-      .catch(() => null)
-      .then((url) => {
+    pending[key] = (conv.type === 'group' ? loadGroupPhoto(conv) : loadDirectPhoto(conv)).then(
+      (url) => {
         photoUrl[key] = url;
         return url;
-      });
+      },
+      () => {
+        delete pending[key];
+        return null;
+      }
+    );
   }
   return pending[key];
 }

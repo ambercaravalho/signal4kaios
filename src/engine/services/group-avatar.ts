@@ -3,8 +3,8 @@
 import { DEFAULT_SIGNAL_CDN, SignalHttpBinaryFn } from '../net/http';
 import { decryptAttribute } from './groups-v2';
 
-/** Signal-Server names group avatars `groups/` plus 16 random bytes in unpadded base64url. */
-const GROUP_AVATAR_KEY = /^groups\/[A-Za-z0-9_-]{1,64}$/;
+/** Signal's storage server names group avatars `groups/<group identifier>/<random bytes>`, each in unpadded base64url. */
+const GROUP_AVATAR_KEY = /^groups(\/[A-Za-z0-9_-]{1,64}){1,2}$/;
 
 export function isGroupAvatarKey(key: string): boolean {
   return GROUP_AVATAR_KEY.test(key);
