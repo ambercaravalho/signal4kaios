@@ -1,10 +1,12 @@
-# Sourced by build.sh. libsignal's attest crate (contact discovery) verifies the enclave with BoringSSL, which is C and C++ that needs a libc, so it is compiled with wasi-sdk and linked against wasi-libc and libc++ (see build.rs and docs/development.md "Contact discovery build").
+# Sourced by build.sh. libsignal's attest crate (contact discovery) verifies the enclave with BoringSSL, which is C and C++ that needs a libc, so it is compiled with wasi-sdk and linked against wasi-libc and libc++ (see build.rs and docs/development.md "Contact discovery build"). The call audio codec, libopus, is C built the same way.
 #
 # Every download is pinned by SHA-256. WASI_SDK_PATH overrides the wasi-sdk download.
 
 WASI_SDK_VERSION=34.0
 LIBC_VERSION=0.2.186
 LIBC_SHA256=68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66
+OPUS_VERSION=1.5.2
+OPUS_SHA256=65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
 
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
@@ -84,6 +86,26 @@ if [ "$(cat "$BSSL_OUT/.beacon-stamp" 2>/dev/null)" != "$BSSL_STAMP" ] || [ ! -f
   cmake --build "$BSSL_OUT" --target crypto ssl --parallel >/dev/null
   echo "$BSSL_STAMP" > "$BSSL_OUT/.beacon-stamp"
 fi
+
+OPUS_SRC=$PWD/target/opus-$OPUS_VERSION
+OPUS_OUT=$PWD/target/opus-wasi
+OPUS_STAMP="opus-$OPUS_VERSION wasi-sdk-$WASI_SDK_VERSION"
+if [ "$(cat "$OPUS_OUT/.beacon-stamp" 2>/dev/null)" != "$OPUS_STAMP" ] || [ ! -f "$OPUS_OUT/libopus.a" ]; then
+  echo "Building libopus $OPUS_VERSION for WASI"
+  rm -rf "$OPUS_SRC" "$OPUS_OUT"
+  fetch "https://downloads.xiph.org/releases/opus/opus-$OPUS_VERSION.tar.gz" target/opus.tar.gz "$OPUS_SHA256"
+  tar -xzf target/opus.tar.gz -C target
+  rm target/opus.tar.gz
+  if command -v ninja >/dev/null 2>&1; then OPUS_GENERATOR=Ninja; else OPUS_GENERATOR="Unix Makefiles"; fi
+  # Release rather than MinSizeRel: encoding and decoding run 17 times a second for the whole call, on a phone without wasm SIMD.
+  cmake -S "$OPUS_SRC" -B "$OPUS_OUT" -G "$OPUS_GENERATOR" \
+    -DCMAKE_TOOLCHAIN_FILE="$WASI_SDK_PATH/share/cmake/wasi-sdk-p1.cmake" -DWASI_SDK_PREFIX="$WASI_SDK_PATH" \
+    -DCMAKE_BUILD_TYPE=Release -DOPUS_BUILD_TESTING=OFF -DOPUS_BUILD_PROGRAMS=OFF -DOPUS_DISABLE_INTRINSICS=ON \
+    -DOPUS_STACK_PROTECTOR=OFF -DOPUS_FORTIFY_SOURCE=OFF -DOPUS_INSTALL_PKG_CONFIG_MODULE=OFF -DOPUS_INSTALL_CMAKE_CONFIG_MODULE=OFF >/dev/null
+  cmake --build "$OPUS_OUT" --target opus --parallel >/dev/null
+  echo "$OPUS_STAMP" > "$OPUS_OUT/.beacon-stamp"
+fi
+export OPUS_LIB_DIR="$OPUS_OUT"
 
 export BORING_BSSL_PATH="$BSSL_OUT" BORING_BSSL_INCLUDE_PATH="$BSSL_SRC/include"
 # bindgen reads BoringSSL's headers as WASI; default visibility keeps its declarations from being filtered out.

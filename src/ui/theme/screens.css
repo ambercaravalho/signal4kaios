@@ -859,3 +859,50 @@
 .lock-error {
   color: var(--danger);
 }
+
+/* Voice call */
+
+.call {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.call-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad);
+  text-align: center;
+}
+
+.call-name {
+  margin-top: 1.2rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-primary);
+  font-weight: 600;
+}
+
+.call-status {
+  margin-top: 0.4rem;
+  font-size: var(--fs-secondary);
+  color: var(--text-2);
+}
+
+.call-ended {
+  color: var(--text);
+}
+
+.call-flag {
+  margin-top: 0.8rem;
+  font-size: var(--fs-small);
+  color: var(--text-2);
+}

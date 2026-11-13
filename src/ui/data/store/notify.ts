@@ -99,11 +99,16 @@ export function dismissNotifications(convId: string): void {
 }
 
 export function notify(conv: Conversation, rec: Message, mentioned?: string[]): void {
-  const why: NotifyReason = { mentioned, reply: !!rec.quote && isSelf(rec.quote.author), call: !!rec.notice && rec.notice.kind === 'missedCall' };
+  const why: NotifyReason = { mentioned, reply: !!rec.quote && isSelf(rec.quote.author), call: !!rec.notice && (rec.notice.kind === 'missedCall' || rec.notice.kind === 'call') };
   if (!shouldNotify(conv, why)) return;
   let body = messageText(rec) || S.newMessage;
   if (conv.type === 'group' && !rec.notice) body = displayName(rec.author) + ': ' + body;
   show(conv, body);
+}
+
+/** A call ringing while Beacon is in the background. */
+export function notifyIncomingCall(conv: Conversation): void {
+  if (shouldNotify(conv, { call: true })) show(conv, S.incomingVoiceCall);
 }
 
 /** Someone else reacted to one of our messages; muted chats stay quiet, as in Signal. */

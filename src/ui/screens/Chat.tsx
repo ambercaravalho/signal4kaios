@@ -18,6 +18,7 @@ import { muteItem } from '../components/setting-rows';
 import { TextField } from '../components/TextField';
 import { toast } from '../components/Toast';
 import { type GroupDetail, signal } from '../data/api';
+import { callablePeer, inCall, placeCall } from '../data/calls';
 import { chatColorClass, chatColorOf } from '../data/chat-colors';
 import { fmtDay, fmtMsgTime } from '../data/format';
 import * as store from '../data/store';
@@ -166,6 +167,13 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
     );
   }
 
+  const callPeer = callablePeer(conv);
+
+  function startCall(peer: string): void {
+    if (inCall()) return toast(S.alreadyInCall);
+    placeCall(peer).catch((e) => toast(friendlyError(e)));
+  }
+
   function chatOptions(): void {
     showOptions([
       request && { label: S.accept, onSelect: acceptRequest },
@@ -181,6 +189,7 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
       canCompose && conv && conv.type === 'group' && { label: S.mention, onSelect: composer.mention },
       canCompose && conv && !store.isSelfConv(conv) && { label: S.createPoll, onSelect: createPoll },
       DIVIDER,
+      !!callPeer && !blocked && !request && !store.isSelfConv(conv) && { label: S.voiceCall, onSelect: () => startCall(callPeer) },
       pinned.length > 0 && { label: S.pinnedMessages, onSelect: showPinned },
       DIVIDER,
       conv && muteItem(conv),

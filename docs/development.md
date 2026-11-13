@@ -5,6 +5,7 @@ Building, testing, and releasing Beacon (this repository, signal4kaios). How the
 - [Prerequisites](#prerequisites)
 - [Build and test](#build-and-test)
 - [Running on a phone](#running-on-a-phone)
+- [Calls](#calls)
 - [Bumping the libsignal pin](#bumping-the-libsignal-pin)
 - [Regenerating protobuf codecs](#regenerating-protobuf-codecs)
 - [Releasing](#releasing)
@@ -39,7 +40,7 @@ npm run package      # bundle + checks -> dist/signal4kaios.zip and dist/signal4
 | Script | Does |
 | --- | --- |
 | `build:wasm` | BoringSSL and the patched `libc` ([below](#contact-discovery-build)) → `cargo build` → `wasm-bindgen --target web` → optional `wasm-opt` → copy to `src/app/vendor/` |
-| `build` | [`scripts/build.mjs`](../scripts/build.mjs): esbuild bundles [`src/ui/main.tsx`](../src/ui/main.tsx) with the engine, the wasm-bindgen glue, and the CSS into `src/app/build/app.js` and `app.css` (IIFE, `firefox84`). It keeps only the emoji KaiOS 3.x can draw. A second entry bundles the Backups codec and the history frame mapper into `backup.js`, which the app loads only while it imports message history after linking. `--analyze` prints what makes up `app.js` |
+| `build` | [`scripts/build.mjs`](../scripts/build.mjs): esbuild bundles [`src/ui/main.tsx`](../src/ui/main.tsx) with the engine, the wasm-bindgen glue, and the CSS into `src/app/build/app.js` and `app.css` (IIFE, `firefox84`). It keeps only the emoji KaiOS 3.x can draw. A second entry bundles the Backups codec and the history frame mapper into `backup.js`, which the app loads only while it imports message history after linking, and a third builds the call audio worklet into `call-worklet.js`. `--analyze` prints what makes up `app.js` |
 | `icons` | [`scripts/icons.mjs`](../scripts/icons.mjs): renders [`beacon.svg`](../src/app/assets/icons/beacon.svg) to the 56 and 112 px launcher PNGs. Run it after editing the SVG and commit the PNGs |
 | `typecheck` | `tsc --noEmit` over `src/engine/`, `src/ui/`, and `test/` |
 | `test` | Bundles `test/*.test.ts` and `test/*.test.tsx` and runs them with `node --test`. The UI tests render screens with `preact-render-to-string` over `fake-indexeddb`, and check that everyday wording stays free of technical terms |
@@ -59,6 +60,25 @@ The interop tests ([`test/interop.test.ts`](../test/interop.test.ts)) run our wa
 Install with [`scripts/install.sh`](../scripts/install.sh) (needs [adb](https://developer.android.com/tools/adb) and [`appscmd`](https://github.com/kaiostech/appscmd)) or OStore's Manual Install, and debug with Firefox at `about:debugging`. On the phone, **Settings → Debug** is the main diagnostic: it shows the account and device IDs, PreKey counts, and connection state, and can share a log with the phone number and IDs redacted. Connections to Signal work only through the app's pinned TLS client, so a regression there shows up as close code 1015.
 
 Test KaiOS 4.0 with `api-daemon`'s stock policy, with no `'wasm-unsafe-eval'` added to the `csp` line in its `config.toml`, since that's what users have. `adb logcat | grep -i wasm-eval` then shows a policy error only for the first launch after an install or update, followed by one reload ([how it works](architecture.md#webassembly-on-kaios-40)). See the [KaiOS developer docs](https://developer.kaiostech.com) for the platform itself.
+
+## Calls
+
+How calls work is in [Architecture](architecture.md#calls). [`test/engine-calling.test.ts`](../test/engine-calling.test.ts) covers the network and media side without a phone: STUN against the RFC 5769 test vector, TURN against a fake relay, two ICE agents connecting to each other, the jitter buffer, encoder pacing, and the call manager's states, with Node's mock timers standing in for the ring and offer timeouts. [`test/ui-calls.test.tsx`](../test/ui-calls.test.tsx) covers call log lines and the call screen. Both run in `npm test`.
+
+The audio settings come from measurements on a TCL T440W running KaiOS 4.0:
+
+| Finding | Result |
+| --- | --- |
+| A `telephony` `AudioContext` plays through the earpiece only when the manifest sets `b2g_features.core: true`. It's a separate Gecko graph, and connecting the microphone to it fails with a sample-rate error | Earpiece mode captures in a normal context and plays in a telephony one. The speaker uses one content context |
+| `echoCancellation: true` selects the voice-call input (`adb logcat` shows HAL source 7, `audio-record-voip`) and the DSP's `Voip_Fluence_SMECNS` echo and noise canceller. Without it the phone uses its recording input, with noise suppression only | Echo cancellation and noise suppression on |
+| Gecko's automatic gain control overloads its media graph thread: the microphone context's clock ran 4.3 to 9.5% slower than the wall clock, so microphone audio was dropped and sounded choppy | Automatic gain control off |
+| Opus takes 2.3 ms per 60 ms frame in a tight loop at complexity 3, but 17.5 ms when paced every 60 ms as in a call (11.9 ms at complexity 1, 23.3 ms at 5), because the scheduler keeps light periodic work on the efficiency cores | Start at complexity 3, and step down to 1, then 0, when encodes average more than half the frame time |
+| App start-up and other main-thread work stall it for up to 335 ms | Playback keeps 150 ms queued at first, grows the queue by 40 ms after a stall runs it dry (up to 300 ms), and shrinks it by 20 ms after 10 calm seconds (down to 100 ms) |
+
+> [!NOTE]
+> `core: true` is what lets a packaged app use the telephony and ringer audio channels. Without it, the call can only play through the loudspeaker.
+
+On the phone, a call needs a second Signal account to call. Without one, `adb logcat | grep -i -e audio_hw -e fluence` still confirms which input and DSP path a microphone test selects, and **Settings → Debug** shares a log that says why a call failed to start, lost its relay, or failed to connect to a device, with no keys, addresses, or relay credentials.
 
 ## Bumping the libsignal pin
 
@@ -91,6 +111,7 @@ The module then imports eight `wasi_snapshot_preview1` functions. esbuild aliase
 | --- | --- |
 | `src/protos/signal-desktop/` | [Signal-Desktop](https://github.com/signalapp/Signal-Desktop/tree/main/protos) v8.34.0 (`Backups.proto`, `DeviceMessages.proto`, `DeviceName.proto`, `Groups.proto`, `SignalService.proto`, `SignalStorage.proto`) |
 | `src/protos/libsignal/` | [libsignal](https://github.com/signalapp/libsignal/tree/main/rust/net/src/proto) v0.106.2 (`chat_websocket.proto`, `cds2.proto`) |
+| `src/protos/ringrtc/` | [RingRTC](https://github.com/signalapp/ringrtc/tree/main/protobuf/protobuf) v2.75.0 (`signaling.proto`, `rtp_data.proto`, `group_call.proto`) |
 
 To update, copy the same files from the new tags, update `buf.yaml`, and run `npm run gen:protos`. [buf](https://buf.build/docs/) and [protoc-gen-es](https://github.com/bufbuild/protobuf-es) regenerate `src/engine/gen/`, which is committed; CI fails if it differs from a fresh generation.
 

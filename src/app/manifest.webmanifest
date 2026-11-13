@@ -14,8 +14,9 @@
     { "src": "/assets/icons/kaios_112.png", "type": "image/png", "sizes": "112x112" }
   ],
   "b2g_features": {
-    "version": "2.9.4",
+    "version": "2.10.0",
     "type": "privileged",
+    "core": true,
     "origin": "signal4kaios",
     "subtitle": "For Signal accounts",
     "focus_color": "#2c6bed",
@@ -41,7 +42,13 @@
         "description": "Use the camera to scan QR codes"
       },
       "audio-capture": {
-        "description": "Record voice messages"
+        "description": "Record voice messages and talk in calls"
+      },
+      "audio-channel-telephony": {
+        "description": "Play call audio through the earpiece"
+      },
+      "audio-channel-ringer": {
+        "description": "Ring for incoming calls"
       },
       "device-storage:pictures": {
         "access": "readcreate",

@@ -10,7 +10,7 @@ import type { MessageEvent, NoticeEvent, StoreEvent } from '../normalize/events'
 import { groupUpdateEvents } from '../normalize/group';
 import { dataMessageEvents, noticeEvent } from '../normalize/message';
 import type { Conversation, Message, Notice } from '../types';
-import { ALERTING_NOTICES, messageRecord, noticeRecord } from './ingest';
+import { messageRecord, noticeAlerts, noticeRecord } from './ingest';
 import { messageText, previewOf } from './previews';
 import { SELF_NAME } from './state';
 
@@ -114,7 +114,7 @@ export class HistoryImport {
         c.lastTs = rec.timestamp;
         c.lastPreview = isNotice ? messageText(rec) : previewOf(rec);
       }
-      const counts = isNotice ? ALERTING_NOTICES.indexOf(rec.notice!.kind) >= 0 && h.author !== this.selfKey : rec.incoming;
+      const counts = isNotice ? noticeAlerts(rec.notice!) && h.author !== this.selfKey : rec.incoming;
       if (counts && !h.read) c.unread = (c.unread || 0) + 1;
       if (!rec.incoming) this.outgoing.add(c.id);
       this.added.set(c.id, (this.added.get(c.id) || 0) + 1);

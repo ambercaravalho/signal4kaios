@@ -12,7 +12,9 @@ import { incomingMethods } from './bridge/incoming';
 import { outgoingMethods } from './bridge/outgoing';
 import { net } from './net/transport';
 import { loadLibsignal } from './protocol/libsignal';
+import { callMethods } from './bridge/calls';
 
+export type { CallState, CallPhase, CallEndReason } from './calling/manager';
 export type { ChatFolderEdit } from './bridge/chat-folders';
 export type { MessageRef } from './bridge/delivery';
 export type { GroupLinkPreview } from './bridge/groups';
@@ -37,6 +39,7 @@ export const signalBridge = {
   ...backfillMethods,
   ...historyMethods,
   ...chatFolderMethods,
+  ...callMethods,
 };
 
 export type SignalBridge = typeof signalBridge;

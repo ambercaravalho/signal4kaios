@@ -6,6 +6,7 @@ Everything Beacon does, driven from the keypad. Installing and linking are in [S
 - [Chats list](#chats-list)
 - [Inside a chat](#inside-a-chat)
 - [Media](#media)
+- [Voice calls](#voice-calls)
 - [Starting a chat and searching](#starting-a-chat-and-searching)
 - [Chat settings, groups, and safety numbers](#chat-settings-groups-and-safety-numbers)
 - [Settings](#settings)
@@ -75,7 +76,7 @@ OK on a message opens its options. The first one is what the message is most lik
 - **Drafts**: text left in the message box stays with the chat until you send or clear it.
 - **Mentions**: in a group, **Mention** picks a member and sends a Signal mention.
 - **Emoji**: **Insert emoji** opens the picker; its **Options** has **Category** and **Skin tone**, which picks one of six tones for emoji that have them, reactions included.
-- **Notices**: calls, payments, reactions to your story, a changed safety number, group calls, disappearing message timer changes, and group changes (name, description, members, admins, invites, join requests, group link, and permissions) show as a line in the chat, for example **Dave added you**; when Signal doesn't say who made a group change, the line just says what changed. OK on one offers **Delete for me**, and on a safety number line **View safety number**. Calls, payments, and stories happen on your phone, so their lines say so, for example **Voice call. Answer it on your phone.** A reply to your story shows as a message quoting **Story**.
+- **Notices**: calls, payments, reactions to your story, a changed safety number, group calls, disappearing message timer changes, and group changes (name, description, members, admins, invites, join requests, group link, and permissions) show as a line in the chat, for example **Dave added you**; when Signal doesn't say who made a group change, the line just says what changed. OK on one offers **Delete for me**, and on a safety number line **View safety number**. Voice calls show how they went, for example **Missed voice call** or **Outgoing voice call · 1:05** (see [Voice calls](#voice-calls)). Video calls, group calls, payments, and stories happen on your phone, so their lines say so, for example **Video call. Answer it on your phone.** A reply to your story shows as a message quoting **Story**.
 - **Groups where only admins can send** show **Only admins can send messages** in place of the message box.
 
 - **Text formatting**: type `**bold**`, `*italic*`, `~strikethrough~`, `` `monospace` ``, or `||spoiler||`. Spoilers stay hidden until you focus the message. Prefix a marker with `\` to type it literally. Turn this off in **Settings → Chats**.
@@ -114,6 +115,31 @@ A group opens as a request when someone who isn't in your contacts added or invi
 - Opening a voice message, video, or view-once media tells the sender you viewed it when read receipts are on.
 - **Chat settings → Media** lists a chat's photos, videos, voice messages, and files, newest first, with a thumbnail for photos already on the phone. OK opens one in the viewer. View-once media and files sent from this phone before Beacon 2.9.3 aren't listed.
 
+## Voice calls
+
+Beacon makes and answers one-to-one Signal voice calls, end-to-end encrypted as in Signal. To call someone, open your chat with them and choose **Options → Voice call**. The screen shows **Calling…**, then **Ringing…** while their phone rings, and the call's length once they answer. The first time, KaiOS asks whether Beacon may use the microphone. Someone who hasn't accepted your message request can't take your call yet, and Beacon says so.
+
+When someone calls, Beacon rings and vibrates and shows **Incoming voice call** over whatever is open, with a notification when it's in the background. **Answer** with OK or the Call key, and **Decline** with the left softkey or the End key. In a muted chat the call shows without ringing unless **Notify for calls** is on, and the same goes while a notification profile that doesn't allow the caller or calls is on. As in Signal, someone who isn't in your contacts and whose message request you haven't accepted doesn't ring; their call shows as missed.
+
+During a call:
+
+| Key | Does |
+| --- | --- |
+| **Left softkey** | **Speaker** moves the call from the earpiece to the loudspeaker; **Speaker off** moves it back |
+| **OK** | **Mute** or **Unmute** your microphone. The screen says **You're muted**, and when the other person mutes, **{name} is muted** |
+| **Right softkey** or **End** | **End** the call |
+| **Volume keys** | The call's volume |
+
+Calls start on the earpiece. **Back** doesn't leave the call screen, so the call can't get lost behind another one.
+
+- Every call leaves a line in the chat: **Outgoing voice call · 1:05**, **Incoming voice call**, **Missed voice call**, **Declined voice call**, or **Unanswered voice call**. A missed call counts as unread and raises a notification.
+- Beacon is one of your linked devices, so your phone and your other devices ring too. Answering or declining on one stops the others ringing, and Beacon says **Answered on another device** or **Declined on another device**.
+- Your call history is shared with your phone and other devices: calls made here show there, missed calls you've seen there stop counting as unread here, and clearing or deleting calls there removes their lines here.
+- Calls always go through Signal's relay servers, like Signal's **Always relay calls** setting, so the other person doesn't see your IP address.
+- **Holding the Call key** in a chat still records a voice message; it doesn't start a call.
+
+## Starting a chat and searching
+
 ## Starting a chat and searching
 
 **New chat** lists your contacts and groups and filters them as you type a name. Type a username to get **Find by username**, or a number to get **Find by phone number**. **Scan** (right softkey) reads someone's Signal QR code (their username code or a phone number), a group's QR code, or a proxy's.
@@ -147,7 +173,7 @@ A group opens as a request when someone who isn't in your contacts added or invi
 | **Help** | Short guides by topic, Source code, and the version |
 | **Debug** | Technical details for troubleshooting (see below) |
 
-**Help** lists guides on getting started, message history, keys, chats and messages, chat folders, groups and safety numbers, settings, the proxy, notifications, what Beacon can't do yet, and troubleshooting. Each opens a page with a QR code for the matching section of these docs: scan it with another phone, or press **Open** to read it in the phone's browser. **Learn more** at the bottom of Privacy, Chats, Chat folders, Notifications, Phone number, Screen lock, and Proxy, and in the safety number's **Options**, opens the same kind of page, as do **Help** on the welcome screen and when Beacon can't start, and **How to link** in the linking screen's **Options**.
+**Help** lists guides on getting started, message history, keys, chats and messages, chat folders, groups and safety numbers, settings, the proxy, notifications, what Beacon can't do, and troubleshooting. Each opens a page with a QR code for the matching section of these docs: scan it with another phone, or press **Open** to read it in the phone's browser. **Learn more** at the bottom of Privacy, Chats, Chat folders, Notifications, Phone number, Screen lock, and Proxy, and in the safety number's **Options**, opens the same kind of page, as do **Help** on the welcome screen and when Beacon can't start, and **How to link** in the linking screen's **Options**.
 
 **Profile → Photo** picks a picture from the gallery or camera, crops the middle square, and saves it at 512 by 512 pixels; with a photo set, it offers **Choose photo** and **Remove photo**. Your photo is encrypted with your profile key like the rest of your profile, and your main phone and other devices pick up the change. A photo set on your main phone shows here too.
 
@@ -196,11 +222,12 @@ Archive, mute and how long it lasts, what notifies in muted chats, notification 
 
 ## Known limitations
 
-Beacon doesn't yet support every Signal feature. Voice calls and more are tracked on the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap); until voice calls work, Beacon shows each call as a line in the chat and your phone rings as usual.
+Beacon doesn't support every Signal feature. This section lists what's missing or works only partly, and why.
 
 These won't be added, and Beacon points you to your phone for them instead:
 
 - **Video calls**, which don't suit the phone's power or its single rear camera.
+- **Group calls**. A group call shows as a line asking you to join it from your phone.
 - **Stories**. Stories your contacts post don't show at all; replies and reactions to yours show in the chat.
 - **Payments**. A payment shows as a line asking you to check your phone.
 
@@ -217,3 +244,5 @@ These work only partly:
 | Holding the Call key to record a voice message | Works only on phones that pass a held Call key to apps. **Options → Record voice message** works everywhere. |
 | Forwarding files you sent from this phone before Beacon 2.9.3 | Not possible, because the phone didn't keep a copy it can resend. They're also left out of **Media**. Files sent since then can be forwarded. |
 | Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |
+| Calls while Beacon is closed | They don't ring here, for the same reason. Your phone still rings, and once Beacon opens, a call you didn't answer shows as **Missed voice call**. |
+| Answering while **Screen lock** has locked Beacon | The lock screen covers the incoming call while it rings: type your PIN, then answer. |

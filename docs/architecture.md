@@ -13,6 +13,7 @@ How Beacon (the signal4kaios repository) turns a KaiOS phone into a Signal linke
 - [Linking](#linking)
 - [The libsignal wrapper](#the-libsignal-wrapper)
 - [Phone number lookup](#phone-number-lookup)
+- [Calls](#calls)
 - [Engine modules](#engine-modules)
 - [Storage](#storage)
 - [Security model](#security-model)
@@ -36,10 +37,12 @@ flowchart LR
   chat["chat.signal.org"]
   storage["storage.signal.org"]
   cdn["cdn*.signal.org"]
+  relay["Signal's call relays"]
   ui <-->|"WebSocket over pinned TLS"| chat
   engine -->|"HTTPS over pinned TLS"| chat
   engine -->|"HTTPS over pinned TLS"| storage
   engine -->|"HTTPS over pinned TLS"| cdn
+  engine <-->|"TURN over TCP or TLS"| relay
 ```
 
 | Layer | Where | Role |
@@ -117,6 +120,7 @@ src/
     net/                  HTTP shapes, protobuf helpers, provisioning, receive, send client
     net/transport/        pinned TLS over TCPSocket: HTTP/1.1 and WebSocket clients
     services/             Storage Service (storage/), message history from linking (history/), profiles, Groups V2
+    calling/              1:1 voice calls: call manager, ICE, TURN, SRTP connections, Opus audio
     crypto/               attachment and profile cipher primitives
     gen/                  generated protobuf codecs (never hand-edited)
   native/libsignal-wasm/  Rust wrapper crate (AGPL-3.0-only)
@@ -285,6 +289,7 @@ Every libsignal call that touches protocol state goes through [`src/engine/proto
 | `zk.rs` | Profile key version, commitment, and access key; Groups V2 params, blob and member decryption, profile key encryption, auth and expiring profile key credential presentations; group send endorsements and tokens |
 | `tls.rs` | TLS client for Signal's hosts with libsignal's pinned roots (see [Network](#network)) |
 | `cdsi.rs` | `Cds2Client`: the contact discovery enclave's attestation and Noise channel, from libsignal's `attest` crate (see [Phone number lookup](#phone-number-lookup)) |
+| `calling.rs` | A call's X25519 key pair, its SRTP keys and AEAD_AES_256_GCM contexts, and [libopus](https://opus-codec.org) (see [Calls](#calls)) |
 
 ## Phone number lookup
 
@@ -296,6 +301,38 @@ Starting a chat with a number that isn't a synced contact asks Signal's contact 
 4. Close code 4008 means rate limited; its JSON reason carries `retry_after` in seconds, which the app shows as minutes.
 
 Each lookup is a fresh request without a saved token, so it counts against the account's discovery quota like a first lookup on another device. A number with no account, or whose owner turned off **Who can find me by number**, comes back without an ACI and is shown as not found. A found account is saved to `syncedContacts` with its number, ACI, and PNI, so sends and later lookups resolve it like a synced contact.
+
+## Calls
+
+Beacon takes part in 1:1 voice calls as one more of the account's devices, following [RingRTC](https://github.com/signalapp/ringrtc). It can't use WebRTC for them: Signal's calls turn DTLS off and key SRTP from the call's own signaling, which Gecko's `RTCPeerConnection` won't do, and KaiOS apps can't open UDP sockets (`UDPSocket` is chrome-only in gecko-b2g). So the engine carries the call itself, and the media reaches the other phone through one of Signal's TURN relays over TCP:
+
+```mermaid
+flowchart LR
+  mic["Microphone"] --> worklet["call-worklet.js on the audio thread"]
+  worklet --> opus["Opus encode in wasm"]
+  opus --> srtp["SRTP in wasm"]
+  srtp --> ice["ICE agent"]
+  ice --> turn["TURN client over TCP or TLS"]
+  turn --> relay["Signal's relay"]
+  relay <-->|UDP| peer["The other person's phone"]
+```
+
+| Piece | Role |
+| --- | --- |
+| [`calling/manager.ts`](../src/engine/calling/manager.ts) | RingRTC's call manager and state machine (`call_manager.rs`, `call_fsm.rs`): offers, answers, ICE updates, busy, hangups, and glare, where the higher call ID wins. Offers older than 60 seconds become missed calls, and an unanswered call rings for 60 seconds. Signaling travels as `CallMessage` over the usual encrypted send path. An outgoing call opens a leg to each of the callee's devices that answers, and the first to accept wins |
+| [`calling/relays.ts`](../src/engine/calling/relays.ts), [`calling/turn.ts`](../src/engine/calling/turn.ts) | `GET /v2/calling/relays` returns short-lived relay credentials, as Signal-Desktop's `getIceServers` gets them. The TURN client (RFC 8656) allocates over TCP to the relay's IP address, or over TLS to its hostname when that fails, and binds a channel for each peer address |
+| [`calling/ice.ts`](../src/engine/calling/ice.ts) | A relay-only ICE agent (RFC 8445): our one candidate is the relayed address, and connectivity checks with the peer's candidates run through the relay. `RelayMux` shares one allocation among the legs of an outgoing call |
+| [`calling/connection.ts`](../src/engine/calling/connection.ts), [`calling/rtp.ts`](../src/engine/calling/rtp.ts) | One leg: Opus over SRTP, and RingRTC's RTP data messages, which carry accepted, hangup, and mute status. The jitter buffer rebuilds a lost packet from the next one's forward error correction, or conceals it, and fills Opus DTX gaps with comfort noise |
+| [`calling/media.ts`](../src/engine/calling/media.ts) | 60 ms Opus frames at 16 kHz and 32 kbps, as RingRTC sends them. The encoder starts at complexity 3 and steps down to 1, then 0, when encoding takes more than half of each frame's time |
+| [`bridge/calls.ts`](../src/engine/bridge/calls.ts) | Wires the manager to the account, the relays, and `calling.rs`, and exposes the call to the app as `signalBridge` methods |
+
+**Keys.** Each side puts a fresh X25519 public key in its `ConnectionParametersV4`, inside the encrypted offer or answer. `calling.rs` derives both directions' SRTP master keys with HKDF-SHA256 over the shared secret, with the caller's and callee's identity keys in the info string, exactly as RingRTC does. The private key and SRTP keys never leave wasm.
+
+**The app's side.** [`data/calls.ts`](../src/ui/data/calls.ts) follows the engine's call state. It opens the call screen ([`screens/Call.tsx`](../src/ui/screens/Call.tsx)) over whatever is showing, rings with a tone that WebAudio synthesizes on the ringer channel plus vibration, and holds a CPU wake lock for the call and a screen wake lock while it rings. As in Signal-Desktop, it doesn't ring for a message request or for someone it doesn't know. [`data/call-audio.ts`](../src/ui/data/call-audio.ts) runs the microphone and the speaker through an `AudioWorklet` ([`call-worklet.ts`](../src/ui/data/call-worklet.ts), built to `build/call-worklet.js`), which resamples to and from 16 kHz. The app keeps a short playback queue in the worklet that grows after a stall and shrinks once audio is steady again.
+
+**Earpiece and speaker.** Gecko plays an `AudioContext` created with `audioChannel: 'telephony'` through the earpiece, but only for core apps, so the manifest sets `b2g_features.core: true` and asks for `audio-channel-telephony` and `audio-channel-ringer`. A telephony context is a separate audio graph that can't take the microphone. In earpiece mode the microphone therefore feeds a normal context and playback goes to a telephony one, while the speaker uses one content-channel context for both. The volume keys follow the channel that's playing. `getUserMedia` asks for echo cancellation and noise suppression, which on the phone selects its voice-call input and the DSP's own echo and noise canceller. Gecko's automatic gain control stays off; see [Development](development.md#calls) for why.
+
+**Call log.** Each call leaves one line in its chat, keyed by the call ID and updated as its outcome becomes known ([`data/store/call-log.ts`](../src/ui/data/store/call-log.ts)). As Signal-Desktop does, Beacon sends `SyncMessage.CallEvent` when it answers, declines, or places a call. A `CallEvent` from another device stops ringing here and updates the line, and `DELETE` removes it. A `CallLogEvent` marks missed calls read, or clears call lines up to its timestamp. Video calls and group calls still show lines that point to the phone.
 
 ## Engine modules
 
@@ -322,6 +359,7 @@ Each lookup is a fresh request without a saved token, so it counts against the a
 | [`services/group-send.ts`](../src/engine/services/group-send.ts) | Group send endorsements and tokens, per-group sender key distribution IDs, and which member devices have our sender key |
 | [`services/usernames.ts`](../src/engine/services/usernames.ts) | Username reserve, confirm, delete, and link URLs |
 | [`services/cdsi.ts`](../src/engine/services/cdsi.ts) | Phone number lookup through contact discovery (see [Phone number lookup](#phone-number-lookup)) |
+| [`calling/`](../src/engine/calling) | 1:1 voice calls (see [Calls](#calls)) |
 | [`crypto/`](../src/engine/crypto) | WebCrypto AES and [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) HMAC/HKDF for attachments, profiles, and storage |
 
 ## Storage

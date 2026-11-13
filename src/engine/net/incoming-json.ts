@@ -17,6 +17,10 @@ import {
   ReceiptMessage_Type,
   type SyncMessage_AttachmentBackfillResponse,
   SyncMessage_AttachmentBackfillResponse_AttachmentData_Status,
+  SyncMessage_CallEvent_Direction,
+  SyncMessage_CallEvent_Event,
+  SyncMessage_CallEvent_Type,
+  SyncMessage_CallLogEvent_Type,
   SyncMessage_MessageRequestResponse_Type,
   TypingMessage_Action,
 } from '../gen/SignalService_pb';
@@ -43,6 +47,33 @@ const REQUEST_RESPONSES: Record<number, string> = {
   [SyncMessage_MessageRequestResponse_Type.SPAM]: 'spam',
   [SyncMessage_MessageRequestResponse_Type.BLOCK_AND_SPAM]: 'blockAndSpam',
 };
+
+const CALL_TYPES: Record<number, string> = {
+  [SyncMessage_CallEvent_Type.AUDIO_CALL]: 'audio',
+  [SyncMessage_CallEvent_Type.VIDEO_CALL]: 'video',
+  [SyncMessage_CallEvent_Type.GROUP_CALL]: 'group',
+  [SyncMessage_CallEvent_Type.AD_HOC_CALL]: 'adHoc',
+};
+
+const CALL_EVENTS: Record<number, string> = {
+  [SyncMessage_CallEvent_Event.ACCEPTED]: 'accepted',
+  [SyncMessage_CallEvent_Event.NOT_ACCEPTED]: 'notAccepted',
+  [SyncMessage_CallEvent_Event.DELETE]: 'delete',
+  [SyncMessage_CallEvent_Event.OBSERVED]: 'observed',
+};
+
+const CALL_LOG_EVENTS: Record<number, string> = {
+  [SyncMessage_CallLogEvent_Type.CLEAR]: 'clear',
+  [SyncMessage_CallLogEvent_Type.MARKED_AS_READ]: 'read',
+  [SyncMessage_CallLogEvent_Type.MARKED_AS_READ_IN_CONVERSATION]: 'readInConversation',
+  [SyncMessage_CallLogEvent_Type.CLEAR_IN_CONVERSATION]: 'clearInConversation',
+};
+
+/** A call event's conversation, when it's a 1:1 chat: the peer's ACI. Group and call link conversations are other IDs. */
+function oneToOnePeer(conversationId: Uint8Array): string | undefined {
+  const id = conversationId.length === 16 ? serviceIdFrom('', conversationId) : '';
+  return isAci(id) ? id : undefined;
+}
 
 const MAX_REPORT_TOKEN_BYTES = 1024;
 
@@ -380,6 +411,25 @@ export function contentToNormalizedFrame(env: IncomingEnvelope, content: Content
               isFullDelete: !!cd.isFullDelete,
             }))
             .concat(d.localOnlyConversationDeletes.map((ld) => ({ conversation: chatRef(ld.conversation), mostRecent: [], mostRecentNonExpiring: [], isFullDelete: true }))),
+        };
+      }
+      if (sm.content.case === 'callEvent') {
+        const e = sm.content.value;
+        syncOut.callEvent = {
+          peer: oneToOnePeer(e.conversationId),
+          callId: e.callId.toString(),
+          timestamp: num(e.timestamp) || env.timestamp || Date.now(),
+          type: CALL_TYPES[e.type] || 'unknown',
+          direction: e.direction === SyncMessage_CallEvent_Direction.INCOMING ? 'incoming' : e.direction === SyncMessage_CallEvent_Direction.OUTGOING ? 'outgoing' : 'unknown',
+          event: CALL_EVENTS[e.event] || 'unknown',
+        };
+      }
+      if (sm.content.case === 'callLogEvent') {
+        const e = sm.content.value;
+        syncOut.callLogEvent = {
+          type: CALL_LOG_EVENTS[e.type] || 'unknown',
+          timestamp: num(e.timestamp) || env.timestamp || Date.now(),
+          peer: oneToOnePeer(e.conversationId),
         };
       }
       if (sm.content.case === 'attachmentBackfillResponse') {

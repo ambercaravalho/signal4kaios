@@ -2,6 +2,7 @@
 
 import { fmt, plural, S } from '../../strings';
 import { config } from '../config';
+import { fmtLength } from '../format';
 import { groupUpdateText, type LineNames, timerText } from '../group-lines';
 import type { Attachment, Message, Notice } from '../types';
 import { displayName, isSelfKey } from './contacts';
@@ -32,6 +33,8 @@ export function noticeText(notice: Notice, author: string): string {
   switch (notice.kind) {
     case 'missedCall':
       return notice.video ? S.missedVideoCall : S.missedVoiceCall;
+    case 'call':
+      return callText(notice);
     case 'safetyNumber':
       return fmt(S.safetyNumberChanged, { name: displayName(author) });
     case 'groupCall':
@@ -47,6 +50,14 @@ export function noticeText(notice: Notice, author: string): string {
     case 'storyReaction':
       return fmt(lineNames.isMe(author) ? S.storyReactionSent : S.storyReaction, { name: displayName(author), emoji: notice.text || '' });
   }
+}
+
+function callText(n: Notice): string {
+  if (n.outcome === 'missed') return S.missedCallLine;
+  if (n.outcome === 'declined') return S.declinedCallLine;
+  if (n.outcome === 'unanswered') return S.unansweredCallLine;
+  const line = n.direction === 'outgoing' ? S.outgoingCallLine : S.incomingCallLine;
+  return n.durationMs && n.durationMs >= 1000 ? line + ' · ' + fmtLength(n.durationMs / 1000) : line;
 }
 
 function paymentText(kind: string | undefined, author: string): string {

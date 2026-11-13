@@ -506,3 +506,14 @@ export function compareScannedSafetyNumber(ourScannable: Uint8Array, scanned: Ui
     return false;
   }
 }
+
+/* ---- Calls ---- */
+
+/** Our ACI identity key and `peerAci`'s, as RingRTC mixes them into a call's SRTP keys: the 32 key bytes without the type byte (Signal-Desktop `handleCallingMessage`). Null when we have no identity for the peer. */
+export async function callIdentityKeys(store: SignalProtocolStore, peerAci: string): Promise<{ ours: Uint8Array; theirs: Uint8Array } | null> {
+  const acc = await store.getAccount();
+  const peer = await store.getIdentity(peerAci);
+  if (!acc || !peer) return null;
+  const strip = (k: Uint8Array) => (k.length === 33 ? k.subarray(1) : k);
+  return { ours: strip(acc.aciIdentityKeyPair.pubKey), theirs: strip(peer.publicKey) };
+}

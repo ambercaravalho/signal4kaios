@@ -248,7 +248,7 @@ export class SignalClient {
   /**
    * Encrypt and deliver a Content to all devices of `recipientId` (an ACI) via `PUT /v1/messages/{recipientId}`, using Sealed Sender when we know the recipient's profile key, and handling 409 (missing/extra devices) and 410 (stale devices) by updating sessions and retrying. Resolves to whether it went sealed.
    */
-  async sendContentToRecipient(recipientId: string, content: Content, timestamp: number, online = false): Promise<boolean> {
+  async sendContentToRecipient(recipientId: string, content: Content, timestamp: number, online = false, urgent = !online): Promise<boolean> {
     if (!isAci(recipientId)) throw new Error('Signal recipients are addressed by ACI; unknown service ID ' + recipientId);
     const auth = await this.authHeader();
     const local = await localIdentity(this.store);
@@ -291,7 +291,7 @@ export class SignalClient {
         await this.httpJson(
           'PUT',
           `/v1/messages/${encodeURIComponent(recipientId)}`,
-          { messages, timestamp, online, urgent: !online },
+          { messages, timestamp, online, urgent },
           accessKey
             ? { baseUrl: this.serverUrl, noAuth: true, headers: { 'Unidentified-Access-Key': accessKey }, timeout: 20000 }
             : { baseUrl: this.serverUrl, basicAuth: auth, timeout: 20000 }

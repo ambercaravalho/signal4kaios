@@ -82,6 +82,21 @@ export const router = {
   depth(): number {
     return screenDepth();
   },
+
+  has(Component: ComponentType<any>): boolean {
+    return stack.some((e) => e.Component === Component);
+  },
+
+  /** Closes every entry showing `Component`, wherever it sits in the stack. */
+  remove(Component: ComponentType<any>): void {
+    const before = topEntry();
+    const next = stack.filter((e) => e.Component !== Component);
+    if (next.length === stack.length || !next.length) return;
+    stack = next;
+    changed();
+    const t = topEntry();
+    if (t && t !== before) for (const fn of t.onResume.slice()) fn();
+  },
 };
 
 const EntryContext = createContext<Entry | null>(null);
