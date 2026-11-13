@@ -2,6 +2,19 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.10.0
+
+Voice calls. Install over v2.9.4; your chats and settings carry over.
+
+### New
+
+- **Voice calls** ([#7](https://github.com/ambercaravalho/signal4kaios/issues/7)). Call someone from **Options → Voice call** in your one-to-one chat with them, and answer with OK or the Call key. Calls start on the earpiece; **Speaker** moves them to the loudspeaker, and OK mutes you. They're end-to-end encrypted as in Signal, and always go through Signal's relay servers, so the other person doesn't see your IP address. Like notifications, calls ring only while Beacon is open or in the background, and group calls and video calls stay on your phone ([Known limitations](docs/user-guide.md#known-limitations)).
+- **Call history.** Each call leaves a line in its chat, such as **Missed voice call** or **Outgoing voice call · 1:05**, and a missed call counts as unread. The history is shared with your phone and other devices: answering or declining on one stops the others ringing, and clearing calls there clears them here.
+
+### Changed
+
+- Older call lines say **Voice call** instead of asking you to answer on your phone.
+
 ## v2.9.4
 
 Find people by phone number, plus a fix. Install over v2.9.3; your chats and settings carry over.

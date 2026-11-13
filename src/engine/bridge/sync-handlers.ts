@@ -2,7 +2,15 @@
 
 import { bytesToUuid, fromBase64, toBase64 } from '../bytes';
 import { DeviceNameSchema } from '../gen/DeviceName_pb';
-import { type Content, SyncMessage_FetchLatest_Type, SyncMessage_MessageRequestResponse_Type, Verified_State } from '../gen/SignalService_pb';
+import {
+  type Content,
+  SyncMessage_CallEvent_Direction,
+  SyncMessage_CallEvent_Event,
+  SyncMessage_CallEvent_Type,
+  SyncMessage_FetchLatest_Type,
+  SyncMessage_MessageRequestResponse_Type,
+  Verified_State,
+} from '../gen/SignalService_pb';
 import { type ChatStateEntry, host } from '../host';
 import { accountBasicAuth, asObject } from '../net/http';
 import { fromBinary, isAci, serviceIdFrom } from '../net/proto';
@@ -18,6 +26,7 @@ import { pullFromStorageService } from '../services/storage';
 import { applyStickerPackOperations } from '../services/storage/sticker-packs';
 import { usernameLinkUrl } from '../services/usernames';
 import { invalidateBlocked } from './blocked';
+import { callManager } from './calls';
 import { client, httpBinary, httpJson, OWN_AVATAR_PATH, serverUrl, store } from './context';
 import { contactIds, mergeSyncedContacts, saveSyncedContacts, saveSyncedGroups, syncedContacts, syncedGroups, updateSyncedContact, updateSyncedGroup } from './contacts';
 import { refreshGroup } from './group-state';
@@ -276,6 +285,13 @@ export async function handleIncomingSyncMessage(env: IncomingEnvelope, content: 
         await store.saveAccount({ ...acc, masterKey, accountEntropyPool: k.accountEntropyPool || acc.accountEntropyPool });
         syncFromStorageService().catch(() => {});
       }
+      break;
+    }
+    case 'callEvent': {
+      const e = c.value;
+      const oneToOne = e.type === SyncMessage_CallEvent_Type.AUDIO_CALL || e.type === SyncMessage_CallEvent_Type.VIDEO_CALL;
+      const settled = e.event === SyncMessage_CallEvent_Event.ACCEPTED || e.event === SyncMessage_CallEvent_Event.NOT_ACCEPTED;
+      if (oneToOne && settled && e.direction === SyncMessage_CallEvent_Direction.INCOMING) callManager.answeredElsewhere(e.callId.toString(), e.event === SyncMessage_CallEvent_Event.ACCEPTED);
       break;
     }
     case 'fetchLatest':

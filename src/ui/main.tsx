@@ -4,6 +4,7 @@ import { applyTheme } from './app/theme';
 import { SoftkeyBar } from './components/Screen';
 import { toast, ToastHost } from './components/Toast';
 import { signal } from './data/api';
+import { inCall } from './data/calls';
 import { config } from './data/config';
 import { db, PRUNE_KEEP } from './data/db';
 import { installEngineHost, onNumberChange } from './data/engine-host';
@@ -17,6 +18,7 @@ import { setupWake, WAKE_CACHE } from './data/wake';
 import { reloadUnderServiceWorker } from './data/wasm-reload';
 import * as ws from './data/ws';
 import { fmt, S } from './strings';
+import { installCallScreen } from './screens/Call';
 import { openChat } from './screens/Chat';
 import { HistoryScreen } from './screens/History';
 import { HomeScreen } from './screens/Home';
@@ -29,6 +31,8 @@ const PENDING_CONV_KEY = '/__s4k_pending_conv';
 const PENDING_MAX_AGE_MS = 60000;
 
 function openConversation(convId: string | null | undefined): void {
+  // A chat opened over the call screen would hide the call with no way back to it.
+  if (inCall()) return;
   if (!convId || store.openConversationId() === convId || !store.conversation(convId)) return;
   openChat(convId);
 }
@@ -103,6 +107,7 @@ function start(): void {
   }
   store.onNotificationClick(openConversation);
   store.init().then(() => {
+    installCallScreen();
     ws.connect();
     ws.installWakeHandlers();
     openPendingConversation();

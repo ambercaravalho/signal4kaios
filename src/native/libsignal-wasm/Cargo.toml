@@ -47,6 +47,10 @@ sha2 = "0.11"
 subtle = "2.6"
 flate2 = { version = "1.1.1", default-features = false, features = ["rust_backend"] }
 
+# 1:1 call SRTP keys (src/calling.rs), the same primitives RingRTC uses; both are already in libsignal's tree.
+x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
+hkdf = "0.13"
+
 # `boring` and `attest` take C types from libc, which has none for wasm32-unknown-unknown. build.sh downloads the locked
 # libc release into vendor/libc and adds wasm32-unknown-unknown to its WASI branch, matching the wasi-libc BoringSSL links.
 [patch.crates-io]

@@ -10,7 +10,7 @@ import { syncChatState } from './chat-state';
 import { altKeyOf, isSelfKey, self } from './contacts';
 import { persistConv } from './conversations';
 import { emit } from './events';
-import { ALERTING_NOTICES, enqueueMutation, findMessage } from './ingest';
+import { enqueueMutation, findMessage, noticeAlerts } from './ingest';
 import { dismissNotifications } from './notify';
 import { convs } from './state';
 
@@ -28,7 +28,22 @@ function readAuthors(sender: string): string[] {
 
 function countsAsUnread(m: Message): boolean {
   if (!m.incoming) return false;
-  return !m.notice || (ALERTING_NOTICES.indexOf(m.notice.kind) >= 0 && !isSelfKey(m.author));
+  return !m.notice || (noticeAlerts(m.notice) && !isSelfKey(m.author));
+}
+
+/** Count what's still unread in the chat after a read here or on another device. */
+export async function recountUnread(convId: string): Promise<void> {
+  const conv = convs[convId];
+  if (!conv) return;
+  const before = conv.unread || 0;
+  if (before > 0) {
+    const rows = await db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, UNREAD_PAGE);
+    const left = rows.filter((r) => countsAsUnread(r) && r.timestamp > (conv.lastReadTs || 0)).length;
+    if (left < UNREAD_PAGE) conv.unread = Math.min(before, left);
+  }
+  persistConv(conv);
+  if (conv.unread !== before) emit('conversations');
+  if (!conv.unread) dismissNotifications(convId);
 }
 
 /** Another of our devices read up to `ts` in this chat: what came after it stays unread. */
@@ -36,15 +51,7 @@ async function readUpTo(convId: string, ts: number): Promise<void> {
   const conv = convs[convId];
   if (!conv) return;
   conv.lastReadTs = Math.max(conv.lastReadTs || 0, ts);
-  const before = conv.unread || 0;
-  if (before > 0) {
-    const rows = await db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, UNREAD_PAGE);
-    const left = rows.filter((r) => countsAsUnread(r) && r.timestamp > conv.lastReadTs!).length;
-    if (left < UNREAD_PAGE) conv.unread = Math.min(before, left);
-  }
-  persistConv(conv);
-  if (conv.unread !== before) emit('conversations');
-  if (!conv.unread) dismissNotifications(convId);
+  return recountUnread(convId);
 }
 
 /** Read syncs name the message's author and timestamp, so find which chat it's in, as for viewed syncs. */

@@ -26,7 +26,7 @@
 </div>
 
 > [!NOTE]
-> Beacon is a work in progress. Everyday messaging, groups, and sync work, but voice calls and some other Signal features don't yet; the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) tracks them. Video calls, stories, and payments won't be added: video doesn't suit a low-powered phone with a single rear camera, and stories and payments see little use. When one of those arrives, Beacon shows a line in the chat pointing you to your phone.
+> Beacon is a work in progress. Everyday messaging, groups, sync, and one-to-one voice calls work, but some Signal features don't; [Known limitations](docs/user-guide.md#known-limitations) lists them. Video calls, group calls, stories, and payments won't be added: video doesn't suit a low-powered phone with a single rear camera, and stories and payments see little use. When one of those arrives, Beacon shows a line in the chat pointing you to your phone.
 
 ## Why Beacon
 
@@ -54,11 +54,12 @@ The [setup guide](docs/setup.md) covers every install route and what to do if so
 | **Privacy** | A screen lock PIN, Signal proxy support, who can see and find your number, read receipt and typing controls, and blocking |
 | **Disappearing messages** | Per-chat timer, a live countdown on each message, and automatic deletion |
 | **Media** | Encrypted photos, video, voice notes, and files via Signal's CDNs; record voice messages with waveforms, blurred previews, and your own profile photo |
+| **Voice calls** | One-to-one Signal voice calls on the earpiece or loudspeaker, with mute, always relayed through Signal's servers, and call history shared with your other devices |
 | **Sync** | Contacts, groups, blocked list, and profiles from Signal's Storage Service and your primary device; number changes are followed; nicknames, blocking, archive, mute, mentions in muted groups, pinned chats, your profile photo, and your username sync back |
 | **Groups** | Rename, description, timer, members, admins, invites, permissions, group links, joining by link, leave, and block, as real Groups V2 changes |
 | **Organization** | Multiple accounts, archived, muted, and pinned chats, pinned messages, a Signal username with its QR code, and local search |
 
-For what isn't supported yet, see [Known limitations](docs/user-guide.md#known-limitations) and the [roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap).
+For what isn't supported, see [Known limitations](docs/user-guide.md#known-limitations).
 
 ## Documentation
 
@@ -69,7 +70,7 @@ For what isn't supported yet, see [Known limitations](docs/user-guide.md#known-l
 | [Architecture](docs/architecture.md) | How the app, the engine, and libsignal fit together |
 | [Development](docs/development.md) | Building, testing, bumping pins, and releasing |
 | [Changelog](CHANGELOG.md) | Release notes |
-| [Roadmap](https://github.com/ambercaravalho/signal4kaios/issues?q=is%3Aissue%20state%3Aopen%20label%3Aroadmap) | Signal features that aren't supported yet, by area |
+| [Known limitations](docs/user-guide.md#known-limitations) | Signal features Beacon doesn't support, and why |
 
 ## Contributing
 

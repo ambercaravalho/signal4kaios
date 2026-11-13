@@ -36,12 +36,22 @@ export interface Quote {
   story?: boolean;
 }
 
-export type NoticeKind = 'missedCall' | 'safetyNumber' | 'groupCall' | 'pollEnded' | 'timer' | 'groupUpdate' | 'payment' | 'storyReaction';
+export type NoticeKind = 'missedCall' | 'call' | 'safetyNumber' | 'groupCall' | 'pollEnded' | 'timer' | 'groupUpdate' | 'payment' | 'storyReaction';
+
+export type CallDirection = 'incoming' | 'outgoing';
+export type CallOutcome = 'accepted' | 'declined' | 'missed' | 'unanswered';
 
 /** A line in the chat about the chat itself rather than a message someone wrote. The message's author is who made the change, or '' when that isn't known. */
 export interface Notice {
   kind: NoticeKind;
   video?: boolean;
+  /** For `call`: which call, which way, how it ended, and how long it lasted. */
+  callId?: string;
+  direction?: CallDirection;
+  outcome?: CallOutcome;
+  durationMs?: number;
+  /** A missed call another device marked as read in its call log. */
+  read?: boolean;
   /** The poll's question for `pollEnded`; the new group name for a `title` change; the emoji for `storyReaction`. */
   text?: string;
   /** The disappearing-message time, for `timer` and a group's `timer` change. */

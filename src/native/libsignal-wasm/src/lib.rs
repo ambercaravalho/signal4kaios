@@ -18,6 +18,7 @@ use wasm_bindgen::prelude::*;
 
 mod account;
 mod backup;
+mod calling;
 mod cdsi;
 mod fingerprint;
 mod group;

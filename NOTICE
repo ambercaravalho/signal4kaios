@@ -9,9 +9,11 @@ Section 13 of the GNU General Public License version 3 permits combining this wo
 
 For contact discovery, the wasm module also statically links BoringSSL (https://boringssl.googlesource.com/boringssl, through Signal's boring fork, https://github.com/signalapp/boring), Apache License 2.0, and from wasi-sdk (https://github.com/WebAssembly/wasi-sdk) wasi-libc (MIT License, Apache License 2.0 with LLVM Exception; it includes musl, MIT License) and LLVM libc++ and libc++abi (Apache License 2.0 with LLVM Exception).
 
+For voice calls, the wasm module also statically links libopus (https://opus-codec.org), BSD-3-Clause, Copyright (c) Xiph.Org Foundation, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, and Erik de Castro Lopo.
+
 The complete corresponding source, including the pinned libsignal revision (src/native/libsignal-wasm/Cargo.toml and Cargo.lock) and the build scripts, is available at https://github.com/ambercaravalho/signal4kaios.
 
-The protobuf schemas in src/protos/ are copied unmodified from Signal-Desktop (https://github.com/signalapp/Signal-Desktop, AGPL-3.0-only) and libsignal (AGPL-3.0-only); src/engine/gen/ is generated from them.
+The protobuf schemas in src/protos/ are copied unmodified from Signal-Desktop (https://github.com/signalapp/Signal-Desktop, AGPL-3.0-only) libsignal (AGPL-3.0-only), and RingRTC (https://github.com/signalapp/ringrtc, AGPL-3.0-only); src/engine/gen/ is generated from them.
 
 The app bundle (src/app/build/app.js) also includes these JavaScript libraries, each under its own license:
 

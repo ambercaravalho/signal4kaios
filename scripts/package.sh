@@ -15,7 +15,7 @@ if [ -f package.json ] && command -v npm >/dev/null 2>&1; then
 fi
 
 # --- Manifest / ServiceWorker / Bundle presence ---------------------------
-for required in src/app/manifest.webmanifest src/app/sw.js src/app/build/app.js src/app/build/app.css src/app/build/backup.js src/app/vendor/libsignal_wasm_bg.wasm; do
+for required in src/app/manifest.webmanifest src/app/sw.js src/app/build/app.js src/app/build/app.css src/app/build/backup.js src/app/build/call-worklet.js src/app/vendor/libsignal_wasm_bg.wasm; do
   if [ ! -f "$required" ]; then
     echo "FAIL: missing $required (needed for KaiOS 3.0/3.1/4.0 install)." >&2
     exit 1

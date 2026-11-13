@@ -1,4 +1,4 @@
-// Bundle the app (src/ui/main.tsx) into src/app/build/app.js and app.css for KaiOS 3.0+ (Gecko 84), and the archive decoder into src/app/build/backup.js.
+// Bundle the app (src/ui/main.tsx) into src/app/build/app.js and app.css for KaiOS 3.0+ (Gecko 84), the call audio worklet into src/app/build/call-worklet.js, and the archive decoder into src/app/build/backup.js.
 // `node scripts/build.mjs --analyze` also writes dist/meta.json and prints the largest inputs.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as esbuild from 'esbuild';
@@ -46,6 +46,9 @@ const result = await esbuild.build({
   jsxImportSource: 'preact',
   plugins: [slimEmoji],
 });
+
+// The call audio worklet, which loads by URL into the audio thread.
+await esbuild.build({ ...common, entryPoints: ['src/ui/data/call-worklet.ts'], outfile: 'src/app/build/call-worklet.js', metafile: false });
 
 // The link-and-sync archive decoder (Backups codecs), loaded only while message history is imported.
 await esbuild.build({ ...common, entryPoints: ['src/engine/services/history/bundle.ts'], outfile: 'src/app/build/backup.js', metafile: false });

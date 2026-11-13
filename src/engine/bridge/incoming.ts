@@ -1,7 +1,9 @@
 /* Incoming WebSocket frames: decoding, ACKs, and turning a decrypted envelope into the app's JSON frame. */
 
 import { decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, isAci } from '../net/proto';
+import { host } from '../host';
 import { isFromBlocked } from './blocked';
+import { callManager } from './calls';
 import { client, store } from './context';
 import { recordPeerProfileKey, updateSyncedContact } from './contacts';
 import { noteIncomingGroup } from './group-state';
@@ -36,6 +38,16 @@ export const incomingMethods = {
 
     if (c.case === 'syncMessage' && !fromSelf) return null;
     if (!fromSelf && (await isFromBlocked(res.envelope, res.content))) return null;
+
+    if (c.case === 'callMessage') {
+      if (fromSelf || !isAci(sender)) return null;
+      const env = res.envelope;
+      const took = await callManager.handle({ source: sender, sourceDevice: env.sourceDevice, serverTimestamp: env.serverTimestamp || env.timestamp }, c.value).catch((err) => {
+        host().dbg(`call: message not handled (${err && err.message})`);
+        return true;
+      });
+      return took ? null : res.normalizedFrame;
+    }
 
     if (c.case === 'dataMessage') {
       const dm = c.value;

@@ -1,13 +1,14 @@
 /* Turns the JSON frames the engine produces from decrypted envelopes into typed events for the store. Frames are untrusted: unknown or malformed shapes are logged and dropped, never thrown. */
 
 import { dbg } from './log';
+import { callRecordEvents, callSyncEvents } from './normalize/calls';
 import type { Conv, NameOf, RequestResponse, StoreEvent } from './normalize/events';
 import { num, str } from './normalize/fields';
 import { groupUpdateEvents } from './normalize/group';
 import { dataMessageEvents, editEvent, noticeEvent, peerKey } from './normalize/message';
 import { backfillEvent, chatRef, deleteSyncEvent, REQUEST_RESPONSES, syncRefs } from './normalize/sync';
 
-export { type BackfillSlot, type ChatDelete, type ChatRef, type MessageEvent, type NoticeEvent, type RequestResponse, type StoreEvent, type SyncRef } from './normalize/events';
+export { type BackfillSlot, type CallEvent, type ChatDelete, type ChatRef, type MessageEvent, type NoticeEvent, type RequestResponse, type StoreEvent, type SyncRef } from './normalize/events';
 export { applyMentions } from './normalize/message';
 
 /** Events for one decrypted frame. `selfNumber` is the author of messages synced from our other devices; `nameOf` names mentioned people. */
@@ -29,6 +30,7 @@ export function parseFrame(frame: unknown, selfNumber: string, nameOf: NameOf): 
 function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEvent[] {
   if (env.groupUpdate) return groupUpdateEvents(env.groupUpdate);
   if (env.notice) return noticeEvent(env, env.notice, { convId: peerKey(env), groupInternalId: null }, peerKey(env) || '');
+  if (env.callRecord) return callRecordEvents(env);
   if (env.dataMessage) return dataMessageEvents(env, env.dataMessage, true, nameOf);
   if (env.editMessage) return editEvent(env, env.editMessage, peerKey(env) || '', nameOf);
 
@@ -77,6 +79,7 @@ function envelopeEvents(env: any, selfNumber: string, nameOf: NameOf): StoreEven
       const backfill = backfillEvent(sm.attachmentBackfill);
       if (backfill) out.push(backfill);
     }
+    out.push(...callSyncEvents(sm));
     if (!out.length) dbg('normalize: unhandled sync message ' + Object.keys(sm).join(','));
     return out;
   }

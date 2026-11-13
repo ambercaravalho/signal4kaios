@@ -216,7 +216,7 @@ describe('store', () => {
     assert.equal(rec.body, '');
     const conv = store.conversation(ALICE)!;
     assert.equal(conv.unread, before + 1);
-    assert.equal(conv.lastPreview, 'Voice call. Answer it on your phone.');
+    assert.equal(conv.lastPreview, 'Voice call');
   });
 
   it('notifies for payments and story reactions from others, but not for our own from another device', async () => {

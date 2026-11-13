@@ -1,7 +1,7 @@
 /* The store events a decrypted frame turns into. */
 
 import type { StyleRange } from '../styled';
-import type { Attachment, ContactCard, LinkPreview, Notice, Poll, Quote } from '../types';
+import type { Attachment, CallDirection, CallOutcome, ContactCard, LinkPreview, Notice, Poll, Quote } from '../types';
 
 export interface MessageEvent {
   type: 'message';
@@ -53,7 +53,21 @@ export type StoreEvent =
   | { type: 'requestResponse'; chat: ChatRef; response: RequestResponse }
   | { type: 'backfill'; chat: ChatRef; author: string; timestamp: number; slots: BackfillSlot[] | null }
   | { type: 'pollVote'; convId: string; voter: string; targetAuthor: string; targetTimestamp: number; options: number[]; voteCount: number; timestamp: number }
-  | { type: 'pollEnd'; convId: string; author: string; targetTimestamp: number; timestamp: number };
+  | { type: 'pollEnd'; convId: string; author: string; targetTimestamp: number; timestamp: number }
+  | CallEvent
+  | { type: 'callDelete'; chat: ChatRef; callId: string }
+  | { type: 'callLog'; action: 'read' | 'clear'; chat: ChatRef | null; timestamp: number };
+
+/** A 1:1 call's line in the chat, from this device or synced from another; a later event for the same call replaces it. */
+export interface CallEvent {
+  type: 'call';
+  chat: ChatRef;
+  callId: string;
+  direction: CallDirection;
+  outcome: CallOutcome;
+  timestamp: number;
+  durationMs: number;
+}
 
 /** One attachment in our phone's answer to a backfill request: a fresh copy, still uploading, or gone. */
 export type BackfillSlot = Attachment | 'pending' | 'failed';

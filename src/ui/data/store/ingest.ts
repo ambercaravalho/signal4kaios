@@ -4,7 +4,8 @@ import { config } from '../config';
 import { db } from '../db';
 import { dbg } from '../log';
 import { type MessageEvent, type NoticeEvent, parseFrame, type StoreEvent } from '../normalize';
-import type { Message, NoticeKind } from '../types';
+import type { Message, Notice, NoticeKind } from '../types';
+import { applyCall, applyCallDelete, applyCallLog } from './call-log';
 import { applyBackfill } from './backfill';
 import { unarchiveOnActivity } from './chat-state';
 import { altKeyOf, displayName, isSelfKey, self } from './contacts';
@@ -78,6 +79,12 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
 
 export const ALERTING_NOTICES: NoticeKind[] = ['missedCall', 'payment', 'storyReaction'];
 
+/** Whether a notice counts as unread and notifies: a missed call until it's read in a call log, a payment, or a reaction to your story. */
+export function noticeAlerts(n: Notice): boolean {
+  if (n.kind === 'call') return n.direction === 'incoming' && n.outcome === 'missed' && !n.read;
+  return ALERTING_NOTICES.indexOf(n.kind) >= 0;
+}
+
 export function noticeRecord(ev: NoticeEvent): Message {
   return {
     id: msgId(ev.convId, ev.timestamp, ev.author),
@@ -104,7 +111,7 @@ export function applyNotice(ev: NoticeEvent, silent: boolean): void {
   const conv = ensureConv({ convId: ev.convId, groupInternalId: ev.groupInternalId, incoming: true, authorName: '' });
   const rec = noticeRecord(ev);
   db.putMessage(rec);
-  const alerts = ALERTING_NOTICES.indexOf(ev.notice.kind) >= 0 && !isSelfKey(ev.author);
+  const alerts = noticeAlerts(ev.notice) && !isSelfKey(ev.author);
   if (ev.timestamp >= (conv.lastTs || 0)) {
     conv.lastTs = ev.timestamp;
     conv.lastPreview = messageText(rec);
@@ -263,6 +270,12 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
       return applyPollVote(ev);
     case 'pollEnd':
       return applyPollEnd(ev);
+    case 'call':
+      return applyCall(ev, silent);
+    case 'callDelete':
+      return applyCallDelete(ev.chat, ev.callId);
+    case 'callLog':
+      return applyCallLog(ev.action, ev.chat, ev.timestamp);
     case 'timer': {
       const conv = convs[ev.convId];
       if (!conv || (conv.expireTimer || 0) === ev.seconds) return;
