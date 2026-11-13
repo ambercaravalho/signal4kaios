@@ -63,7 +63,7 @@ function RecorderView(props: { recorder: VoiceRecorder; resolve(note: VoiceNote 
       if (rec.state === 'recording') rec.stop().then(() => tick((n) => n + 1));
       else send();
     } else if (e.key === 'SoftLeft' || e.key === 'Backspace') done(null);
-    else if (e.key !== 'Call') return false;
+    else return false;
     return true;
   });
 
