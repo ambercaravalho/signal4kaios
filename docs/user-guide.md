@@ -61,7 +61,7 @@ OK on a message opens its options. The first one is what the message is most lik
 
 - **React**: pick from six quick reactions or any emoji; pick your current reaction again to remove it.
 - **Reply** and **Copy text**.
-- **Forward** sends the text (with its formatting) or the attachment to another chat, contact, or group after you confirm. View-once media and files sent from this phone before Beacon 2.9.3 can't be forwarded.
+- **Forward** sends the text (with its formatting) or the attachment to another chat, contact, or group after you confirm. View-once media can't be forwarded.
 - **Edit** (up to 10 times) and **Delete for everyone** on your own messages for 24 hours, as in Signal. Group admins also get **Delete for everyone** on other people's messages for 24 hours; those read **An admin deleted this message.**
 - **Pin message** (for everyone in the chat), **Message details**, and **Delete for me**, which also deletes the message on your other linked devices.
 - **Message details** shows the full text, when it was sent, its status, reactions, when it disappears, earlier versions of an edited message, and **Delivered privately** when **Private delivery icon** is on in **Settings → Privacy**.
@@ -102,7 +102,7 @@ A group opens as a request when someone who isn't in your contacts added or invi
 
 **Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file). Photos, videos, and files wait above the message box (for example **2 photos**) so you can attach more and type a caption; **Send** sends them together as one message, and **Options → Remove attachments** clears them. Voice recordings send right away on their own. A message can carry up to 32 attachments and 25 MB in total, and each file is sent with its name.
 
-**Options → Record voice message**, or holding the Call key in a chat, starts recording at once. The first time, KaiOS asks whether Beacon may use the microphone. The sheet shows the time and how loud you are; **Stop** ends the recording, then **Send** sends it on its own (your draft stays in the message box) and **Cancel** throws it away. Recordings stop by themselves at 15 minutes. Beacon sends them as MP3 with a waveform, so they play on every Signal app, and a long one takes a few seconds to prepare.
+**Options → Record voice message** starts recording at once. The first time, KaiOS asks whether Beacon may use the microphone. The sheet shows the time and how loud you are; **Stop** ends the recording, then **Send** sends it on its own (your draft stays in the message box) and **Cancel** throws it away. Recordings stop by themselves at 15 minutes. Beacon sends them as MP3 with a waveform, so they play on every Signal app, and a long one takes a few seconds to prepare.
 
 - Voice messages show their waveform and length in the chat.
 - A message with several attachments has **View attachments** first in its options, which lists them to open one.
@@ -113,7 +113,7 @@ A group opens as a request when someone who isn't in your contacts added or invi
 - **Save to phone** puts the file in the gallery, music, videos, or files.
 - View-once media can be viewed once, then it's gone, including when you open it on another device. To send your own, pick a photo or video with **Options → Attach**, then choose **Send as view-once**; it goes right away, without a caption. **Attach** instead adds it above the message box as usual.
 - Opening a voice message, video, or view-once media tells the sender you viewed it when read receipts are on.
-- **Chat settings → Media** lists a chat's photos, videos, voice messages, and files, newest first, with a thumbnail for photos already on the phone. OK opens one in the viewer. View-once media and files sent from this phone before Beacon 2.9.3 aren't listed.
+- **Chat settings → Media** lists a chat's photos, videos, voice messages, and files, newest first, with a thumbnail for photos already on the phone. OK opens one in the viewer. View-once media isn't listed.
 
 ## Voice calls
 
@@ -135,8 +135,8 @@ Calls start on the earpiece. **Back** doesn't leave the call screen, so the call
 - Every call leaves a line in the chat: **Outgoing voice call · 1:05**, **Incoming voice call**, **Missed voice call**, **Declined voice call**, or **Unanswered voice call**. A missed call counts as unread and raises a notification.
 - Beacon is one of your linked devices, so your phone and your other devices ring too. Answering or declining on one stops the others ringing, and Beacon says **Answered on another device** or **Declined on another device**.
 - Your call history is shared with your phone and other devices: calls made here show there, missed calls you've seen there stop counting as unread here, and clearing or deleting calls there removes their lines here.
+- With **Screen lock** on, a call still shows and can be answered without the PIN, and Beacon is locked again when the call ends.
 - Calls always go through Signal's relay servers, like Signal's **Always relay calls** setting, so the other person doesn't see your IP address.
-- **Holding the Call key** in a chat still records a voice message; it doesn't start a call.
 
 ## Starting a chat and searching
 
@@ -181,7 +181,7 @@ Calls start on the earpiece. **Back** doesn't leave the call screen, so the call
 
 **Privacy → Phone number** has **Who can see my number** and **Who can find me by number**, each **Everybody** or **Nobody**. With **Nobody** seeing it, only people who already have your number see it; with **Nobody** finding you, people can't start a chat with you using your number. While everybody can see your number, everybody can also find you by it, as in Signal. Both settings are shared with your phone and other devices.
 
-**Privacy → Screen lock** asks for a PIN whenever Beacon opens. Choose 4 to 8 digits and enter them twice. **Lock after** sets how long Beacon can be in the background before it asks again: immediately, 1, 5, 15, or 30 minutes, or 1 hour (1 minute to start with). Type the PIN on the keypad and press **Unlock**. After 3 wrong PINs in a row you wait 30 seconds before the next try, and the wait doubles with each wrong PIN, up to 15 minutes. Turning the lock off asks for the PIN. Screen lock only hides Beacon: your messages aren't encrypted with the PIN, and notifications still show. If you forget the PIN, **Forgot PIN** on the lock screen → **Delete all data** is the only way back in, and then you link the phone again.
+**Privacy → Screen lock** asks for a PIN whenever Beacon opens. Choose 4 to 8 digits and enter them twice. **Lock after** sets how long Beacon can be in the background before it asks again: immediately, 1, 5, 15, or 30 minutes, or 1 hour (1 minute to start with). Type the PIN on the keypad and press **Unlock**. After 3 wrong PINs in a row you wait 30 seconds before the next try, and the wait doubles with each wrong PIN, up to 15 minutes. Turning the lock off asks for the PIN. Calls still ring and can be answered while Beacon is locked, and it's locked again when the call ends. Screen lock only hides Beacon: your messages aren't encrypted with the PIN, and notifications still show. If you forget the PIN, **Forgot PIN** on the lock screen → **Delete all data** is the only way back in, and then you link the phone again.
 
 ### Proxy
 
@@ -241,8 +241,5 @@ These work only partly:
 | Action | What happens now |
 | --- | --- |
 | "Contact joined Signal" alerts | Not shown. Beacon looks a number up with Signal only when you start a chat with it, not your whole address book. |
-| Holding the Call key to record a voice message | Works only on phones that pass a held Call key to apps. **Options → Record voice message** works everywhere. |
-| Forwarding files you sent from this phone before Beacon 2.9.3 | Not possible, because the phone didn't keep a copy it can resend. They're also left out of **Media**. Files sent since then can be forwarded. |
 | Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |
 | Calls while Beacon is closed | They don't ring here, for the same reason. Your phone still rings, and once Beacon opens, a call you didn't answer shows as **Missed voice call**. |
-| Answering while **Screen lock** has locked Beacon | The lock screen covers the incoming call while it rings: type your PIN, then answer. |

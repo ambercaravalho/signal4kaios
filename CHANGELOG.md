@@ -2,6 +2,18 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.10.1
+
+A fix for calls with Screen lock on. Install over v2.10.0; your chats and settings carry over.
+
+### Fixed
+
+- **Calls while locked.** An incoming call now shows over **Screen lock**, so you can answer it without typing your PIN. Beacon locks again when the call ends.
+
+### Changed
+
+- **Holding the Call key** in a chat no longer records a voice message. Use **Options → Record voice message**.
+
 ## v2.10.0
 
 Voice calls. Install over v2.9.4; your chats and settings carry over.

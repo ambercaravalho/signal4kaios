@@ -1,7 +1,8 @@
-/* The screen lock cover. It sits outside the router, above every screen and overlay, so nothing opened underneath (a tapped notification, say) shows through, and it takes every key before the router sees it. */
+/* The screen lock cover. It sits outside the router, above every screen and overlay except a call's screen, so nothing opened underneath (a tapped notification, say) shows through, and it takes every key before the router sees it. A call can be answered while locked; the cover comes back when its screen closes. */
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { isDigitKey, PinDots } from '../components/PinEntry';
+import { callView, onCallView } from '../data/calls';
 import * as screenLock from '../data/screen-lock';
 import { APP_NAME, S } from '../strings';
 import { deleteAllData, pinWaitMessage } from './Settings';
@@ -13,6 +14,10 @@ export function LockGate() {
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [inCall, setInCall] = useState(!!callView());
+  const covering = locked && !inCall;
+
+  useEffect(() => onCallView(() => setInCall(!!callView())), []);
 
   useEffect(
     () =>
@@ -34,13 +39,13 @@ export function LockGate() {
   }, [waitUntil]);
 
   useEffect(() => {
-    if (!locked) return;
+    if (!covering) return;
     const prev = document.activeElement as HTMLElement | null;
     if (prev && prev !== document.body && prev.blur) prev.blur();
     return () => {
       if (prev && prev !== document.body && prev.focus && document.contains(prev)) prev.focus();
     };
-  }, [locked]);
+  }, [covering]);
 
   async function submit(entered: string): Promise<void> {
     setBusy(true);
@@ -78,13 +83,13 @@ export function LockGate() {
   };
 
   useEffect(() => {
-    if (!locked) return;
+    if (!covering) return;
     const fn = (e: KeyboardEvent) => handler.current(e);
     window.addEventListener('keydown', fn, true);
     return () => window.removeEventListener('keydown', fn, true);
-  }, [locked]);
+  }, [covering]);
 
-  if (!locked) return null;
+  if (!covering) return null;
   const hint = waitUntil ? pinWaitMessage(waitUntil) : wrong ? S.wrongPin : S.enterPin;
   return (
     <div class="lock" role="dialog">

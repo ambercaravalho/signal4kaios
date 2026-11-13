@@ -9,9 +9,11 @@ import { _setCallStateForTest, callView } from '../src/ui/data/calls';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import { parseFrame } from '../src/ui/data/normalize';
+import * as screenLock from '../src/ui/data/screen-lock';
 import * as store from '../src/ui/data/store';
 import { CallScreen, installCallScreen } from '../src/ui/screens/Call';
 import { HomeScreen } from '../src/ui/screens/Home';
+import { LockGate } from '../src/ui/screens/Lock';
 import { ALICE as ALICE_ACI, BOB as STRANGER, settle } from './helpers';
 
 const ME = '+15550000';
@@ -141,6 +143,20 @@ describe('call screen', () => {
     _setCallStateForTest(null);
     assert.ok(!router.has(CallScreen));
     assert.equal(_stackForTest().length, 1);
+  });
+
+  it('shows a call over the screen lock, and locks again once the call is cleared', async () => {
+    await screenLock.enable('4821');
+    screenLock.lockNow();
+    assert.match(renderToString(<LockGate />), /class="lock"/);
+    _setCallStateForTest(state({ callId: '203' }));
+    assert.ok(router.has(CallScreen));
+    assert.equal(renderToString(<LockGate />), '');
+    _setCallStateForTest(null);
+    assert.ok(screenLock.isLocked());
+    assert.match(renderToString(<LockGate />), /class="lock"/);
+    screenLock.disable();
+    screenLock.unlock();
   });
 
   it('doesn’t ring for someone it doesn’t know', () => {

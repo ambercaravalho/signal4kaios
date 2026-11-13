@@ -76,9 +76,6 @@ export function useChatKeys(o: ChatKeysOptions): boolean {
       case 'SoftRight':
         o.chatOptions();
         return true;
-      case 'Call':
-        if (e.repeat && o.canCompose && !editing) composer.voiceMessage();
-        return true;
       case 'SoftLeft':
         if (!quote && !editing) return false;
         composer.clearContext();
