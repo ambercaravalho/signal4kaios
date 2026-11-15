@@ -35,7 +35,7 @@
     "@bufbuild/buf": "1.75.0",
     "@bufbuild/protoc-gen-es": "2.17.0",
     "@resvg/resvg-js": "^2.6.2",
-    "@signalapp/libsignal-client": "0.106.2",
+    "@signalapp/libsignal-client": "0.107.0",
     "@types/node": "^24.19.2",
     "esbuild": "^0.28.2",
     "fake-indexeddb": "^6.2.8",
