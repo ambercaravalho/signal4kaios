@@ -80,7 +80,7 @@ OK on a message opens its options. The first one is what the message is most lik
 - **Groups where only admins can send** show **Only admins can send messages** in place of the message box.
 
 - **Text formatting**: type `**bold**`, `*italic*`, `~strikethrough~`, `` `monospace` ``, or `||spoiler||`. Spoilers stay hidden until you focus the message. Prefix a marker with `\` to type it literally. Turn this off in **Settings → Chats**.
-- **Disappearing messages**: set the timer in **Chat settings**. Messages you send carry the timer, and the phone deletes expired messages on its own. **Settings → Privacy → Default timer for new chats** starts the timer in a new one-to-one chat when you send the first message.
+- **Disappearing messages**: set the timer in **Chat settings**. Messages you send carry the timer, and the phone deletes expired messages on its own. As in Signal, a message you receive starts its countdown when you read it, here or on another of your devices; messages you send start when they're sent. **Settings → Privacy → Default timer for new chats** starts the timer in a new one-to-one chat when you send the first message.
 - **Read receipts and typing indicators**: turn yours off in **Settings → Privacy**. Like Signal, turning them off also hides other people's.
 - Reading a chat on another of your devices clears its unread count here.
 
@@ -173,7 +173,9 @@ Calls start on the earpiece. **Back** doesn't leave the call screen, so the call
 | **Help** | Short guides by topic, Source code, and the version |
 | **Debug** | Technical details for troubleshooting (see below) |
 
-**Linked device → Unlink this phone** removes Beacon from **Linked devices** on your main phone and deletes this phone's messages and keys. Without a connection to Signal it asks first, and then only unlinks here; remove the entry from **Linked devices** yourself afterwards. When your main phone unlinks Beacon, Beacon deletes its keys, keeps your messages, and shows the Link screen.
+**Linked device → Unlink this phone** removes Beacon from **Linked devices** on your main phone and deletes this phone's messages and keys. If you saved another account, Beacon switches to it. Without a connection to Signal it asks first, and then only unlinks here; remove the entry from **Linked devices** yourself afterwards. When your main phone unlinks Beacon, Beacon deletes its keys, keeps your messages, and shows the Link screen.
+
+Each saved account keeps its own profile, username, privacy and notification settings, and chat folders, so switching accounts shows that account's choices straight away. Theme, text size, chat color, notification display and sound, screen lock, and the proxy belong to the phone and stay the same for every account. **Delete all data** removes every account's messages and settings; if part of it can't be deleted, Beacon says so and keeps your settings, so you can try again.
 
 **Help** lists guides on getting started, message history, keys, chats and messages, chat folders, groups and safety numbers, settings, the proxy, notifications, what Beacon can't do, and troubleshooting. Each opens a page with a QR code for the matching section of these docs: scan it with another phone, or press **Open** to read it in the phone's browser. **Learn more** at the bottom of Privacy, Chats, Chat folders, Notifications, Phone number, Screen lock, and Proxy, and in the safety number's **Options**, opens the same kind of page, as do **Help** on the welcome screen and when Beacon can't start, and **How to link** in the linking screen's **Options**.
 

@@ -168,6 +168,10 @@ A frame is acknowledged only after it has been decrypted and its writes have bee
 
 When the main phone changes the account's number, it sends each linked device a `SyncMessage.PniChangeNumber` with that device's new PNI identity key pair, signed PreKey, last-resort Kyber PreKey, and registration ID, and the envelope carries the new PNI (`updatedPni`). [`services/change-number.ts`](../src/engine/services/change-number.ts) applies it inside the decryption queue, as Signal-Desktop does, because the envelopes after it may be addressed to the new PNI: libsignal parses the records, the old PNI identity is dropped, group credentials and the sender certificate are cleared, and fresh PNI PreKeys are uploaded. The app then shows the new number, but the account's database keeps the name it was created under (`dbNumber` in `s4k.config`), since IndexedDB can't rename a database.
 
+A 1:1 chat is keyed by the person's number when Beacon knows it, else by their ACI. Identified envelopes carry no number, so [`bridge/incoming.ts`](../src/engine/bridge/incoming.ts) fills `sourceNumber` (and a synced send's `destinationNumber`) from the synced contacts, and the store maps every direct event to `canonicalDirectId`. When a contact turns out to have both a number chat and an ACI chat, `mergeConversations` moves the ACI chat's messages (and the bytes Retry needs for failed ones) into the number chat, keeps the newest activity and the furthest read point, and deletes the ACI chat.
+
+A received disappearing message keeps its timer (`expireSecs`) but gets no `expiresAt` until it's read, here (`markRead`) or on another device (a read sync); the chat's `expiryFrom` marks the oldest one waiting. Messages we send, from Beacon or another device, start at their send time, as in Signal.
+
 ## Sending
 
 `store.send*` in [`src/ui/data/store/send.ts`](../src/ui/data/store/send.ts) writes an optimistic `pending` message, then calls the engine's `signalBridge.send`. The engine:
@@ -205,6 +209,8 @@ sequenceDiagram
 ```
 
 The new manifest keeps every identifier it doesn't touch, including record types this app doesn't read, and unknown protobuf fields survive the re-encode. Each pull marks the records another device wrote since the previous pull as `changed`. Archive, mute, and pinned-chat state is applied only from those records, and the store's `applyChatState` applies it without writing it back, so local and remote changes don't overwrite each other in a loop.
+
+Edits come from bridge calls such as `setReadReceipts` or `syncChatState`. Each one that only sets values is saved in the account's kv (`pendingStorageWrites`) as its method name and JSON arguments until its write succeeds (`savedStorageWrite` in [`bridge/context.ts`](../src/engine/bridge/context.ts)), since the queued mutations themselves are closures that can't outlive the app. The app calls `flushStorageWrites` when it's hidden, so pressing Back doesn't wait out the 1.5 s, and `replayStorageWrites` each time the socket opens, which rebuilds the saved calls oldest first and writes them. Setting the same values again is harmless, so a call that was written just before Beacon closed costs only a no-op write.
 
 The username itself is claimed on the chat server first: [`services/usernames.ts`](../src/engine/services/usernames.ts) reserves one of libsignal's candidates (`PUT /v1/accounts/username_hash/reserve`) and confirms it with a zero-knowledge proof and an encrypted username link (`PUT /v1/accounts/username_hash/confirm`). Only then are the username and link written to the account record. The QR code is `https://signal.me/#eu/` followed by the link's entropy and server ID.
 

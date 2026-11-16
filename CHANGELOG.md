@@ -2,6 +2,20 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.10.6
+
+Fixes for disappearing messages, accounts, group invites, settings sync, your profile, and duplicate chats. Install over v2.10.5; your chats and settings carry over.
+
+### Fixed
+
+- **Disappearing messages you receive** now start their countdown when you read them, here or on another device, as in Signal. Before, they started when they arrived, so a message could vanish before you saw it. Unread messages from before this version start again when you read them.
+- **Settings per account.** Each saved account now keeps its own profile, username, privacy and notification settings, and chat folders. Before, switching accounts or adding one carried the previous account's settings over until the next sync.
+- **Group invites** now always show as a message request with **Accept**, whoever invited you, and appear on Home as soon as Beacon hears about them, even before anyone writes in the group.
+- **Settings changes survive a quick exit.** Archiving, muting, pinning, blocking, nicknames, privacy settings, and folder changes are now kept on the phone until your other devices have them, and sent again the next time Beacon connects. Before, pressing Back straight after a change could lose it.
+- **Your profile stays in step.** A name you change in Beacon now stays changed on your other devices instead of coming back on the next sync, your About and its emoji are loaded from your profile when you link or sync, and saving just your name no longer resends an out-of-date About.
+- **Linking again** now starts with fresh keys while keeping your messages. **Unlink this phone** switches to your next saved account if you have one, and **Delete all data** removes every account's data and says so if something couldn't be deleted.
+- **One chat per person.** Messages from someone you know by number no longer open a second chat with them, and chats that were already split in two are merged, with their messages and read state.
+
 ## v2.10.5
 
 Security and privacy fixes for safety numbers, encryption keys, photos, and groups. Install over v2.10.4; your chats and settings carry over.
