@@ -2,6 +2,16 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.10.3
+
+Fixes for retrying photos, safety number codes, and saving new messages. Install over v2.10.2; your chats and settings carry over.
+
+### Fixed
+
+- **Retry** on a photo, file, or voice message that didn't send now sends it again with its attachment. Before, only the caption was sent and the attachment was lost. Messages that failed before this version can't be retried; delete them and send again.
+- **Safety number codes.** **Show code** and **Scan code** now use the same format as Signal on Android and iPhone, so you can verify each other by scanning. Codes shown by older versions of Beacon still scan.
+- **Saving new messages.** Beacon now tells Signal it has a message only once the message is saved on the phone. If the phone's storage is full, Beacon warns you and keeps trying instead of losing the message.
+
 ## v2.10.2
 
 Fixes for KaiOS 3.x, incoming calls, privacy settings, and view-once media. Install over v2.10.1; your chats and settings carry over.

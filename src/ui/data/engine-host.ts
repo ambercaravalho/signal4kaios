@@ -35,7 +35,9 @@ export function installEngineHost(): void {
       return refreshDirectory();
     },
     applyChatState,
-    ingest: (frame) => ingestRaw(frame),
+    ingest: (frame) => {
+      ingestRaw(frame).catch((e) => dbg('ingest failed: ' + (e && e.message)));
+    },
     numberChanged: (number) => {
       config.changeNumber(number);
       numberListeners.forEach((f) => f(number));

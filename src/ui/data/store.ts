@@ -5,9 +5,9 @@ export { contactByKey, contactName, contactsList, displayName, groupAvatarKey, g
 export { attachmentLabel, noticeText, previewOf } from './store/previews';
 export { dismissNotifications, type MutedException, notificationText, notifiesWhileMuted, notifyIncomingCall, onNotificationClick, shouldNotify } from './store/notify';
 export { archivedConversations, chatFor, chatMedia, connectionState, conversation, conversations, conversationWith, groupConversation, init, isReady, joinedGroupConversation, openConversationId, purgeExpired, purgeExpiredConv, setChatColor, setConnection, setConversationName, setConvExpire, setDraft, setOpenConv, typing } from './store/conversations';
-export { applyEvent, ingestRaw, MAX_EDITS } from './store/ingest';
+export { applyEvent, ingestRaw, MAX_EDITS, SaveError } from './store/ingest';
 export { markAllRead, markRead, markViewed } from './store/read';
-export { forwardMessage, MAX_ATTACHMENTS, retryMessage, sendAttachments, sendEdit, sendText, type OutgoingFile } from './store/send';
+export { forwardMessage, MAX_ATTACHMENTS, retryMessage, RetryUnavailableError, sendAttachments, sendEdit, sendText, type OutgoingFile } from './store/send';
 export { ADMIN_DELETE_MAX_AGE, adminDelete, deleteChat, deleteForEveryone, deleteLocal, reactTo, setMessagePinned } from './store/message-actions';
 export { acceptRequest, blockRequest, deleteRequest, groupAddedBy, reportSpamRequest } from './store/requests';
 export { endPoll, pollCounts, sendPoll, votePoll } from './store/polls';

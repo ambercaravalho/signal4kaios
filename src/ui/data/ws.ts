@@ -1,10 +1,12 @@
-/* The connection to Signal (`wss://chat.signal.org/v1/websocket/`). Each `PUT /api/v1/message` envelope is decrypted on the phone and acknowledged only after it is stored. While the phone is offline Signal queues messages and replays them on connect, then sends `PUT /api/v1/queue/empty`. */
+/* The connection to Signal (`wss://chat.signal.org/v1/websocket/`). Each `PUT /api/v1/message` envelope is decrypted on the phone and acknowledged only after it is stored; one the database refuses is kept in memory and retried, since the server can't decrypt it for us again. While the phone is offline Signal queues messages and replays them on connect, then sends `PUT /api/v1/queue/empty`. */
 
 import { signal } from './api';
 import { config } from './config';
 import { dbg } from './log';
 import { scheduleAlarm } from './platform';
 import { ingestRaw, refreshDirectory, setConnection } from './store';
+import { emit } from './store/events';
+import { SaveError } from './store/ingest';
 import type { SocketLike } from '../../engine/net/transport';
 import { WAKE_ALARM } from './wake';
 
@@ -15,6 +17,16 @@ const SOCK_OPEN = 1;
 const HEARTBEAT_MS = 30000;
 const KEEPALIVE_MS = 25000;
 const WAKE_ALARM_MS = 300000;
+const SAVE_RETRY_MIN_MS = 5000;
+const SAVE_RETRY_MAX_MS = 60000;
+/** Caps the decrypted frames kept in memory while storage is full; past it a frame is left unacknowledged, and the server's redelivery is dropped as a duplicate. */
+const MAX_UNSAVED = 500;
+
+type Unsaved = { frame: unknown; reqId: bigint | undefined; sock: SocketLike };
+const unsaved: Unsaved[] = [];
+let saveRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let saveRetryMs = SAVE_RETRY_MIN_MS;
+let saveFailing = false;
 
 let sock: SocketLike | null = null;
 let attempts = 0;
@@ -58,6 +70,62 @@ function sendAck(reqId: bigint | undefined): void {
   sendFrame(signal.encodeWsAck(reqId, 200, 'OK'), 'ack');
 }
 
+/** Request ids are per connection: after a reconnect the server sends unacknowledged messages again, so a late ack must not reach the new socket. */
+function ackOn(s: SocketLike, reqId: bigint | undefined): void {
+  if (s === sock) sendAck(reqId);
+}
+
+function saveFrame(item: Unsaved, silent: boolean): Promise<boolean> {
+  return ingestRaw(item.frame, { silent }).then(
+    () => {
+      ackOn(item.sock, item.reqId);
+      return true;
+    },
+    (err: any) => {
+      if (err instanceof SaveError) return false;
+      dbg('ws: message not applied ' + (err && err.message));
+      ackOn(item.sock, item.reqId);
+      return true;
+    }
+  );
+}
+
+function holdUnsaved(item: Unsaved): void {
+  if (unsaved.length >= MAX_UNSAVED) {
+    dbg('ws: too many unsaved messages, leaving one unacknowledged');
+    return;
+  }
+  unsaved.push(item);
+  if (!saveFailing) {
+    saveFailing = true;
+    dbg('ws: could not save a message, holding it for a retry');
+    emit('save-error');
+  }
+  if (!saveRetryTimer) {
+    saveRetryTimer = setTimeout(() => {
+      saveRetryTimer = null;
+      retryUnsaved();
+    }, saveRetryMs);
+    saveRetryMs = Math.min(SAVE_RETRY_MAX_MS, saveRetryMs * 2);
+  }
+}
+
+/** Store the held messages again, oldest first, and acknowledge the ones that save. */
+export function retryUnsaved(): Promise<void> {
+  if (saveRetryTimer) {
+    clearTimeout(saveRetryTimer);
+    saveRetryTimer = null;
+  }
+  const batch = unsaved.splice(0);
+  return batch
+    .reduce<Promise<void>>((p, item) => p.then(() => saveFrame(item, true).then((ok) => (ok ? undefined : holdUnsaved(item)))), Promise.resolve())
+    .then(() => {
+      if (unsaved.length) return;
+      saveFailing = false;
+      saveRetryMs = SAVE_RETRY_MIN_MS;
+    });
+}
+
 function scheduleWakeAlarm(): void {
   scheduleAlarm(new Date(Date.now() + WAKE_ALARM_MS), { type: WAKE_ALARM }).catch((e) => dbg('ws: could not schedule wake alarm ' + (e && e.message)));
 }
@@ -85,7 +153,7 @@ function scheduleReconnect(): void {
   }, delay);
 }
 
-function onMessage(data: unknown): void {
+function onMessage(from: SocketLike, data: unknown): void {
   if (typeof data === 'string') return;
   let wsMsg: any;
   try {
@@ -106,17 +174,20 @@ function onMessage(data: unknown): void {
     const silent = drainingQueue;
     framesThisSession += 1;
     lastMessage = Date.now();
-    signal
-      .processIncomingEnvelope(req.body)
-      .then((frame) => {
-        if (frame) ingestRaw(frame, { silent });
-        sendAck(req.id);
-      })
-      .catch((err: any) => {
+    signal.processIncomingEnvelope(req.body).then(
+      (frame) => {
+        if (!frame) return ackOn(from, req.id);
+        const item = { frame, reqId: req.id, sock: from };
+        saveFrame(item, silent).then((ok) => {
+          if (!ok) holdUnsaved(item);
+        });
+      },
+      (err: any) => {
         dbg('ws: envelope decrypt error: ' + (err && err.message));
         // An undecryptable envelope is acknowledged so it can't block the queue forever.
-        sendAck(req.id);
-      });
+        ackOn(from, req.id);
+      }
+    );
     return;
   }
   sendAck(req.id);
@@ -173,7 +244,7 @@ export function connect(): void {
     keepaliveTimer = setInterval(() => sendFrame(signal.encodeWsKeepalive(), 'keepalive'), KEEPALIVE_MS);
     setConnection('open');
   };
-  s.onmessage = (evt) => onMessage(evt.data);
+  s.onmessage = (evt) => onMessage(s, evt.data);
   s.onclose = (evt) => {
     lastCloseAt = Date.now();
     if (keepaliveTimer) {

@@ -21,6 +21,20 @@ import { convs, state, typingMap } from './state';
 
 const STATUS_RANK: Record<string, number> = { pending: 0, failed: 0, sent: 1, delivered: 2, read: 3 };
 
+/** A decrypted frame the database couldn't store. The server can't decrypt it for us again, so the caller holds on to it and retries. */
+export class SaveError extends Error {}
+
+/** The writes started while `ingestRaw` applies one frame; null outside it. */
+let frameWrites: Array<Promise<unknown>> | null = null;
+
+function track(p: Promise<unknown>): void {
+  if (frameWrites) frameWrites.push(p);
+}
+
+function isStorageError(e: unknown): boolean {
+  return typeof DOMException !== 'undefined' && e instanceof DOMException;
+}
+
 /** The stored message for a received or synced one, before reactions, receipts, or edits. */
 export function messageRecord(ev: MessageEvent): Message {
   const rec: Message = {
@@ -57,7 +71,7 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   if (ev.reportToken && conv.type === 'direct') conv.reportToken = ev.reportToken;
   if ((conv.expireTimer || 0) !== ev.expiresInSeconds) conv.expireTimer = ev.expiresInSeconds;
   if (!ev.incoming) delete conv.request;
-  db.putMessage(rec);
+  track(db.putMessage(rec));
 
   conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
   conv.lastPreview = previewOf(rec);
@@ -110,7 +124,7 @@ export function applyNotice(ev: NoticeEvent, silent: boolean): void {
   if ((ev.notice.kind === 'safetyNumber' || ev.notice.kind === 'groupUpdate') && !convs[ev.convId]) return;
   const conv = ensureConv({ convId: ev.convId, groupInternalId: ev.groupInternalId, incoming: true, authorName: '' });
   const rec = noticeRecord(ev);
-  db.putMessage(rec);
+  track(db.putMessage(rec));
   const alerts = noticeAlerts(ev.notice) && !isSelfKey(ev.author);
   if (ev.timestamp >= (conv.lastTs || 0)) {
     conv.lastTs = ev.timestamp;
@@ -127,7 +141,9 @@ export function applyNotice(ev: NoticeEvent, silent: boolean): void {
 }
 
 export function enqueueMutation(fn: () => Promise<unknown>): Promise<unknown> {
-  state.mutations = state.mutations.then(fn).catch((e) => dbg('update failed: ' + (e && e.message)));
+  const run = state.mutations.then(fn);
+  track(run);
+  state.mutations = run.catch((e) => dbg('update failed: ' + (e && e.message)));
   return state.mutations;
 }
 
@@ -289,7 +305,24 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
   }
 }
 
-/** Apply one decrypted frame. `silent` while draining the offline queue, so queued messages don't each notify. */
-export function ingestRaw(frame: unknown, opts?: { silent?: boolean }): void {
-  for (const ev of parseFrame(frame, self(), displayName)) applyEvent(ev, !!(opts && opts.silent));
+/** Apply one decrypted frame; resolves once its writes are stored, and rejects with `SaveError` when the database refused one. `silent` while draining the offline queue, so queued messages don't each notify. */
+export function ingestRaw(frame: unknown, opts?: { silent?: boolean }): Promise<void> {
+  const writes: Array<Promise<unknown>> = [];
+  let thrown: unknown = null;
+  frameWrites = writes;
+  try {
+    for (const ev of parseFrame(frame, self(), displayName)) applyEvent(ev, !!(opts && opts.silent));
+  } catch (e) {
+    thrown = e || new Error('apply failed');
+  } finally {
+    frameWrites = null;
+  }
+  return Promise.allSettled(writes).then((results) => {
+    if (thrown) throw thrown;
+    for (const r of results) {
+      if (r.status !== 'rejected') continue;
+      const e = r.reason;
+      throw isStorageError(e) ? new SaveError(String((e && e.message) || e)) : e;
+    }
+  });
 }

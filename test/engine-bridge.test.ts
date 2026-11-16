@@ -1,7 +1,7 @@
 import { before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { randomBytes } from '../src/engine/bytes';
+import { randomBytes, toBase64 } from '../src/engine/bytes';
 import { contactMethods } from '../src/engine/bridge/contact-actions';
 import { contactIds, recordPeerProfileKey, syncedContacts } from '../src/engine/bridge/contacts';
 import { client, store } from '../src/engine/bridge/context';
@@ -9,6 +9,7 @@ import { conversationIdentifier } from '../src/engine/bridge/delivery';
 import { resetPeerNamesForTest } from '../src/engine/bridge/peer-names';
 import { type EngineHost, setEngineHost } from '../src/engine/host';
 import { libsignal } from '../src/engine/protocol/libsignal';
+import { safetyNumber } from '../src/engine/protocol/protocol';
 import { encryptProfileName } from '../src/engine/services/profiles';
 import { ALICE, BOB, settle } from './helpers';
 import { loadWasmForTests } from './support';
@@ -134,5 +135,17 @@ describe('safety numbers', () => {
 
     assert.equal(await client.safetyNumberFor(ALICE), null, 'none for ourselves');
     assert.equal(await contactMethods.safetyNumber('+15550004444'), null, 'none for an unknown number');
+  });
+
+  it('matches a scanned code from the official apps (raw bytes) and from older Beacons (base64)', () => {
+    const a = libsignal.keyPairGenerate() as { publicKey: Uint8Array };
+    const b = libsignal.keyPairGenerate() as { publicKey: Uint8Array };
+    const ours = safetyNumber(ALICE, a.publicKey, BOB, b.publicKey);
+    const theirs = safetyNumber(BOB, b.publicKey, ALICE, a.publicKey);
+    const verify = (scanned: string) => contactMethods.verifySafetyNumberQr(scanned, toBase64(ours.scannable), ours.safetyNumber);
+    assert.equal(verify(String.fromCharCode(...theirs.scannable)), true, 'Latin-1, as the scanner reads Signal’s byte-mode code');
+    assert.equal(verify(toBase64(theirs.scannable)), true, 'base64, as Beacon before 2.10.3 showed it');
+    assert.equal(verify(new TextDecoder().decode(theirs.scannable)), false, 'bytes mangled by a UTF-8 decode');
+    assert.equal(verify(String.fromCharCode(...ours.scannable)), false, 'our own code');
   });
 });
