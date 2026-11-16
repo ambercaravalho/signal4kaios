@@ -178,11 +178,11 @@ export const contactMethods = {
     try {
       const cleanDigits = scannedString.replace(/\D/g, '');
       if (cleanDigits.length === 60 && cleanDigits === expectedSafetyNumber) return true;
-      // QR scanners hand back either base64 or a binary latin1 string
+      // Signal's apps encode the raw fingerprint bytes, which the scanner hands back as Latin-1; Beacon before 2.10.3 encoded base64 text.
       let scannedBytes: Uint8Array;
-      try {
+      if (/^[A-Za-z0-9+/]+={0,2}$/.test(scannedString)) {
         scannedBytes = fromBase64(scannedString);
-      } catch {
+      } else {
         scannedBytes = new Uint8Array(scannedString.length);
         for (let i = 0; i < scannedString.length; i++) scannedBytes[i] = scannedString.charCodeAt(i) & 0xff;
       }

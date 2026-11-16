@@ -646,6 +646,7 @@ export const S = {
   showDetails: 'Show details',
   restart: 'Restart',
   storageError: 'Couldn’t open your messages on this phone.',
+  messagesNotSaved: 'Couldn’t save new messages. Free up some space on the phone.',
 
   // Errors
   errOffline: 'Couldn’t connect. Check your internet connection.',
@@ -656,6 +657,7 @@ export const S = {
   errNotAllowed: 'You don’t have permission to do that.',
   errGeneric: 'Something went wrong. Try again.',
   errSend: 'Couldn’t send. Check your connection.',
+  retryUnavailable: 'This attachment is no longer on this phone. Delete the message and send it again.',
 } as const;
 
 /** Fill `{name}`-style placeholders. */

@@ -823,6 +823,52 @@ describe('store', () => {
     assert.equal(once.attachments[0].id, '', 'we can’t open our own view-once media');
   });
 
+  it('retries a failed photo with its bytes and caption, and refuses once the bytes are gone', async () => {
+    let last: any;
+    const off = store.on('message', (m) => (last = m));
+    const newest = async () => (await db.getMessage(last.id))!;
+    const photo = { dataUri: 'data:image/jpeg;filename=b.jpg;base64,BAUG', contentType: 'image/jpeg', filename: 'b.jpg', size: 3, width: 4, height: 3 };
+    (signal as any).send = async () => {
+      throw new Error('offline');
+    };
+    await assert.rejects(store.sendAttachments(ALICE, [photo], 'look'));
+    await settle();
+    const failed = await newest();
+    assert.equal(failed.status, 'failed');
+
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 8600, attachments: ['desc-retried'] };
+    };
+    const rec = await store.retryMessage(failed);
+    assert.deepEqual(sent[0].base64_attachments, [photo.dataUri]);
+    assert.equal(sent[0].message, 'look');
+    assert.equal(rec.body, 'look');
+    assert.equal(rec.attachments[0].filename, 'b.jpg');
+    assert.equal(rec.attachments[0].width, 4);
+    assert.equal(rec.attachments[0].id, 'desc-retried');
+    assert.equal(await db.getMessage(failed.id), undefined, 'the failed copy is replaced');
+
+    (signal as any).send = async () => {
+      throw new Error('offline');
+    };
+    await assert.rejects(store.sendAttachments(ALICE, [photo], 'again'));
+    await settle();
+    const old = await newest();
+    off();
+    assert.equal(old.status, 'failed');
+    await db.deleteAttachment('outbox:' + old.id + ':0');
+    sent.length = 0;
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 8700 };
+    };
+    await assert.rejects(store.retryMessage(old), (e: unknown) => e instanceof store.RetryUnavailableError);
+    assert.deepEqual(sent, [], 'nothing is sent');
+    assert.ok(await db.getMessage(old.id), 'the message stays so it can be deleted');
+  });
+
   it('applies read syncs to the chat the message is in, leaving newer messages unread', async () => {
     await db.kvSet('syncedContacts', [{ uuid: 'aci-erin', number: '+15550020', name: 'Erin' }, { uuid: 'aci-finn', number: '', name: 'aci-finn' }]);
     await db.kvSet('syncedGroups', [{ id: 'group.R1RS', internal_id: 'R1RS', masterKey: '', revision: 1, name: 'Club', members: ['aci-me', 'aci-erin'], admins: [], pending: [], expireTimer: 0, blocked: false, link_mode: 'disabled', invite_link: '' }]);
@@ -860,6 +906,28 @@ describe('store', () => {
     readSync('aci-finn', ts + 3);
     await settle();
     assert.equal(store.conversation(finn.id)!.unread, 0, 'a contact known only by ACI');
+  });
+
+  it('resolves once a frame is stored, and rejects with SaveError when the database refuses a write', async () => {
+    await store.ingestRaw(incoming(9400, 'stored first'));
+    assert.equal((await db.getMessage(ALICE + '|9400|' + ALICE))!.body, 'stored first', 'stored by the time it resolves');
+
+    const put = db.putMessage;
+    let failures = 0;
+    (db as any).putMessage = (rec: any) => (failures-- > 0 ? Promise.reject(new DOMException('disk full', 'QuotaExceededError')) : put.call(db, rec));
+    try {
+      failures = 1;
+      await assert.rejects(store.ingestRaw(incoming(9500, 'no room')), (e: unknown) => e instanceof store.SaveError);
+      failures = 1;
+      const reaction = { envelope: { sourceNumber: ALICE, timestamp: 9510, dataMessage: { reaction: { emoji: '👍', targetAuthorNumber: ALICE, targetSentTimestamp: 9400 } } } };
+      await assert.rejects(store.ingestRaw(reaction), (e: unknown) => e instanceof store.SaveError, 'a reaction’s write counts too');
+      await store.ingestRaw(incoming(9500, 'no room'));
+      await store.ingestRaw(reaction);
+    } finally {
+      (db as any).putMessage = put;
+    }
+    assert.equal((await db.getMessage(ALICE + '|9500|' + ALICE))!.body, 'no room', 'stored on the retry');
+    assert.equal((await db.getMessage(ALICE + '|9400|' + ALICE))!.reactions[ALICE], '👍');
   });
 
   it('won’t open view-once media again once viewed, even after the cache has forgotten it', async () => {

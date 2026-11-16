@@ -90,6 +90,7 @@ function start(): void {
   http.onUnlinked(onUnlinked);
   ws.onUnlinked(onUnlinked);
   store.on('storage-error', () => toast(S.storageError, 4000));
+  store.on('save-error', () => toast(S.messagesNotSaved, 5000));
   onNumberChange((number) => toast(fmt(S.numberChanged, { number }), 5000));
 
   // Message history from linking is imported before the first connection, so nothing new lands in the middle of it.

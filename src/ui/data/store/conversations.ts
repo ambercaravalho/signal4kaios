@@ -186,7 +186,7 @@ export function joinedGroupConversation(internalId: string, name: string): Conve
     persistConv(conv);
   }
   const aci = config.aci();
-  if (aci) ingestRaw({ envelope: { groupUpdate: { groupId: internalId, author: aci, timestamp: Date.now(), changes: [{ change: 'joinedViaLink', target: aci }] } } });
+  if (aci) ingestRaw({ envelope: { groupUpdate: { groupId: internalId, author: aci, timestamp: Date.now(), changes: [{ change: 'joinedViaLink', target: aci }] } } }).catch((e) => dbg('join line failed: ' + (e && e.message)));
   return conv;
 }
 

@@ -13,6 +13,8 @@ export interface StoreEvents {
   typing: [string];
   connection: [Connection];
   'storage-error': [string];
+  /** New messages couldn't be stored and are being held for a retry. */
+  'save-error': [];
 }
 
 export type Listener<K extends keyof StoreEvents> = (...args: StoreEvents[K]) => void;

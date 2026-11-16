@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { fromBase64 } from '../../engine/bytes';
 import { router, useKeys, useSoftkeys } from '../app/router';
 import { Icon } from '../components/Icon';
 import { EmptyState, Spinner } from '../components/List';
@@ -52,7 +53,7 @@ export function SafetyNumberScreen(props: { target: string; name: string }) {
 
   async function scan(): Promise<void> {
     if (!entry) return;
-    const text = await scanQr(S.scanCode);
+    const text = await scanQr(S.scanCode, { binary: true });
     if (!text) return;
     if (signal.verifySafetyNumberQr(text, entry.scannable_safety_number, entry.safety_number)) {
       await alertDialog(S.safetyNumber, S.scanMatch);
@@ -66,7 +67,7 @@ export function SafetyNumberScreen(props: { target: string; name: string }) {
     if (e.key === 'Enter') setVerified(!verified);
     else if (e.key === 'SoftRight')
       showOptions([
-        !!entry.scannable_safety_number && { label: S.showCode, onSelect: () => router.push(QrScreen, { title: S.safetyNumber, text: entry.scannable_safety_number, caption: fmt(S.showCodeHint, { name: props.name }) }) },
+        !!entry.scannable_safety_number && { label: S.showCode, onSelect: () => router.push(QrScreen, { title: S.safetyNumber, bytes: fromBase64(entry.scannable_safety_number), caption: fmt(S.showCodeHint, { name: props.name }) }) },
         !!entry.scannable_safety_number && { label: S.scanCode, onSelect: scan },
         { label: S.learnMore, onSelect: () => openGuide('groups') },
       ]);

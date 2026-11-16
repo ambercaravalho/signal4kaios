@@ -58,8 +58,8 @@ function tx<T>(storeName: string, mode: IDBTransactionMode, work: (s: IDBObjectS
         const t = db.transaction(storeName, mode);
         const result = work(t.objectStore(storeName));
         t.oncomplete = () => resolve((result ? result.value : undefined) as T);
-        t.onerror = () => reject(t.error);
-        t.onabort = () => reject(t.error);
+        t.onerror = () => reject(t.error || new DOMException('transaction failed', 'UnknownError'));
+        t.onabort = () => reject(t.error || new DOMException('transaction aborted', 'AbortError'));
       })
   );
 }
@@ -263,6 +263,12 @@ export const db = {
 
   getAttachment(id: string): Promise<{ blob: Blob; type: string } | undefined> {
     return tx('attachments', 'readonly', (s) => reqValue(s.get(id)));
+  },
+
+  deleteAttachment(id: string): Promise<void> {
+    return tx('attachments', 'readwrite', (s) => {
+      s.delete(id);
+    });
   },
 
   /** Keep only the `keep` most recently cached attachments. Avatars (`avatar:*`) are exempt: they are small and bounded by the contact list. So are the empty markers left by opened view-once media, which keep it from being downloaded again. */

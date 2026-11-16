@@ -162,7 +162,7 @@ export function messageOptions(m: Message, ctx: MessageOptionsContext): void {
   const att = m.attachments[0];
   const settled = m.status !== 'failed' && m.status !== 'pending' && !request;
   const main: Record<MainAction, MenuEntry[]> = {
-    retry: [{ label: S.retry, onSelect: () => store.retryMessage(m).catch((e) => toast(sendError(e))) }],
+    retry: [{ label: S.retry, onSelect: () => store.retryMessage(m).catch((e) => toast(e instanceof store.RetryUnavailableError ? S.retryUnavailable : sendError(e))) }],
     attachment: m.attachments.length > 1 ? [{ label: S.viewAttachments, onSelect: () => pickAttachment(m) }] : [att && { label: attachmentAction(att), onSelect: () => openAttachment(m, att) }],
     vote: [!!conv && conv.type === 'group' && !request && { label: S.vote, onSelect: () => vote(m) }],
     card: contactCardOptions(m, ctx.insertText),

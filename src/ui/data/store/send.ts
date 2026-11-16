@@ -2,7 +2,7 @@
 
 import { isValidLinkPreview } from '../../../engine/services/link-previews';
 import { signal } from '../api';
-import { ATTACHMENT_CACHE_KEEP, dataUriBlob } from '../attachments';
+import { ATTACHMENT_CACHE_KEEP, dataUriBlob, readDataUri } from '../attachments';
 import { config } from '../config';
 import { db } from '../db';
 import { type FetchedPreview, imageDataUri } from '../link-preview-fetch';
@@ -55,6 +55,7 @@ export function sendCore(conv: Conversation, rec: Message, payload: SendPayload,
     },
     (err: any) => {
       rec.status = 'failed';
+      keepUnsentAttachments(rec, payload);
       db.putMessage(rec);
       emit('message-updated', rec, undefined);
       dbg('send failed: ' + (err && err.message));
@@ -73,6 +74,22 @@ function keepSentAttachments(rec: Message, payload: SendPayload, ids: unknown): 
     att.id = id;
     const blob = uris[i] ? dataUriBlob(uris[i]) : null;
     if (blob) db.putAttachment(id, blob, att.contentType).then(() => db.pruneAttachments(ATTACHMENT_CACHE_KEEP), () => {});
+  });
+}
+
+/** Thrown by Retry when a failed message's attachment bytes are no longer cached, so it can't be sent again. */
+export class RetryUnavailableError extends Error {}
+
+function outboxKey(msgId: string, i: number): string {
+  return 'outbox:' + msgId + ':' + i;
+}
+
+/** Caches a failed message's attachment bytes for Retry. They share the attachment LRU, so an old failure can outlive its bytes. */
+function keepUnsentAttachments(rec: Message, payload: SendPayload): void {
+  (payload.base64_attachments || []).forEach((uri, i) => {
+    const att = rec.attachments[i];
+    const blob = att ? dataUriBlob(uri) : null;
+    if (blob) db.putAttachment(outboxKey(rec.id, i), blob, att.contentType).then(() => db.pruneAttachments(ATTACHMENT_CACHE_KEEP), () => {});
   });
 }
 
@@ -273,9 +290,40 @@ export function forwardMessage(convId: string, m: Message, dataUri?: string): Pr
   });
 }
 
-export function retryMessage(rec: Message): Promise<Message> {
+function removeFailed(rec: Message): void {
   db.deleteMessage(rec.id);
   emit('message-removed', { id: rec.id, convId: rec.convId, timestamp: rec.timestamp });
-  if (rec.poll) return sendPoll(rec.convId, rec.poll.question, rec.poll.options, rec.poll.allowMultiple);
-  return sendText(rec.convId, rec.raw != null ? rec.raw : rec.body, rec.quote, rec.mentions || []);
+}
+
+export function retryMessage(rec: Message): Promise<Message> {
+  const text = rec.raw != null ? rec.raw : rec.body;
+  if (rec.poll || !rec.attachments.length) {
+    removeFailed(rec);
+    if (rec.poll) return sendPoll(rec.convId, rec.poll.question, rec.poll.options, rec.poll.allowMultiple);
+    return sendText(rec.convId, text, rec.quote, rec.mentions || []);
+  }
+  const keys = rec.attachments.map((_, i) => outboxKey(rec.id, i));
+  return Promise.all(keys.map((k) => db.getAttachment(k).catch(() => undefined)))
+    .then((rows) => {
+      if (rows.some((r) => !r || !r.blob || !r.blob.size)) throw new RetryUnavailableError('attachment bytes not kept');
+      return Promise.all(rows.map((r, i) => readDataUri(r!.blob, rec.attachments[i].filename)));
+    })
+    .then((uris) => {
+      removeFailed(rec);
+      const files: OutgoingFile[] = rec.attachments.map((att, i) => ({
+        dataUri: uris[i],
+        contentType: att.contentType,
+        filename: att.filename,
+        size: att.size,
+        voiceNote: att.voiceNote,
+        waveform: att.waveform,
+        duration: att.duration,
+        blurHash: att.blurHash,
+        width: att.width,
+        height: att.height,
+      }));
+      const sent = sendAttachments(rec.convId, files, text, { viewOnce: rec.attachments.some((a) => a.viewOnce), quote: rec.quote });
+      for (const k of keys) db.deleteAttachment(k).catch(() => {});
+      return sent;
+    });
 }
