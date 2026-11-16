@@ -4,6 +4,7 @@ import type { SyncMessage_PniChangeNumber } from '../gen/SignalService_pb';
 import type { IncomingEnvelope } from '../net/receive';
 import { libsignal } from '../protocol/libsignal';
 import { skipPreKeyIds } from '../protocol/prekeys';
+import { removeIdentity, saveOwnIdentityKey } from '../protocol/protocol';
 import type { SignalProtocolStore } from '../protocol/store';
 import { E164_RE } from '../validate';
 
@@ -30,8 +31,8 @@ export async function applyPniChangeNumber(store: SignalProtocolStore, env: Inco
   if (kyberPreKeyId !== undefined) await store.storeKyberPreKey(kyberPreKeyId, change.lastResortKyberPreKey, true);
   await skipPreKeyIds(store, 'pni', { signedPreKey: signedPreKeyId, kyberPreKey: kyberPreKeyId });
 
-  if (acc.pni && acc.pni !== pni) await store.removeIdentity('PNI:' + acc.pni);
-  await store.saveIdentity('PNI:' + pni, pair.publicKey);
+  if (acc.pni && acc.pni !== pni) await removeIdentity(store, 'PNI:' + acc.pni);
+  await saveOwnIdentityKey(store, 'PNI:' + pni, pair.publicKey);
   await store.saveAccount({
     ...acc,
     pni,

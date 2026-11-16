@@ -70,11 +70,14 @@ export interface SignalProtocolStore {
 
   loadSignedPreKey(id: number): Promise<Uint8Array | null>;
   storeSignedPreKey(id: number, record: Uint8Array): Promise<void>;
+  removeSignedPreKey(id: number): Promise<void>;
 
   loadKyberPreKey(id: number): Promise<KyberPreKeyEntry | null>;
   storeKyberPreKey(id: number, record: Uint8Array, lastResort: boolean): Promise<void>;
   /** One-time Kyber PreKeys are deleted once used; last-resort keys are kept. */
   markKyberPreKeyUsed(id: number): Promise<void>;
+  /** Deletes a Kyber PreKey of either kind; used to prune old last-resort keys. */
+  removeKyberPreKey(id: number): Promise<void>;
 
   loadSession(name: string, deviceId: number): Promise<Uint8Array | null>;
   storeSession(name: string, deviceId: number, record: Uint8Array): Promise<void>;
@@ -191,6 +194,10 @@ export class MemorySignalStore implements SignalProtocolStore {
     this.signedPreKeys.set(id, record);
   }
 
+  async removeSignedPreKey(id: number): Promise<void> {
+    this.signedPreKeys.delete(id);
+  }
+
   async loadKyberPreKey(id: number): Promise<KyberPreKeyEntry | null> {
     return this.kyberPreKeys.get(id) || null;
   }
@@ -202,6 +209,10 @@ export class MemorySignalStore implements SignalProtocolStore {
   async markKyberPreKeyUsed(id: number): Promise<void> {
     const entry = this.kyberPreKeys.get(id);
     if (entry && !entry.lastResort) this.kyberPreKeys.delete(id);
+  }
+
+  async removeKyberPreKey(id: number): Promise<void> {
+    this.kyberPreKeys.delete(id);
   }
 
   async loadSession(name: string, deviceId: number): Promise<Uint8Array | null> {
@@ -372,6 +383,10 @@ export class IndexedDbSignalStore implements SignalProtocolStore {
     await this.db().putPreKey('signed:' + id, record);
   }
 
+  async removeSignedPreKey(id: number): Promise<void> {
+    await this.db().deletePreKey('signed:' + id);
+  }
+
   async loadKyberPreKey(id: number): Promise<KyberPreKeyEntry | null> {
     const raw = await this.db().getPreKey('kyber:' + id);
     const record = raw ? toRecord(raw.record) : null;
@@ -385,6 +400,10 @@ export class IndexedDbSignalStore implements SignalProtocolStore {
   async markKyberPreKeyUsed(id: number): Promise<void> {
     const entry = await this.loadKyberPreKey(id);
     if (entry && !entry.lastResort) await this.db().deletePreKey('kyber:' + id);
+  }
+
+  async removeKyberPreKey(id: number): Promise<void> {
+    await this.db().deletePreKey('kyber:' + id);
   }
 
   async loadSession(name: string, deviceId: number): Promise<Uint8Array | null> {

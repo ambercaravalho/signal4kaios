@@ -6,7 +6,7 @@ import { ContactRecord_NameSchema } from '../gen/SignalStorage_pb';
 import { host } from '../host';
 import { create, isAci } from '../net/proto';
 import { net } from '../net/transport';
-import { compareScannedSafetyNumber } from '../protocol/protocol';
+import { allIdentityRecords, compareScannedSafetyNumber, identityRecord, setIdentityTrust } from '../protocol/protocol';
 import type { TrustLevel } from '../protocol/store';
 import { cdsiLookup } from '../services/cdsi';
 import { downloadAndDecryptProfileAvatar, fetchAndDecryptProfile } from '../services/profiles';
@@ -143,16 +143,16 @@ export const contactMethods = {
 
   /** `target` is a contact's ACI or phone number. */
   async safetyNumber(target: string) {
-    const aci = (await resolveAci(target)) || (await store.getAllIdentities()).find((r) => !!target && r.number === target)?.uuid || '';
+    const aci = (await resolveAci(target)) || (await allIdentityRecords(store)).find((r) => !!target && r.number === target)?.uuid || '';
     return aci ? client.safetyNumberFor(aci) : null;
   },
 
   async trustIdentity(target: string, opts?: { verified_safety_number?: string; trust_all_known_keys?: boolean }): Promise<void> {
     const level: TrustLevel = opts?.verified_safety_number ? 'TRUSTED_VERIFIED' : 'TRUSTED_UNVERIFIED';
     const aci = (await resolveAci(target)) || target;
-    await store.setIdentityTrust(aci, level);
+    await setIdentityTrust(store, aci, level);
 
-    const idRec = await store.getIdentity(aci);
+    const idRec = await identityRecord(store, aci);
     if (idRec && isAci(aci)) {
       await client.sendSyncMessage(
         create(ContentSchema, {

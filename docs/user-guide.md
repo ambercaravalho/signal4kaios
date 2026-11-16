@@ -100,7 +100,7 @@ A group opens as a request when someone who isn't in your contacts added or invi
 
 ## Media
 
-**Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file). Photos, videos, and files wait above the message box (for example **2 photos**) so you can attach more and type a caption; **Send** sends them together as one message, and **Options → Remove attachments** clears them. Voice recordings send right away on their own. A message can carry up to 32 attachments and 25 MB in total, and each file is sent with its name.
+**Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file). Photos, videos, and files wait above the message box (for example **2 photos**) so you can attach more and type a caption; **Send** sends them together as one message, and **Options → Remove attachments** clears them. Voice recordings send right away on their own. A message can carry up to 32 attachments and 25 MB in total, and each file is sent with its name. Photos are sent at Signal's Standard quality, up to 1600 pixels on the longest side, and without the location, camera, and time details the camera saved in them; GIFs are sent as they are.
 
 **Options → Record voice message** starts recording at once. The first time, KaiOS asks whether Beacon may use the microphone. The sheet shows the time and how loud you are; **Stop** ends the recording, then **Send** sends it on its own (your draft stays in the message box) and **Cancel** throws it away. Recordings stop by themselves at 15 minutes. Beacon sends them as MP3 with a waveform, so they play on every Signal app, and a long one takes a few seconds to prepare.
 

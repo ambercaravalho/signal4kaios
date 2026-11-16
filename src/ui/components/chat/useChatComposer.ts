@@ -3,6 +3,7 @@ import { groupDetail, signal } from '../../data/api';
 import { readDataUri } from '../../data/attachments';
 import { photoBlurHash } from '../../data/blurhash';
 import { config } from '../../data/config';
+import { preparePhoto } from '../../data/image-scale';
 import { type FetchedPreview, fetchLinkPreview, previewCandidate } from '../../data/link-preview-fetch';
 import { chooseFile } from '../../data/platform';
 import * as store from '../../data/store';
@@ -200,16 +201,20 @@ export function useChatComposer(convId: string, conv: Conversation | undefined, 
     const file = await chooseFile();
     if (!file) return;
     const type = file.type || 'application/octet-stream';
-    if (file.size > MAX_FILE_BYTES) return toast(S.fileTooLarge);
+    const photo = type.indexOf('image/') === 0;
+    if (!photo && file.size > MAX_FILE_BYTES) return toast(S.fileTooLarge);
     const viewOnce = await askViewOnce(type);
     if (viewOnce === undefined) return;
     const alone = viewOnce || type.indexOf('audio/') === 0;
     if (!alone && tray.length >= store.MAX_ATTACHMENTS) return toast(fmt(S.tooManyAttachments, { n: store.MAX_ATTACHMENTS }));
-    if (!alone && tray.reduce((sum, f) => sum + (f.size || 0), 0) + file.size > MAX_FILE_BYTES) return toast(S.attachmentsTooLarge);
     toast(S.preparingFile);
     try {
-      const out: store.OutgoingFile = { dataUri: await readDataUri(file, file.name), contentType: type, filename: file.name, size: file.size };
-      if (type.indexOf('image/') === 0) Object.assign(out, await photoBlurHash(file));
+      const prepared = photo ? await preparePhoto(file, file.name) : { blob: file, contentType: type, filename: file.name };
+      const size = prepared.blob.size;
+      if (size > MAX_FILE_BYTES) return toast(S.fileTooLarge);
+      if (!alone && tray.reduce((sum, f) => sum + (f.size || 0), 0) + size > MAX_FILE_BYTES) return toast(S.attachmentsTooLarge);
+      const out: store.OutgoingFile = { dataUri: await readDataUri(prepared.blob, prepared.filename), contentType: prepared.contentType, filename: prepared.filename, size };
+      if (photo) Object.assign(out, await photoBlurHash(prepared.blob));
       if (!alone) {
         setTray((cur) => cur.concat(out));
         setFocusedId(null);

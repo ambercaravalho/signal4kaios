@@ -272,7 +272,7 @@ flowchart LR
   F --> G["release the lock"]
 ```
 
-Every libsignal call that touches protocol state goes through [`src/engine/protocol/protocol.ts`](../src/engine/protocol/protocol.ts), which serializes these cycles. Failures come back as JS errors whose `name` is a stable code such as `UntrustedIdentity` or `DuplicatedMessage`.
+Every libsignal call that touches protocol state goes through [`src/engine/protocol/protocol.ts`](../src/engine/protocol/protocol.ts), which serializes these cycles. So does every read and write of identity records (`identityRecord`, `saveIdentityKey`, `setIdentityTrust`, and the rest); `test/engine-sources.test.ts` fails if any other engine or app file calls the store's identity methods. Failures come back as JS errors whose `name` is a stable code such as `UntrustedIdentity` or `DuplicatedMessage`.
 
 | Rust module | Provides |
 | --- | --- |
@@ -341,7 +341,7 @@ flowchart LR
 | [`index.ts`](../src/engine/index.ts) | `signalBridge`, assembled from [`bridge/`](../src/engine/bridge): recipients, sync messages, sends, blocking, group changes, pins, usernames, chat-list state, Storage Service refresh |
 | [`protocol/libsignal.ts`](../src/engine/protocol/libsignal.ts) | Loads the wasm module (`ready()`) |
 | [`protocol/protocol.ts`](../src/engine/protocol/protocol.ts) | Hydrate, call, and flush around each libsignal operation; trust policy; Sealed Sender trust roots |
-| [`protocol/prekeys.ts`](../src/engine/protocol/prekeys.ts) | Signed, last-resort Kyber, and one-time PreKeys |
+| [`protocol/prekeys.ts`](../src/engine/protocol/prekeys.ts) | Signed, last-resort Kyber, and one-time PreKeys, and the rotation record |
 | [`protocol/store.ts`](../src/engine/protocol/store.ts) | `SignalProtocolStore` over IndexedDB (and in memory for tests) |
 | [`net/http.ts`](../src/engine/net/http.ts) | Signal hosts, the HTTP function shapes passed in from [`src/ui/data/http.ts`](../src/ui/data/http.ts), and `asObject` for untrusted JSON |
 | [`net/proto.ts`](../src/engine/net/proto.ts) | WebSocket framing, service IDs, and delimited streams over the generated codecs |
@@ -380,7 +380,10 @@ Upgrading from a database older than version 4 discards the protocol state and a
 - **Keys stay on the phone.** Identity keys and sessions live only in IndexedDB, and the device password only in the app's `localStorage`. 2.0.x also cached the login for the ServiceWorker; 2.1.0 deletes that copy on upgrade.
 - **Untrusted input.** WebSocket frames, protobufs, and HTTP responses are all parsed defensively; a bad frame is logged and dropped.
 - **Sync messages** are accepted only from our own ACI. Recipients must be ACIs.
-- **Identity changes.** A contact's first identity key is trusted on first use. If it later changes, the contact drops to untrusted, and if you had verified them, sending stops until you review the new safety number.
+- **Identity changes.** A contact's first identity key is trusted on first use. If it later changes, the contact drops to untrusted, and if you had verified them, sending stops until you review the new safety number. Every change adds a safety number notice to the contact's chat, whether Beacon learned the key from a message, a PreKey bundle when sending, a profile, or a sync message; a decrypt reports it through `identityChanged`, and the other paths through `onIdentityKeyChanged`, which [`bridge/incoming.ts`](../src/engine/bridge/incoming.ts) turns into a notice frame.
+- **PreKey upkeep.** `maintainPreKeys` ([`bridge/account.ts`](../src/engine/bridge/account.ts)), after Signal-Desktop's `maybeUpdateKeys`, runs for the ACI and PNI when the socket opens or the wake alarm fires, at most every 12 hours. It reads the server's counts (`GET /v2/keys`) and uploads 100 one-time EC or Kyber PreKeys when either drops below 10, and replaces the signed and last-resort Kyber PreKeys every two days. Uploaded pairs are recorded in `preKeyRotation:{aci|pni}`; after each rotation the newest three are kept and older ones are deleted once they're 30 days old.
+- **Group membership.** A group data message (including reactions and edits) from someone our copy of the group doesn't list as a member is acknowledged and dropped, unless it names a newer revision than ours or carries a `groupChange`. Groups we haven't fetched yet, and unvetted placeholders, aren't checked.
+- **Photo metadata.** The composer re-encodes JPEG, PNG, and WebP photos as JPEG at Signal's Standard quality (longest edge 1600 pixels, quality 0.8; [`ui/data/image-scale.ts`](../src/ui/data/image-scale.ts) `preparePhoto`), which drops EXIF. When the canvas can't decode a JPEG, its APP1 and APP13 segments are removed from the original bytes instead. GIFs go unchanged.
 - **Sealed Sender** certificates are checked against Signal's production trust roots.
 - **TLS.** Connections to Signal's hosts trust only the two roots libsignal pins, not the phone's certificate store, so a CA added to the phone can't intercept them.
 - **CSP.** The privileged-app CSP forbids `eval`, `new Function`, and inline scripts, and `scripts/package.sh` fails the build if any shipped script contains them. On KaiOS 4.0 the ServiceWorker adds only `'wasm-unsafe-eval'` to `api-daemon`'s policy ([WebAssembly on KaiOS 4.0](#webassembly-on-kaios-40)).

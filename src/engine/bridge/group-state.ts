@@ -74,6 +74,17 @@ export async function groupMasterKey(groupSendId: string): Promise<Uint8Array> {
   return mk;
 }
 
+/** Whether a group message should be dropped because our copy of the group, at the message's revision or later, doesn't list the sender as a member; groups we haven't fetched yet and messages carrying a group change are never dropped. */
+export async function isFromNonMember(masterKey: Uint8Array, revision: number, sender: string, groupChange: Uint8Array): Promise<boolean> {
+  if (groupChange.length) return false;
+  const internalId = deriveGroupV2Keys(masterKey).internalId;
+  const group = (await syncedGroups()).find((g) => g.internal_id === internalId);
+  if (!group || group.unvetted || !group.members || !group.members.length) return false;
+  if ((revision || 0) > (group.revision || 0)) return false;
+  const who = sender.toLowerCase();
+  return !group.members.some((m: string) => m.toLowerCase() === who);
+}
+
 /** Record a group seen in an incoming message; fetch its state when it is new or its revision moved on. */
 export async function noteIncomingGroup(masterKey: Uint8Array, revision: number, sender: string, expireTimer: number, groupChange: Uint8Array, timestamp: number): Promise<void> {
   const keys = deriveGroupV2Keys(masterKey);

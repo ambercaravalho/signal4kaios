@@ -2,6 +2,7 @@
 
 import { fromBase64, toBase64, toHex, toWebSafeBase64 } from '../bytes';
 import { libsignal } from '../protocol/libsignal';
+import { saveIdentityKey } from '../protocol/protocol';
 import type { SignalProtocolStore } from '../protocol/store';
 import { accountBasicAuth, asObject, DEFAULT_SIGNAL_SERVER, SignalHttpBinaryFn, SignalHttpJsonFn } from '../net/http';
 import { parseAvatarForm, uploadProfileAvatar } from './profile-avatar';
@@ -98,7 +99,7 @@ export async function fetchAndDecryptProfile(
   if (typeof res.identityKey === 'string') {
     try {
       out.identityKey = fromBase64(res.identityKey);
-      await store.saveIdentity(aci, out.identityKey, { uuid: aci });
+      await saveIdentityKey(store, aci, out.identityKey, { uuid: aci });
     } catch {
       // malformed identity key
     }

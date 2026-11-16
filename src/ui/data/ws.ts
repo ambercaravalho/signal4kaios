@@ -19,6 +19,8 @@ const KEEPALIVE_MS = 25000;
 const WAKE_ALARM_MS = 300000;
 const SAVE_RETRY_MIN_MS = 5000;
 const SAVE_RETRY_MAX_MS = 60000;
+const PRE_KEY_CHECK_MS = 12 * 60 * 60 * 1000;
+const PRE_KEY_RETRY_MS = 60 * 60 * 1000;
 /** Caps the decrypted frames kept in memory while storage is full; past it a frame is left unacknowledged, and the server's redelivery is dropped as a duplicate. */
 const MAX_UNSAVED = 500;
 
@@ -129,6 +131,27 @@ export function retryUnsaved(): Promise<void> {
       if (unsaved.length) return;
       saveFailing = false;
       saveRetryMs = SAVE_RETRY_MIN_MS;
+    });
+}
+
+let preKeyCheckRunning = false;
+
+/** Checks PreKeys at most every 12 hours, retrying an hour after a failure; the wake alarm reaches a phone that stays connected for days. */
+function maybeMaintainPreKeys(): void {
+  const now = Date.now();
+  if (preKeyCheckRunning || now - config.preKeysCheckedAt() < PRE_KEY_CHECK_MS) return;
+  preKeyCheckRunning = true;
+  signal
+    .maintainPreKeys()
+    .then(
+      () => config.setPreKeysCheckedAt(Date.now()),
+      (e) => {
+        dbg('ws: PreKey upkeep failed ' + (e && e.message));
+        config.setPreKeysCheckedAt(Date.now() - PRE_KEY_CHECK_MS + PRE_KEY_RETRY_MS);
+      }
+    )
+    .then(() => {
+      preKeyCheckRunning = false;
     });
 }
 
@@ -289,6 +312,7 @@ export function connect(): void {
     }
     everConnected = true;
     scheduleWakeAlarm();
+    maybeMaintainPreKeys();
     if (keepaliveTimer) clearInterval(keepaliveTimer);
     keepaliveUnanswered = false;
     keepaliveTimer = setInterval(() => keepalive(s), KEEPALIVE_MS);
@@ -374,6 +398,7 @@ export function installWakeHandlers(): void {
         dbg('ws: wake alarm');
         wakeIfClosed();
         scheduleWakeAlarm();
+        if (wanted) maybeMaintainPreKeys();
       }
     });
   }

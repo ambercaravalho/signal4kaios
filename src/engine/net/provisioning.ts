@@ -13,8 +13,9 @@ import { WebSocketMessage_Type } from '../gen/chat_websocket_pb';
 import { ProvisioningAddressSchema, ProvisionMessage, ProvisionMessageSchema } from '../gen/DeviceMessages_pb';
 import { DeviceName, DeviceNameSchema } from '../gen/DeviceName_pb';
 import { libsignal } from '../protocol/libsignal';
-import { generateKyberPreKeys, generateOneTimePreKeys, generateSignedPreKey, ONE_TIME_PRE_KEY_COUNT } from '../protocol/prekeys';
+import { generateKyberPreKeys, generateOneTimePreKeys, generateSignedPreKey, ONE_TIME_PRE_KEY_COUNT, recordPreKeyRotation } from '../protocol/prekeys';
 import { create, decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, fromBinary, serviceIdFrom, toBinary } from './proto';
+import { saveOwnIdentityKey } from '../protocol/protocol';
 import type { AccountCredentials, KeyPair, SignalProtocolStore } from '../protocol/store';
 import { accountBasicAuth, asObject, DEFAULT_SIGNAL_SERVER, DEFAULT_SIGNAL_WS, SIGNAL_USER_AGENT, SignalHttpJsonFn } from './http';
 import { net, SOCKET_OPEN, SocketLike } from './transport';
@@ -175,8 +176,10 @@ async function finishLinking(
   }
   const creds: AccountCredentials = { ...provisional, deviceId: linkRes.deviceId };
   await store.saveAccount(creds);
-  await store.saveIdentity(aci, aciIdentity.pubKey, { number: creds.number || undefined, uuid: aci });
-  if (pni && pniIdentity) await store.saveIdentity('PNI:' + pni, pniIdentity.pubKey);
+  await saveOwnIdentityKey(store, aci, aciIdentity.pubKey, { number: creds.number || undefined, uuid: aci });
+  if (pni && pniIdentity) await saveOwnIdentityKey(store, 'PNI:' + pni, pniIdentity.pubKey);
+  await recordPreKeyRotation(store, 'aci', { signedPreKey: aciSignedPreKey, pqLastResortPreKey: aciPqLastResortPreKey });
+  if (pniSignedPreKey && pniPqLastResortPreKey) await recordPreKeyRotation(store, 'pni', { signedPreKey: pniSignedPreKey, pqLastResortPreKey: pniPqLastResortPreKey });
 
   if (onStatus) onStatus('Uploading PreKeys\u2026');
   const auth = accountBasicAuth({ aci, deviceId: creds.deviceId, password });
