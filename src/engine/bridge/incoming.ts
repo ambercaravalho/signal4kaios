@@ -2,12 +2,22 @@
 
 import { decodeWebSocketMessage, encodeWebSocketRequest, encodeWebSocketResponse, isAci } from '../net/proto';
 import { host } from '../host';
+import { onIdentityKeyChanged } from '../protocol/protocol';
 import { isFromBlocked } from './blocked';
 import { callManager } from './calls';
 import { client, store } from './context';
-import { recordPeerProfileKey, updateSyncedContact } from './contacts';
-import { noteIncomingGroup } from './group-state';
+import { contactIds, recordPeerProfileKey, updateSyncedContact } from './contacts';
+import { isFromNonMember, noteIncomingGroup } from './group-state';
 import { applyOwnKeyChanges, handleIncomingSyncMessage } from './sync-handlers';
+
+onIdentityKeyChanged((aci) => {
+  (async () => {
+    const acc = await store.getAccount();
+    if (!acc || aci === acc.aci || !isAci(aci)) return;
+    const ids = await contactIds(aci);
+    host().ingest({ envelope: { sourceUuid: aci, sourceNumber: ids.e164 || undefined, timestamp: Date.now(), notice: { kind: 'safetyNumber' } } });
+  })().catch(() => {});
+});
 
 export const incomingMethods = {
   /** Decode a binary WebSocket frame from `wss://chat.signal.org/v1/websocket/`. */
@@ -47,6 +57,13 @@ export const incomingMethods = {
         return true;
       });
       return took ? null : res.normalizedFrame;
+    }
+
+    const groupMessage = c.case === 'dataMessage' ? c.value : c.case === 'editMessage' ? c.value.dataMessage : undefined;
+    const gv2 = groupMessage && groupMessage.groupV2;
+    if (!fromSelf && gv2 && gv2.masterKey.length === 32 && (await isFromNonMember(gv2.masterKey, gv2.revision, sender, gv2.groupChange))) {
+      host().dbg('group: dropped a message from someone who is not a member');
+      return null;
     }
 
     if (c.case === 'dataMessage') {

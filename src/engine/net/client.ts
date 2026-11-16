@@ -13,6 +13,7 @@ import {
 } from '../gen/SignalService_pb';
 import { create, toBinary } from './proto';
 import {
+  allIdentityRecords,
   CIPHERTEXT_PLAINTEXT,
   createSenderKeyDistribution,
   decryptionErrorContent,
@@ -20,14 +21,18 @@ import {
   encryptForDevice,
   errorCode,
   hasUsableSession,
+  identityRecord,
   localIdentity,
   parsePreKeyResponse,
   processPreKeyBundle,
+  reportIdentityChange,
   safetyNumber,
+  saveIdentityKey,
   sealedEncryptForDevice,
   senderCertificateExpiration,
   senderKeyMultiRecipientEncrypt,
   sessionRegistrationId,
+  setIdentityTrust,
   unidentifiedAccessKey,
 } from '../protocol/protocol';
 import {
@@ -194,13 +199,14 @@ export class SignalClient {
 
   /** Saves a server-provided identity key before session setup, unless it replaces a key the user verified. */
   private async acceptBundleIdentity(recipientId: string, identityKey: Uint8Array): Promise<void> {
-    const existing = await this.store.getIdentity(recipientId);
+    const existing = await identityRecord(this.store, recipientId);
     if (existing && constantTimeEqual(existing.publicKey, identityKey)) return;
     if (existing && existing.trustLevel === 'TRUSTED_VERIFIED') {
-      await this.store.setIdentityTrust(recipientId, 'UNTRUSTED');
+      await setIdentityTrust(this.store, recipientId, 'UNTRUSTED');
+      reportIdentityChange(recipientId);
       throw new IdentityChangedError(recipientId);
     }
-    await this.store.saveIdentity(recipientId, identityKey, { uuid: recipientId });
+    await saveIdentityKey(this.store, recipientId, identityKey, { uuid: recipientId });
   }
 
   /** Fetches PreKey bundles for `selector` (`*` or one device ID) and builds sessions; returns the device IDs that now have sessions. */
@@ -595,7 +601,7 @@ export class SignalClient {
   } | null> {
     const acc = await this.store.getAccount();
     if (!acc || !isAci(aci) || aci === acc.aci) return null;
-    const id = (await this.store.getIdentity(aci)) || (await this.store.getAllIdentities()).find((r) => r.uuid === aci) || null;
+    const id = (await identityRecord(this.store, aci)) || (await allIdentityRecords(this.store)).find((r) => r.uuid === aci) || null;
     if (!id) return null;
     const cacheKey = aci + ':' + toBase64(acc.aciIdentityKeyPair.pubKey) + ':' + toBase64(id.publicKey);
     let sn = this.safetyNumbers.get(cacheKey);

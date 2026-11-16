@@ -1,18 +1,23 @@
-import { before, beforeEach, describe, it } from 'node:test';
+import { after, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { randomBytes, toBase64 } from '../src/engine/bytes';
 import { accountMethods } from '../src/engine/bridge/account';
 import { contactMethods } from '../src/engine/bridge/contact-actions';
 import { contactIds, recordPeerProfileKey, syncedContacts } from '../src/engine/bridge/contacts';
-import { client, store } from '../src/engine/bridge/context';
+import { client, httpJson, store } from '../src/engine/bridge/context';
 import { conversationIdentifier } from '../src/engine/bridge/delivery';
+import { incomingMethods } from '../src/engine/bridge/incoming';
 import { outgoingMethods } from '../src/engine/bridge/outgoing';
 import { resetPeerNamesForTest } from '../src/engine/bridge/peer-names';
+import { ContentSchema } from '../src/engine/gen/SignalService_pb';
 import { type EngineHost, setEngineHost } from '../src/engine/host';
+import { create } from '../src/engine/net/proto';
 import { libsignal } from '../src/engine/protocol/libsignal';
-import { safetyNumber } from '../src/engine/protocol/protocol';
-import { encryptProfileName } from '../src/engine/services/profiles';
+import { loadPreKeyRotation, PRE_KEY_ROTATION_MS } from '../src/engine/protocol/prekeys';
+import { identityRecord, safetyNumber, saveIdentityKey, saveOwnIdentityKey, setIdentityTrust } from '../src/engine/protocol/protocol';
+import { deriveGroupV2Keys } from '../src/engine/services/groups-v2';
+import { encryptProfileName, fetchAndDecryptProfile } from '../src/engine/services/profiles';
 import { ALICE, BOB, settle } from './helpers';
 import { loadWasmForTests } from './support';
 
@@ -22,9 +27,12 @@ const CAROL = '33333333-3333-4333-8333-333333333333';
 const kv = new Map<string, any>();
 const keys = new Map<string, any>();
 const identities = new Map<string, any>();
+const preKeys = new Map<string, any>();
 const gets: string[] = [];
 let directoryChanges = 0;
 let profiles: Record<string, string> = {};
+let profileKeys: Record<string, string> = {};
+const ingested: any[] = [];
 
 const fakeHost = {
   http: {
@@ -32,7 +40,7 @@ const fakeHost = {
       if (method !== 'GET' || !path.startsWith('/v1/profile/')) throw Object.assign(new Error('HTTP 404'), { status: 404 });
       gets.push(path);
       const aci = decodeURIComponent(path.split('/')[3]);
-      return profiles[aci] ? { name: profiles[aci] } : {};
+      return { ...(profiles[aci] ? { name: profiles[aci] } : {}), ...(profileKeys[aci] ? { identityKey: profileKeys[aci] } : {}) };
     },
     rawBinary: async () => new Uint8Array(0),
     rawRequest: async () => ({ status: 404, body: new Uint8Array(0), location: null }),
@@ -44,6 +52,9 @@ const fakeHost = {
     putAttachment: async () => {},
     signalKeyGet: async (k: string) => keys.get(k),
     signalKeySet: async (k: string, v: unknown) => void keys.set(k, v),
+    getPreKey: async (k: string) => preKeys.get(k),
+    putPreKey: async (k: string, v: unknown) => void preKeys.set(k, v),
+    deletePreKey: async (k: string) => void preKeys.delete(k),
     putIdentity: async (rec: any) => void identities.set(rec.address, { ...rec }),
     getIdentity: async (a: string) => (identities.has(a) ? { ...identities.get(a) } : undefined),
     deleteIdentity: async (a: string) => void identities.delete(a),
@@ -55,7 +66,7 @@ const fakeHost = {
     directoryChanges++;
   },
   applyChatState: () => {},
-  ingest: () => {},
+  ingest: (frame: any) => void ingested.push(frame),
   numberChanged: () => {},
 } as unknown as EngineHost;
 
@@ -71,6 +82,8 @@ beforeEach(() => {
   gets.length = 0;
   directoryChanges = 0;
   profiles = {};
+  profileKeys = {};
+  ingested.length = 0;
   resetPeerNamesForTest();
 });
 
@@ -149,6 +162,183 @@ describe('safety numbers', () => {
     assert.equal(verify(toBase64(theirs.scannable)), true, 'base64, as Beacon before 2.10.3 showed it');
     assert.equal(verify(new TextDecoder().decode(theirs.scannable)), false, 'bytes mangled by a UTF-8 decode');
     assert.equal(verify(String.fromCharCode(...ours.scannable)), false, 'our own code');
+  });
+});
+
+describe('identity key changes', () => {
+  const newKey = () => (libsignal.keyPairGenerate() as { publicKey: Uint8Array }).publicKey;
+  const notices = () => ingested.filter((f) => f.envelope && f.envelope.notice && f.envelope.notice.kind === 'safetyNumber');
+  beforeEach(() => identities.clear());
+
+  it('adds one safety number notice when a profile lookup brings a new key, and none when it repeats', async () => {
+    kv.set('syncedContacts', [{ uuid: BOB, number: '+15550001111', name: 'Bob', blocked: false, expireTimer: 0 }]);
+    await saveIdentityKey(store, BOB, newKey(), { uuid: BOB });
+    await settle();
+    assert.equal(notices().length, 0, 'the first key is not a change');
+    const second = newKey();
+    profileKeys[BOB] = toBase64(second);
+    await fetchAndDecryptProfile(store, httpJson, BOB);
+    await settle();
+    assert.equal(notices().length, 1);
+    assert.equal(notices()[0].envelope.sourceUuid, BOB);
+    assert.equal(notices()[0].envelope.sourceNumber, '+15550001111', 'names the chat by number, as incoming messages do');
+    await fetchAndDecryptProfile(store, httpJson, BOB);
+    await settle();
+    assert.equal(notices().length, 1, 'the same key again changes nothing');
+  });
+
+  it('adds one notice when a send fetches a bundle with a changed key, including a refused change to a verified key', async () => {
+    await saveIdentityKey(store, CAROL, newKey(), { uuid: CAROL });
+    await (client as any).acceptBundleIdentity(CAROL, newKey());
+    await settle();
+    assert.equal(notices().length, 1);
+    await setIdentityTrust(store, CAROL, 'TRUSTED_VERIFIED');
+    const verified = (await identityRecord(store, CAROL))!.publicKey;
+    await assert.rejects((client as any).acceptBundleIdentity(CAROL, newKey()));
+    await settle();
+    assert.equal(notices().length, 2);
+    assert.deepEqual((await identityRecord(store, CAROL))!.publicKey, verified, 'the verified key is kept');
+    assert.equal((await identityRecord(store, CAROL))!.trustLevel, 'UNTRUSTED');
+  });
+
+  it('never reports our own keys', async () => {
+    await saveIdentityKey(store, ALICE, newKey(), { uuid: ALICE });
+    await saveIdentityKey(store, ALICE, newKey(), { uuid: ALICE });
+    await saveOwnIdentityKey(store, 'PNI:' + CAROL, newKey());
+    await saveOwnIdentityKey(store, 'PNI:' + CAROL, newKey());
+    await settle();
+    assert.equal(notices().length, 0);
+  });
+});
+
+describe('PreKey upkeep', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const realRequest = fakeHost.http.request;
+  let counts = { count: 100, pqCount: 100 };
+  let puts: any[] = [];
+
+  beforeEach(() => {
+    preKeys.clear();
+    puts = [];
+    counts = { count: 100, pqCount: 100 };
+    (fakeHost.http as any).request = async (method: string, path: string, body: any) => {
+      if (path !== '/v2/keys?identity=aci') return (realRequest as any).call(fakeHost.http, method, path);
+      if (method === 'GET') return counts;
+      puts.push(body);
+      return {};
+    };
+  });
+
+  after(() => {
+    (fakeHost.http as any).request = realRequest;
+  });
+
+  const rotated = (daysAgo: number, signed: Array<[number, number]> = [], lastResort: Array<[number, number]> = []) =>
+    store.storeValue('preKeyRotation:aci', {
+      rotatedAt: Date.now() - daysAgo * DAY,
+      signed: signed.map(([id, d]) => ({ id, at: Date.now() - d * DAY })),
+      lastResort: lastResort.map(([id, d]) => ({ id, at: Date.now() - d * DAY })),
+    });
+
+  it('uploads only one-time keys when the server runs low', async () => {
+    await rotated(1);
+    counts = { count: 4, pqCount: 9 };
+    await accountMethods.maintainPreKeys();
+    assert.equal(puts.length, 1);
+    assert.deepEqual(Object.keys(puts[0]).sort(), ['pqPreKeys', 'preKeys']);
+    assert.equal(puts[0].preKeys.length, 100);
+    assert.equal(puts[0].pqPreKeys.length, 100);
+  });
+
+  it('rotates a signed key that is three days old', async () => {
+    await rotated(3);
+    await accountMethods.maintainPreKeys();
+    assert.equal(puts.length, 1);
+    assert.deepEqual(Object.keys(puts[0]).sort(), ['pqLastResortPreKey', 'signedPreKey']);
+    const rotation = await loadPreKeyRotation(store, 'aci');
+    assert.ok(Date.now() - rotation.rotatedAt < PRE_KEY_ROTATION_MS);
+    assert.equal(rotation.signed[rotation.signed.length - 1].id, puts[0].signedPreKey.keyId);
+    assert.ok(await store.loadSignedPreKey(puts[0].signedPreKey.keyId));
+  });
+
+  it('uploads nothing while the keys are fresh and plentiful', async () => {
+    await rotated(1);
+    await accountMethods.maintainPreKeys();
+    assert.equal(puts.length, 0);
+  });
+
+  it('deletes old signed and last-resort keys beyond the newest three', async () => {
+    const record = new Uint8Array([1]);
+    for (const id of [1, 2, 3, 4]) {
+      await store.storeSignedPreKey(id, record);
+      await store.storeKyberPreKey(100 + id, record, true);
+    }
+    await rotated(3, [[1, 50], [2, 40], [3, 35], [4, 3]], [[101, 50], [102, 40], [103, 35], [104, 3]]);
+    await accountMethods.maintainPreKeys();
+    const rotation = await loadPreKeyRotation(store, 'aci');
+    assert.deepEqual(rotation.signed.map((k) => k.id).slice(0, 2), [3, 4]);
+    assert.equal(rotation.signed.length, 3);
+    assert.deepEqual(rotation.lastResort.map((k) => k.id).slice(0, 2), [103, 104]);
+    assert.equal(await store.loadSignedPreKey(1), null);
+    assert.equal(await store.loadSignedPreKey(2), null);
+    assert.ok(await store.loadSignedPreKey(3), 'one of the newest three, even though it is old');
+    assert.equal(await store.loadKyberPreKey(101), null);
+    assert.equal(await store.loadKyberPreKey(102), null);
+    assert.ok(await store.loadKyberPreKey(104));
+  });
+
+  it('keeps keys younger than 30 days even beyond the newest three', async () => {
+    const record = new Uint8Array([1]);
+    for (const id of [5, 6, 7, 8]) await store.storeSignedPreKey(id, record);
+    await rotated(3, [[5, 20], [6, 10], [7, 5], [8, 3]]);
+    await accountMethods.maintainPreKeys();
+    assert.equal((await loadPreKeyRotation(store, 'aci')).signed.length, 5);
+    assert.ok(await store.loadSignedPreKey(5));
+  });
+});
+
+describe('group messages from people who are not members', () => {
+  const masterKey = new Uint8Array(32).fill(7);
+  const realDecrypt = (client as any).enqueueDecryptEnvelope;
+
+  beforeEach(() => {
+    const keys = deriveGroupV2Keys(masterKey);
+    kv.set('syncedGroups', [{ id: keys.sendId, internal_id: keys.internalId, masterKey: toBase64(masterKey), revision: 5, name: 'Book club', members: [ALICE, BOB], admins: [], blocked: false }]);
+  });
+
+  after(() => {
+    (client as any).enqueueDecryptEnvelope = realDecrypt;
+  });
+
+  function receive(sender: string, value: Record<string, unknown>) {
+    const frame = { envelope: { sourceUuid: sender, timestamp: 1000 } };
+    (client as any).enqueueDecryptEnvelope = async () => ({
+      envelope: { sourceUuid: sender, sourceDevice: 1, timestamp: 1000 },
+      content: create(ContentSchema, { content: { case: 'dataMessage', value } }),
+      normalizedFrame: frame,
+    });
+    return incomingMethods.processIncomingEnvelope(new Uint8Array(1)).then((res) => res === frame);
+  }
+
+  it('drops a message from a non-member at our revision', async () => {
+    assert.equal(await receive(CAROL, { body: 'hi', timestamp: 1000n, groupV2: { masterKey, revision: 5 } }), false);
+  });
+
+  it('keeps it when the message names a newer revision, since our copy may be behind', async () => {
+    assert.equal(await receive(CAROL, { body: 'hi', timestamp: 1000n, groupV2: { masterKey, revision: 6 } }), true);
+  });
+
+  it('keeps a member’s message', async () => {
+    assert.equal(await receive(BOB, { body: 'hi', timestamp: 1000n, groupV2: { masterKey, revision: 5 } }), true);
+  });
+
+  it('drops a reaction from a non-member', async () => {
+    const reaction = { emoji: '\u{1F44D}', targetAuthorAci: BOB, targetSentTimestamp: 900n };
+    assert.equal(await receive(CAROL, { reaction, timestamp: 1000n, groupV2: { masterKey, revision: 5 } }), false);
+  });
+
+  it('keeps a message that carries a group change, which is how a new member’s first message arrives', async () => {
+    assert.equal(await receive(CAROL, { body: 'hi', timestamp: 1000n, groupV2: { masterKey, revision: 5, groupChange: new Uint8Array([1]) } }), true);
   });
 });
 

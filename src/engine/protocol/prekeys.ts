@@ -127,6 +127,33 @@ export async function generateOneTimePreKeys(
   return out;
 }
 
+/** The signed and last-resort Kyber PreKeys of a `PUT /v2/keys?identity=...` body. */
+export async function generateRotationUpload(
+  store: SignalProtocolStore,
+  identity: 'aci' | 'pni',
+  identityKeyPair: KeyPair,
+  now = Date.now()
+): Promise<{ signedPreKey: UploadSignedPreKey; pqLastResortPreKey: UploadSignedPreKey }> {
+  return {
+    signedPreKey: await generateSignedPreKey(store, identity, identityKeyPair, now),
+    pqLastResortPreKey: (await generateKyberPreKeys(store, identity, identityKeyPair, 1, true, now))[0],
+  };
+}
+
+/** The one-time EC and/or Kyber PreKeys of a `PUT /v2/keys?identity=...` body. */
+export async function generateOneTimeUpload(
+  store: SignalProtocolStore,
+  identity: 'aci' | 'pni',
+  identityKeyPair: KeyPair,
+  which: { ec: boolean; kyber: boolean },
+  count = ONE_TIME_PRE_KEY_COUNT
+): Promise<PreKeyUpload> {
+  const out: PreKeyUpload = {};
+  if (which.ec) out.preKeys = await generateOneTimePreKeys(store, identity, count);
+  if (which.kyber) out.pqPreKeys = await generateKyberPreKeys(store, identity, identityKeyPair, count, false);
+  return out;
+}
+
 /** A full `PUT /v2/keys?identity=...` body: fresh signed and last-resort Kyber PreKeys plus one-time EC and Kyber PreKeys. */
 export async function generatePreKeyUpload(
   store: SignalProtocolStore,
@@ -134,10 +161,69 @@ export async function generatePreKeyUpload(
   identityKeyPair: KeyPair,
   oneTimeCount = ONE_TIME_PRE_KEY_COUNT
 ): Promise<Required<PreKeyUpload>> {
+  const rotation = await generateRotationUpload(store, identity, identityKeyPair);
+  const oneTime = await generateOneTimeUpload(store, identity, identityKeyPair, { ec: true, kyber: true }, oneTimeCount);
+  return { ...rotation, preKeys: oneTime.preKeys!, pqPreKeys: oneTime.pqPreKeys! };
+}
+
+/* ---- Upkeep, after Signal-Desktop's maybeUpdateKeys ---- */
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** The server's one-time key count below which a new batch is uploaded. */
+export const MIN_ONE_TIME_PRE_KEYS = 10;
+export const PRE_KEY_ROTATION_MS = 2 * DAY_MS;
+const KEEP_ROTATED_PRE_KEYS = 3;
+const ROTATED_PRE_KEY_MAX_AGE_MS = 30 * DAY_MS;
+
+interface RotatedKey {
+  id: number;
+  at: number;
+}
+
+/** Signed and last-resort Kyber PreKeys we uploaded, newest last; `rotatedAt` is the last upload the server accepted. */
+export interface PreKeyRotation {
+  rotatedAt: number;
+  signed: RotatedKey[];
+  lastResort: RotatedKey[];
+}
+
+export async function loadPreKeyRotation(store: SignalProtocolStore, identity: 'aci' | 'pni'): Promise<PreKeyRotation> {
+  const raw = await store.loadValue<PreKeyRotation>('preKeyRotation:' + identity);
   return {
-    signedPreKey: await generateSignedPreKey(store, identity, identityKeyPair),
-    pqLastResortPreKey: (await generateKyberPreKeys(store, identity, identityKeyPair, 1, true))[0],
-    preKeys: await generateOneTimePreKeys(store, identity, oneTimeCount),
-    pqPreKeys: await generateKyberPreKeys(store, identity, identityKeyPair, oneTimeCount, false),
+    rotatedAt: (raw && Number(raw.rotatedAt)) || 0,
+    signed: (raw && Array.isArray(raw.signed) && raw.signed) || [],
+    lastResort: (raw && Array.isArray(raw.lastResort) && raw.lastResort) || [],
   };
+}
+
+export function rotationDue(rotation: PreKeyRotation, now = Date.now()): boolean {
+  return now - rotation.rotatedAt >= PRE_KEY_ROTATION_MS;
+}
+
+/** Deletes the given key set's entries beyond the newest few that are also older than the age limit; returns the kept ones. */
+async function prune(keys: RotatedKey[], now: number, remove: (id: number) => Promise<void>): Promise<RotatedKey[]> {
+  const sorted = keys.slice().sort((a, b) => a.at - b.at);
+  const kept: RotatedKey[] = [];
+  sorted.forEach((k, i) => {
+    if (i < sorted.length - KEEP_ROTATED_PRE_KEYS && now - k.at > ROTATED_PRE_KEY_MAX_AGE_MS) return;
+    kept.push(k);
+  });
+  for (const k of sorted) if (kept.indexOf(k) < 0) await remove(k.id);
+  return kept;
+}
+
+/** Records a signed and last-resort pair the server accepted, then prunes the old ones; only call this after a successful upload, so the newest key is always live. */
+export async function recordPreKeyRotation(
+  store: SignalProtocolStore,
+  identity: 'aci' | 'pni',
+  uploaded: { signedPreKey: { keyId: number }; pqLastResortPreKey: { keyId: number } },
+  now = Date.now()
+): Promise<void> {
+  const rotation = await loadPreKeyRotation(store, identity);
+  rotation.signed.push({ id: uploaded.signedPreKey.keyId, at: now });
+  rotation.lastResort.push({ id: uploaded.pqLastResortPreKey.keyId, at: now });
+  rotation.signed = await prune(rotation.signed, now, (id) => store.removeSignedPreKey(id));
+  rotation.lastResort = await prune(rotation.lastResort, now, (id) => store.removeKyberPreKey(id));
+  rotation.rotatedAt = now;
+  await store.storeValue('preKeyRotation:' + identity, rotation);
 }

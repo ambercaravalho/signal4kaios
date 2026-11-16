@@ -5,7 +5,7 @@
 
 import { concatBytes, fromBase64, toBase64, uuidToBytes } from '../bytes';
 import { libsignal } from './libsignal';
-import type { KeyPair, SignalProtocolStore } from './store';
+import type { IdentityRecord, KeyPair, SignalProtocolStore, TrustLevel } from './store';
 
 /** Signal production sealed-sender trust roots (public keys, from Signal-Desktop config/production.json). */
 const SEALED_SENDER_TRUST_ROOTS = [
@@ -126,6 +126,53 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
   const next = lockTail.then(fn, fn);
   lockTail = next.catch(() => undefined);
   return next;
+}
+
+/* ---- Identity keys ---- */
+
+let identityChangeListener: ((address: string) => void) | null = null;
+
+/** Called with a contact's ACI whenever a profile, PreKey bundle, or sync message replaces their identity key outside a decrypt (decrypts report it through `identityChanged`). */
+export function onIdentityKeyChanged(fn: ((address: string) => void) | null): void {
+  identityChangeListener = fn;
+}
+
+/** Tells the listener a contact's key changed; also used when a new key was refused because the old one was verified. */
+export function reportIdentityChange(address: string): void {
+  if (!identityChangeListener || address.startsWith('PNI:')) return;
+  try {
+    identityChangeListener(address);
+  } catch {
+    // listener failures must not fail the save
+  }
+}
+
+export function identityRecord(store: SignalProtocolStore, address: string): Promise<IdentityRecord | null> {
+  return store.getIdentity(address);
+}
+
+export function allIdentityRecords(store: SignalProtocolStore): Promise<IdentityRecord[]> {
+  return store.getAllIdentities();
+}
+
+/** Saves a contact's identity key and returns whether it replaced a different one. */
+export async function saveIdentityKey(store: SignalProtocolStore, address: string, publicKey: Uint8Array, meta?: { number?: string; uuid?: string }): Promise<boolean> {
+  const changed = await withLock(() => store.saveIdentity(address, publicKey, meta));
+  if (changed) reportIdentityChange(address);
+  return changed;
+}
+
+/** Saves one of our own identity keys (ACI at link time, PNI at link or number change); never reported as a change. */
+export function saveOwnIdentityKey(store: SignalProtocolStore, address: string, publicKey: Uint8Array, meta?: { number?: string; uuid?: string }): Promise<boolean> {
+  return withLock(() => store.saveIdentity(address, publicKey, meta));
+}
+
+export function setIdentityTrust(store: SignalProtocolStore, address: string, level: TrustLevel): Promise<void> {
+  return withLock(() => store.setIdentityTrust(address, level));
+}
+
+export function removeIdentity(store: SignalProtocolStore, address: string): Promise<void> {
+  return withLock(() => store.removeIdentity(address));
 }
 
 /** Runs `op` against a hydrated libsignal store and persists its changes. Nothing is written when `op` throws. */

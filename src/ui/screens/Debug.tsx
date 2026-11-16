@@ -79,7 +79,7 @@ export function DebugScreen() {
     info('stickers', DEBUG.stickerPacks, String(config.stickerPacks().length)),
     info('folders', DEBUG.chatFolders, String(config.chatFolders().length)),
     { section: '' },
-    { key: 'refresh', label: DEBUG.refreshPreKeys, onSelect: () => action(() => signal.replenishPreKeys().then(loadDiag), DEBUG.preKeysRefreshed) },
+    { key: 'refresh', label: DEBUG.refreshPreKeys, onSelect: () => action(() => signal.maintainPreKeys({ force: true }).then(loadDiag), DEBUG.preKeysRefreshed) },
     { key: 'sync', label: DEBUG.requestSync, onSelect: () => action(() => signal.requestSync(), DEBUG.syncRequested) },
     { key: 'reconnect', label: DEBUG.reconnect, onSelect: () => (ws.restart(), toast(DEBUG.reconnecting)) },
     { key: 'log', label: DEBUG.viewLog, end: 'chevron', onSelect: () => router.push(DebugLogScreen, {}) },

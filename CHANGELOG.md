@@ -2,6 +2,17 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.10.5
+
+Security and privacy fixes for safety numbers, encryption keys, photos, and groups. Install over v2.10.4; your chats and settings carry over.
+
+### Fixed
+
+- **Safety number changes.** A chat now says your safety number has changed whenever Beacon learns a contact's new key, including when you send to them or open their profile. Before, it only said so when a message from them arrived.
+- **Encryption keys stay fresh.** Beacon now checks its keys on Signal's server twice a day, adds more when they run low, and replaces its long-term keys every two days, as Signal Desktop does. Before, they were only refreshed from the Debug screen, and old keys were never deleted.
+- **Photos no longer carry location data.** Photos you send are now resized to Signal's Standard quality (1600 pixels on the longest side) and re-saved, which removes location, camera, and time details. GIFs are sent as they are.
+- **Group messages from people who left** or were removed are now ignored, unless the group has changed since Beacon last checked.
+
 ## v2.10.4
 
 Fixes for notifications, the connection, reading, polls, message requests, unlinking, and large transfers. Install over v2.10.3; your chats and settings carry over.

@@ -17,7 +17,8 @@ import { fromBinary, isAci, serviceIdFrom } from '../net/proto';
 import { decryptDeviceName } from '../net/provisioning';
 import { type DecryptedEnvelope, type IncomingEnvelope, parseContactsSyncBlob } from '../net/receive';
 import { libsignal } from '../protocol/libsignal';
-import { generatePreKeyUpload } from '../protocol/prekeys';
+import { generatePreKeyUpload, recordPreKeyRotation } from '../protocol/prekeys';
+import { saveIdentityKey, setIdentityTrust } from '../protocol/protocol';
 import type { TrustLevel } from '../protocol/store';
 import { applyPniChangeNumber, type NumberChange } from '../services/change-number';
 import { deriveGroupV2Keys } from '../services/groups-v2';
@@ -46,8 +47,8 @@ export async function syncFromStorageService(): Promise<boolean> {
       if (!(sc.aci || sc.e164)) continue;
       if (sc.aci && sc.profileKey) client.setPeerProfileKey(sc.aci, sc.profileKey);
       if (sc.aci && sc.identityKey) {
-        await store.saveIdentity(sc.aci, sc.identityKey, { uuid: sc.aci, number: sc.e164 });
-        if (sc.identityState) await store.setIdentityTrust(sc.aci, sc.identityState);
+        await saveIdentityKey(store, sc.aci, sc.identityKey, { uuid: sc.aci, number: sc.e164 });
+        if (sc.identityState) await setIdentityTrust(store, sc.aci, sc.identityState);
       }
       if (sc.changed) chatState.push({ uuid: sc.aci || '', number: sc.e164 || '', archived: !!sc.archived, mutedUntil: sc.mutedUntilTimestamp || 0, markedUnread: !!sc.markedUnread, callsIfMuted: sc.notifyForCallsIfMuted ?? null });
     }
@@ -185,7 +186,10 @@ export async function applyOwnKeyChanges(res: DecryptedEnvelope): Promise<void> 
   const pniKeys = acc.pniIdentityKeyPair;
   const basicAuth = accountBasicAuth(acc);
   generatePreKeyUpload(store, 'pni', pniKeys)
-    .then((body) => httpJson('PUT', '/v2/keys?identity=pni', body, { basicAuth }))
+    .then(async (body) => {
+      await httpJson('PUT', '/v2/keys?identity=pni', body, { basicAuth });
+      await recordPreKeyRotation(store, 'pni', body);
+    })
     .catch((e: any) => host().dbg('sync: PNI PreKey upload after the number change failed: ' + (e && e.message)));
 }
 
@@ -218,10 +222,10 @@ export async function handleIncomingSyncMessage(env: IncomingEnvelope, content: 
       const v = c.value;
       const aci = v.destinationAci;
       if (!isAci(aci)) break;
-      if (v.identityKey.length === 33) await store.saveIdentity(aci, v.identityKey, { uuid: aci });
+      if (v.identityKey.length === 33) await saveIdentityKey(store, aci, v.identityKey, { uuid: aci });
       const level: TrustLevel =
         v.state === Verified_State.VERIFIED ? 'TRUSTED_VERIFIED' : v.state === Verified_State.UNVERIFIED ? 'UNTRUSTED' : 'TRUSTED_UNVERIFIED';
-      await store.setIdentityTrust(aci, level);
+      await setIdentityTrust(store, aci, level);
       break;
     }
     case 'blocked': {

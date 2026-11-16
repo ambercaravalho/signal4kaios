@@ -87,6 +87,8 @@ interface ConfigData {
   proxyAddress?: string;
   proxyEnabled?: boolean;
   accounts?: SavedAccount[];
+  /** When each account (by ACI) last checked its PreKeys on the server. */
+  preKeysCheckedAt?: Record<string, number>;
   [k: string]: unknown;
 }
 
@@ -317,6 +319,19 @@ export const config = {
   },
 
   /** Make a saved account active. The caller reloads so the right database and connection are used. */
+  preKeysCheckedAt(): number {
+    const c = read();
+    const at = c.preKeysCheckedAt && c.aci ? c.preKeysCheckedAt[c.aci] : 0;
+    return typeof at === 'number' ? at : 0;
+  },
+
+  setPreKeysCheckedAt(at: number): void {
+    const c = read();
+    if (!c.aci) return;
+    c.preKeysCheckedAt = Object.assign({}, c.preKeysCheckedAt, { [c.aci]: at });
+    write(c);
+  },
+
   switchAccount(number: string): boolean {
     const c = read();
     const a = (c.accounts || []).find((x) => x.number === number);

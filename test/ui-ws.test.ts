@@ -51,6 +51,7 @@ const message =
   (ts: number, from = ALICE) =>
   async () => ({ envelope: { sourceNumber: from, timestamp: ts, dataMessage: { timestamp: ts, message: 'm' + ts } } });
 
+let preKeyChecks = 0;
 const notified: string[] = [];
 function showNotifications(on: boolean): void {
   (globalThis as any).document.hidden = on;
@@ -82,6 +83,9 @@ describe('acknowledging messages', () => {
     };
     s.encodeWsAck = (id: bigint) => new Uint8Array([Number(id)]);
     s.encodeWsKeepalive = () => new Uint8Array([0]);
+    s.maintainPreKeys = async () => {
+      preKeyChecks++;
+    };
     s.processIncomingEnvelope = (body: Uint8Array) => decrypted[body[0]]();
     s.net.isPinnedUrl = () => true;
     s.net.openWebSocket = () => {
@@ -221,5 +225,19 @@ describe('acknowledging messages', () => {
     assert.equal(store.connectionState(), 'closed');
     ws.connect();
     assert.notEqual(current(), live);
+  });
+
+  it('checks PreKeys when the socket opens, at most every 12 hours', async () => {
+    await settle();
+    assert.equal(preKeyChecks, 1);
+    ws.restart();
+    current().open();
+    await settle();
+    assert.equal(preKeyChecks, 1, 'a reconnect soon after does not check again');
+    config.setPreKeysCheckedAt(Date.now() - 13 * 60 * 60 * 1000);
+    ws.restart();
+    current().open();
+    await settle();
+    assert.equal(preKeyChecks, 2);
   });
 });

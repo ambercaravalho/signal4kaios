@@ -8,7 +8,8 @@ import { host, type HostProfileOverride } from '../host';
 import { accountBasicAuth, asObject } from '../net/http';
 import { create, serviceIdFrom } from '../net/proto';
 import { type ProvisioningCallbacks, type ProvisioningSession, startDeviceProvisioning } from '../net/provisioning';
-import { generatePreKeyUpload } from '../protocol/prekeys';
+import { generateOneTimeUpload, generateRotationUpload, loadPreKeyRotation, MIN_ONE_TIME_PRE_KEYS, recordPreKeyRotation, rotationDue } from '../protocol/prekeys';
+import type { KeyPair } from '../protocol/store';
 import { downloadAndDecryptProfileAvatar, fetchAndDecryptProfile, resolveSignalUsername, uploadOwnProfile } from '../services/profiles';
 import { setNotifyForMentionsIfMuted, setPhoneNumberPrivacy, type StorageMutation, toOptionalBool } from '../services/storage';
 import { profileOverrideRecord } from '../services/storage/notification-profiles';
@@ -41,14 +42,30 @@ export const accountMethods = {
     await httpJson('DELETE', '/v1/devices/' + acc.deviceId, null, { basicAuth: accountBasicAuth(acc) });
   },
 
-  /** Rotate the signed and last-resort Kyber PreKeys and upload fresh one-time EC and Kyber PreKeys for both identities. */
-  async replenishPreKeys(): Promise<void> {
+  /** Tops up one-time PreKeys and rotates the signed and last-resort Kyber PreKeys for both identities, after Signal-Desktop's maybeUpdateKeys; `force` rotates and refills regardless (the Debug button). */
+  async maintainPreKeys(opts?: { force?: boolean }): Promise<void> {
     const acc = await store.getAccount();
     if (!acc) return;
+    // SECURITY-REVIEW: the device's own credentials authorize reading key counts and uploading public PreKeys; they go only to Signal's server and are never logged.
     const basicAuth = accountBasicAuth(acc);
-    await httpJson('PUT', '/v2/keys?identity=aci', await generatePreKeyUpload(store, 'aci', acc.aciIdentityKeyPair), { basicAuth });
-    if (acc.pniIdentityKeyPair) {
-      await httpJson('PUT', '/v2/keys?identity=pni', await generatePreKeyUpload(store, 'pni', acc.pniIdentityKeyPair), { basicAuth }).catch(() => {});
+    const force = !!(opts && opts.force);
+    const identities: Array<['aci' | 'pni', KeyPair]> = [['aci', acc.aciIdentityKeyPair]];
+    if (acc.pni && acc.pniIdentityKeyPair) identities.push(['pni', acc.pniIdentityKeyPair]);
+    for (const [identity, keyPair] of identities) {
+      try {
+        const counts = force ? null : asObject(await httpJson('GET', '/v2/keys?identity=' + identity, null, { basicAuth }));
+        const ec = force || !(Number(counts && counts.count) >= MIN_ONE_TIME_PRE_KEYS);
+        const kyber = force || !(Number(counts && counts.pqCount) >= MIN_ONE_TIME_PRE_KEYS);
+        const rotate = force || rotationDue(await loadPreKeyRotation(store, identity));
+        if (!ec && !kyber && !rotate) continue;
+        const rotation = rotate ? await generateRotationUpload(store, identity, keyPair) : null;
+        const body = { ...(await generateOneTimeUpload(store, identity, keyPair, { ec, kyber })), ...(rotation || {}) };
+        await httpJson('PUT', '/v2/keys?identity=' + identity, body, { basicAuth });
+        if (rotation) await recordPreKeyRotation(store, identity, rotation);
+      } catch (e: any) {
+        if (identity === 'aci' || force) throw e;
+        host().dbg('PNI PreKey upkeep failed: ' + (e && e.message));
+      }
     }
   },
 

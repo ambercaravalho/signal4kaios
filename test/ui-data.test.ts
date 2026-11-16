@@ -211,6 +211,11 @@ describe('parseFrame', () => {
     assert.deepEqual(evs[0], { type: 'notice', convId: '+3', groupInternalId: null, author: '+3', timestamp: 49, notice: { kind: 'safetyNumber' } });
   });
 
+  it('adds just the notice when the engine reports a key change outside a message', () => {
+    const evs = parseFrame({ envelope: { sourceUuid: 'aci-carol', sourceNumber: '+3', timestamp: 70, notice: { kind: 'safetyNumber' } } }, '+1', nameOf);
+    assert.deepEqual(evs, [{ type: 'notice', convId: '+3', groupInternalId: null, author: '+3', timestamp: 70, notice: { kind: 'safetyNumber' } }]);
+  });
+
   it('shows group call updates as a notice in the group', () => {
     const [ev] = parseFrame({ envelope: { sourceUuid: 'aci-bob', timestamp: 60, dataMessage: { timestamp: 60, groupCallUpdate: true, groupInfo: { groupId: 'GID' } } } }, '+1', nameOf);
     assert.deepEqual(ev, { type: 'notice', convId: 'g:GID', groupInternalId: 'GID', author: 'aci-bob', timestamp: 60, notice: { kind: 'groupCall' } });
