@@ -2,8 +2,8 @@ import './ui-env';
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { signal, updateProfile } from '../src/ui/data/api';
-import { cachedAttachment } from '../src/ui/data/attachments';
+import { setReadReceipts, setTypingIndicators, signal, updateProfile } from '../src/ui/data/api';
+import { cachedAttachment, ViewedOnceError } from '../src/ui/data/attachments';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
@@ -74,6 +74,24 @@ describe('store', () => {
       { body: 'first', styles: [], timestamp: 1500 },
       { body: 'second', styles: [], timestamp: 1600 },
     ]);
+  });
+
+  it('applies your own edits from another device, but not someone else’s edit of your message', async () => {
+    const sentAt = 1800;
+    store.ingestRaw({ envelope: { sourceNumber: ME, timestamp: sentAt, syncMessage: { sentMessage: { destinationNumber: ALICE, timestamp: sentAt, message: 'see you at 6' } } } });
+    await settle();
+    const id = ALICE + '|' + sentAt + '|' + ME;
+    assert.equal((await db.getMessage(id))!.body, 'see you at 6');
+
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: 1810, editMessage: { targetSentTimestamp: sentAt, dataMessage: { timestamp: 1810, message: 'I owe you $500' } } } });
+    await settle();
+    assert.equal((await db.getMessage(id))!.body, 'see you at 6');
+
+    store.ingestRaw({ envelope: { sourceNumber: ME, timestamp: 1820, syncMessage: { sentMessage: { destinationNumber: ALICE, timestamp: 1820, editMessage: { targetSentTimestamp: sentAt, dataMessage: { timestamp: 1820, message: 'see you at 7' } } } } } });
+    await settle();
+    const rec = (await db.getMessage(id))!;
+    assert.equal(rec.body, 'see you at 7');
+    assert.equal(rec.edited, true);
   });
 
   it('forwards text with its formatting and an attachment without its mentions', async () => {
@@ -768,6 +786,28 @@ describe('store', () => {
     assert.deepEqual(uploaded, [{ name: 'Me', emoji: '🌻' }]);
   });
 
+  it('shares read receipts and typing indicators with your other devices, so the next sync doesn’t undo them', async () => {
+    const written: Array<[string, boolean]> = [];
+    (signal as any).setReadReceipts = async (on: boolean) => {
+      written.push(['receipts', on]);
+    };
+    (signal as any).setTypingIndicators = async (on: boolean) => {
+      written.push(['typing', on]);
+    };
+    await setReadReceipts(false);
+    await setTypingIndicators(false);
+    assert.equal(config.sendReadReceipts(), false);
+    assert.equal(config.typingIndicators(), false);
+    await setReadReceipts(true);
+    await setTypingIndicators(true);
+    assert.deepEqual(written, [
+      ['receipts', false],
+      ['typing', false],
+      ['receipts', true],
+      ['typing', true],
+    ]);
+  });
+
   it('keeps the download id and bytes of attachments we send, so this phone opens them itself', async () => {
     (signal as any).send = async () => ({ timestamp: 8400, attachments: ['desc-photo'] });
     const rec = await store.sendAttachments(ALICE, [{ dataUri: 'data:image/jpeg;filename=a.jpg;base64,AQID', contentType: 'image/jpeg', filename: 'a.jpg', size: 3 }], '');
@@ -820,5 +860,28 @@ describe('store', () => {
     readSync('aci-finn', ts + 3);
     await settle();
     assert.equal(store.conversation(finn.id)!.unread, 0, 'a contact known only by ACI');
+  });
+
+  it('won’t open view-once media again once viewed, even after the cache has forgotten it', async () => {
+    const downloads: string[] = [];
+    (signal as any).downloadAttachmentBlob = async (id: string) => {
+      downloads.push(id);
+      return new Blob(['secret']);
+    };
+    store.ingestRaw(incoming(9300, '', { attachments: [{ id: 'att-once-pruned', contentType: 'image/jpeg' }], viewOnce: true }));
+    await settle();
+    const rec = (await db.getMessage(ALICE + '|9300|' + ALICE))!;
+    assert.equal(rec.attachments[0].viewOnce, true);
+    rec.viewed = true;
+    await assert.rejects(store.loadOrAskPhone(rec.attachments[0], rec, () => {}), (e: unknown) => e instanceof ViewedOnceError);
+    assert.deepEqual(downloads, [], 'nothing is downloaded');
+
+    await db.putAttachment('att-once-marker', new Blob([]), '');
+    for (let i = 0; i < 4; i++) await db.putAttachment('att-fill-' + i, new Blob(['x']), 'image/jpeg');
+    await db.pruneAttachments(2);
+    assert.ok(await db.getAttachment('att-once-marker'), 'the viewed marker survives the prune');
+    let kept = 0;
+    for (let i = 0; i < 4; i++) if (await db.getAttachment('att-fill-' + i)) kept++;
+    assert.ok(kept <= 2);
   });
 });

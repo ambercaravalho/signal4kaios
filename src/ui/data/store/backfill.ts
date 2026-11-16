@@ -1,7 +1,7 @@
 /* Asking our primary phone for attachments Signal's servers no longer have, like Signal-Desktop's attachmentBackfill: one request per message, answered by a `backfill` event or given up on after a wait. */
 
 import { signal } from '../api';
-import { loadAttachment } from '../attachments';
+import { loadAttachment, ViewedOnceError } from '../attachments';
 import type { BackfillSlot, StoreEvent } from '../normalize';
 import type { Attachment, Message } from '../types';
 import { altKeyOf, self } from './contacts';
@@ -58,6 +58,8 @@ function isGone(e: unknown): boolean {
 
 /** `loadAttachment`, asking our phone for a fresh copy when Signal's servers no longer have it, or never had one we know of (history from linking that was older than the CDN keeps); `onAsking` runs once the request goes out. */
 export function loadOrAskPhone(att: Attachment, msg: Message | undefined, onAsking: () => void): Promise<Blob> {
+  // The cache's viewed marker can be pruned, and history imports never write one.
+  if (att.viewOnce && msg && msg.viewed) return Promise.reject(new ViewedOnceError('viewed'));
   return loadAttachment(att).catch((e) => {
     const index = msg && !att.viewOnce ? msg.attachments.findIndex((a) => a === att || (!!att.id && a.id === att.id)) : -1;
     if (!msg || index < 0 || !(isGone(e) || !att.id)) throw e;

@@ -4,7 +4,7 @@ import { Row, RowList } from '../../components/RowList';
 import { Screen } from '../../components/Screen';
 import { pickTimer, toggleRow } from '../../components/setting-rows';
 import { toast } from '../../components/Toast';
-import { signal } from '../../data/api';
+import { setReadReceipts, setTypingIndicators, signal } from '../../data/api';
 import { config } from '../../data/config';
 import { expireLabel } from '../../data/format';
 import { activeProxy } from '../../data/proxy';
@@ -29,6 +29,11 @@ export function PrivacyScreen() {
     signal.setUniversalExpireTimer(secs).catch((e) => toast(friendlyError(e)));
   }
 
+  function shared(saving: Promise<void>): void {
+    refresh();
+    saving.catch((e) => toast(friendlyError(e)));
+  }
+
   function setPrivateIcon(on: boolean): void {
     config.set({ sealedSenderIndicators: on });
     refresh();
@@ -36,8 +41,8 @@ export function PrivacyScreen() {
   }
 
   const rows: Row[] = [
-    toggleRow('receipts', S.readReceipts, config.sendReadReceipts(), (v) => (config.set({ sendReadReceipts: v }), refresh()), S.readReceiptsHint),
-    toggleRow('typing', S.typingIndicators, config.typingIndicators(), (v) => (config.set({ typingIndicators: v }), refresh()), S.typingIndicatorsHint),
+    toggleRow('receipts', S.readReceipts, config.sendReadReceipts(), (v) => shared(setReadReceipts(v)), S.readReceiptsHint),
+    toggleRow('typing', S.typingIndicators, config.typingIndicators(), (v) => shared(setTypingIndicators(v)), S.typingIndicatorsHint),
     { key: 'timer', label: S.defaultTimer, sub: expireLabel(defaultTimer), onSelect: chooseDefaultTimer },
     toggleRow('private', S.privateDeliveryIcon, config.sealedSenderIndicators(), setPrivateIcon, S.privateDeliveryHint),
     { key: 'phone', label: S.phoneNumber, end: 'chevron', onSelect: () => router.push(PhoneNumberScreen, {}) },

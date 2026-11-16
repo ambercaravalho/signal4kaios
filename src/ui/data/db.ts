@@ -265,10 +265,10 @@ export const db = {
     return tx('attachments', 'readonly', (s) => reqValue(s.get(id)));
   },
 
-  /** Keep only the `keep` most recently cached attachments. Avatars (`avatar:*`) are exempt: they are small and bounded by the contact list. */
+  /** Keep only the `keep` most recently cached attachments. Avatars (`avatar:*`) are exempt: they are small and bounded by the contact list. So are the empty markers left by opened view-once media, which keep it from being downloaded again. */
   pruneAttachments(keep: number): Promise<void> {
-    return getAll<{ id: string; ts: number }>('attachments').then((rows) => {
-      rows = rows.filter((r) => String(r.id).indexOf('avatar:') !== 0);
+    return getAll<{ id: string; ts: number; blob?: Blob }>('attachments').then((rows) => {
+      rows = rows.filter((r) => String(r.id).indexOf('avatar:') !== 0 && !(r.blob && r.blob.size === 0));
       if (rows.length <= keep) return;
       rows.sort((a, b) => b.ts - a.ts);
       const drop = rows.slice(keep);

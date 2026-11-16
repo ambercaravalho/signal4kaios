@@ -29,6 +29,13 @@ if grep -rlE '(^|[^A-Za-z0-9_$])eval[[:space:]]*\(|new[[:space:]]+Function[[:spa
   exit 1
 fi
 
+# --- Gecko 84: built-ins KaiOS 3.0/3.1 lack ----------------------------------
+# esbuild lowers syntax but not missing built-ins; these would throw only on a KaiOS 3.x phone. Object.hasOwn is covered by scripts/gecko84-polyfill.js.
+if grep -lE 'structuredClone|\.findLast(Index)?\(|AbortSignal\.(timeout|any)|Promise\.withResolvers|\.to(Sorted|Reversed|Spliced)\(|\.at\(' src/app/build/*.js; then
+  echo "FAIL: the files above use built-ins Gecko 84 (KaiOS 3.0/3.1) lacks; add a fallback or a polyfill in scripts/gecko84-polyfill.js." >&2
+  exit 1
+fi
+
 # --- Version check ---------------------------------------------------------
 # When RELEASE_TAG is set (CI), the tag must be v<version>, optionally with a pre-release suffix (v2.0.0-rc1).
 manifest_version() {

@@ -2,6 +2,22 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.10.2
+
+Fixes for KaiOS 3.x, incoming calls, privacy settings, and view-once media. Install over v2.10.1; your chats and settings carry over.
+
+### Fixed
+
+- **KaiOS 3.0 and 3.1.** Beacon now starts on these phones; recent versions stopped at a blank screen at launch.
+- **Incoming calls.** Calls from Signal on Android, iPhone, and Desktop now connect when you answer them on Beacon.
+- **Read receipts and typing indicators.** Turning them off or on in **Settings → Privacy** now stays that way, and your other devices follow. Before, the next sync with your phone could switch them back.
+- **View-once media** can't be opened again after it's been viewed. Before, it could reopen once Beacon had downloaded many other attachments.
+- **Edits.** Someone else can no longer change the text of a message you sent.
+
+### Changed
+
+- **Confirmations** like **Delete all data** or **Delete chat** now need the right softkey; OK no longer confirms them.
+
 ## v2.10.1
 
 A fix for calls with Screen lock on. Install over v2.10.0; your chats and settings carry over.

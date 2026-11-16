@@ -1,4 +1,4 @@
-// Bundle the app (src/ui/main.tsx) into src/app/build/app.js and app.css for KaiOS 3.0+ (Gecko 84), the call audio worklet into src/app/build/call-worklet.js, and the archive decoder into src/app/build/backup.js.
+// Bundle the app (src/ui/main.tsx) into src/app/build/app.js and app.css for KaiOS 3.0+ (Gecko 84), the call audio worklet into src/app/build/call-worklet.js, and the archive decoder into src/app/build/backup.js. Each bundle starts with scripts/gecko84-polyfill.js.
 // `node scripts/build.mjs --analyze` also writes dist/meta.json and prints the largest inputs.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as esbuild from 'esbuild';
@@ -6,6 +6,7 @@ import * as esbuild from 'esbuild';
 // The newest emoji release the KaiOS 3.x system emoji font can draw; newer ones show as empty boxes.
 const MAX_EMOJI_VERSION = 12.1;
 const analyze = process.argv.includes('--analyze');
+const gecko84Polyfill = await readFile(new URL('./gecko84-polyfill.js', import.meta.url), 'utf8');
 
 /* unicode-emoji-json's grouped file is ~420 KB with names and metadata; the picker needs only each group's drawable emoji, so trim it while bundling. Emoji without a usable skin tone become plain strings; `Emoji.tsx` also reads the unslimmed file the tests bundle. */
 const slimEmoji = {
@@ -31,6 +32,7 @@ const common = {
   target: 'firefox84',
   minify: true,
   legalComments: 'none',
+  banner: { js: gecko84Polyfill.trim() },
   metafile: analyze,
   define: { 'process.env.NODE_ENV': '"production"' },
   alias: { wasi_snapshot_preview1: './src/engine/protocol/wasi.ts' },

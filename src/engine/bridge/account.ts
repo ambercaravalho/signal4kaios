@@ -211,6 +211,20 @@ export const accountMethods = {
     });
   },
 
+  /** Whether we send read receipts (`AccountRecord.readReceipts`), shared with our other devices. */
+  async setReadReceipts(on: boolean): Promise<void> {
+    await updateAccountRecord((a) => {
+      a.readReceipts = on;
+    });
+  },
+
+  /** Whether we send and show typing indicators (`AccountRecord.typingIndicators`), shared with our other devices. */
+  async setTypingIndicators(on: boolean): Promise<void> {
+    await updateAccountRecord((a) => {
+      a.typingIndicators = on;
+    });
+  },
+
   /** Whether messages show when they were delivered privately (`AccountRecord.sealedSenderIndicators`), shared with our other devices. */
   async setSealedSenderIndicators(on: boolean): Promise<void> {
     await updateAccountRecord((a) => {

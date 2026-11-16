@@ -16,6 +16,7 @@ import {
   errorCode,
   longTermKey,
   readXorAddress,
+  shortTermKey,
   type SocketAddress,
   StunAttr,
   StunType,
@@ -354,6 +355,43 @@ test('calling: two relay-only ICE agents connect through their relays and then c
   assert.equal(b.receive({ ip: '192.0.2.99', port: 1 }, new Uint8Array([0x80, 9])), false, 'media from an unknown address is dropped');
   a.close();
   b.close();
+});
+
+test('calling: as the callee, ICE connects on a WebRTC renomination check that has NOMINATION but no USE-CANDIDATE', async () => {
+  const peer = { ip: '203.0.113.9', port: 3000 };
+  const turn = fakeTurn({ ip: '203.0.113.1', port: 1000 });
+  const b = new IceAgent({ turn: turn as never, controlling: false, localUfrag: 'bbbb', localPwd: 'b'.repeat(22) });
+  b.setRemoteCredentials('ring', 'r'.repeat(22));
+  const connected = new Promise<void>((resolve) => (b.onConnected = resolve));
+  b.start();
+  const check = (nomination?: number) =>
+    encodeStun(
+      {
+        type: StunType.BindingRequest,
+        transactionId: new Uint8Array(12).fill(nomination || 7),
+        attrs: [
+          textAttr(StunAttr.Username, 'bbbb:ring'),
+          u32Attr(StunAttr.Priority, 1845501695),
+          { type: StunAttr.IceControlling, value: new Uint8Array(8).fill(0xff) },
+          ...(nomination ? [u32Attr(StunAttr.Nomination, nomination)] : []),
+        ],
+      },
+      shortTermKey('b'.repeat(22)),
+      true
+    );
+  let selected = false;
+  void connected.then(() => (selected = true));
+  let guard: ReturnType<typeof setTimeout> | undefined;
+  try {
+    assert.ok(b.receive(peer, check()));
+    await new Promise((r) => setImmediate(r));
+    assert.equal(selected, false, 'a plain check without a nomination selects nothing');
+    assert.ok(b.receive(peer, check(1)));
+    await Promise.race([connected, new Promise((_, reject) => (guard = setTimeout(() => reject(new Error('renomination did not select the pair')), 1000)))]);
+  } finally {
+    clearTimeout(guard);
+    b.close();
+  }
 });
 
 test('calling: RelayMux hands each datagram to the agent whose candidate sent it', () => {
