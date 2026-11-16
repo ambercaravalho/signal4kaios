@@ -171,12 +171,11 @@ export function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: 
     const options: unknown[] = Array.isArray(v.optionIndexes) ? v.optionIndexes : [];
     const targetAuthor = str(v.targetAuthorUuid);
     const valid = options.length <= MAX_POLL_OPTIONS && options.every((i) => typeof i === 'number' && i >= 0 && i < MAX_POLL_OPTIONS);
-    if (!conv.groupInternalId || !targetAuthor || !valid) return [];
+    if (!targetAuthor || !valid) return [];
     return [{ type: 'pollVote', convId, voter: author, targetAuthor, targetTimestamp: num(v.targetSentTimestamp), options: options as number[], voteCount: num(v.voteCount), timestamp: num(dm.timestamp) || num(env.timestamp) }];
   }
 
   if (dm.pollTerminate) {
-    if (!conv.groupInternalId) return [];
     return [{ type: 'pollEnd', convId, author, targetTimestamp: num(dm.pollTerminate.targetSentTimestamp), timestamp: num(dm.timestamp) || num(env.timestamp) }];
   }
 

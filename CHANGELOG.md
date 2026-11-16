@@ -2,6 +2,24 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.10.4
+
+Fixes for notifications, the connection, reading, polls, message requests, unlinking, and large transfers. Install over v2.10.3; your chats and settings carry over.
+
+### Fixed
+
+- **Notifications after a reconnect.** Messages that arrive while Beacon is offline now notify once it reconnects, with one notification per chat. Before, they arrived silently.
+- **Stuck connection.** When the network changes or the connection stops answering, Beacon now reconnects on its own instead of waiting until you open it.
+- **Chats left open in the background** no longer mark new messages read or send read receipts. They're marked read when you come back to the chat.
+- **Read on Beacon, read everywhere.** With read receipts off, reading a chat on Beacon now also clears it on your phone and other devices.
+- **Messages stuck sending.** A message that was still sending when Beacon closed now shows as failed, with **Retry**, the next time you open it.
+- **Polls in one-to-one chats.** You can now vote in them, and the other person's votes are counted.
+- **Message requests.** Someone you never accepted, such as a member of a shared group, now starts as a message request.
+- **Unblock** in a blocked group's chat now works.
+- **Unlink this phone** now also removes Beacon from **Linked devices** on your main phone. When your main phone unlinks Beacon, Beacon deletes its keys and keeps your messages.
+- **Large files on slow connections** no longer fail after a minute or two while they're still downloading or uploading.
+- **QR codes at larger text sizes** now fit the screen, and **Up** and **Down** scroll the linking and QR code screens.
+
 ## v2.10.3
 
 Fixes for retrying photos, safety number codes, and saving new messages. Install over v2.10.2; your chats and settings carry over.

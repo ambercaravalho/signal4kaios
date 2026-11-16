@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { router, useKeys, useSoftkeys } from '../app/router';
+import { router, useArrowScroll, useKeys, useSoftkeys } from '../app/router';
 import { Spinner } from '../components/List';
 import { DIVIDER, prompt, showOptions } from '../components/Overlays';
 import { Pictogram } from '../components/Pictogram';
@@ -108,6 +108,8 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
 
   const busy = state === 'finishing' || state === 'syncing';
   useSoftkeys({ left: root ? null : undefined, center: state === 'failed' ? S.retry : null, right: busy ? null : S.options });
+  const body = useRef<HTMLDivElement>(null);
+  useArrowScroll(body);
   useKeys((e) => {
     if (e.key === 'Enter' && state === 'failed') setAttempt((n) => n + 1);
     else if (e.key === 'SoftRight' && !busy)
@@ -129,7 +131,7 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
   else content = <QrCode text={uri} />;
 
   return (
-    <Screen title={props.mode === 'add' ? S.addAccount : S.linkTitle} bodyClass="link-screen">
+    <Screen title={props.mode === 'add' ? S.addAccount : S.linkTitle} bodyClass="link-screen" bodyRef={body}>
       {props.mode === 'relink' && <div class="link-note">{S.unlinked}</div>}
       {content}
       {!busy && state !== 'failed' && <p class="link-steps">{S.linkSteps}</p>}

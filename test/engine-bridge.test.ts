@@ -2,10 +2,12 @@ import { before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { randomBytes, toBase64 } from '../src/engine/bytes';
+import { accountMethods } from '../src/engine/bridge/account';
 import { contactMethods } from '../src/engine/bridge/contact-actions';
 import { contactIds, recordPeerProfileKey, syncedContacts } from '../src/engine/bridge/contacts';
 import { client, store } from '../src/engine/bridge/context';
 import { conversationIdentifier } from '../src/engine/bridge/delivery';
+import { outgoingMethods } from '../src/engine/bridge/outgoing';
 import { resetPeerNamesForTest } from '../src/engine/bridge/peer-names';
 import { type EngineHost, setEngineHost } from '../src/engine/host';
 import { libsignal } from '../src/engine/protocol/libsignal';
@@ -147,5 +149,43 @@ describe('safety numbers', () => {
     assert.equal(verify(toBase64(theirs.scannable)), true, 'base64, as Beacon before 2.10.3 showed it');
     assert.equal(verify(new TextDecoder().decode(theirs.scannable)), false, 'bytes mangled by a UTF-8 decode');
     assert.equal(verify(String.fromCharCode(...ours.scannable)), false, 'our own code');
+  });
+});
+
+describe('read receipts', () => {
+  it('tells our other devices what we read even with read receipts off', async () => {
+    const sent: string[] = [];
+    const c = client as any;
+    const { sendContentToRecipient, sendSyncMessage } = c;
+    c.sendContentToRecipient = async (to: string, content: any) => void sent.push('receipt ' + to + ' ' + content.content.case);
+    c.sendSyncMessage = async (content: any) => void sent.push('sync ' + content.content.value.read.map((r: any) => r.senderAci + ' ' + r.timestamp).join());
+    try {
+      await outgoingMethods.sendReadReceipt(BOB, 1000, { receipt: false });
+      assert.deepEqual(sent, ['sync ' + BOB + ' 1000']);
+      sent.length = 0;
+      await outgoingMethods.sendReadReceipt(BOB, 2000, { receipt: true });
+      assert.deepEqual(sent, ['receipt ' + BOB + ' receiptMessage', 'sync ' + BOB + ' 2000']);
+    } finally {
+      c.sendContentToRecipient = sendContentToRecipient;
+      c.sendSyncMessage = sendSyncMessage;
+    }
+  });
+});
+
+describe('unlinking', () => {
+  it('removes this device from the account with its own credentials', async () => {
+    const calls: any[] = [];
+    const http = fakeHost.http as any;
+    const request = http.request;
+    http.request = async (method: string, path: string, _body: unknown, opts: any) => {
+      calls.push([method, path, opts.basicAuth && opts.basicAuth.username]);
+      return {};
+    };
+    try {
+      await accountMethods.unlinkThisDevice();
+    } finally {
+      http.request = request;
+    }
+    assert.deepEqual(calls, [['DELETE', '/v1/devices/2', ALICE + '.2']]);
   });
 });

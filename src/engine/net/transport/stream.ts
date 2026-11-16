@@ -24,8 +24,8 @@ export interface ByteStream {
 
 export type Connector = (host: string, port: number, timeoutMs: number) => Promise<ByteStream>;
 
-/** Writes `data` in slices, waiting for `onDrain` whenever the stream reports a full buffer. */
-export function writeAll(stream: ByteStream, data: Uint8Array, chunkSize = 64 * 1024): Promise<void> {
+/** Writes `data` in slices, waiting for `onDrain` whenever the stream reports a full buffer; `onProgress` runs after each slice is handed over. */
+export function writeAll(stream: ByteStream, data: Uint8Array, chunkSize = 64 * 1024, onProgress?: () => void): Promise<void> {
   return new Promise((resolve) => {
     let offset = 0;
     const pump = () => {
@@ -33,6 +33,7 @@ export function writeAll(stream: ByteStream, data: Uint8Array, chunkSize = 64 * 
         const end = Math.min(offset + chunkSize, data.length);
         const ok = stream.write(data.subarray(offset, end));
         offset = end;
+        if (onProgress) onProgress();
         if (!ok && offset < data.length) {
           stream.onDrain = () => {
             stream.onDrain = null;

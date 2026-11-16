@@ -173,6 +173,8 @@ Calls start on the earpiece. **Back** doesn't leave the call screen, so the call
 | **Help** | Short guides by topic, Source code, and the version |
 | **Debug** | Technical details for troubleshooting (see below) |
 
+**Linked device → Unlink this phone** removes Beacon from **Linked devices** on your main phone and deletes this phone's messages and keys. Without a connection to Signal it asks first, and then only unlinks here; remove the entry from **Linked devices** yourself afterwards. When your main phone unlinks Beacon, Beacon deletes its keys, keeps your messages, and shows the Link screen.
+
 **Help** lists guides on getting started, message history, keys, chats and messages, chat folders, groups and safety numbers, settings, the proxy, notifications, what Beacon can't do, and troubleshooting. Each opens a page with a QR code for the matching section of these docs: scan it with another phone, or press **Open** to read it in the phone's browser. **Learn more** at the bottom of Privacy, Chats, Chat folders, Notifications, Phone number, Screen lock, and Proxy, and in the safety number's **Options**, opens the same kind of page, as do **Help** on the welcome screen and when Beacon can't start, and **How to link** in the linking screen's **Options**.
 
 **Profile → Photo** picks a picture from the gallery or camera, crops the middle square, and saves it at 512 by 512 pixels; with a photo set, it offers **Choose photo** and **Remove photo**. Your photo is encrypted with your profile key like the rest of your profile, and your main phone and other devices pick up the change. A photo set on your main phone shows here too.

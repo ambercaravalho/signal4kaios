@@ -116,6 +116,16 @@ export function useChatSession(convId: string, targetTs: number | undefined, top
     store.markRead(convId);
   });
 
+  const topRef = useRef(top);
+  topRef.current = top;
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden && topRef.current) store.markRead(convId);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [convId]);
+
   useStoreEvent('message', (rec) => {
     if (rec.convId !== convId) return;
     setMsgs((cur) => {
@@ -126,7 +136,7 @@ export function useChatSession(convId: string, targetTs: number | undefined, top
       }
       return next;
     });
-    if (top) store.markRead(convId);
+    if (top && !document.hidden) store.markRead(convId);
   });
 
   useStoreEvent('message-updated', (rec, oldId) => {
@@ -144,5 +154,5 @@ export function useChatSession(convId: string, targetTs: number | undefined, top
     setPinned((cur) => cur.filter((m) => m.id !== ref.id));
   });
 
-  return { msgs, hasMore, loading, loadingOlder, focusedId, setFocusedId, pinned, group, loadOlder, focusTimestamp };
+  return { msgs, hasMore, loading, loadingOlder, focusedId, setFocusedId, pinned, group, reloadGroup, loadOlder, focusTimestamp };
 }

@@ -285,15 +285,18 @@ export const outgoingMethods = {
     await deliver(target, content, ts, true);
   },
 
-  async sendReadReceipt(recipient: string, timestamp: number): Promise<void> {
+  /** We read a message: a READ receipt to the sender when `receipt` is set, and always a Read sync to our other devices, as Signal-Desktop does. */
+  async sendReadReceipt(recipient: string, timestamp: number, opts: { receipt: boolean }): Promise<void> {
     const now = Date.now();
     const aci = await resolveAci(recipient);
-    if (!aci || (await isBlockedRecipient(aci)) || (await isBlockedRecipient(recipient))) return;
-    await client.sendContentToRecipient(
-      aci,
-      create(ContentSchema, { content: { case: 'receiptMessage', value: { type: ReceiptMessage_Type.READ, timestamp: [BigInt(timestamp)] } } }),
-      now
-    );
+    if (!aci) return;
+    if (opts.receipt && !(await isBlockedRecipient(aci)) && !(await isBlockedRecipient(recipient))) {
+      await client.sendContentToRecipient(
+        aci,
+        create(ContentSchema, { content: { case: 'receiptMessage', value: { type: ReceiptMessage_Type.READ, timestamp: [BigInt(timestamp)] } } }),
+        now
+      );
+    }
     await client.sendSyncMessage(
       create(ContentSchema, { content: { case: 'syncMessage', value: { read: [{ senderAci: aci, timestamp: BigInt(timestamp) }] } } }),
       now

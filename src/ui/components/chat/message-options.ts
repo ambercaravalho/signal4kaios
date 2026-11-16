@@ -164,7 +164,7 @@ export function messageOptions(m: Message, ctx: MessageOptionsContext): void {
   const main: Record<MainAction, MenuEntry[]> = {
     retry: [{ label: S.retry, onSelect: () => store.retryMessage(m).catch((e) => toast(e instanceof store.RetryUnavailableError ? S.retryUnavailable : sendError(e))) }],
     attachment: m.attachments.length > 1 ? [{ label: S.viewAttachments, onSelect: () => pickAttachment(m) }] : [att && { label: attachmentAction(att), onSelect: () => openAttachment(m, att) }],
-    vote: [!!conv && conv.type === 'group' && !request && { label: S.vote, onSelect: () => vote(m) }],
+    vote: [!!conv && !request && { label: S.vote, onSelect: () => vote(m) }],
     card: contactCardOptions(m, ctx.insertText),
     readFull: [{ label: S.readFull, onSelect: () => router.push(MessageDetailsScreen, { msg: m }) }],
     openLink: [{ label: S.openLink, onSelect: () => openLinks(urls) }],

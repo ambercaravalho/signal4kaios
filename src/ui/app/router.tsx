@@ -135,6 +135,17 @@ export function useKeys(handler: KeyHandler): void {
   }, [e]);
 }
 
+const ARROW_SCROLL_PX = 40;
+
+/** Up and Down scroll `ref`'s element, for screens with nothing to focus whose content can outgrow the screen at larger text sizes. */
+export function useArrowScroll(ref: { current: HTMLElement | null }): void {
+  useKeys((e) => {
+    if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || !ref.current) return false;
+    ref.current.scrollTop += e.key === 'ArrowDown' ? ARROW_SCROLL_PX : -ARROW_SCROLL_PX;
+    return true;
+  });
+}
+
 /** This entry's softkey labels. A pushed screen shows "Back" on the left unless it sets `left` (null hides it). */
 export function useSoftkeys(labels: SoftkeyLabels): void {
   const e = useEntry();

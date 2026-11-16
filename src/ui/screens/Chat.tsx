@@ -199,8 +199,12 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
 
   function unblock(): void {
     if (!conv || !conv.sendId) return;
-    signal.setContactBlocked(conv.sendId, false).then(
-      () => toast(S.unblocked),
+    const p = conv.type === 'group' ? signal.setGroupBlocked(conv.sendId, false) : signal.setContactBlocked(conv.sendId, false);
+    p.then(
+      () => {
+        toast(S.unblocked);
+        session.reloadGroup();
+      },
       (e) => toast(friendlyError(e))
     );
   }

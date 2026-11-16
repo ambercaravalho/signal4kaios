@@ -1,9 +1,9 @@
-import type { ComponentChildren } from 'preact';
+import type { ComponentChildren, Ref } from 'preact';
 import { useMarquee } from '../app/focus';
 import { currentSoftkeys, useIsTop, useRouterVersion } from '../app/router';
 
 /** A full screen: KaiOS header and a scrolling body. */
-export function Screen(props: { title: string; banner?: ComponentChildren; children?: ComponentChildren; bodyClass?: string }) {
+export function Screen(props: { title: string; banner?: ComponentChildren; children?: ComponentChildren; bodyClass?: string; bodyRef?: Ref<HTMLDivElement> }) {
   const top = useIsTop();
   const titleRef = useMarquee<HTMLDivElement>(top, props.title);
   return (
@@ -14,7 +14,9 @@ export function Screen(props: { title: string; banner?: ComponentChildren; child
         </div>
       </div>
       {props.banner}
-      <div class={'body' + (props.bodyClass ? ' ' + props.bodyClass : '')}>{props.children}</div>
+      <div class={'body' + (props.bodyClass ? ' ' + props.bodyClass : '')} ref={props.bodyRef}>
+        {props.children}
+      </div>
     </div>
   );
 }

@@ -129,7 +129,7 @@ export function markViewed(m: Message): void {
   signal.sendViewed(m.author, m.timestamp, { receipt: config.sendReadReceipts() && !(conv && conv.request), viewOnce: !!att.viewOnce }).catch((e) => dbg('viewed receipt failed ' + (e && e.message)));
 }
 
-/** Clear a chat's unread count and send read receipts (up to 10) for what was unread. */
+/** Clear a chat's unread count, tell our other devices, and send read receipts (up to 10) for what was unread. */
 export function markRead(convId: string): void {
   const conv = convs[convId];
   if (!conv) return;
@@ -144,9 +144,8 @@ export function markRead(convId: string): void {
   else
     db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, 25).then((rows) => {
       const pending = rows.filter((r) => r.incoming && r.timestamp > (conv.lastReadTs || 0));
-      if (config.sendReadReceipts()) {
-        for (const r of pending.slice(-10)) signal.sendReadReceipt(r.author, r.timestamp).catch((e) => dbg('receipt failed ' + (e && e.message)));
-      }
+      const receipt = config.sendReadReceipts();
+      for (const r of pending.slice(-10)) signal.sendReadReceipt(r.author, r.timestamp, { receipt }).catch((e) => dbg('receipt failed ' + (e && e.message)));
       if (pending.length) conv.lastReadTs = pending[pending.length - 1].timestamp;
       persistConv(conv);
     });

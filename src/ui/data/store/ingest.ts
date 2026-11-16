@@ -9,7 +9,7 @@ import { applyCall, applyCallDelete, applyCallLog } from './call-log';
 import { applyBackfill } from './backfill';
 import { unarchiveOnActivity } from './chat-state';
 import { altKeyOf, displayName, isSelfKey, self } from './contacts';
-import { ensureConv, msgId, persistConv, timerLine } from './conversations';
+import { ensureConv, isViewing, msgId, persistConv, timerLine } from './conversations';
 import { emit } from './events';
 import { applyAdminDelete, applyDeleteSync } from './message-actions';
 import { notify, notifyReaction } from './notify';
@@ -76,8 +76,9 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
   conv.lastPreview = previewOf(rec);
   unarchiveOnActivity(conv);
-  const read = ev.incoming && state.openConvId !== conv.id && alreadyRead(conv.id, ev.author, ev.timestamp);
-  if (ev.incoming && state.openConvId !== conv.id && !read) conv.unread = (conv.unread || 0) + 1;
+  const viewing = isViewing(conv.id);
+  const read = ev.incoming && !viewing && alreadyRead(conv.id, ev.author, ev.timestamp);
+  if (ev.incoming && !viewing && !read) conv.unread = (conv.unread || 0) + 1;
   if (typingMap[conv.id]) {
     delete typingMap[conv.id];
     emit('typing', conv.id);
@@ -86,9 +87,8 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
 
   emit('message', rec);
   emit('conversations');
-  // Draining the offline queue (silent) must not notify per message: the queue replays on every reconnect.
   if (ev.incoming && !silent && !read) notify(conv, rec, ev.mentioned);
-  if (ev.incoming && state.openConvId === conv.id) markRead(conv.id);
+  if (ev.incoming && viewing) markRead(conv.id);
 }
 
 export const ALERTING_NOTICES: NoticeKind[] = ['missedCall', 'payment', 'storyReaction'];
@@ -132,7 +132,7 @@ export function applyNotice(ev: NoticeEvent, silent: boolean): void {
   }
   if (alerts) {
     unarchiveOnActivity(conv);
-    if (state.openConvId !== conv.id) conv.unread = (conv.unread || 0) + 1;
+    if (!isViewing(conv.id)) conv.unread = (conv.unread || 0) + 1;
   }
   persistConv(conv);
   emit('message', rec);
@@ -305,7 +305,7 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
   }
 }
 
-/** Apply one decrypted frame; resolves once its writes are stored, and rejects with `SaveError` when the database refused one. `silent` while draining the offline queue, so queued messages don't each notify. */
+/** Apply one decrypted frame; resolves once its writes are stored, and rejects with `SaveError` when the database refused one. `silent` while the first connection after launch drains the offline queue, which doesn't notify. */
 export function ingestRaw(frame: unknown, opts?: { silent?: boolean }): Promise<void> {
   const writes: Array<Promise<unknown>> = [];
   let thrown: unknown = null;

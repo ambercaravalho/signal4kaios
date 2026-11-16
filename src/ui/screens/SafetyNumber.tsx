@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fromBase64 } from '../../engine/bytes';
-import { router, useKeys, useSoftkeys } from '../app/router';
+import { router, useArrowScroll, useKeys, useSoftkeys } from '../app/router';
 import { Icon } from '../components/Icon';
 import { EmptyState, Spinner } from '../components/List';
 import { alertDialog, showOptions } from '../components/Overlays';
@@ -62,6 +62,7 @@ export function SafetyNumberScreen(props: { target: string; name: string }) {
   }
 
   useSoftkeys({ center: entry ? (verified ? S.clearVerified : S.markVerified) : null, right: entry ? S.options : null });
+  useArrowScroll(body);
   useKeys((e) => {
     if (!entry) return false;
     if (e.key === 'Enter') setVerified(!verified);
@@ -71,7 +72,6 @@ export function SafetyNumberScreen(props: { target: string; name: string }) {
         !!entry.scannable_safety_number && { label: S.scanCode, onSelect: scan },
         { label: S.learnMore, onSelect: () => openGuide('groups') },
       ]);
-    else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && body.current) body.current.scrollTop += e.key === 'ArrowDown' ? 40 : -40;
     else return false;
     return true;
   });

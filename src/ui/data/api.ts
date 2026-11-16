@@ -98,3 +98,8 @@ export function setTypingIndicators(on: boolean): Promise<void> {
 export function unlink(): Promise<void> {
   return db.wipe().catch(() => {});
 }
+
+/** Signal unlinked this phone: its keys and credentials are useless now, so delete them and keep the message history. */
+export function forgetUnlinkedDevice(): Promise<void> {
+  return db.clearSignalState().catch(() => {});
+}
