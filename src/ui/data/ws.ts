@@ -4,7 +4,7 @@ import { signal } from './api';
 import { config } from './config';
 import { dbg } from './log';
 import { scheduleAlarm } from './platform';
-import { ingestRaw, refreshDirectory, setConnection } from './store';
+import { holdNotifications, ingestRaw, refreshDirectory, releaseNotifications, setConnection } from './store';
 import { emit } from './store/events';
 import { SaveError } from './store/ingest';
 import type { SocketLike } from '../../engine/net/transport';
@@ -32,12 +32,18 @@ let sock: SocketLike | null = null;
 let attempts = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+/** Whether nothing has come from the server since the last keepalive went out. */
+let keepaliveUnanswered = false;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let wanted = false;
 let everConnected = false;
 let lastCloseAt = 0;
 let framesThisSession = 0;
 let drainingQueue = true;
+/** Whether this drain is the first since launch, which stays silent; later ones notify once per chat when they end. */
+let quietDrain = true;
+let drainWork: Array<Promise<unknown>> = [];
+let drainGen = 0;
 let unlinkedHandler: (() => void) | null = null;
 let lastMessage = 0;
 
@@ -153,7 +159,32 @@ function scheduleReconnect(): void {
   }, delay);
 }
 
+/** A socket can stay open after the network under it changed, so a keepalive the server didn't answer by the next one means the connection is gone. */
+function keepalive(s: SocketLike): void {
+  if (s !== sock) return;
+  if (keepaliveUnanswered) {
+    dbg('ws: keepalive unanswered, reconnecting');
+    dropSocket(s);
+    return;
+  }
+  keepaliveUnanswered = true;
+  sendFrame(signal.encodeWsKeepalive(), 'keepalive');
+}
+
+/** Close a dead socket and handle it like one the server closed, without waiting for the browser to notice. */
+function dropSocket(s: SocketLike): void {
+  const onclose = s.onclose;
+  s.onclose = null;
+  try {
+    s.close();
+  } catch {
+    // already closed
+  }
+  if (onclose) onclose({ code: 1006, reason: 'keepalive', wasClean: false });
+}
+
 function onMessage(from: SocketLike, data: unknown): void {
+  if (from === sock) keepaliveUnanswered = false;
   if (typeof data === 'string') return;
   let wsMsg: any;
   try {
@@ -165,20 +196,20 @@ function onMessage(from: SocketLike, data: unknown): void {
   if (!wsMsg || wsMsg.type !== 1 || !wsMsg.request) return;
   const req = wsMsg.request;
   if (req.path === '/api/v1/queue/empty') {
-    drainingQueue = false;
+    endDrain();
     sendAck(req.id);
     dbg('ws: offline queue drained');
     return;
   }
   if (req.path === '/api/v1/message' && req.body && req.body.length) {
-    const silent = drainingQueue;
+    const silent = drainingQueue && quietDrain;
     framesThisSession += 1;
     lastMessage = Date.now();
-    signal.processIncomingEnvelope(req.body).then(
+    const work = signal.processIncomingEnvelope(req.body).then(
       (frame) => {
         if (!frame) return ackOn(from, req.id);
         const item = { frame, reqId: req.id, sock: from };
-        saveFrame(item, silent).then((ok) => {
+        return saveFrame(item, silent).then((ok) => {
           if (!ok) holdUnsaved(item);
         });
       },
@@ -188,9 +219,22 @@ function onMessage(from: SocketLike, data: unknown): void {
         ackOn(from, req.id);
       }
     );
+    if (drainingQueue && !quietDrain) drainWork.push(work);
     return;
   }
   sendAck(req.id);
+}
+
+/** The offline queue is replayed (or the socket closed first): once its messages are applied, show what they held back. */
+function endDrain(): void {
+  drainingQueue = false;
+  const work = drainWork;
+  const gen = drainGen;
+  drainWork = [];
+  Promise.allSettled(work).then(() => {
+    // A newer connection's drain releases them instead, together with its own.
+    if (gen === drainGen) releaseNotifications();
+  });
 }
 
 export function connect(): void {
@@ -207,6 +251,7 @@ export function connect(): void {
   dbg('ws: connecting');
   setConnection('connecting');
   drainingQueue = true;
+  quietDrain = !everConnected;
 
   try {
     // SECURITY-REVIEW: device credentials go only to Signal's WebSocket endpoint and are never logged. Signal authenticates the upgrade by its Authorization header and treats query-string credentials as an anonymous socket, so only the pinned client (which can set headers) receives messages.
@@ -229,6 +274,10 @@ export function connect(): void {
   }
 
   const s = sock;
+  if (!quietDrain) {
+    drainGen += 1;
+    holdNotifications();
+  }
   s.onopen = () => {
     attempts = 0;
     framesThisSession = 0;
@@ -241,7 +290,8 @@ export function connect(): void {
     everConnected = true;
     scheduleWakeAlarm();
     if (keepaliveTimer) clearInterval(keepaliveTimer);
-    keepaliveTimer = setInterval(() => sendFrame(signal.encodeWsKeepalive(), 'keepalive'), KEEPALIVE_MS);
+    keepaliveUnanswered = false;
+    keepaliveTimer = setInterval(() => keepalive(s), KEEPALIVE_MS);
     setConnection('open');
   };
   s.onmessage = (evt) => onMessage(s, evt.data);
@@ -253,7 +303,10 @@ export function connect(): void {
     }
     dbg('ws: closed (code ' + evt.code + ', ' + framesThisSession + ' frames)');
     setConnection('closed');
-    if (sock === s) sock = null;
+    if (sock === s) {
+      sock = null;
+      endDrain();
+    }
     if (evt.code === CLOSE_UNAUTHORIZED || evt.code === CLOSE_FORBIDDEN) {
       dbg('ws: Signal rejected this device (unlinked)');
       wanted = false;
@@ -284,6 +337,7 @@ export function stop(): void {
     }
     sock = null;
   }
+  endDrain();
   setConnection('closed');
 }
 
@@ -306,6 +360,12 @@ function wakeIfClosed(): void {
 export function installWakeHandlers(): void {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) wakeIfClosed();
+  });
+  // A socket opened on the previous network can look open for minutes after the switch.
+  window.addEventListener('online', () => {
+    if (!wanted) return;
+    dbg('ws: network changed, reconnecting');
+    restart();
   });
   if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
     navigator.serviceWorker.addEventListener('message', (evt) => {

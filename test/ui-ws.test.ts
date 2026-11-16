@@ -10,6 +10,8 @@ import * as ws from '../src/ui/data/ws';
 import { settle } from './helpers';
 
 const ALICE = '+15550001';
+const BOB = '+15550002';
+const QUEUE_EMPTY = 255;
 
 class FakeSocket {
   readyState = 0;
@@ -33,12 +35,35 @@ class FakeSocket {
   deliver(id: number): void {
     this.onmessage!({ data: new Uint8Array([id]).buffer });
   }
+  /** The server's response to a keepalive. */
+  reply(): void {
+    this.onmessage!({ data: new Uint8Array(0).buffer });
+  }
+  keepalives(): number {
+    return this.acks.filter((b) => b === 0).length;
+  }
 }
 
 const sockets: FakeSocket[] = [];
 const current = () => sockets[sockets.length - 1];
 const decrypted: Record<number, () => Promise<unknown>> = {};
-const message = (ts: number) => async () => ({ envelope: { sourceNumber: ALICE, timestamp: ts, dataMessage: { timestamp: ts, message: 'm' + ts } } });
+const message =
+  (ts: number, from = ALICE) =>
+  async () => ({ envelope: { sourceNumber: from, timestamp: ts, dataMessage: { timestamp: ts, message: 'm' + ts } } });
+
+const notified: string[] = [];
+function showNotifications(on: boolean): void {
+  (globalThis as any).document.hidden = on;
+  if (on)
+    (globalThis as any).Notification = class {
+      onclick: unknown = null;
+      constructor(_title: string, opts: { tag: string }) {
+        notified.push(opts.tag);
+      }
+      close(): void {}
+    };
+  else delete (globalThis as any).Notification;
+}
 
 describe('acknowledging messages', () => {
   const put = db.putMessage;
@@ -49,7 +74,10 @@ describe('acknowledging messages', () => {
     await db.ready();
     const s = signal as any;
     s.decodeWsFrame = (buf: ArrayBuffer) => {
-      const id = new Uint8Array(buf)[0];
+      const bytes = new Uint8Array(buf);
+      if (!bytes.length) return { type: 2, response: { id: 0n, status: 200, message: 'OK' } };
+      const id = bytes[0];
+      if (id === QUEUE_EMPTY) return { type: 1, request: { path: '/api/v1/queue/empty', id: BigInt(id) } };
       return { type: 1, request: { path: '/api/v1/message', body: new Uint8Array([id]), id: BigInt(id) } };
     };
     s.encodeWsAck = (id: bigint) => new Uint8Array([Number(id)]);
@@ -67,8 +95,28 @@ describe('acknowledging messages', () => {
 
   after(() => {
     (db as any).putMessage = put;
+    showNotifications(false);
     ws.stop();
     mock.timers.reset();
+  });
+
+  it('keeps the first offline queue after launch quiet, then notifies again', async () => {
+    showNotifications(true);
+    notified.length = 0;
+    decrypted[20] = message(20000);
+    current().deliver(20);
+    current().deliver(QUEUE_EMPTY);
+    await settle();
+    assert.deepEqual(notified, []);
+    decrypted[21] = message(21000);
+    current().deliver(21);
+    await settle();
+    assert.deepEqual(notified, [ALICE]);
+    showNotifications(false);
+    ws.restart();
+    current().open();
+    current().deliver(QUEUE_EMPTY);
+    current().acks.length = 0;
   });
 
   it('acknowledges only once the message is stored', async () => {
@@ -136,5 +184,42 @@ describe('acknowledging messages', () => {
     assert.equal(first.acks.indexOf(6), -1);
     assert.deepEqual(second.acks, []);
     (db as any).putMessage = put;
+  });
+
+  it('after a reconnect, notifies once per chat when the offline queue is replayed', async () => {
+    current().deliver(QUEUE_EMPTY);
+    await settle();
+    showNotifications(true);
+    notified.length = 0;
+    ws.restart();
+    current().open();
+    decrypted[30] = message(30000);
+    decrypted[31] = message(31000, BOB);
+    decrypted[32] = message(32000);
+    current().deliver(30);
+    current().deliver(31);
+    current().deliver(32);
+    await settle();
+    assert.deepEqual(notified, [], 'nothing while the queue is replayed');
+    current().deliver(QUEUE_EMPTY);
+    await settle();
+    assert.deepEqual(notified.slice().sort(), [ALICE, BOB]);
+    showNotifications(false);
+  });
+
+  it('reconnects when a keepalive goes unanswered', async () => {
+    const live = current();
+    mock.timers.tick(25000);
+    assert.equal(live.keepalives(), 1);
+    live.reply();
+    mock.timers.tick(25000);
+    assert.equal(live.keepalives(), 2);
+    assert.equal(live.readyState, 1, 'answered, so still open');
+
+    mock.timers.tick(25000);
+    assert.equal(live.readyState, 3, 'unanswered, so dropped');
+    assert.equal(store.connectionState(), 'closed');
+    ws.connect();
+    assert.notEqual(current(), live);
   });
 });

@@ -3,7 +3,7 @@ import { router, RouterView } from './app/router';
 import { applyTheme } from './app/theme';
 import { SoftkeyBar } from './components/Screen';
 import { toast, ToastHost } from './components/Toast';
-import { signal } from './data/api';
+import { forgetUnlinkedDevice, signal } from './data/api';
 import { inCall } from './data/calls';
 import { config } from './data/config';
 import { db, PRUNE_KEEP } from './data/db';
@@ -82,8 +82,10 @@ function registerServiceWorker(): void {
 function onUnlinked(): void {
   dbg('auth: this device was unlinked');
   ws.stop();
-  config.forgetAccount();
-  location.reload();
+  forgetUnlinkedDevice().then(() => {
+    config.forgetAccount();
+    location.reload();
+  });
 }
 
 function start(): void {

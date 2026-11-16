@@ -42,17 +42,32 @@ function xhrSend(method: string, url: string, headers: Record<string, string>, b
   return new Promise((resolve, reject) => {
     const xhr = mozSystemXhr() || new XMLHttpRequest();
     xhr.open(method, url, true);
-    xhr.timeout = timeout;
     xhr.responseType = 'arraybuffer';
     for (const k of Object.keys(headers)) xhr.setRequestHeader(k, headers[k]);
-    xhr.onload = () =>
+    // `xhr.timeout` caps the whole transfer; this times out only when nothing has moved for `timeout`, like the pinned client.
+    let watchdog = setTimeout(expire, timeout);
+    function expire(): void {
+      xhr.abort();
+      reject(netError('timeout', 'timeout'));
+    }
+    const progress = () => {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(expire, timeout);
+    };
+    xhr.onprogress = progress;
+    if (xhr.upload) xhr.upload.onprogress = progress;
+    xhr.onload = () => {
+      clearTimeout(watchdog);
       resolve({
         status: xhr.status,
         body: xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0),
         header: (name) => xhr.getResponseHeader(name),
       });
-    xhr.onerror = () => reject(netError('network', 'network'));
-    xhr.ontimeout = () => reject(netError('timeout', 'timeout'));
+    };
+    xhr.onerror = () => {
+      clearTimeout(watchdog);
+      reject(netError('network', 'network'));
+    };
     if (body != null) xhr.send(body as any);
     else xhr.send();
   });

@@ -2,12 +2,13 @@ import './ui-env';
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { setReadReceipts, setTypingIndicators, signal, updateProfile } from '../src/ui/data/api';
+import { forgetUnlinkedDevice, setReadReceipts, setTypingIndicators, signal, updateProfile } from '../src/ui/data/api';
 import { cachedAttachment, ViewedOnceError } from '../src/ui/data/attachments';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
 import { migrateMute, MUTED_ALWAYS } from '../src/ui/data/store/mute';
+import { state as storeState } from '../src/ui/data/store/state';
 import { settle } from './helpers';
 
 const ME = '+15550000';
@@ -574,6 +575,14 @@ describe('store', () => {
     assert.deepEqual(sent[0].recipients, [ALICE]);
     await store.votePoll(rec, [1]);
     assert.deepEqual(votes[0].slice(0, 4), [ALICE, ME, rec.timestamp, [1]]);
+    const voteFrom = (src: string, at: number) => ({ envelope: { sourceNumber: src, timestamp: at, dataMessage: { timestamp: at, pollVote: { targetAuthorUuid: 'aci-me', targetSentTimestamp: rec.timestamp, optionIndexes: [0], voteCount: 1 } } } });
+    store.ingestRaw(voteFrom(ALICE, 7150));
+    store.ingestRaw(voteFrom('+15550002', 7160));
+    await settle();
+    const voted = (await db.getMessage(rec.id))!.poll!;
+    assert.deepEqual(voted.votes[ALICE].options, [0], 'their vote counts');
+    assert.equal(voted.votes['+15550002'], undefined, 'someone outside the chat can’t vote');
+    assert.deepEqual(store.pollCounts(voted), [1, 1]);
     await store.endPoll(rec);
     await settle();
     assert.equal((await db.getMessage(rec.id))!.poll!.ended, true);
@@ -662,6 +671,51 @@ describe('store', () => {
     assert.deepEqual(receipts, [[ERIN, 50000]]);
   });
 
+  it('doesn’t read what arrives in a chat left open while Beacon is in the background', async () => {
+    const receipts: any[] = [];
+    (signal as any).sendReadReceipt = async (to: string, ts: number) => {
+      receipts.push([to, ts]);
+    };
+    store.markRead(ALICE);
+    await settle();
+    receipts.length = 0;
+    const doc = (globalThis as any).document;
+    const ts = Math.max(Date.now(), (store.conversation(ALICE)!.lastReadTs || 0) + 1);
+    store.setOpenConv(ALICE);
+    doc.hidden = true;
+    try {
+      store.ingestRaw(incoming(ts, 'while you were away'));
+      await settle();
+      assert.equal(store.conversation(ALICE)!.unread, 1);
+      assert.deepEqual(receipts, []);
+    } finally {
+      doc.hidden = false;
+    }
+    store.markRead(ALICE);
+    await settle();
+    assert.equal(store.conversation(ALICE)!.unread, 0);
+    assert.deepEqual(receipts, [[ALICE, ts]]);
+    store.setOpenConv(null);
+  });
+
+  it('still syncs what we read to our other devices with read receipts off', async () => {
+    const reads: any[] = [];
+    (signal as any).sendReadReceipt = async (to: string, ts: number, opts: { receipt: boolean }) => {
+      reads.push([to, ts, opts.receipt]);
+    };
+    const ts = Math.max(Date.now(), (store.conversation(ALICE)!.lastReadTs || 0) + 1);
+    store.ingestRaw(incoming(ts, 'read me'));
+    await settle();
+    config.set({ sendReadReceipts: false });
+    try {
+      store.markRead(ALICE);
+      await settle();
+    } finally {
+      config.set({ sendReadReceipts: true });
+    }
+    assert.deepEqual(reads, [[ALICE, ts, false]]);
+  });
+
   it('holds a group a stranger added us to as a request until we accept or delete it', async () => {
     const group = (internal: string, extra: Record<string, unknown>) => ({ id: 'group.' + internal, internal_id: internal, masterKey: '', revision: 1, name: 'Deals ' + internal, members: ['aci-me', 'aci-zed'], admins: [], pending: [], expireTimer: 0, blocked: false, link_mode: 'disabled', invite_link: '', ...extra });
     await db.kvSet('syncedGroups', [group('R1RQ', { messageRequest: true, addedBy: 'aci-zed' }), group('R1RD', { messageRequest: true })]);
@@ -719,6 +773,29 @@ describe('store', () => {
     await settle();
     store.ingestRaw(answer(null));
     await assert.rejects(gone, (e: unknown) => e instanceof store.NoLongerAvailableError);
+  });
+
+  it('holds back someone we never accepted once Storage Service has said who we did', async () => {
+    const HANK = '+15550030';
+    const IVY = '+15550031';
+    const JO = '+15550032';
+    const hi = (from: string, ts: number) => ({ envelope: { sourceNumber: from, timestamp: ts, dataMessage: { timestamp: ts, message: 'hi' } } });
+    await db.kvSet('syncedContacts', [{ uuid: 'aci-hank', number: HANK, name: 'Hank' }]);
+    await store.refreshDirectory();
+    store.ingestRaw(hi(HANK, 52000));
+    await settle();
+    assert.equal(store.conversation(HANK)!.request, undefined, 'before the first pull, a known contact isn’t held back');
+
+    await db.kvSet('syncedContacts', [
+      { uuid: 'aci-ivy', number: IVY, name: 'Ivy' },
+      { uuid: 'aci-jo', number: JO, name: 'Jo', whitelisted: true },
+    ]);
+    await store.refreshDirectory();
+    store.ingestRaw(hi(IVY, 52100));
+    store.ingestRaw(hi(JO, 52200));
+    await settle();
+    assert.equal(store.conversation(IVY)!.request, true, 'only seen in a group, never accepted');
+    assert.equal(store.conversation(JO)!.request, undefined, 'accepted');
   });
 
   it('starts requests for contacts we don’t share our profile with, and clears or deletes them from other devices', async () => {
@@ -930,6 +1007,22 @@ describe('store', () => {
     assert.equal((await db.getMessage(ALICE + '|9400|' + ALICE))!.reactions[ALICE], '👍');
   });
 
+  it('marks a send cut off by closing the app as failed at the next start, so Retry is offered', async () => {
+    const ts = Date.now();
+    const id = ALICE + '|' + ts + '|' + ME;
+    await db.putMessage({ id, convId: ALICE, incoming: false, author: ME, authorName: '', timestamp: ts, body: 'interrupted', styles: [], quote: null, attachments: [], reactions: {}, status: 'pending', deleted: false, edited: false });
+    const updated: string[] = [];
+    const off = store.on('message-updated', (rec) => updated.push(rec.id + ' ' + rec.status));
+    await settle(5);
+    await store.init();
+    clearInterval(storeState.purgeTimer!);
+    storeState.purgeTimer = null;
+    await settle();
+    off();
+    assert.equal((await db.getMessage(id))!.status, 'failed');
+    assert.deepEqual(updated, [id + ' failed']);
+  });
+
   it('won’t open view-once media again once viewed, even after the cache has forgotten it', async () => {
     const downloads: string[] = [];
     (signal as any).downloadAttachmentBlob = async (id: string) => {
@@ -951,5 +1044,14 @@ describe('store', () => {
     let kept = 0;
     for (let i = 0; i < 4; i++) if (await db.getAttachment('att-fill-' + i)) kept++;
     assert.ok(kept <= 2);
+  });
+
+  it('deletes the keys but keeps the messages when Signal unlinks this phone', async () => {
+    await db.signalKeySet('account', { aci: 'aci-me', password: 'test-only' });
+    await db.putSession('aci-zed.1', new Uint8Array([1, 2, 3]));
+    await forgetUnlinkedDevice();
+    assert.equal(await db.signalKeyGet('account'), undefined);
+    assert.equal(await db.getSession('aci-zed.1'), undefined);
+    assert.ok(await db.getMessage(ALICE + '|1000|' + ALICE), 'history stays');
   });
 });

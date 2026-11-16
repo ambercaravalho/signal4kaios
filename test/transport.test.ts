@@ -189,6 +189,23 @@ describe('HTTP/1.1 client', () => {
     await assert.rejects(new Http1Client(silent.connect).request({ method: 'GET', url: 'https://chat.signal.org/', timeoutMs: 50 }), (e: TransportError) => e.kind === 'timeout');
   });
 
+  it('keeps a slow transfer going as long as bytes keep arriving', async () => {
+    const body = 'abcdefgh';
+    const trickle = fakeServer((c) => (c.onBytes = (s) => {
+      s.onBytes = null;
+      s.send('HTTP/1.1 200 OK\r\nContent-Length: ' + body.length + '\r\n\r\n');
+      body.split('').forEach((ch, i) => setTimeout(() => s.client.onData && s.client.onData(text(ch)), 30 * (i + 1)));
+    }));
+    const res = await new Http1Client(trickle.connect).request({ method: 'GET', url: 'https://cdn.signal.org/slow', timeoutMs: 50 });
+    assert.equal(utf8(res.body), body, 'took 240 ms, never 50 ms without a byte');
+
+    const stalls = fakeServer((c) => (c.onBytes = (s) => {
+      s.onBytes = null;
+      s.send('HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabc');
+    }));
+    await assert.rejects(new Http1Client(stalls.connect).request({ method: 'GET', url: 'https://cdn.signal.org/stall', timeoutMs: 50 }), (e: TransportError) => e.kind === 'timeout');
+  });
+
   it('refuses header injection and non-https URLs', async () => {
     const { connect } = fakeServer(() => {});
     const client = new Http1Client(connect);

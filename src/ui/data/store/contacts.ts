@@ -69,6 +69,12 @@ export function contactName(c: SyncedContact): string {
   return c.username || c.number || c.uuid;
 }
 
+/** Whether Storage Service has told us who we've accepted: only contacts it lists carry `whitelisted`, so before the first pull nobody does. */
+export function acceptanceKnown(): boolean {
+  for (const k in contactsByKey) if (contactsByKey[k].whitelisted !== undefined) return true;
+  return false;
+}
+
 export async function refreshDirectory(): Promise<boolean> {
   if (!config.isConfigured()) return false;
   const [contacts, groups] = await Promise.all([syncedContacts(), syncedGroups()]);

@@ -5,13 +5,13 @@ import type { CallEvent, ChatRef } from '../normalize';
 import type { CallOutcome, Conversation, Message } from '../types';
 import { unarchiveOnActivity } from './chat-state';
 import { self } from './contacts';
-import { chatFor, ensureConv, persistConv } from './conversations';
+import { chatFor, ensureConv, isViewing, persistConv } from './conversations';
 import { emit } from './events';
 import { enqueueMutation, noticeAlerts, noticeRecord } from './ingest';
 import { notify } from './notify';
 import { messageText } from './previews';
 import { alreadyRead, recountUnread } from './read';
-import { convs, state } from './state';
+import { convs } from './state';
 
 const PAGE = 200;
 const UNREAD_PAGE = 50;
@@ -50,7 +50,7 @@ export function applyCall(ev: CallEvent, silent: boolean): void {
     }
     if (alerts) {
       unarchiveOnActivity(conv);
-      if (state.openConvId !== conv.id) conv.unread = (conv.unread || 0) + 1;
+      if (!isViewing(conv.id)) conv.unread = (conv.unread || 0) + 1;
     }
     persistConv(conv);
     if (prev) emit('message-updated', rec, undefined);

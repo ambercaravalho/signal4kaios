@@ -62,7 +62,27 @@ export function notificationText(conv: Conversation, body: string): { title: str
 
 const shown: Record<string, Notification> = {};
 
-function show(conv: Conversation, text: string): void {
+/** The latest notification per chat while a reconnect replays the offline queue; null when they show right away. */
+let held: Record<string, { conv: Conversation; text: string }> | null = null;
+
+/** Keep notifications back until `releaseNotifications`, so a replayed queue raises one per chat instead of one per message. */
+export function holdNotifications(): void {
+  if (!held) held = {};
+}
+
+/** Show the held notifications, one per chat, except for chats read in the meantime. */
+export function releaseNotifications(): void {
+  const list = held;
+  held = null;
+  if (!list) return;
+  for (const id of Object.keys(list)) show(list[id].conv, list[id].text);
+}
+
+function show(conv: Conversation, text: string, now = false): void {
+  if (held && !now) {
+    held[conv.id] = { conv, text };
+    return;
+  }
   if (!document.hidden || typeof Notification === 'undefined') return;
   const { title, body } = notificationText(conv, text);
   const opts: NotificationOptions = { body: body.slice(0, 100), tag: conv.id, icon: '/assets/icons/kaios_112.png', data: { convId: conv.id }, silent: !config.notifySound() };
@@ -86,6 +106,7 @@ function show(conv: Conversation, text: string): void {
 
 /** Close the chat's notification, once it was read on another device. */
 export function dismissNotifications(convId: string): void {
+  if (held) delete held[convId];
   const n = shown[convId];
   if (n) {
     delete shown[convId];
@@ -108,7 +129,7 @@ export function notify(conv: Conversation, rec: Message, mentioned?: string[]): 
 
 /** A call ringing while Beacon is in the background. */
 export function notifyIncomingCall(conv: Conversation): void {
-  if (shouldNotify(conv, { call: true })) show(conv, S.incomingVoiceCall);
+  if (shouldNotify(conv, { call: true })) show(conv, S.incomingVoiceCall, true);
 }
 
 /** Someone else reacted to one of our messages; muted chats stay quiet, as in Signal. */

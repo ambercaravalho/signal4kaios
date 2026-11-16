@@ -6,7 +6,7 @@ import { dbg } from '../log';
 import type { ChatRef, MessageEvent } from '../normalize';
 import type { PickedMention } from '../styled';
 import type { Attachment, Connection, Conversation, Message } from '../types';
-import { altKeyOf, contactByKey, directName, displayName, isSelfKey, refreshDirectory, self } from './contacts';
+import { acceptanceKnown, altKeyOf, contactByKey, directName, displayName, isSelfKey, refreshDirectory, self } from './contacts';
 import { emit } from './events';
 import { applyNotice, ingestRaw } from './ingest';
 import { migrateMute, scheduleUnmute } from './mute';
@@ -40,7 +40,8 @@ export function ensureConv(ev: Pick<MessageEvent, 'convId' | 'groupInternalId' |
     conv = newConv(ev.convId, 'direct', directName(ev.convId, name), ev.convId);
     if (ev.incoming && !isSelfKey(ev.convId)) {
       const c = contactByKey(ev.convId);
-      if (!c || c.whitelisted === false) conv.request = true;
+      // Before the first Storage Service pull, a known contact isn't held back: everyone would otherwise land in requests on a fresh link.
+      if (!c || c.whitelisted === false || (c.whitelisted === undefined && acceptanceKnown())) conv.request = true;
     }
   }
   convs[conv.id] = conv;
@@ -190,6 +191,21 @@ export function joinedGroupConversation(internalId: string, name: string): Conve
   return conv;
 }
 
+const PENDING_PAGE = 20;
+
+/** A message still pending from before the app started was cut off when Beacon closed: mark it failed, which offers Retry. */
+async function failStalePending(startedAt: number): Promise<void> {
+  for (const conv of Object.values(convs)) {
+    if (!(conv.lastTs > 0)) continue;
+    for (const rec of await db.getMessagesPage(conv.id, Number.MAX_SAFE_INTEGER, PENDING_PAGE)) {
+      if (rec.incoming || rec.status !== 'pending' || rec.timestamp >= startedAt) continue;
+      rec.status = 'failed';
+      await db.putMessage(rec);
+      emit('message-updated', rec, undefined);
+    }
+  }
+}
+
 export async function init(): Promise<void> {
   try {
     for (const c of await db.allContacts()) {
@@ -204,6 +220,7 @@ export async function init(): Promise<void> {
     }
     state.ready = true;
     emit('conversations');
+    failStalePending(Date.now()).catch((e) => dbg('pending check failed: ' + (e && e.message)));
     scheduleUnmute();
     purgeExpired();
     if (!state.purgeTimer) state.purgeTimer = setInterval(purgeExpired, 30000);
@@ -242,6 +259,11 @@ export function typing(convId: string): { author: string; until: number } | null
 
 export function setOpenConv(convId: string | null): void {
   state.openConvId = convId;
+}
+
+/** Whether the chat is on screen: open, with Beacon in the foreground. A chat left open in the background doesn't read what arrives. */
+export function isViewing(convId: string): boolean {
+  return state.openConvId === convId && !document.hidden;
 }
 
 export function openConversationId(): string | null {

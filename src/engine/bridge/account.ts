@@ -33,6 +33,14 @@ export const accountMethods = {
     await client.requestInitialSync();
   },
 
+  /** Remove this phone from the account's linked devices, as Signal-Desktop's unlink does; the server then rejects these credentials. */
+  async unlinkThisDevice(): Promise<void> {
+    const acc = await store.getAccount();
+    if (!acc) return;
+    // SECURITY-REVIEW: the device's own credentials authorize removing itself; they go only to Signal's server and are never logged.
+    await httpJson('DELETE', '/v1/devices/' + acc.deviceId, null, { basicAuth: accountBasicAuth(acc) });
+  },
+
   /** Rotate the signed and last-resort Kyber PreKeys and upload fresh one-time EC and Kyber PreKeys for both identities. */
   async replenishPreKeys(): Promise<void> {
     const acc = await store.getAccount();

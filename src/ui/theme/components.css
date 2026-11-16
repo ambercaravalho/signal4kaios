@@ -542,9 +542,10 @@
   justify-content: center;
 }
 
+/* At larger text sizes 18rem is wider than the screen; 4rem is the screen's and this box's padding. */
 .qr svg {
-  width: 18rem;
-  height: 18rem;
+  width: min(18rem, 100vw - 4rem);
+  height: min(18rem, 100vw - 4rem);
 }
 
 .scan-body {

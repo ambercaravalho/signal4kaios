@@ -8,6 +8,7 @@ export interface HttpRequest {
   url: string;
   headers?: Record<string, string>;
   body?: Uint8Array | null;
+  /** How long the request may go without sending or receiving a byte. */
   timeoutMs?: number;
   maxResponseBytes?: number;
 }
@@ -303,20 +304,19 @@ export class Http1Client {
 
     await this.acquire(key);
     try {
-      const deadline = Date.now() + timeoutMs;
       const reused = this.takeIdle(key);
       if (reused) {
         try {
-          return await this.exchange(key, reused, method, head, body, maxBytes, deadline);
+          return await this.exchange(key, reused, method, head, body, maxBytes, timeoutMs);
         } catch (e) {
           // A kept-alive socket the server already closed fails before any response byte; retry once on a fresh one.
           if (!(e instanceof StaleConnectionError)) throw e;
         }
       }
-      const stream = await this.connect(host, port, Math.max(1000, deadline - Date.now()));
+      const stream = await this.connect(host, port, timeoutMs);
       const conn: PooledConn = { stream, dead: false, idleTimer: null };
       try {
-        return await this.exchange(key, conn, method, head, body, maxBytes, deadline);
+        return await this.exchange(key, conn, method, head, body, maxBytes, timeoutMs);
       } catch (e) {
         if (e instanceof StaleConnectionError) throw new TransportError('network', `connection to ${host} closed before a response`);
         throw e;
@@ -399,7 +399,7 @@ export class Http1Client {
     head: Uint8Array,
     body: Uint8Array | null,
     maxBytes: number,
-    deadline: number
+    idleMs: number
   ): Promise<HttpResponse> {
     return new Promise((resolve, reject) => {
       const parser = new ResponseParser(method, maxBytes);
@@ -407,7 +407,14 @@ export class Http1Client {
       let settled = false;
       const stream = conn.stream;
 
-      const timer = setTimeout(() => fail(new TransportError('timeout', 'request timed out')), Math.max(1, deadline - Date.now()));
+      // The timeout counts time without progress, so a large transfer on a slow connection isn't cut off while bytes still move.
+      const expire = () => fail(new TransportError('timeout', 'request timed out'));
+      let timer = setTimeout(expire, idleMs);
+      const progress = () => {
+        if (settled) return;
+        clearTimeout(timer);
+        timer = setTimeout(expire, idleMs);
+      };
 
       function settle() {
         settled = true;
@@ -435,6 +442,7 @@ export class Http1Client {
 
       stream.onData = (data) => {
         gotBytes = true;
+        progress();
         try {
           if (parser.feed(data)) succeed();
         } catch (e) {
@@ -456,7 +464,7 @@ export class Http1Client {
       };
 
       stream.write(head);
-      if (body && body.length) writeAll(stream, body).catch((e) => fail(e as Error));
+      if (body && body.length) writeAll(stream, body, undefined, progress).catch((e) => fail(e as Error));
     });
   }
 }

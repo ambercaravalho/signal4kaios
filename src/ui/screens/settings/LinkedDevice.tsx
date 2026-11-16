@@ -6,6 +6,8 @@ import { toast } from '../../components/Toast';
 import { signal, unlink } from '../../data/api';
 import { config } from '../../data/config';
 import { db } from '../../data/db';
+import * as http from '../../data/http';
+import { dbg } from '../../data/log';
 import * as ws from '../../data/ws';
 import { friendlyError } from '../../errors';
 import { S } from '../../strings';
@@ -27,6 +29,19 @@ export function LinkedDeviceScreen() {
   async function doUnlink(): Promise<void> {
     if (!(await confirm({ title: S.unlinkPhone + '?', body: S.unlinkConfirm, ok: S.unlink, danger: true }))) return;
     ws.stop();
+    // Requests still in flight get a 401 once the server has removed us; that's this unlink, not a remote one.
+    http.onUnlinked(() => {});
+    const removed = await signal.unlinkThisDevice().then(
+      () => true,
+      (e: any) => {
+        dbg('unlink: server removal failed ' + (e && (e.status || e.message)));
+        return !!e && (e.status === 401 || e.status === 404);
+      }
+    );
+    if (!removed && !(await confirm({ title: S.unlinkOffline, body: S.unlinkOfflineBody, ok: S.unlink, danger: true }))) {
+      location.reload();
+      return;
+    }
     await unlink();
     config.forgetAccount();
     location.reload();
