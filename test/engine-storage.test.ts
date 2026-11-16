@@ -70,7 +70,7 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
         { type: 'contact', aci: ALICE, update: (c) => { c.blocked = false; c.nickname = create(ContactRecord_NameSchema, { given: 'Clara O.' }); } },
         { type: 'contact', aci: ALICE, update: (c) => { c.archived = true; } },
         { type: 'groupV2', masterKey: newGroup, update: (g) => { g.mutedUntilTimestamp = 99n; } },
-        { type: 'account', update: (a) => { a.username = 'clara.42'; a.universalExpireTimer = 3600; a.sealedSenderIndicators = false; setPhoneNumberPrivacy(a, false, false); } },
+        { type: 'account', update: (a) => { a.username = 'clara.42'; a.universalExpireTimer = 3600; a.sealedSenderIndicators = false; a.readReceipts = false; a.typingIndicators = true; setPhoneNumberPrivacy(a, false, false); } },
         { type: 'contact', aci: ALICE, update: (c) => { c.whitelisted = true; } },
       ]);
       assert.equal(changed, true);
@@ -96,6 +96,8 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
       assert.equal(res.account?.username, 'clara.42');
       assert.equal(res.account?.universalExpireTimer, 3600);
       assert.equal(res.account?.sealedSenderIndicators, false);
+      assert.equal(res.account?.readReceipts, false);
+      assert.equal(res.account?.typingIndicators, true);
       assert.equal(res.account?.sharePhoneNumber, false);
       assert.equal(res.account?.findableByNumber, false);
       assert.equal(res.contacts[0].whitelisted, true);

@@ -6,7 +6,7 @@ import { renderToString } from 'preact-render-to-string';
 import { _stackForTest, router, RouterView } from '../src/ui/app/router';
 import { Avatar, AVATAR_COLORS, avatarColorIndex } from '../src/ui/components/Avatar';
 import { Badge, ListItem } from '../src/ui/components/List';
-import { confirm, DIVIDER, menuRows, pick, showOptions } from '../src/ui/components/Overlays';
+import { confirm, dialogKey, DIVIDER, menuRows, pick, showOptions } from '../src/ui/components/Overlays';
 import { QrCode } from '../src/ui/components/Qr';
 import { RichText } from '../src/ui/components/RichText';
 import { AUTOMATIC, CHAT_COLORS, chatColorOptions } from '../src/ui/data/chat-colors';
@@ -251,6 +251,16 @@ describe('screens', () => {
     assert.match(out, /Delete message\?/);
     router.pop();
     assert.equal(_stackForTest().length, 1);
+  });
+
+  it('confirms a two-button dialog only with its labelled right softkey, never with OK', () => {
+    assert.equal(dialogKey('Enter', true), 'ignore');
+    assert.equal(dialogKey('SoftRight', true), 'confirm');
+    assert.equal(dialogKey('SoftLeft', true), 'cancel');
+    assert.equal(dialogKey('Backspace', true), 'cancel');
+    assert.equal(dialogKey('ArrowDown', true), null);
+    assert.equal(dialogKey('Enter', false), 'confirm', 'a one-button alert still closes with OK');
+    assert.equal(dialogKey('SoftLeft', false), 'confirm');
   });
 
   it('renders every everyday screen without technical terms', () => {

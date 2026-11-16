@@ -82,6 +82,18 @@ export function updateProfile(body: { name?: string; about?: string; emoji?: str
   return signal.updateOwnProfile(body);
 }
 
+/** Read receipts on or off here and, through Storage Service, on your other devices; a pull would otherwise put back the old value. */
+export function setReadReceipts(on: boolean): Promise<void> {
+  config.set({ sendReadReceipts: on });
+  return signal.setReadReceipts(on);
+}
+
+/** Typing indicators on or off here and on your other devices. */
+export function setTypingIndicators(on: boolean): Promise<void> {
+  config.set({ typingIndicators: on });
+  return signal.setTypingIndicators(on);
+}
+
 /** Remove this phone's account data: messages and keys. */
 export function unlink(): Promise<void> {
   return db.wipe().catch(() => {});

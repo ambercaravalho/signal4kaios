@@ -236,7 +236,8 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
         setPreviewIfLast(ev.convId, rec, 'This message was deleted.');
       });
     case 'edit':
-      return updateTarget(ev.convId, ev.targetTimestamp, [ev.author, altKeyOf(ev.author), self()], 'edit', (rec) => {
+      // Only the author may edit: someone else naming the timestamp of a message you sent must not rewrite it.
+      return updateTarget(ev.convId, ev.targetTimestamp, [ev.author, altKeyOf(ev.author)].concat(isSelfKey(ev.author) ? [self()] : []), 'edit', (rec) => {
         if (ev.timestamp && rec.editedAt === ev.timestamp) return;
         keepVersion(rec);
         rec.body = ev.newBody;

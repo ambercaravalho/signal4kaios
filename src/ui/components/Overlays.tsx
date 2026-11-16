@@ -59,6 +59,14 @@ export function showOptions(items: MenuEntry[], title: string = S.options): void
   if (list.length) router.overlay(OptionsMenuView, { title, items: list });
 }
 
+/** What a key does in a dialog. A confirm leaves the centre softkey blank, so OK there does nothing rather than confirm something like Delete all data by habit. */
+export function dialogKey(key: string, hasCancel: boolean): 'confirm' | 'cancel' | 'ignore' | null {
+  if (key === 'Enter') return hasCancel ? 'ignore' : 'confirm';
+  if (key === 'SoftRight' || (!hasCancel && key === 'SoftLeft')) return 'confirm';
+  if (key === 'SoftLeft' || key === 'Backspace') return 'cancel';
+  return null;
+}
+
 function DialogView(props: { title: string; body?: ComponentChildren; ok: string; cancel: string | null; danger?: boolean; resolve(v: boolean): void }) {
   const done = (v: boolean) => {
     router.pop();
@@ -66,10 +74,10 @@ function DialogView(props: { title: string; body?: ComponentChildren; ok: string
   };
   useSoftkeys(props.cancel ? { left: props.cancel, center: null, right: props.ok } : { left: null, center: props.ok, right: null });
   useKeys((e) => {
-    if (e.key === 'Enter' || e.key === 'SoftRight' || (!props.cancel && e.key === 'SoftLeft')) done(true);
-    else if (e.key === 'SoftLeft' || e.key === 'Backspace') done(false);
-    else return false;
-    return true;
+    const action = dialogKey(e.key, !!props.cancel);
+    if (action === 'confirm') done(true);
+    else if (action === 'cancel') done(false);
+    return action !== null;
   });
   return (
     <div class="dialog" role="alertdialog">

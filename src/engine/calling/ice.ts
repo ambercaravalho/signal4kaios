@@ -275,8 +275,10 @@ export class IceAgent {
       pair.state = 'waiting';
       pair.attempts = 0;
     }
-    if (!this.controlling && attr(msg, StunAttr.UseCandidate)) {
-      const nomination = readU32(attr(msg, StunAttr.Nomination)) || 1;
+    // With renomination, which RingRTC always offers, WebRTC's controlling side nominates with NOMINATION alone and never sends USE-CANDIDATE.
+    const renominated = readU32(attr(msg, StunAttr.Nomination));
+    if (!this.controlling && (attr(msg, StunAttr.UseCandidate) || renominated)) {
+      const nomination = renominated || 1;
       if (nomination >= this.nominationSeen) {
         this.nominationSeen = nomination;
         this.select(key);
