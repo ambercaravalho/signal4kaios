@@ -30,6 +30,7 @@ import { SettingsScreen } from '../src/ui/screens/Settings';
 import { AppearanceScreen } from '../src/ui/screens/settings/Appearance';
 import { HELP_TOPICS, HelpScreen } from '../src/ui/screens/settings/Help';
 import { NotificationsScreen } from '../src/ui/screens/settings/Notifications';
+import { saveProfile } from '../src/ui/screens/settings/Profile';
 import { StartupErrorScreen } from '../src/ui/screens/StartupError';
 import { DEBUG, fmt, S } from '../src/ui/strings';
 import { settle } from './helpers';
@@ -389,5 +390,20 @@ describe('screens', () => {
     assert.ok(!out.includes(NOTE));
     assert.match(out, />MP</);
     config.set({ profileName: undefined });
+  });
+
+  it('saves a new name without resending an About this phone may have out of date', async () => {
+    const bodies: any[] = [];
+    const real = signal.updateOwnProfile;
+    (signal as any).updateOwnProfile = async (body: any) => void bodies.push(body);
+    config.set({ profileName: 'Mia Park', profileAbout: 'old about' });
+    try {
+      await saveProfile({ name: 'Mia P' });
+      await saveProfile({ about: 'new about' });
+    } finally {
+      (signal as any).updateOwnProfile = real;
+      config.set({ profileName: undefined, profileAbout: undefined });
+    }
+    assert.deepEqual(bodies, [{ name: 'Mia P' }, { name: 'Mia P', about: 'new about' }]);
   });
 });

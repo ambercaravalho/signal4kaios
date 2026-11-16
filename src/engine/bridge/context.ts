@@ -7,7 +7,7 @@ import { SignalClient } from '../net/client';
 import { DEFAULT_SIGNAL_SERVER, type SignalHttpJsonFn } from '../net/http';
 import { create } from '../net/proto';
 import { IndexedDbSignalStore } from '../protocol/store';
-import { mutateStorage, StorageWriteQueue } from '../services/storage';
+import { mutateStorage, type StorageMutation, type StorageReplay, StorageWriteQueue } from '../services/storage';
 
 export const store = new IndexedDbSignalStore();
 
@@ -39,13 +39,38 @@ export function fetchLatestSync(type: SyncMessage_FetchLatest_Type): Content {
   return create(ContentSchema, { content: { case: 'syncMessage', value: { content: { case: 'fetchLatest', value: { type } } } } });
 }
 
-/** Storage Service writes, batched; other devices are told to re-read the manifest after each one. */
+const PENDING_STORAGE_WRITES = 'pendingStorageWrites';
+
+/** Storage Service writes, batched; other devices are told to re-read the manifest after each one. Saved calls wait in the account's kv until they are written. */
 export const storageQueue = new StorageWriteQueue(
   (mutations) => mutateStorage(store, httpJson, httpBinary, serverUrl(), mutations),
   () => {
     client.sendSyncMessage(fetchLatestSync(SyncMessage_FetchLatest_Type.STORAGE_MANIFEST)).catch(() => {});
+  },
+  1500,
+  {
+    load: async () => ((await host().db.kvGet(PENDING_STORAGE_WRITES)) as StorageReplay[] | undefined) || [],
+    save: (list) => host().db.kvSet(PENDING_STORAGE_WRITES, list),
   }
 );
+
+type StorageWriteBuilder = (...args: any[]) => StorageMutation[] | Promise<StorageMutation[]>;
+const storageWriteBuilders: Record<string, StorageWriteBuilder> = {};
+
+/** A Storage Service write that is saved on the phone until it's written, so it survives Beacon closing. `build` turns JSON-safe arguments into mutations and must only set values, since a replay may repeat it. */
+export function savedStorageWrite<A extends unknown[]>(method: string, build: (...args: A) => StorageMutation[] | Promise<StorageMutation[]>): (...args: A) => Promise<void> {
+  storageWriteBuilders[method] = build as StorageWriteBuilder;
+  return async (...args: A) => storageQueue.enqueue(await build(...args), { method, args });
+}
+
+/** Make again the saved writes an earlier run didn't finish. */
+export function replayStorageWrites(): Promise<void> {
+  return storageQueue.replaySaved((r) => {
+    const build = storageWriteBuilders[r.method];
+    if (!build || !Array.isArray(r.args)) throw new Error('unknown storage write ' + r.method);
+    return build(...r.args);
+  });
+}
 
 /** Rewrite one Storage Service account record field (or several), shared with our other devices. */
 export function updateAccountRecord(update: (a: AccountRecord) => void): Promise<void> {

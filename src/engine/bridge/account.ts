@@ -10,16 +10,155 @@ import { create, serviceIdFrom } from '../net/proto';
 import { type ProvisioningCallbacks, type ProvisioningSession, startDeviceProvisioning } from '../net/provisioning';
 import { generateOneTimeUpload, generateRotationUpload, loadPreKeyRotation, MIN_ONE_TIME_PRE_KEYS, recordPreKeyRotation, rotationDue } from '../protocol/prekeys';
 import type { KeyPair } from '../protocol/store';
-import { downloadAndDecryptProfileAvatar, fetchAndDecryptProfile, resolveSignalUsername, uploadOwnProfile } from '../services/profiles';
+import { downloadAndDecryptProfileAvatar, fetchAndDecryptProfile, resolveSignalUsername, splitProfileName, uploadOwnProfile } from '../services/profiles';
 import { setNotifyForMentionsIfMuted, setPhoneNumberPrivacy, type StorageMutation, toOptionalBool } from '../services/storage';
 import { profileOverrideRecord } from '../services/storage/notification-profiles';
 import { deleteUsername as deleteAccountUsername, resolveUsernameLink, setUsername as setAccountUsername, usernameLinkUrl } from '../services/usernames';
-import { client, httpBinary, httpJson, OWN_AVATAR_CACHE, OWN_AVATAR_CACHED_FOR, OWN_AVATAR_PATH, serverUrl, storageQueue, store, updateAccountRecord } from './context';
+import { client, httpBinary, httpJson, OWN_AVATAR_CACHE, OWN_AVATAR_CACHED_FOR, OWN_AVATAR_PATH, replayStorageWrites, savedStorageWrite, serverUrl, storageQueue, store, updateAccountRecord } from './context';
 import { contactIds } from './contacts';
 import { groupMasterKey } from './group-state';
 import { syncFromStorageService } from './sync-handlers';
 
 const DEFAULT_PROFILE_NAME = 'Signal User';
+
+type ChatState = {
+  type: 'direct' | 'group';
+  sendId: string;
+  archived?: boolean;
+  mutedUntil?: number;
+  markedUnread?: boolean;
+  pinned?: boolean;
+  mentionsIfMuted?: boolean;
+  repliesIfMuted?: boolean;
+  callsIfMuted?: boolean;
+};
+
+const writeChatState = savedStorageWrite('syncChatState', async (chat: ChatState): Promise<StorageMutation[]> => {
+  const mutations: StorageMutation[] = [];
+  const setState = (r: { archived: boolean; mutedUntilTimestamp: bigint; markedUnread: boolean; notifyForCallsIfMuted: OptionalBool }) => {
+    if (chat.archived !== undefined) r.archived = chat.archived;
+    if (chat.mutedUntil !== undefined) r.mutedUntilTimestamp = BigInt(Math.max(0, Math.min(Math.floor(chat.mutedUntil) || 0, Number.MAX_SAFE_INTEGER)));
+    if (chat.markedUnread !== undefined) r.markedUnread = chat.markedUnread;
+    if (chat.callsIfMuted !== undefined) r.notifyForCallsIfMuted = toOptionalBool(chat.callsIfMuted);
+  };
+  const stateChanged = chat.archived !== undefined || chat.mutedUntil !== undefined || chat.markedUnread !== undefined || chat.callsIfMuted !== undefined;
+  let isPin: (p: AccountRecord_PinnedConversation) => boolean;
+  let pin: MessageInitShape<typeof AccountRecord_PinnedConversationSchema>;
+
+  if (chat.type === 'group') {
+    const masterKey = await groupMasterKey(chat.sendId);
+    if (stateChanged || chat.mentionsIfMuted !== undefined || chat.repliesIfMuted !== undefined) {
+      mutations.push({
+        type: 'groupV2',
+        masterKey,
+        update: (g) => {
+          setState(g);
+          if (chat.mentionsIfMuted !== undefined) setNotifyForMentionsIfMuted(g, chat.mentionsIfMuted);
+          if (chat.repliesIfMuted !== undefined) g.notifyForRepliesIfMuted = toOptionalBool(chat.repliesIfMuted);
+        },
+      });
+    }
+    isPin = (p) => p.identifier.case === 'groupMasterKey' && constantTimeEqual(p.identifier.value, masterKey);
+    pin = { identifier: { case: 'groupMasterKey', value: masterKey } };
+  } else {
+    const acc = await store.getAccount();
+    const ids = await contactIds(chat.sendId);
+    if (!ids.aci && !ids.e164) throw new Error('No Signal account known for ' + chat.sendId);
+    const self = !!acc && (ids.aci === acc.aci || (!!ids.e164 && ids.e164 === acc.number));
+    if (self && (chat.archived !== undefined || chat.markedUnread !== undefined)) {
+      mutations.push({
+        type: 'account',
+        update: (a) => {
+          if (chat.archived !== undefined) a.noteToSelfArchived = chat.archived;
+          if (chat.markedUnread !== undefined) a.noteToSelfMarkedUnread = chat.markedUnread;
+        },
+      });
+    } else if (!self && stateChanged) {
+      mutations.push({ type: 'contact', aci: ids.aci || undefined, e164: ids.e164 || undefined, update: setState });
+    }
+    isPin = (p) => {
+      if (p.identifier.case !== 'contact') return false;
+      const c = p.identifier.value;
+      const aci = serviceIdFrom(c.serviceId, c.serviceIdBinary);
+      return (!!ids.aci && aci === ids.aci) || (!!ids.e164 && c.e164 === ids.e164);
+    };
+    pin = { identifier: { case: 'contact', value: { serviceId: ids.aci, serviceIdBinary: ids.aci ? uuidToBytes(ids.aci) : undefined, e164: ids.e164 } } };
+  }
+
+  if (chat.pinned !== undefined) {
+    mutations.push({
+      type: 'account',
+      update: (a) => {
+        const rest = a.pinnedConversations.filter((p) => !isPin(p));
+        if (chat.pinned) rest.push(create(AccountRecord_PinnedConversationSchema, pin));
+        a.pinnedConversations = rest;
+      },
+    });
+  }
+  return mutations;
+});
+
+const writeProfileName = savedStorageWrite('profileName', (given: string, family: string): StorageMutation[] => [
+  {
+    type: 'account',
+    update: (a) => {
+      a.givenName = given;
+      a.familyName = family;
+    },
+  },
+]);
+
+/** Load our own profile's name, About, and emoji into config, as other devices last set them. */
+async function hydrateOwnProfile(): Promise<void> {
+  const acc = await store.getAccount();
+  if (!acc || !acc.profileKey || acc.profileKey.length !== 32) return;
+  const p = await fetchAndDecryptProfile(store, httpJson, acc.aci, acc.profileKey, serverUrl());
+  if (!p || !p.givenName) return;
+  host().config.set({ profileName: p.fullName || p.givenName, profileAbout: p.about, profileAboutEmoji: p.aboutEmoji });
+}
+
+const writePhoneNumberPrivacy = savedStorageWrite('phoneNumberPrivacy', (share: boolean, findable: boolean): StorageMutation[] => [{ type: 'account', update: (a) => setPhoneNumberPrivacy(a, share, findable) }]);
+
+const writeNotificationDefaults = savedStorageWrite('notificationDefaults', (d: { reactions?: boolean; mentionsIfMuted?: boolean; repliesIfMuted?: boolean; callsIfMuted?: boolean }): StorageMutation[] => [
+  {
+    type: 'account',
+    update: (a) => {
+      if (d.reactions !== undefined) a.reactionNotifications = toOptionalBool(d.reactions);
+      if (d.mentionsIfMuted !== undefined) a.notifyForMentionsIfMuted = toOptionalBool(d.mentionsIfMuted);
+      if (d.repliesIfMuted !== undefined) a.notifyForRepliesIfMuted = toOptionalBool(d.repliesIfMuted);
+      if (d.callsIfMuted !== undefined) a.notifyForCallsIfMuted = toOptionalBool(d.callsIfMuted);
+    },
+  },
+]);
+
+const writeProfileOverride = savedStorageWrite('notificationProfileOverride', (override: NonNullable<HostProfileOverride>): StorageMutation[] => [
+  {
+    type: 'account',
+    update: (a) => {
+      a.notificationProfileManualOverride = profileOverrideRecord(override);
+    },
+  },
+]);
+
+type AccountToggle = 'readReceipts' | 'typingIndicators' | 'linkPreviews' | 'sealedSenderIndicators';
+
+const writeAccountToggle = savedStorageWrite('accountToggle', (field: AccountToggle, on: boolean): StorageMutation[] => [
+  {
+    type: 'account',
+    update: (a) => {
+      a[field] = !!on;
+    },
+  },
+]);
+
+const writeUniversalExpireTimer = savedStorageWrite('universalExpireTimer', (secs: number): StorageMutation[] => [
+  {
+    type: 'account',
+    update: (a) => {
+      a.universalExpireTimer = secs;
+    },
+  },
+]);
 
 export const accountMethods = {
   /** Start QR code provisioning for linking this KaiOS phone as a Signal secondary device. */
@@ -31,6 +170,7 @@ export const accountMethods = {
   /** Request contacts, blocked list, configuration, and keys from the primary device, and pull Storage Service. */
   async requestSync(): Promise<void> {
     await syncFromStorageService().catch(() => {});
+    await hydrateOwnProfile().catch((e: any) => host().dbg('own profile load failed: ' + (e && e.message)));
     await client.requestInitialSync();
   },
 
@@ -112,149 +252,74 @@ export const accountMethods = {
     });
   },
 
+  /** Upload our profile; About and its emoji stay as they are unless given. A new name also goes to `AccountRecord`, or the next Storage Service pull would bring the old one back. */
   async updateOwnProfile(body: { name?: string; about?: string; emoji?: string }): Promise<void> {
-    await uploadOwnProfile(
+    const written = await uploadOwnProfile(
       store,
       httpJson,
       { name: body.name || host().config.profileName() || DEFAULT_PROFILE_NAME, about: body.about, emoji: body.emoji, sharePhoneNumber: host().config.sharePhoneNumber() },
       serverUrl()
-    ).catch(() => {});
+    );
+    if (written && body.name && body.name.trim()) await writeProfileName(...splitProfileName(body.name));
   },
+
+  hydrateOwnProfile,
 
   /** Who sees our number (`AccountRecord.phoneNumberSharingMode`, and the profile's sharing flag) and who can find us by it (`unlistedPhoneNumber`), shared with our other devices. */
   async setPhoneNumberPrivacy(share: boolean, findable: boolean): Promise<void> {
-    await updateAccountRecord((a) => setPhoneNumberPrivacy(a, share, findable));
+    await writePhoneNumberPrivacy(share, findable);
     host().config.set({ sharePhoneNumber: share, findableByNumber: share || findable });
     await uploadOwnProfile(store, httpJson, { name: host().config.profileName(), sharePhoneNumber: share }, serverUrl());
   },
 
   /** Publish a chat's archive, mute, marked-unread, or pinned state to Storage Service so the account's other devices match. Only the fields that are set change. */
-  async syncChatState(chat: {
-    type: 'direct' | 'group';
-    sendId: string;
-    archived?: boolean;
-    mutedUntil?: number;
-    markedUnread?: boolean;
-    pinned?: boolean;
-    mentionsIfMuted?: boolean;
-    repliesIfMuted?: boolean;
-    callsIfMuted?: boolean;
-  }): Promise<void> {
-    const mutations: StorageMutation[] = [];
-    const setState = (r: { archived: boolean; mutedUntilTimestamp: bigint; markedUnread: boolean; notifyForCallsIfMuted: OptionalBool }) => {
-      if (chat.archived !== undefined) r.archived = chat.archived;
-      if (chat.mutedUntil !== undefined) r.mutedUntilTimestamp = BigInt(Math.max(0, Math.min(Math.floor(chat.mutedUntil) || 0, Number.MAX_SAFE_INTEGER)));
-      if (chat.markedUnread !== undefined) r.markedUnread = chat.markedUnread;
-      if (chat.callsIfMuted !== undefined) r.notifyForCallsIfMuted = toOptionalBool(chat.callsIfMuted);
-    };
-    const stateChanged = chat.archived !== undefined || chat.mutedUntil !== undefined || chat.markedUnread !== undefined || chat.callsIfMuted !== undefined;
-    let isPin: (p: AccountRecord_PinnedConversation) => boolean;
-    let pin: MessageInitShape<typeof AccountRecord_PinnedConversationSchema>;
+  async syncChatState(chat: ChatState): Promise<void> {
+    await writeChatState(chat);
+  },
 
-    if (chat.type === 'group') {
-      const masterKey = await groupMasterKey(chat.sendId);
-      if (stateChanged || chat.mentionsIfMuted !== undefined || chat.repliesIfMuted !== undefined) {
-        mutations.push({
-          type: 'groupV2',
-          masterKey,
-          update: (g) => {
-            setState(g);
-            if (chat.mentionsIfMuted !== undefined) setNotifyForMentionsIfMuted(g, chat.mentionsIfMuted);
-            if (chat.repliesIfMuted !== undefined) g.notifyForRepliesIfMuted = toOptionalBool(chat.repliesIfMuted);
-          },
-        });
-      }
-      isPin = (p) => p.identifier.case === 'groupMasterKey' && constantTimeEqual(p.identifier.value, masterKey);
-      pin = { identifier: { case: 'groupMasterKey', value: masterKey } };
-    } else {
-      const acc = await store.getAccount();
-      const ids = await contactIds(chat.sendId);
-      if (!ids.aci && !ids.e164) throw new Error('No Signal account known for ' + chat.sendId);
-      const self = !!acc && (ids.aci === acc.aci || (!!ids.e164 && ids.e164 === acc.number));
-      if (self && (chat.archived !== undefined || chat.markedUnread !== undefined)) {
-        mutations.push({
-          type: 'account',
-          update: (a) => {
-            if (chat.archived !== undefined) a.noteToSelfArchived = chat.archived;
-            if (chat.markedUnread !== undefined) a.noteToSelfMarkedUnread = chat.markedUnread;
-          },
-        });
-      } else if (!self && stateChanged) {
-        mutations.push({ type: 'contact', aci: ids.aci || undefined, e164: ids.e164 || undefined, update: setState });
-      }
-      isPin = (p) => {
-        if (p.identifier.case !== 'contact') return false;
-        const c = p.identifier.value;
-        const aci = serviceIdFrom(c.serviceId, c.serviceIdBinary);
-        return (!!ids.aci && aci === ids.aci) || (!!ids.e164 && c.e164 === ids.e164);
-      };
-      pin = { identifier: { case: 'contact', value: { serviceId: ids.aci, serviceIdBinary: ids.aci ? uuidToBytes(ids.aci) : undefined, e164: ids.e164 } } };
-    }
+  /** Write queued Storage Service changes now, before Beacon may be closed. */
+  flushStorageWrites(): Promise<void> {
+    return storageQueue.flush();
+  },
 
-    if (chat.pinned !== undefined) {
-      mutations.push({
-        type: 'account',
-        update: (a) => {
-          const rest = a.pinnedConversations.filter((p) => !isPin(p));
-          if (chat.pinned) rest.push(create(AccountRecord_PinnedConversationSchema, pin));
-          a.pinnedConversations = rest;
-        },
-      });
-    }
-    await storageQueue.enqueue(mutations);
+  /** Make again the Storage Service changes an earlier run saved but didn't write. */
+  replayStorageWrites(): Promise<void> {
+    return replayStorageWrites();
   },
 
   /** The account's notification defaults (`AccountRecord` fields 55 to 58), shared with our other devices. Only the fields that are set change. */
   async setNotificationDefaults(d: { reactions?: boolean; mentionsIfMuted?: boolean; repliesIfMuted?: boolean; callsIfMuted?: boolean }): Promise<void> {
-    await updateAccountRecord((a) => {
-      if (d.reactions !== undefined) a.reactionNotifications = toOptionalBool(d.reactions);
-      if (d.mentionsIfMuted !== undefined) a.notifyForMentionsIfMuted = toOptionalBool(d.mentionsIfMuted);
-      if (d.repliesIfMuted !== undefined) a.notifyForRepliesIfMuted = toOptionalBool(d.repliesIfMuted);
-      if (d.callsIfMuted !== undefined) a.notifyForCallsIfMuted = toOptionalBool(d.callsIfMuted);
-    });
+    await writeNotificationDefaults(d);
   },
 
   /** Turn a notification profile on or every profile off, like the phone's manual switch, shared with our other devices. */
   async setNotificationProfileOverride(override: NonNullable<HostProfileOverride>): Promise<void> {
-    await updateAccountRecord((a) => {
-      a.notificationProfileManualOverride = profileOverrideRecord(override);
-    });
+    await writeProfileOverride(override);
   },
 
   /** The disappearing-message timer new 1:1 chats start with (`AccountRecord.universalExpireTimer`), shared with our other devices. */
   async setUniversalExpireTimer(seconds: number): Promise<void> {
-    const secs = Math.max(0, Math.floor(seconds) || 0);
-    await updateAccountRecord((a) => {
-      a.universalExpireTimer = secs;
-    });
+    await writeUniversalExpireTimer(Math.max(0, Math.floor(seconds) || 0));
   },
 
   /** Whether links we send get previews (`AccountRecord.linkPreviews`), shared with our other devices. */
   async setLinkPreviews(on: boolean): Promise<void> {
-    await updateAccountRecord((a) => {
-      a.linkPreviews = on;
-    });
+    await writeAccountToggle('linkPreviews', on);
   },
 
   /** Whether we send read receipts (`AccountRecord.readReceipts`), shared with our other devices. */
   async setReadReceipts(on: boolean): Promise<void> {
-    await updateAccountRecord((a) => {
-      a.readReceipts = on;
-    });
+    await writeAccountToggle('readReceipts', on);
   },
 
   /** Whether we send and show typing indicators (`AccountRecord.typingIndicators`), shared with our other devices. */
   async setTypingIndicators(on: boolean): Promise<void> {
-    await updateAccountRecord((a) => {
-      a.typingIndicators = on;
-    });
+    await writeAccountToggle('typingIndicators', on);
   },
 
   /** Whether messages show when they were delivered privately (`AccountRecord.sealedSenderIndicators`), shared with our other devices. */
   async setSealedSenderIndicators(on: boolean): Promise<void> {
-    await updateAccountRecord((a) => {
-      a.sealedSenderIndicators = on;
-    });
+    await writeAccountToggle('sealedSenderIndicators', on);
   },
 
   /** Reserve and confirm a Signal username (`nickname` gets a random number, `nickname.42` is taken as typed), then publish it and its link to Storage Service. */

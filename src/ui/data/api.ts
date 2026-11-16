@@ -99,6 +99,29 @@ export function unlink(): Promise<void> {
   return db.wipe().catch(() => {});
 }
 
+/** Point the store at the account being linked, with no keys or sessions left from an earlier link of it; its history stays. */
+export async function openLinkDatabase(account: { aci: string; number: string }): Promise<void> {
+  await db.useAccount(account.number || account.aci);
+  await db.clearSignalState();
+}
+
+/** Unlinking forgot the active account: switch to the next saved one, if any. The caller reloads. */
+export function leaveUnlinkedAccount(): void {
+  config.forgetAccount();
+  const next = config.accounts()[0];
+  if (next) config.switchAccount(next.number);
+}
+
+/** Delete every Beacon database on this phone; settings go only when they all did, so a failed attempt can be tried again. Resolves to whether everything went. */
+export async function wipeAllData(): Promise<boolean> {
+  const names = [db.nameFor(''), db.name(), ...config.knownDatabases(), ...config.accounts().map((a) => db.nameFor(a.dbNumber || a.number)), ...(await db.listDatabases())];
+  const failed = await db.deleteDatabases(names.filter((n, i) => names.indexOf(n) === i));
+  if (failed.length) return false;
+  // SECURITY-REVIEW: this drops every account's device credentials from config.
+  config.clear();
+  return true;
+}
+
 /** Signal unlinked this phone: its keys and credentials are useless now, so delete them and keep the message history. */
 export function forgetUnlinkedDevice(): Promise<void> {
   return db.clearSignalState().catch(() => {});

@@ -42,7 +42,7 @@ export async function deleteChat(convId: string): Promise<void> {
   if (!conv) return;
   if (conv.sendId) {
     const rows = (await db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, 50)).filter(addressable).reverse();
-    const chat = { chat: conv.sendId, mostRecent: rows.slice(0, DELETE_CHAT_REFS).map(messageRef), mostRecentNonExpiring: rows.filter((r) => !r.expiresAt).slice(0, DELETE_CHAT_REFS).map(messageRef) };
+    const chat = { chat: conv.sendId, mostRecent: rows.slice(0, DELETE_CHAT_REFS).map(messageRef), mostRecentNonExpiring: rows.filter((r) => !r.expireSecs).slice(0, DELETE_CHAT_REFS).map(messageRef) };
     signal.sendDeleteForMe({ chats: [chat] }).catch((e) => dbg('delete chat sync failed: ' + (e && e.message)));
   }
   if (conv.pinned) syncChatState(conv, { pinned: false });

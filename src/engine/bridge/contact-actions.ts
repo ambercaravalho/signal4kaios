@@ -8,11 +8,12 @@ import { create, isAci } from '../net/proto';
 import { net } from '../net/transport';
 import { allIdentityRecords, compareScannedSafetyNumber, identityRecord, setIdentityTrust } from '../protocol/protocol';
 import type { TrustLevel } from '../protocol/store';
+import type { StorageMutation } from '../services/storage';
 import { cdsiLookup } from '../services/cdsi';
 import { downloadAndDecryptProfileAvatar, fetchAndDecryptProfile } from '../services/profiles';
 import { reportSpam as reportSpamMessages } from '../services/report-spam';
 import { invalidateBlocked, sendBlockedSync } from './blocked';
-import { client, httpBinary, httpJson, serverUrl, storageQueue, store } from './context';
+import { client, httpBinary, httpJson, savedStorageWrite, serverUrl, store } from './context';
 import { contactIds, resolveAci, saveSyncedContacts, syncedContacts, updateSyncedContact } from './contacts';
 import { dataContent } from './delivery';
 
@@ -22,23 +23,55 @@ async function knownContact(id: string): Promise<{ aci: string; e164: string }> 
   return ids;
 }
 
+const writeNickname = savedStorageWrite('contactNickname', async (id: string, given: string, family: string): Promise<StorageMutation[]> => {
+  const ids = await knownContact(id);
+  return [
+    {
+      type: 'contact',
+      aci: ids.aci || undefined,
+      e164: ids.e164 || undefined,
+      update: (c) => {
+        c.nickname = given || family ? create(ContactRecord_NameSchema, { given, family }) : undefined;
+      },
+    },
+  ];
+});
+
+const writeContactBlocked = savedStorageWrite('contactBlocked', async (id: string, blocked: boolean, at: number): Promise<StorageMutation[]> => {
+  const ids = await knownContact(id);
+  return [
+    {
+      type: 'contact',
+      aci: ids.aci || undefined,
+      e164: ids.e164 || undefined,
+      update: (c) => {
+        c.blocked = blocked;
+        c.blockedAtTimestamp = blocked ? BigInt(at) : 0n;
+        c.whitelisted = !blocked;
+      },
+    },
+  ];
+});
+
+const writeContactAccepted = savedStorageWrite('contactAccepted', async (id: string): Promise<StorageMutation[]> => {
+  const ids = await knownContact(id);
+  return [
+    {
+      type: 'contact',
+      aci: ids.aci || undefined,
+      e164: ids.e164 || undefined,
+      update: (c) => {
+        c.whitelisted = true;
+      },
+    },
+  ];
+});
+
 export const contactMethods = {
   /** Set or clear a contact's nickname (Storage Service `ContactRecord.nickname`, shown on all your devices). */
   async setContactNickname(id: string, name: string): Promise<void> {
-    const ids = await knownContact(id);
     const parts = (name || '').trim().split(/\s+/).filter(Boolean);
-    const given = parts[0] || '';
-    const family = parts.slice(1).join(' ');
-    await storageQueue.enqueue([
-      {
-        type: 'contact',
-        aci: ids.aci || undefined,
-        e164: ids.e164 || undefined,
-        update: (c) => {
-          c.nickname = given || family ? create(ContactRecord_NameSchema, { given, family }) : undefined;
-        },
-      },
-    ]);
+    await writeNickname(id, parts[0] || '', parts.slice(1).join(' '));
   },
 
   /** Block or unblock a person like Signal-Desktop: Blocked sync to our devices, then `ContactRecord.blocked` (and profile sharing off while blocked) in Storage Service. */
@@ -50,18 +83,7 @@ export const contactMethods = {
     invalidateBlocked();
     host().directoryChanged().catch(() => {});
     await sendBlockedSync();
-    await storageQueue.enqueue([
-      {
-        type: 'contact',
-        aci: ids.aci || undefined,
-        e164: ids.e164 || undefined,
-        update: (c) => {
-          c.blocked = blocked;
-          c.blockedAtTimestamp = blocked ? BigInt(Date.now()) : 0n;
-          c.whitelisted = !blocked;
-        },
-      },
-    ]);
+    await writeContactBlocked(id, blocked, Date.now());
   },
 
   /** Answer a 1:1 message request on our other devices. Accepting also shares our profile with them, in Storage Service and with a PROFILE_KEY_UPDATE message, as Signal-Desktop does. */
@@ -79,16 +101,7 @@ export const contactMethods = {
     await updateSyncedContact(ids, (c) => {
       c.whitelisted = true;
     });
-    await storageQueue.enqueue([
-      {
-        type: 'contact',
-        aci: ids.aci,
-        e164: ids.e164 || undefined,
-        update: (c) => {
-          c.whitelisted = true;
-        },
-      },
-    ]);
+    await writeContactAccepted(sendId);
     const acc = await store.getAccount();
     if (!acc || !acc.profileKey || acc.profileKey.length !== 32) return;
     const ts = Date.now();

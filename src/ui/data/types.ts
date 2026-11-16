@@ -169,6 +169,8 @@ export interface Conversation {
   /** "Mark as unread" with nothing actually unread; opening the chat clears it. */
   markedUnread?: boolean;
   expireTimer?: number;
+  /** The oldest received message whose disappearing timer waits for it to be read. */
+  expiryFrom?: number;
   /** This chat's bubble color (a `CHAT_COLORS` name); unset follows the default. */
   chatColor?: string;
   /** Unsent text in the composer, kept until it's sent or cleared. */

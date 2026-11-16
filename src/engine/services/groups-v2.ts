@@ -65,6 +65,8 @@ export interface GroupV2Metadata {
   addedBy?: string;
   /** Someone we don't know added us, so the group waits as a message request until we answer it. */
   messageRequest?: boolean;
+  /** We're invited (only a pending member), so the request stays until we accept or decline. */
+  pendingInvite?: boolean;
 }
 
 export type GroupLinkMode = 'disabled' | 'enabled' | 'enabled-with-approval';

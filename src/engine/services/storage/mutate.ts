@@ -192,37 +192,141 @@ export async function mutateStorage(
   }
 }
 
+/** A call that made Storage Service mutations, saved so it can be made again if Beacon closes before they are written. `args` are JSON-safe. */
+export interface StorageReplay {
+  id: string;
+  method: string;
+  args: unknown[];
+}
+
+/** Where saved calls are kept between runs. */
+export interface StorageJournal {
+  load(): Promise<StorageReplay[]>;
+  save(list: StorageReplay[]): Promise<void>;
+}
+
+let replayCounter = 0;
+
 /**
- * Batches Storage Service mutations: changes queued within `delayMs` go out as one manifest write, and writes never overlap. `onWritten` runs after each write that changed something.
+ * Batches Storage Service mutations: changes queued within `delayMs` go out as one manifest write, and writes never overlap. `onWritten` runs after each write that changed something. Calls queued with a replay are kept in `journal` until their write succeeds.
  */
 export class StorageWriteQueue {
   private pending: StorageMutation[] = [];
+  private pendingReplays: StorageReplay[] = [];
+  /** Saved calls this run has queued or is writing; a replay skips them. */
+  private live = new Set<string>();
   private batch: Promise<void> | null = null;
+  private settle: { resolve: () => void; reject: (e: unknown) => void } | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private chain: Promise<unknown> = Promise.resolve();
+  private journalChain: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly write: (mutations: StorageMutation[]) => Promise<boolean>,
     private readonly onWritten: () => void,
-    private readonly delayMs = 1500
+    private readonly delayMs = 1500,
+    private readonly journal?: StorageJournal
   ) {}
 
-  enqueue(mutations: StorageMutation[]): Promise<void> {
+  enqueue(mutations: StorageMutation[], replay?: { method: string; args: unknown[] }): Promise<void> {
+    if (replay && this.journal) {
+      const entry: StorageReplay = { id: Date.now().toString(36) + '.' + (replayCounter++).toString(36), method: replay.method, args: replay.args };
+      this.live.add(entry.id);
+      this.pendingReplays.push(entry);
+      this.updateJournal((list) => list.concat([entry]));
+    }
     this.pending.push(...mutations);
+    return this.schedule();
+  }
+
+  /** Write what is queued now instead of after the delay; resolves once every write so far has finished. */
+  flush(): Promise<void> {
+    if (!this.batch) return this.chain.then(() => undefined);
+    const batch = this.batch;
+    this.run();
+    return batch;
+  }
+
+  /** Queue the saved calls left from an earlier run, oldest first and ahead of anything newer, and write them now. A call `build` can't turn into mutations is dropped. */
+  async replaySaved(build: (r: StorageReplay) => StorageMutation[] | Promise<StorageMutation[]>): Promise<void> {
+    if (!this.journal) return;
+    await this.journalChain;
+    const saved = (await this.journal.load()).filter((r) => r && !this.live.has(r.id));
+    if (!saved.length) return;
+    const muts: StorageMutation[] = [];
+    const replays: StorageReplay[] = [];
+    const dropped = new Set<string>();
+    for (const r of saved) {
+      try {
+        muts.push(...(await build(r)));
+        replays.push(r);
+        this.live.add(r.id);
+      } catch {
+        dropped.add(r.id);
+      }
+    }
+    if (dropped.size) this.updateJournal((list) => list.filter((r) => !dropped.has(r.id)));
+    if (!replays.length) return;
+    this.pending = muts.concat(this.pending);
+    this.pendingReplays = replays.concat(this.pendingReplays);
+    const batch = this.schedule();
+    this.run();
+    await batch;
+  }
+
+  private schedule(): Promise<void> {
     if (!this.batch) {
       this.batch = new Promise<void>((resolve, reject) => {
-        setTimeout(() => {
-          const muts = this.pending;
-          this.pending = [];
-          this.batch = null;
-          const job = this.chain.then(() => this.write(muts));
-          this.chain = job.catch(() => undefined);
-          job.then((changed) => {
-            if (changed) this.onWritten();
-            resolve();
-          }, reject);
-        }, this.delayMs);
+        this.settle = { resolve, reject };
       });
+      this.timer = setTimeout(() => this.run(), this.delayMs);
     }
     return this.batch;
+  }
+
+  private run(): void {
+    if (!this.settle) return;
+    if (this.timer) clearTimeout(this.timer);
+    const { resolve, reject } = this.settle;
+    const muts = this.pending;
+    const replays = this.pendingReplays;
+    this.pending = [];
+    this.pendingReplays = [];
+    this.batch = null;
+    this.settle = null;
+    this.timer = null;
+    const job = this.chain.then(() => this.write(muts));
+    this.chain = job.catch(() => undefined);
+    job.then(
+      (changed) => {
+        this.forget(replays, true);
+        if (changed) this.onWritten();
+        resolve();
+      },
+      (e) => {
+        this.forget(replays, false);
+        reject(e);
+      }
+    );
+  }
+
+  /** After a write: a written call leaves the journal; a failed one stays there for the next replay. */
+  private forget(replays: StorageReplay[], written: boolean): void {
+    if (!replays.length) return;
+    for (const r of replays) this.live.delete(r.id);
+    if (!written) return;
+    const done = new Set(replays.map((r) => r.id));
+    this.updateJournal((list) => list.filter((r) => !done.has(r.id)));
+  }
+
+  private updateJournal(change: (list: StorageReplay[]) => StorageReplay[]): void {
+    const journal = this.journal;
+    if (!journal) return;
+    this.journalChain = this.journalChain
+      .then(async () => {
+        const list = await journal.load();
+        await journal.save(change(Array.isArray(list) ? list : []));
+      })
+      .catch(() => undefined);
   }
 }

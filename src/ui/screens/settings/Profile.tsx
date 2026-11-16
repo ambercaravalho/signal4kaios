@@ -27,7 +27,7 @@ export function selfName(): string {
 }
 
 /** Save the profile, always with a name: Signal rejects a profile without one. */
-async function saveProfile(patch: { name?: string; about?: string; emoji?: string }): Promise<void> {
+export async function saveProfile(patch: { name?: string; about?: string; emoji?: string }): Promise<void> {
   const name = (patch.name != null ? patch.name : selfName()).trim();
   if (!name) {
     toast(S.nameRequired);
@@ -35,7 +35,6 @@ async function saveProfile(patch: { name?: string; about?: string; emoji?: strin
   }
   const body: { name: string; about?: string; emoji?: string } = { name };
   if (patch.about != null) body.about = patch.about;
-  else if (config.profileAbout()) body.about = config.profileAbout();
   if (patch.emoji != null) body.emoji = patch.emoji;
   try {
     await updateProfile(body);

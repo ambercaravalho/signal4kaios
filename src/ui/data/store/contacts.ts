@@ -5,7 +5,7 @@ import { config } from '../config';
 import { db } from '../db';
 import { dbg } from '../log';
 import type { Contact, Conversation, GroupRef } from '../types';
-import { persistConv } from './conversations';
+import { groupConversation, mergeConversations, persistConv } from './conversations';
 import { emit } from './events';
 import { contactsByKey, convs, SELF_NAME, state } from './state';
 
@@ -44,6 +44,13 @@ export function displayName(key: string): string {
 
 export function directName(key: string, fallback: string): string {
   return isSelfKey(key) ? SELF_NAME : fallback;
+}
+
+/** The ID of a person's 1:1 chat: their number when we know it, else their ACI. */
+export function canonicalDirectId(key: string): string {
+  if (!key || key.indexOf('g:') === 0 || isSelfKey(key)) return key;
+  const c = contactByKey(key);
+  return (c && (c.number || c.uuid)) || key;
 }
 
 export function altKeyOf(key: string): string | null {
@@ -88,6 +95,9 @@ export async function refreshDirectory(): Promise<boolean> {
     if (rec.uuid) contactsByKey[rec.uuid] = rec;
   }
   db.putContacts(records);
+  for (const rec of records) {
+    if (rec.number && rec.uuid && convs[rec.uuid] && !isSelfKey(rec.number)) await mergeConversations(rec.uuid, rec.number).catch((e) => dbg('chat merge failed: ' + (e && e.message)));
+  }
 
   state.groupsByInternal = {};
   for (const g of groups) {
@@ -101,6 +111,13 @@ export async function refreshDirectory(): Promise<boolean> {
   db.kvSet('groups', state.groupsByInternal);
 
   let changed = false;
+  for (const g of groups) {
+    if (!g.internal_id || !g.messageRequest || g.blocked || convs['g:' + g.internal_id]) continue;
+    const conv = groupConversation(g.internal_id);
+    conv.lastTs = Date.now();
+    persistConv(conv);
+    changed = true;
+  }
   for (const conv of Object.values(convs)) {
     if (conv.type === 'group') {
       const g = conv.groupInternalId ? state.groupsByInternal[conv.groupInternalId] : undefined;

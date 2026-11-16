@@ -493,6 +493,7 @@ export const S = {
   unlinkPhone: 'Unlink this phone',
   deleteAllData: 'Delete all data',
   deleteAllDataBody: 'Deletes every account, message, and setting here. Your Signal account stays.',
+  deleteAllDataFailed: 'Some data couldn’t be deleted. Try again.',
   unlinkConfirm: 'This phone leaves your linked devices and its messages are deleted. Your Signal account stays.',
   unlinkOffline: 'Couldn’t reach Signal',
   unlinkOfflineBody: 'Unlink on this phone only? Then remove Beacon from Linked devices on your phone.',

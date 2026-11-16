@@ -313,6 +313,7 @@ export function connect(): void {
     everConnected = true;
     scheduleWakeAlarm();
     maybeMaintainPreKeys();
+    signal.replayStorageWrites().catch((e: any) => dbg('ws: storage replay failed ' + (e && e.message)));
     if (keepaliveTimer) clearInterval(keepaliveTimer);
     keepaliveUnanswered = false;
     keepaliveTimer = setInterval(() => keepalive(s), KEEPALIVE_MS);
@@ -384,6 +385,7 @@ function wakeIfClosed(): void {
 export function installWakeHandlers(): void {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) wakeIfClosed();
+    else if (config.isConfigured()) signal.flushStorageWrites().catch((e: any) => dbg('ws: storage flush failed ' + (e && e.message)));
   });
   // A socket opened on the previous network can look open for minutes after the switch.
   window.addEventListener('online', () => {

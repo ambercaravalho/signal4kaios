@@ -8,8 +8,8 @@ import type { Message, Notice, NoticeKind } from '../types';
 import { applyCall, applyCallDelete, applyCallLog } from './call-log';
 import { applyBackfill } from './backfill';
 import { unarchiveOnActivity } from './chat-state';
-import { altKeyOf, displayName, isSelfKey, self } from './contacts';
-import { ensureConv, isViewing, msgId, persistConv, timerLine } from './conversations';
+import { altKeyOf, canonicalDirectId, displayName, isSelfKey, self } from './contacts';
+import { ensureConv, isViewing, mergeConversations, msgId, persistConv, timerLine } from './conversations';
 import { emit } from './events';
 import { applyAdminDelete, applyDeleteSync } from './message-actions';
 import { notify, notifyReaction } from './notify';
@@ -60,7 +60,8 @@ export function messageRecord(ev: MessageEvent): Message {
   if (ev.serverGuid) rec.serverGuid = ev.serverGuid;
   if (ev.expiresInSeconds) {
     rec.expireSecs = ev.expiresInSeconds;
-    rec.expiresAt = Date.now() + ev.expiresInSeconds * 1000;
+    // A received message's timer starts when it's read; ours started when it was sent.
+    if (!ev.incoming) rec.expiresAt = (ev.timestamp || Date.now()) + ev.expiresInSeconds * 1000;
   }
   return rec;
 }
@@ -71,13 +72,17 @@ function applyMessage(ev: MessageEvent, silent: boolean): void {
   if (ev.reportToken && conv.type === 'direct') conv.reportToken = ev.reportToken;
   if ((conv.expireTimer || 0) !== ev.expiresInSeconds) conv.expireTimer = ev.expiresInSeconds;
   if (!ev.incoming) delete conv.request;
+  const viewing = isViewing(conv.id);
+  const read = ev.incoming && !viewing && alreadyRead(conv.id, ev.author, ev.timestamp);
+  if (rec.expireSecs && !rec.expiresAt) {
+    if (read) rec.expiresAt = Date.now() + rec.expireSecs * 1000;
+    else conv.expiryFrom = Math.min(conv.expiryFrom || rec.timestamp, rec.timestamp);
+  }
   track(db.putMessage(rec));
 
   conv.lastTs = Math.max(conv.lastTs || 0, ev.timestamp);
   conv.lastPreview = previewOf(rec);
   unarchiveOnActivity(conv);
-  const viewing = isViewing(conv.id);
-  const read = ev.incoming && !viewing && alreadyRead(conv.id, ev.author, ev.timestamp);
   if (ev.incoming && !viewing && !read) conv.unread = (conv.unread || 0) + 1;
   if (typingMap[conv.id]) {
     delete typingMap[conv.id];
@@ -231,6 +236,16 @@ function applyReceipt(peer: string, kind: string, timestamps: number[]): void {
 }
 
 export function applyEvent(ev: StoreEvent, silent: boolean): void {
+  if ('convId' in ev && typeof ev.convId === 'string' && ev.convId) {
+    const was = ev.convId;
+    ev.convId = canonicalDirectId(was);
+    if ((ev.type === 'message' || ev.type === 'notice') && ev.author === was) ev.author = ev.convId;
+    const alt = altKeyOf(ev.convId);
+    if (alt && convs[alt] && convs[alt].type === 'direct') {
+      const merged = mergeConversations(alt, ev.convId);
+      enqueueMutation(() => merged);
+    }
+  }
   switch (ev.type) {
     case 'message':
       return applyMessage(ev, silent);

@@ -92,7 +92,7 @@ A new one-to-one chat from someone who isn't in your contacts, and whom you have
 - **Options** has **Accept**, **Delete** (removes the chat), **Block**, and **Report spam**, which tells Signal about their most recent messages (Signal can't see what's in them), blocks them, and deletes the chat.
 - Sending them a message from another of your devices, or accepting, deleting, or blocking there, does the same here.
 
-A group opens as a request when someone who isn't in your contacts added or invited you, as in Signal: **{name} added you to this group** sits in place of the message box. Groups you were added to by a contact, created yourself, or already accepted on another device open as usual.
+A group opens as a request when you're invited to it, whoever invited you, or when someone who isn't in your contacts added you, as in Signal: **{name} added you to this group** sits in place of the message box. An invite shows on Home as a **Message request** as soon as Beacon hears about it, even before anyone writes. Groups you were added to by a contact, created yourself, or already accepted on another device open as usual.
 
 - **Accept** (OK) joins you in (taking up the invite if you were invited) and shares your profile with the members.
 - **Options** has **Accept**, **Delete**, which leaves the group and removes the chat, and **Block**, which leaves the group and stops its messages. **Report spam** is only for one-to-one chats.

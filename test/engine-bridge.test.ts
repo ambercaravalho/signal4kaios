@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import { randomBytes, toBase64 } from '../src/engine/bytes';
 import { accountMethods } from '../src/engine/bridge/account';
 import { contactMethods } from '../src/engine/bridge/contact-actions';
-import { contactIds, recordPeerProfileKey, syncedContacts } from '../src/engine/bridge/contacts';
-import { client, httpJson, store } from '../src/engine/bridge/context';
+import { contactIds, recordPeerProfileKey, syncedContacts, syncedGroups } from '../src/engine/bridge/contacts';
+import { mergeGroupState } from '../src/engine/bridge/group-state';
+import { client, httpJson, storageQueue, store } from '../src/engine/bridge/context';
 import { conversationIdentifier } from '../src/engine/bridge/delivery';
 import { incomingMethods } from '../src/engine/bridge/incoming';
 import { outgoingMethods } from '../src/engine/bridge/outgoing';
@@ -377,5 +378,137 @@ describe('unlinking', () => {
       http.request = request;
     }
     assert.deepEqual(calls, [['DELETE', '/v1/devices/2', ALICE + '.2']]);
+  });
+});
+
+describe('group invites', () => {
+  const masterKey = new Uint8Array(32).fill(9);
+  const gk = deriveGroupV2Keys(masterKey);
+  const state = (members: string[], pending: string[]) => ({ id: gk.sendId, internal_id: gk.internalId, masterKey: toBase64(masterKey), revision: 2, name: 'Picnic', members, admins: [BOB], pending, expireTimer: 0, blocked: false, link_mode: 'disabled' as const, invite_link: '', invitedBy: { [ALICE]: BOB } });
+
+  it('waits for Accept when a contact invited us, and stops once we are a member', async () => {
+    kv.set('syncedContacts', [{ uuid: BOB, number: '+15550002', name: 'Bob', whitelisted: true, systemContact: true }]);
+    kv.set('syncedGroups', [{ id: gk.sendId, internal_id: gk.internalId, masterKey: toBase64(masterKey), revision: 1, name: 'Group', members: [BOB], admins: [], blocked: false, unvetted: true }]);
+    await mergeGroupState(state([BOB], [ALICE]));
+    let row = (await syncedGroups()).find((g) => g.internal_id === gk.internalId)!;
+    assert.equal(row.messageRequest, true);
+    assert.equal(row.pendingInvite, true);
+
+    await mergeGroupState({ ...state([BOB, ALICE], []), revision: 3 });
+    row = (await syncedGroups()).find((g) => g.internal_id === gk.internalId)!;
+    assert.equal(row.messageRequest, undefined, 'accepted, maybe on another device');
+    assert.equal(row.pendingInvite, undefined);
+  });
+
+  it('opens as usual when a contact added us outright', async () => {
+    kv.set('syncedContacts', [{ uuid: BOB, number: '+15550002', name: 'Bob', whitelisted: true, systemContact: true }]);
+    kv.set('syncedGroups', [{ id: gk.sendId, internal_id: gk.internalId, masterKey: toBase64(masterKey), revision: 1, name: 'Group', members: [BOB], admins: [], blocked: false, unvetted: true }]);
+    await mergeGroupState({ ...state([BOB, ALICE], []), invitedBy: {} }, { author: BOB, revision: 2, timestamp: 1 });
+    assert.equal((await syncedGroups())[0].messageRequest, undefined);
+  });
+});
+
+describe('numbers for people who write by ACI', () => {
+  const realDecrypt = (client as any).enqueueDecryptEnvelope;
+
+  after(() => {
+    (client as any).enqueueDecryptEnvelope = realDecrypt;
+  });
+
+  function receive(frameEnv: any, content: any) {
+    (client as any).enqueueDecryptEnvelope = async () => ({ envelope: { sourceUuid: frameEnv.sourceUuid, sourceDevice: 1, timestamp: 1000 }, content, normalizedFrame: { envelope: frameEnv } });
+    return incomingMethods.processIncomingEnvelope(new Uint8Array(1));
+  }
+
+  it('adds the number our contacts know to an identified message and to a synced send', async () => {
+    kv.set('syncedContacts', [{ uuid: BOB, number: '+15550002', name: 'Bob' }]);
+    const msg = await receive({ sourceUuid: BOB, timestamp: 1000 }, create(ContentSchema, { content: { case: 'dataMessage', value: { body: 'hi', timestamp: 1000n } } }));
+    assert.equal(msg!.envelope.sourceNumber, '+15550002');
+
+    const sync = await receive({ sourceUuid: ALICE, timestamp: 1000, syncMessage: { sentMessage: { destinationUuid: BOB, timestamp: 1000, message: 'yo' } } }, create(ContentSchema, { content: { case: 'syncMessage', value: {} } }));
+    assert.equal(sync!.envelope.syncMessage.sentMessage.destinationNumber, '+15550002');
+  });
+
+  it('leaves someone without a known number keyed by ACI', async () => {
+    const msg = await receive({ sourceUuid: CAROL, timestamp: 1000 }, create(ContentSchema, { content: { case: 'dataMessage', value: { body: 'hi', timestamp: 1000n } } }));
+    assert.equal(msg!.envelope.sourceNumber, undefined);
+  });
+});
+
+describe('saved Storage Service writes', () => {
+  const q = storageQueue as any;
+  const realWrite = q.write;
+
+  after(() => {
+    q.write = realWrite;
+  });
+
+  it('keeps a setting change that could not be written and makes it again later', async () => {
+    q.write = async () => {
+      throw new Error('offline');
+    };
+    const change = accountMethods.setReadReceipts(false);
+    await accountMethods.flushStorageWrites().catch(() => {});
+    await change.catch(() => {});
+    await settle();
+    assert.deepEqual(kv.get('pendingStorageWrites').map((r: any) => [r.method, r.args]), [['accountToggle', ['readReceipts', false]]]);
+
+    const record: any = { readReceipts: true };
+    q.write = async (muts: any[]) => {
+      for (const m of muts) m.update(record);
+      return false;
+    };
+    await accountMethods.replayStorageWrites();
+    await settle();
+    assert.equal(record.readReceipts, false);
+    assert.deepEqual(kv.get('pendingStorageWrites'), []);
+  });
+});
+
+describe('our own profile', () => {
+  const q = storageQueue as any;
+  const realWrite = q.write;
+  const http = fakeHost.http as any;
+  const realRequest = http.request;
+  const cfg = fakeHost.config as any;
+  const realSet = cfg.set;
+  let original: any;
+
+  before(async () => {
+    original = await store.getAccount();
+    await store.saveAccount({ ...original, profileKey: randomBytes(32) });
+  });
+
+  after(async () => {
+    q.write = realWrite;
+    http.request = realRequest;
+    cfg.set = realSet;
+    await store.saveAccount(original);
+  });
+
+  it('writes a new name to the account record, keeps About, and loads both back', async () => {
+    let profile: any = {};
+    http.request = async (method: string, path: string, body: any) => {
+      if (method === 'GET' && path.startsWith('/v1/profile/')) return profile;
+      if (method === 'PUT' && path === '/v1/profile') profile = { name: body.name, about: body.about, aboutEmoji: body.aboutEmoji };
+      return {};
+    };
+    const record: any = { givenName: 'Old', familyName: '' };
+    q.write = async (muts: any[]) => {
+      for (const m of muts) m.update(record);
+      return false;
+    };
+    await accountMethods.updateOwnProfile({ name: 'Ann Lee', about: 'Gardening' });
+    await accountMethods.flushStorageWrites();
+    assert.deepEqual([record.givenName, record.familyName], ['Ann', 'Lee']);
+
+    await accountMethods.updateOwnProfile({ name: 'Ann Lea' });
+    await accountMethods.flushStorageWrites();
+    assert.equal(record.familyName, 'Lea');
+
+    const patches: any[] = [];
+    cfg.set = (p: any) => void patches.push(p);
+    await accountMethods.hydrateOwnProfile();
+    assert.deepEqual(patches, [{ profileName: 'Ann Lea', profileAbout: 'Gardening', profileAboutEmoji: '' }]);
   });
 });

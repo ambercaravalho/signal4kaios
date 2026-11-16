@@ -16,15 +16,30 @@ let opened: Promise<IDBDatabase> | null = null;
 let signalStateReset = false;
 let accountOverride: string | null = null;
 
+const DB_PREFIX = 'signal4kaios';
+
+function nameFor(num: string): string {
+  return num ? DB_PREFIX + ':' + num : DB_PREFIX;
+}
+
 function dbName(): string {
-  const num = accountOverride !== null ? accountOverride : config.dbNumber();
-  return num ? 'signal4kaios:' + num : 'signal4kaios';
+  return nameFor(accountOverride !== null ? accountOverride : config.dbNumber());
+}
+
+function deleteDatabase(name: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(name);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
 }
 
 function open(): Promise<IDBDatabase> {
   if (opened) return opened;
   opened = new Promise((resolve, reject) => {
-    const req = indexedDB.open(dbName(), DB_VERSION);
+    const name = dbName();
+    config.noteDatabase(name);
+    const req = indexedDB.open(name, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const db = req.result;
       const has = (n: string) => db.objectStoreNames.contains(n);
@@ -119,6 +134,30 @@ export const db = {
     return dbName();
   },
 
+  /** The database name `number`'s account uses. */
+  nameFor,
+
+  /** Beacon's databases on this phone, where the browser can list them (KaiOS 4.0); empty on KaiOS 3.x. */
+  async listDatabases(): Promise<string[]> {
+    const idb = indexedDB as IDBFactory & { databases?: () => Promise<{ name?: string }[]> };
+    if (typeof idb.databases !== 'function') return [];
+    try {
+      return (await idb.databases()).map((d) => d.name || '').filter((n) => n === DB_PREFIX || n.indexOf(DB_PREFIX + ':') === 0);
+    } catch {
+      return [];
+    }
+  },
+
+  /** Close the open database and delete each of `names`; resolves to the names that couldn't be deleted. */
+  async deleteDatabases(names: string[]): Promise<string[]> {
+    const prev = opened;
+    opened = null;
+    if (prev) await prev.then((d) => d.close(), () => {});
+    const failed: string[] = [];
+    for (const name of names) await deleteDatabase(name).catch(() => failed.push(name));
+    return failed;
+  },
+
   ready(): Promise<void> {
     return open().then(() => {});
   },
@@ -163,6 +202,25 @@ export const db = {
   deleteMessage(id: string): Promise<void> {
     return tx('messages', 'readwrite', (s) => {
       s.delete(id);
+    });
+  },
+
+  /** Move chat `fromId`'s messages into chat `toId`, crediting `toId` with the ones `fromId` wrote; resolves to each moved message's old ID and new record. */
+  moveMessages(fromId: string, toId: string): Promise<Array<{ oldId: string; rec: Message }>> {
+    return tx('messages', 'readwrite', (s) => {
+      const out = { value: [] as Array<{ oldId: string; rec: Message }> };
+      s.index('conv').openCursor(convRange(fromId)).onsuccess = (e) => {
+        const cur = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+        if (!cur) return;
+        const old = cur.value as Message;
+        const author = old.author === fromId ? toId : old.author;
+        const rec: Message = { ...old, convId: toId, author, id: old.id.indexOf('|call|') > 0 ? toId + old.id.slice(fromId.length) : toId + '|' + old.timestamp + '|' + author };
+        cur.delete();
+        s.put(rec);
+        out.value.push({ oldId: old.id, rec });
+        cur.continue();
+      };
+      return out;
     });
   },
 
@@ -237,6 +295,26 @@ export const db = {
   /** The same, for one chat only; cheap enough to run when the chat opens. */
   deleteExpiredIn(convId: string, now: number): Promise<ExpiredRef[]> {
     return sweep((s) => s.index('conv').openCursor(convRange(convId)), now);
+  },
+
+  /** Starts the disappearing timers of received messages from `fromTs` through `throughTs` that haven't started yet; `clear` instead un-starts them (the one-time repair for timers that began on arrival). Resolves to the changed messages. */
+  startExpiry(convId: string, fromTs: number, throughTs: number, now: number, clear = false): Promise<Message[]> {
+    return tx<Message[]>('messages', 'readwrite', (s) => {
+      const out = { value: [] as Message[] };
+      s.index('conv').openCursor(IDBKeyRange.bound([convId, fromTs], [convId, throughTs])).onsuccess = (e) => {
+        const cur = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+        if (!cur) return;
+        const rec = cur.value as Message;
+        if (rec.incoming && rec.expireSecs && (clear ? !!rec.expiresAt : !rec.expiresAt)) {
+          if (clear) delete rec.expiresAt;
+          else rec.expiresAt = now + rec.expireSecs * 1000;
+          cur.update(rec);
+          out.value.push(rec);
+        }
+        cur.continue();
+      };
+      return out;
+    });
   },
 
   /** Case-insensitive substring search over message text, newest first. */
@@ -414,11 +492,7 @@ export const db = {
     return open().then((d) => {
       d.close();
       opened = null;
-      return new Promise<void>((resolve, reject) => {
-        const req = indexedDB.deleteDatabase(dbName());
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
-      });
+      return deleteDatabase(dbName());
     });
   },
 } satisfies HostDb & Record<string, unknown>;

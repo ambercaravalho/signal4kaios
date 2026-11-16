@@ -27,13 +27,28 @@ import {
 } from '../services/group-changes';
 import { deriveGroupV2Keys, fetchGroupState, type GroupLinkMode, type GroupV2Metadata, parseGroupLink, SERVER_PUBLIC_PARAMS } from '../services/groups-v2';
 import { fetchExpiringProfileKeyCredential, resolveSignalUsername } from '../services/profiles';
+import type { StorageMutation } from '../services/storage';
 import { libsignal } from '../protocol/libsignal';
-import { fromBase64 } from '../bytes';
+import { fromBase64, toBase64 } from '../bytes';
 import { invalidateBlocked, sendBlockedSync } from './blocked';
-import { client, httpBinary, httpJson, serverUrl, storageQueue, store } from './context';
+import { client, httpBinary, httpJson, savedStorageWrite, serverUrl, store } from './context';
 import { resolveAci, syncedContacts, syncedGroups, updateSyncedGroup } from './contacts';
 import { dataContent, type DataMessageInit, syncSent } from './delivery';
 import { groupDeps, groupMasterKey, mergeGroupState } from './group-state';
+
+const writeJoinedGroup = savedStorageWrite('joinedGroup', (masterKey: string) => [joinedGroupMutation(fromBase64(masterKey))]);
+
+const writeGroupBlocked = savedStorageWrite('groupBlocked', (masterKey: string, blocked: boolean, at: number): StorageMutation[] => [
+  {
+    type: 'groupV2',
+    masterKey: fromBase64(masterKey),
+    update: (g) => {
+      g.blocked = blocked;
+      g.blockedAtTimestamp = blocked ? BigInt(at) : 0n;
+      g.whitelisted = !blocked;
+    },
+  },
+]);
 
 export type GroupLinkPreview = GroupJoinInfoView & { internalId: string; member: boolean };
 
@@ -165,7 +180,7 @@ export const groupMethods = {
 
     const state = await fetchGroupState(store, httpJson, httpBinary, link.masterKey, serverUrl());
     await mergeGroupState(state);
-    await storageQueue.enqueue([joinedGroupMutation(link.masterKey)]).catch((e: any) => host().dbg('group storage record failed: ' + (e && e.message)));
+    await writeJoinedGroup(toBase64(link.masterKey)).catch((e: any) => host().dbg('group storage record failed: ' + (e && e.message)));
     const notify = state.members.concat(state.pending).filter((id) => isAci(id) && id !== acc.aci);
     await announceGroupChange(notify, link.masterKey, res.revision, res.groupChange, acc.profileKey, Date.now());
     return { joined: true, internalId: keys.internalId, name: state.name };
@@ -205,12 +220,16 @@ export const groupMethods = {
         g.whitelisted = true;
         delete g.messageRequest;
       });
-      await storageQueue.enqueue([joinedGroupMutation(masterKey)]).catch((e: any) => host().dbg('group storage record failed: ' + (e && e.message)));
+      await writeJoinedGroup(toBase64(masterKey)).catch((e: any) => host().dbg('group storage record failed: ' + (e && e.message)));
     } else if (response === 'block') {
       await groupMethods.setGroupBlocked(groupSendId, true);
     } else {
       await changeGroup(groupSendId, (snap) => leaveActions(snap)).catch((e: any) => {
         if (!e || (e.name !== 'NotAMember' && e.status !== 403)) throw e;
+      });
+      await updateSyncedGroup(internalId, (g) => {
+        delete g.messageRequest;
+        delete g.pendingInvite;
       });
     }
     const type = { accept: SyncMessage_MessageRequestResponse_Type.ACCEPT, delete: SyncMessage_MessageRequestResponse_Type.DELETE, block: SyncMessage_MessageRequestResponse_Type.BLOCK }[response];
@@ -233,16 +252,6 @@ export const groupMethods = {
     invalidateBlocked();
     host().directoryChanged().catch(() => {});
     await sendBlockedSync();
-    await storageQueue.enqueue([
-      {
-        type: 'groupV2',
-        masterKey,
-        update: (g) => {
-          g.blocked = blocked;
-          g.blockedAtTimestamp = blocked ? BigInt(Date.now()) : 0n;
-          g.whitelisted = !blocked;
-        },
-      },
-    ]);
+    await writeGroupBlocked(toBase64(masterKey), blocked, Date.now());
   },
 };
