@@ -5,7 +5,7 @@ import { router, useKeys, useSoftkeys } from '../app/router';
 import { useTicker } from '../app/hooks';
 import { Avatar, type AvatarSubject } from '../components/Avatar';
 import type { CallEndReason } from '../../engine';
-import { answerCall, callConversation, callView, closeCall, declineCall, hangUp, installCalls, onCallView, toggleMute, toggleSpeaker, type CallView } from '../data/calls';
+import { answerCall, callConversation, callView, closeCall, declineCall, hangUp, installCalls, onCallView, silenceRinging, toggleMute, toggleSpeaker, type CallView } from '../data/calls';
 import { fmtLength } from '../data/format';
 import { displayName } from '../data/store';
 import { fmt, S } from '../strings';
@@ -82,7 +82,8 @@ export function CallScreen() {
   useKeys((e) => {
     if (incoming) {
       if (e.key === 'Enter' || e.key === 'Call') answerCall();
-      else if (e.key === 'SoftLeft' || e.key === 'EndCall' || e.key === 'Backspace') declineCall();
+      else if (e.key === 'SoftLeft' || e.key === 'EndCall') declineCall();
+      else if (e.key === 'Backspace') silenceRinging();
       return true;
     }
     if (live) {

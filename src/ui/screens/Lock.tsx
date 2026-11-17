@@ -1,8 +1,13 @@
-/* The screen lock cover. It sits outside the router, above every screen and overlay except a call's screen, so nothing opened underneath (a tapped notification, say) shows through, and it takes every key before the router sees it. A call can be answered while locked; the cover comes back when its screen closes. */
+/* The screen lock cover. It sits outside the router, above every screen and overlay except a call's screen, so nothing opened underneath (a tapped notification, say) shows through, and it takes every key before the router sees it. A call can be answered while locked; the cover comes back as soon as it ends. */
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { isDigitKey, PinDots } from '../components/PinEntry';
 import { callView, onCallView } from '../data/calls';
+
+function liveCall(): boolean {
+  const v = callView();
+  return !!v && v.call.phase !== 'ended';
+}
 import * as screenLock from '../data/screen-lock';
 import { APP_NAME, S } from '../strings';
 import { deleteAllData, pinWaitMessage } from './Settings';
@@ -14,10 +19,10 @@ export function LockGate() {
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
   const [now, setNow] = useState(Date.now());
-  const [inCall, setInCall] = useState(!!callView());
+  const [inCall, setInCall] = useState(liveCall());
   const covering = locked && !inCall;
 
-  useEffect(() => onCallView(() => setInCall(!!callView())), []);
+  useEffect(() => onCallView(() => setInCall(liveCall())), []);
 
   useEffect(
     () =>

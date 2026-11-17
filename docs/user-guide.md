@@ -119,7 +119,7 @@ A group opens as a request when you're invited to it, whoever invited you, or wh
 
 Beacon makes and answers one-to-one Signal voice calls, end-to-end encrypted as in Signal. To call someone, open your chat with them and choose **Options → Voice call**. The screen shows **Calling…**, then **Ringing…** while their phone rings, and the call's length once they answer. The first time, KaiOS asks whether Beacon may use the microphone. Someone who hasn't accepted your message request can't take your call yet, and Beacon says so.
 
-When someone calls, Beacon rings and vibrates and shows **Incoming voice call** over whatever is open, with a notification when it's in the background. **Answer** with OK or the Call key, and **Decline** with the left softkey or the End key. In a muted chat the call shows without ringing unless **Notify for calls** is on, and the same goes while a notification profile that doesn't allow the caller or calls is on. As in Signal, someone who isn't in your contacts and whose message request you haven't accepted doesn't ring; their call shows as missed.
+When someone calls, Beacon rings and vibrates and shows **Incoming voice call** over whatever is open, with a notification when it's in the background. **Answer** with OK or the Call key, and **Decline** with the left softkey or the End key. **Back** silences the ringing and vibration and leaves the call on screen, so you can still answer it. In a muted chat the call shows without ringing unless **Notify for calls** is on, and the same goes while a notification profile that doesn't allow the caller or calls is on. As in Signal, someone who isn't in your contacts and whose message request you haven't accepted doesn't ring; their call shows as missed.
 
 During a call:
 
@@ -135,8 +135,9 @@ Calls start on the earpiece. **Back** doesn't leave the call screen, so the call
 - Every call leaves a line in the chat: **Outgoing voice call · 1:05**, **Incoming voice call**, **Missed voice call**, **Declined voice call**, or **Unanswered voice call**. A missed call counts as unread and raises a notification.
 - Beacon is one of your linked devices, so your phone and your other devices ring too. Answering or declining on one stops the others ringing, and Beacon says **Answered on another device** or **Declined on another device**.
 - Your call history is shared with your phone and other devices: calls made here show there, missed calls you've seen there stop counting as unread here, and clearing or deleting calls there removes their lines here.
-- With **Screen lock** on, a call still shows and can be answered without the PIN, and Beacon is locked again when the call ends.
+- With **Screen lock** on, a call still shows and can be answered without the PIN, and Beacon locks again as soon as the call ends.
 - Calls always go through Signal's relay servers, like Signal's **Always relay calls** setting, so the other person doesn't see your IP address.
+- A call doesn't move between networks: if the phone switches between Wi-Fi and mobile data during a call, the call ends and you need to call again.
 
 ## Starting a chat and searching
 

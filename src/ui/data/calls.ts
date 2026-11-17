@@ -27,6 +27,7 @@ let speaker = false;
 let problem: CallProblem = null;
 let audio: CallAudioIO | null = null;
 let ignoredId: string | null = null;
+let silencedId: string | null = null;
 let notifiedConv: string | null = null;
 let cpuLock: WakeLock | null = null;
 let screenLock: WakeLock | null = null;
@@ -71,6 +72,13 @@ export function placeCall(peer: string): Promise<void> {
 
 export function answerCall(): void {
   signal.acceptCall();
+}
+
+/** Stop the ringtone and vibration and leave the call ringing, so it can still be answered. */
+export function silenceRinging(): void {
+  if (!state || state.phase !== 'incoming') return;
+  silencedId = state.callId;
+  tone.stop();
 }
 
 export function declineCall(): void {
@@ -135,7 +143,7 @@ function syncTone(s: CallState | null): void {
   const conv = s ? callConversation(s.peer) : undefined;
   const ringing = !!s && s.direction === 'incoming' && s.phase === 'incoming';
   if (ringing) {
-    if (!conv || shouldNotify(conv, { call: true })) tone.start('ring', 'ringer', true);
+    if (s!.callId !== silencedId && (!conv || shouldNotify(conv, { call: true }))) tone.start('ring', 'ringer', true);
     if (conv && document.hidden && notifiedConv !== conv.id) {
       notifyIncomingCall(conv);
       notifiedConv = conv.id;
@@ -204,4 +212,8 @@ function emit(): void {
 
 export function _setCallStateForTest(s: CallState | null): void {
   onState(s);
+}
+
+export function _ringingForTest(): boolean {
+  return tone.playing === 'ring';
 }
