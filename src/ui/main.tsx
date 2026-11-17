@@ -14,7 +14,7 @@ import { hasServiceWorker } from './data/platform';
 import { applyProxy } from './data/proxy';
 import * as screenLock from './data/screen-lock';
 import * as store from './data/store';
-import { maybeCheckForUpdate, noteLaunchVersion } from './data/updates';
+import { deleteInstalledUpdates, maybeCheckForUpdate, noteLaunchVersion } from './data/updates';
 import { setupWake, WAKE_ALARM, WAKE_CACHE } from './data/wake';
 import { reloadUnderServiceWorker } from './data/wasm-reload';
 import * as ws from './data/ws';
@@ -109,6 +109,7 @@ function start(): void {
   store.on('save-error', () => toast(S.messagesNotSaved, 5000));
   onNumberChange((number) => toast(fmt(S.numberChanged, { number }), 5000));
   noteLaunchVersion().then((version) => version && toast(fmt(S.updatedTo, { version }), 4000));
+  deleteInstalledUpdates().catch((e: any) => dbg('update: cleanup failed ' + (e && e.message)));
 
   // Message history from linking is imported before the first connection, so nothing new lands in the middle of it.
   if (config.isConfigured() && config.historySync()) {

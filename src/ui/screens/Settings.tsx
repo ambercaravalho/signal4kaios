@@ -7,6 +7,7 @@ import { config } from '../data/config';
 import { availableUpdate } from '../data/updates';
 import { S } from '../strings';
 import { DebugScreen } from './Debug';
+import { AboutScreen } from './settings/About';
 import { AppearanceScreen } from './settings/Appearance';
 import { ChatsSettingsScreen } from './settings/Chats';
 import { HelpScreen } from './settings/Help';
@@ -25,6 +26,7 @@ export { lockAfterLabel, pinWaitMessage, ScreenLockScreen } from './settings/Scr
 export { PhoneNumberScreen } from './settings/PhoneNumber';
 export { AppearanceScreen } from './settings/Appearance';
 export { HelpScreen } from './settings/Help';
+export { AboutScreen } from './settings/About';
 export { BlockedScreen } from './settings/Blocked';
 export { updateMenuItem } from './settings/Updates';
 
@@ -46,6 +48,7 @@ export function SettingsScreen() {
     { key: 'appearance', label: S.appearance, icon: 'photo', end: 'chevron', onSelect: () => router.push(AppearanceScreen, {}) },
     { key: 'help', label: S.help, icon: 'help', end: 'chevron', onSelect: () => router.push(HelpScreen, {}) },
     { key: 'debug', label: S.debug, icon: 'file', end: 'chevron', onSelect: () => router.push(DebugScreen, {}) },
+    { key: 'about', label: S.aboutApp, icon: 'info', end: 'chevron', onSelect: () => router.push(AboutScreen, {}) },
   ];
   return (
     <Screen title={S.settings}>

@@ -27,11 +27,11 @@ describe('the page’s CSP check', () => {
 });
 
 describe('the manifest', () => {
-  it('only asks to add files to the phone’s storage, since Beacon never reads or lists them', () => {
+  it('only asks to add files to the phone’s storage, except sdcard, where it deletes its old updates', () => {
     const perms = JSON.parse(readFileSync('src/app/manifest.webmanifest', 'utf8')).b2g_features.permissions;
     const storage = Object.keys(perms).filter((k) => k.indexOf('device-storage:') === 0);
     assert.ok(storage.length > 0);
-    for (const k of storage) assert.equal(perms[k].access, 'createonly', k);
+    for (const k of storage) assert.equal(perms[k].access, k === 'device-storage:sdcard' ? 'readwrite' : 'createonly', k);
   });
 
   it('installs its own updates only through the Sideload service, never with full app management', () => {

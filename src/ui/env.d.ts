@@ -9,6 +9,7 @@ interface B2gDomRequest<T = unknown> {
 
 interface B2gDeviceStorage {
   addNamed(blob: Blob, name: string): B2gDomRequest<unknown> | Promise<unknown>;
+  delete?(name: string): B2gDomRequest<unknown> | Promise<unknown>;
   /** The storage area's mount point on the file system, or "unknown". */
   storagePath?: string;
 }

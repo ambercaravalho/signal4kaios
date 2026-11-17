@@ -6,7 +6,7 @@ import { dbg } from '../log';
 import { emit } from '../store/events';
 import * as ws from '../ws';
 import type { UpdateInfo } from './check';
-import { downloadUpdate, saveUpdate } from './download';
+import { deleteSavedUpdates, downloadUpdate, saveUpdate } from './download';
 import { detectInstaller, type Installer, withTimeout } from './install';
 
 export type UpdateStep = 'idle' | 'downloading' | 'installing';
@@ -61,7 +61,7 @@ export function applyUpdate(info: UpdateInfo): Promise<UpdateOutcome> {
     const pct = Math.floor(fraction * 100);
     if (pct !== percent) setStep('downloading', pct);
   })
-    .then((bytes) => saveUpdate(bytes, info))
+    .then((bytes) => deleteSavedUpdates().then(() => saveUpdate(bytes, info)))
     .then((saved) =>
       detectInstaller().then((installer): Promise<UpdateOutcome> | UpdateOutcome => {
         dbg('update: saved ' + saved.name);

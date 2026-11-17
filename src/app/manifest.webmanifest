@@ -63,8 +63,8 @@
         "description": "Save received videos"
       },
       "device-storage:sdcard": {
-        "access": "createonly",
-        "description": "Save received files and Beacon updates"
+        "access": "readwrite",
+        "description": "Save received files and Beacon updates, and delete old updates"
       },
       "sideload": {
         "description": "Install Beacon updates"

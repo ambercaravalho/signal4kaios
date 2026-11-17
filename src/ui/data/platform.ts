@@ -83,18 +83,36 @@ export function saveToDevice(kind: string, blob: Blob, name: string): Promise<un
   }
 }
 
-/** Save a blob like `saveToDevice` and resolve to its path on the file system, for a system service that reads it. */
-export function saveToDevicePath(kind: string, blob: Blob, name: string): Promise<string> {
+export interface DeviceFile {
+  /** The name the storage area gave the file, which `deleteFromDevice` takes. */
+  stored: string;
+  /** Its path on the file system, for a system service that reads it. */
+  path: string;
+}
+
+/** Save a blob like `saveToDevice`, and resolve to its stored name and its path on the file system. */
+export function saveToDevicePath(kind: string, blob: Blob, name: string): Promise<DeviceFile> {
   const storage = deviceStorage(kind);
   if (!storage) return Promise.reject(new Error('storage unavailable'));
   const mount = (storage.storagePath || '').replace(/\/+$/, '');
   if (!mount || mount === 'unknown') return Promise.reject(new Error('storage path unknown'));
-  return saveToDevice(kind, blob, name).then((stored) => {
-    const rel = typeof stored === 'string' && stored ? stored : name;
+  return saveToDevice(kind, blob, name).then((result) => {
+    const stored = typeof result === 'string' && result ? result : name;
     // Composite storage answers "/<storage name>/<file>" rather than a path under the mount point.
-    if (rel.indexOf(mount + '/') === 0) return rel;
-    return mount + '/' + rel.replace(/^\/+[^/]+\/(?=.)/, '').replace(/^\/+/, '');
+    if (stored.indexOf(mount + '/') === 0) return { stored, path: stored };
+    return { stored, path: mount + '/' + stored.replace(/^\/+[^/]+\/(?=.)/, '').replace(/^\/+/, '') };
   });
+}
+
+/** Delete a file by the name `saveToDevicePath` resolved to; needs `readwrite` access to that storage area. */
+export function deleteFromDevice(kind: string, stored: string): Promise<void> {
+  const storage = deviceStorage(kind);
+  if (!storage || !storage.delete) return Promise.reject(new Error('storage unavailable'));
+  try {
+    return fromRequest(storage.delete(stored)).then(() => undefined);
+  } catch (e) {
+    return Promise.reject(e);
+  }
 }
 
 let alarmQueue: Promise<unknown> = Promise.resolve();

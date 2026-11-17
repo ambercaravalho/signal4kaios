@@ -2,12 +2,14 @@
 
 import { toHex } from '../../../engine/bytes';
 import { hashSha256 } from '../../../engine/crypto/primitives';
+import { isReleaseVersion } from '../../../engine/validate';
+import { config } from '../config';
 import { http } from '../http';
 import { dbg } from '../log';
-import { saveToDevicePath } from '../platform';
-import { RELEASES_URL, type UpdateInfo } from './check';
+import { appVersion, deleteFromDevice, saveToDevicePath } from '../platform';
+import { compareVersions, RELEASES_URL, type UpdateInfo } from './check';
 
-/** Phone storage the update is saved to. `device-storage:sdcard` is create-only, so an existing file is never replaced. */
+/** Phone storage the update is saved to. `addNamed` never replaces an existing file, and Beacon deletes only the files it recorded in `updateFiles`. */
 const STORAGE = 'sdcard';
 const MAX_NAME_TRIES = 5;
 
@@ -55,13 +57,16 @@ export function candidateName(info: UpdateInfo, attempt: number): string {
   return attempt <= 1 ? info.zip : info.zip.replace(/\.zip$/, '-' + attempt + '.zip');
 }
 
-/** Save the verified ZIP to phone storage under the first free name. */
+/** Save the verified ZIP to phone storage under the first free name, and record it so it can be deleted later. */
 export function saveUpdate(bytes: Uint8Array, info: UpdateInfo, save = saveToDevicePath): Promise<SavedUpdate> {
   const blob = new Blob([bytes as BlobPart], { type: 'application/zip' });
   const attempt = (n: number): Promise<SavedUpdate> => {
     const name = candidateName(info, n);
     return save(STORAGE, blob, name).then(
-      (path) => ({ name, path }),
+      (file) => {
+        config.set({ updateFiles: [...config.updateFiles().filter((f) => f.stored !== file.stored), { stored: file.stored, version: info.version }] });
+        return { name, path: file.path };
+      },
       (e: { name?: string; message?: string }) => {
         dbg('update: saving ' + name + ' failed ' + (e && (e.name || e.message)));
         if (n >= MAX_NAME_TRIES || /storage (unavailable|path unknown)/.test(String(e && e.message))) throw updateError('UpdateStorage', 'could not save the update');
@@ -70,4 +75,30 @@ export function saveUpdate(bytes: Uint8Array, info: UpdateInfo, save = saveToDev
     );
   };
   return attempt(1);
+}
+
+function isGone(e: { name?: string; message?: string } | null | undefined): boolean {
+  return !!e && (e.name === 'NotFoundError' || /not ?found/i.test(String(e.message)));
+}
+
+/** Delete the update ZIPs Beacon saved, except those whose version `keep` accepts. Only files listed in `updateFiles` are touched; one the user already deleted is dropped from the list. */
+export async function deleteSavedUpdates(keep: (version: string) => boolean = () => false, remove = deleteFromDevice): Promise<void> {
+  const done: string[] = [];
+  for (const file of config.updateFiles()) {
+    if (keep(file.version)) continue;
+    try {
+      await remove(STORAGE, file.stored);
+      done.push(file.stored);
+    } catch (e: any) {
+      if (isGone(e)) done.push(file.stored);
+      else dbg('update: deleting ' + file.stored + ' failed ' + (e && (e.name || e.message)));
+    }
+  }
+  if (done.length) config.set({ updateFiles: config.updateFiles().filter((f) => done.indexOf(f.stored) < 0) });
+}
+
+/** On launch: delete the saved updates for this version or older, which are installed or out of date. */
+export function deleteInstalledUpdates(): Promise<void> {
+  if (!config.updateFiles().length) return Promise.resolve();
+  return appVersion().then((installed) => (isReleaseVersion(installed) ? deleteSavedUpdates((v) => isReleaseVersion(v) && compareVersions(v, installed) > 0) : undefined));
 }

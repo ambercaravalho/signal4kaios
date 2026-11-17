@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 
 import { config } from '../src/ui/data/config';
 import { availableUpdate, checkForUpdate, compareVersions, CHECK_EVERY_MS, maybeCheckForUpdate, newerThan, noteLaunchVersion, parseUpdateInfo, type UpdateInfo } from '../src/ui/data/updates/check';
-import { candidateName, downloadUpdate, saveUpdate, zipUrl } from '../src/ui/data/updates/download';
+import { candidateName, deleteInstalledUpdates, deleteSavedUpdates, downloadUpdate, saveUpdate, zipUrl } from '../src/ui/data/updates/download';
 import { appscmdReply, type Installer, pickInstaller, stagedOrigin } from '../src/ui/data/updates/install';
 import { friendlyError } from '../src/ui/errors';
 import { S } from '../src/ui/strings';
@@ -193,21 +193,63 @@ describe('downloading an update', () => {
     await assert.rejects(downloadUpdate(info));
   });
 
-  it('saves under the next free name, since existing files can’t be replaced', async () => {
+  it('saves under the next free name, since existing files can’t be replaced, and records the file', async () => {
+    config.set({ updateFiles: [] });
     const tried: string[] = [];
     const save = (_kind: string, _blob: Blob, name: string) => {
       tried.push(name);
-      return tried.length < 3 ? Promise.reject(new Error('exists')) : Promise.resolve('/sdcard/' + name);
+      return tried.length < 3 ? Promise.reject(new Error('exists')) : Promise.resolve({ stored: '/sdcard/' + name, path: '/data/media/' + name });
     };
     const saved = await saveUpdate(ZIP, info, save);
     assert.deepEqual(tried, ['signal4kaios-2.11.0.zip', 'signal4kaios-2.11.0-2.zip', 'signal4kaios-2.11.0-3.zip']);
-    assert.deepEqual(saved, { name: 'signal4kaios-2.11.0-3.zip', path: '/sdcard/signal4kaios-2.11.0-3.zip' });
+    assert.deepEqual(saved, { name: 'signal4kaios-2.11.0-3.zip', path: '/data/media/signal4kaios-2.11.0-3.zip' });
+    assert.deepEqual(config.updateFiles(), [{ stored: '/sdcard/signal4kaios-2.11.0-3.zip', version: '2.11.0' }]);
     assert.equal(candidateName(info, 1), 'signal4kaios-2.11.0.zip');
   });
 
   it('gives up with a storage error when the phone has no storage', async () => {
     const save = () => Promise.reject(new Error('storage unavailable'));
     await assert.rejects(saveUpdate(ZIP, info, save), (e: Error) => e.name === 'UpdateStorage');
+  });
+});
+
+describe('deleting saved updates', () => {
+  const files = [
+    { stored: '/sdcard/signal4kaios-2.10.9.zip', version: '2.10.9' },
+    { stored: '/sdcard/signal4kaios-2.11.0.zip', version: '2.11.0' },
+    { stored: '/sdcard/signal4kaios-2.11.1.zip', version: '2.11.1' },
+  ];
+
+  it('deletes only the recorded files that `keep` doesn’t accept, and forgets the deleted ones', async () => {
+    config.set({ updateFiles: files });
+    const removed: string[] = [];
+    await deleteSavedUpdates((v) => v === '2.11.1', (kind, stored) => {
+      assert.equal(kind, 'sdcard');
+      removed.push(stored);
+      return Promise.resolve();
+    });
+    assert.deepEqual(removed, ['/sdcard/signal4kaios-2.10.9.zip', '/sdcard/signal4kaios-2.11.0.zip']);
+    assert.deepEqual(config.updateFiles(), [files[2]]);
+  });
+
+  it('forgets a file the user already deleted, and keeps one that couldn’t be deleted for another try', async () => {
+    config.set({ updateFiles: files.slice(0, 2) });
+    const gone = Object.assign(new Error('gone'), { name: 'NotFoundError' });
+    await deleteSavedUpdates(undefined, (_kind, stored) => Promise.reject(stored.indexOf('2.10.9') >= 0 ? gone : new Error('busy')));
+    assert.deepEqual(config.updateFiles(), [files[1]]);
+  });
+
+  it('on launch, keeps only the saved updates newer than the installed version', async () => {
+    config.set({ updateFiles: [{ stored: '/sdcard/signal4kaios-2.10.9.zip', version: INSTALLED }, files[1]] });
+    const removed: string[] = [];
+    (globalThis as any).navigator.b2g = { getDeviceStorage: () => ({ addNamed: () => null, delete: (name: string) => (removed.push(name), Promise.resolve()) }) };
+    try {
+      await deleteInstalledUpdates();
+    } finally {
+      delete (globalThis as any).navigator.b2g;
+    }
+    assert.deepEqual(removed, ['/sdcard/signal4kaios-2.10.9.zip']);
+    assert.deepEqual(config.updateFiles(), [files[1]]);
   });
 });
 

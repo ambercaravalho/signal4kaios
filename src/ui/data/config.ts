@@ -106,9 +106,16 @@ interface ConfigData {
   updateNotified?: string;
   /** The version that ran last, so the first launch after an update can say so. */
   lastRunVersion?: string;
+  /** The update ZIPs Beacon saved to phone storage, by stored name, so it deletes only its own files. */
+  updateFiles?: SavedUpdateFile[];
   /** The `ACCOUNT_KEYS` settings of each saved account (by ACI) other than the active one, whose settings are at the top level. */
   accountSettings?: Record<string, Partial<ConfigData>>;
   [k: string]: unknown;
+}
+
+export interface SavedUpdateFile {
+  stored: string;
+  version: string;
 }
 
 /** `unlinked`: the main phone or Signal removed this phone; `here`: it was unlinked in Settings; `keys`: its keys on this phone were lost; `history`: the main phone asked to link again for history. */
@@ -324,6 +331,11 @@ export const config = {
   lastRunVersion(): string {
     const v = read().lastRunVersion;
     return typeof v === 'string' ? v : '';
+  },
+
+  updateFiles(): SavedUpdateFile[] {
+    const v = read().updateFiles;
+    return Array.isArray(v) ? v.filter((f): f is SavedUpdateFile => !!f && typeof f.stored === 'string' && !!f.stored && typeof f.version === 'string') : [];
   },
 
   screenLock(): ScreenLockConfig | null {
