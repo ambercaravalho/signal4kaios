@@ -80,7 +80,7 @@ export function ViewerScreen(props: { att: Attachment; msg?: Message; title: str
     );
   }
 
-  useSoftkeys({ center: playable ? (playing ? S.pause : S.play) : null, right: blob && !att.viewOnce ? S.saveToPhone : null });
+  useSoftkeys({ center: playable ? (playing ? S.pause : S.play) : null, right: blob && !att.viewOnce ? S.skSave : null });
   useKeys((e) => {
     if (e.key === 'Enter' && playable && media.current) {
       if (media.current.paused) media.current.play().catch(() => {});

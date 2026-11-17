@@ -128,7 +128,7 @@ export function LockGate() {
       <div class="softkeys">
         <span class="sk sk-left">{forgot ? S.cancel : S.forgotPin}</span>
         <span class="sk sk-center">{step === 'confirm' ? S.delete : ''}</span>
-        <span class="sk sk-right">{step === 'forgot' ? S.deleteAllData : forgot || busy || waiting || pin.length < screenLock.PIN_MIN ? '' : S.unlock}</span>
+        <span class="sk sk-right">{step === 'forgot' ? S.delete : forgot || busy || waiting || pin.length < screenLock.PIN_MIN ? '' : S.unlock}</span>
       </div>
     </div>
   );

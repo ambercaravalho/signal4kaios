@@ -162,6 +162,7 @@ export class SignalClient {
     }
   }
 
+  /** SECURITY-REVIEW: the account's Basic auth for Signal's servers; callers pass it only as `basicAuth`, never into a URL or the log. */
   private async authHeader(): Promise<{ username: string; password: string; aci: string; number: string; deviceId: number }> {
     const acc = await this.store.getAccount();
     if (!acc) throw new Error('This phone is not linked to a Signal account');

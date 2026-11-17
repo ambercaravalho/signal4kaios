@@ -104,7 +104,12 @@ function setChatFlag(convId: string, flag: ChatFlag, val: boolean): void {
   if (conv && !!conv[flag] !== val) changeChatState(conv, { [flag]: val });
 }
 
-export const setArchived = (convId: string, val: boolean): void => setChatFlag(convId, 'archived', val);
+/** Archive or unarchive a chat; archiving unpins it, as in Signal-Desktop. */
+export function setArchived(convId: string, val: boolean): void {
+  const conv = convs[convId];
+  if (!conv || !!conv.archived === val) return;
+  changeChatState(conv, val && conv.pinned ? { archived: true, pinned: false } : { archived: val });
+}
 
 /** Mute a chat until `until` (ms, or `MUTED_ALWAYS`); 0 unmutes. */
 export function setMuted(convId: string, until: number): void {
@@ -128,7 +133,7 @@ export function setNotifyIfMuted(convId: string, kind: MutedException, val: bool
 export function setConvPinned(convId: string, val: boolean): boolean {
   const conv = convs[convId];
   if (!conv || !!conv.pinned === val) return true;
-  if (val && Object.values(convs).filter((c) => c.pinned).length >= MAX_PINNED_CHATS) return false;
+  if (val && Object.values(convs).filter((c) => c.pinned && !c.archived).length >= MAX_PINNED_CHATS) return false;
   setChatFlag(convId, 'pinned', val);
   return true;
 }

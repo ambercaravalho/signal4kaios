@@ -78,7 +78,7 @@ export function CallScreen() {
 
   const incoming = phase === 'incoming';
   const live = !incoming && phase !== 'ended';
-  useSoftkeys(incoming ? { left: S.decline, center: S.answer, right: null } : live ? { left: view && view.speaker ? S.speakerOff : S.speaker, center: c && c.muted ? S.unmute : S.mute, right: S.endCall } : { left: null, center: S.ok, right: null });
+  useSoftkeys(incoming ? { left: S.decline, center: S.answer, right: null } : live ? { left: view && view.speaker ? S.skEarpiece : S.speaker, center: c && c.muted ? S.unmute : S.mute, right: S.endCall } : { left: null, center: S.ok, right: null });
   useKeys((e) => {
     if (incoming) {
       if (e.key === 'Enter' || e.key === 'Call') answerCall();

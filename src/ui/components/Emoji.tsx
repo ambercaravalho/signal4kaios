@@ -184,7 +184,7 @@ function ReactionBar(props: { current: string | null; resolve(e: string | null |
       } else finish(e === props.current ? null : e);
     },
   });
-  useSoftkeys({ left: S.cancel, center: S.select, right: props.current ? S.removeReaction : null });
+  useSoftkeys({ left: S.cancel, center: S.select, right: props.current ? S.skRemove : null });
   useKeys((e) => {
     if (e.key === 'SoftLeft') finish(undefined);
     else if (e.key === 'SoftRight' && props.current) finish(null);

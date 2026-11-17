@@ -221,6 +221,37 @@ describe('store', () => {
     assert.deepEqual(rec.mentions, [{ name: 'Bob', uuid: 'aci-bob' }]);
   });
 
+  it('searches the newest messages first and stops at the limit, also in a database from before the time index', async () => {
+    const old = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(db.nameFor('search-v4'), 4);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore('messages', { keyPath: 'id' }).createIndex('conv', ['convId', 'timestamp'], { unique: false });
+        for (const n of ['conversations', 'contacts', 'attachments']) req.result.createObjectStore(n, { keyPath: 'id' });
+        req.result.createObjectStore('kv', { keyPath: 'k' });
+        for (const n of ['signal_keystore']) req.result.createObjectStore(n, { keyPath: 'k' });
+        for (const n of ['signal_identities', 'signal_sessions']) req.result.createObjectStore(n, { keyPath: 'address' });
+        for (const n of ['signal_prekeys', 'signal_sender_keys']) req.result.createObjectStore(n, { keyPath: 'id' });
+        for (let i = 1; i <= 5; i++) req.transaction!.objectStore('messages').put({ id: 'm' + i, convId: 'c', timestamp: i * 1000, body: 'needle ' + i, author: ALICE, incoming: true });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    old.close();
+    await db.useAccount('search-v4');
+    try {
+      assert.deepEqual((await db.searchMessages('NEEDLE', 2)).map((m) => m.id), ['m5', 'm4']);
+      assert.deepEqual((await db.searchMessages('needle 1')).map((m) => m.id), ['m1']);
+      const upgraded = await new Promise<IDBDatabase>((resolve) => {
+        const req = indexedDB.open(db.nameFor('search-v4'));
+        req.onsuccess = () => resolve(req.result);
+      });
+      assert.ok(upgraded.transaction('messages').objectStore('messages').indexNames.contains('ts'));
+      upgraded.close();
+    } finally {
+      await db.useAccount(null);
+    }
+  });
+
   it('knows when we’re no longer in a group, but not before its state arrives', () => {
     const g = (members: string[], masterKey = 'mk') => ({ id: 'group.x', internal_id: 'x', masterKey, members }) as any;
     assert.equal(outOfGroup(g(['aci-bob', 'aci-carol'])), true);
@@ -330,7 +361,7 @@ describe('store', () => {
     const ts = Date.now() + 61000;
     store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: ts, dataMessage: { timestamp: ts, payment: { kind: 'notification' } } } });
     await settle();
-    assert.equal(store.conversation(ALICE)!.lastPreview, 'Alice sent you a payment. Check your phone to see it.');
+    assert.equal(store.conversation(ALICE)!.lastPreview, 'Alice sent you a payment. Check your main phone to see it.');
     store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: ts + 1, dataMessage: { timestamp: ts + 1, reaction: { emoji: '❤️' }, storyContext: { authorUuid: 'aci-me', sentTimestamp: 5 } } } });
     await settle();
     assert.equal(store.conversation(ALICE)!.lastPreview, 'Alice reacted ❤️ to your story');
@@ -338,9 +369,9 @@ describe('store', () => {
 
     store.ingestRaw({ envelope: { sourceNumber: ME, timestamp: ts + 2, syncMessage: { sentMessage: { destinationNumber: ALICE, timestamp: ts + 2, payment: { kind: 'notification' } } } } });
     await settle();
-    assert.equal(store.conversation(ALICE)!.lastPreview, 'You sent a payment. Check your phone to see it.');
+    assert.equal(store.conversation(ALICE)!.lastPreview, 'You sent a payment. Check your main phone to see it.');
     assert.equal(store.conversation(ALICE)!.unread, unread + 2);
-    assert.equal(store.noticeText({ kind: 'payment', value: 'activationRequest' }, ALICE), 'Alice asked you to turn on payments, which you can do on your phone.');
+    assert.equal(store.noticeText({ kind: 'payment', value: 'activationRequest' }, ALICE), 'Alice asked you to turn on payments, which you can do on your main phone.');
     assert.equal(store.noticeText({ kind: 'storyReaction', text: '👍' }, ME), 'You reacted 👍 to their story');
   });
 
@@ -375,6 +406,12 @@ describe('store', () => {
       assert.equal(store.setConvPinned(c.id, true), true);
     }
     assert.equal(store.setConvPinned(ALICE, true), false);
+
+    const first = store.conversationWith({ number: '+15551000' });
+    store.setArchived(first.id, true);
+    assert.equal(store.conversation(first.id)!.pinned, false, 'archiving unpins');
+    assert.equal(store.setConvPinned(ALICE, true), true, 'the freed slot can be used');
+    store.setArchived(first.id, false);
   });
 
   it('mutes a chat until a time, publishes it, and refreshes the list when the mute runs out', async () => {

@@ -9,7 +9,7 @@ import { toast } from '../components/Toast';
 import { toBase64 } from '../../engine/bytes';
 import type { ProvisioningSession } from '../../engine/net/provisioning';
 import { openLinkDatabase, signal } from '../data/api';
-import { config } from '../data/config';
+import { config, type RelinkReason } from '../data/config';
 import { db } from '../data/db';
 import { dbg } from '../data/log';
 import * as ws from '../data/ws';
@@ -37,6 +37,19 @@ export function WelcomeScreen() {
 
 type LinkState = 'connecting' | 'waiting' | 'finishing' | 'syncing' | 'failed';
 
+export function relinkLine(reason: RelinkReason): string {
+  if (reason === 'here') return S.relinkHere;
+  if (reason === 'keys') return S.relinkKeys;
+  if (reason === 'history') return S.historyRelink;
+  return S.unlinked;
+}
+
+/** Where linking stands after the code shows (`qr`) or the main phone scans it (`scanned`); "Finishing up" shows only after a scan. */
+export function linkStateAfter(state: LinkState, event: 'qr' | 'scanned'): LinkState {
+  if (state === 'failed' || state === 'syncing') return state;
+  return event === 'scanned' ? 'finishing' : state === 'finishing' ? state : 'waiting';
+}
+
 /** Shows the code to scan from Signal on the main phone. `first` is the first run, `add` adds another account, `relink` follows an unlink. */
 export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
   const [uri, setUri] = useState('');
@@ -55,11 +68,11 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
       onQrUrl: (u) => {
         if (!live) return;
         setUri(u);
-        setState('waiting');
+        setState((s) => linkStateAfter(s, 'qr'));
       },
-      onStatus: (msg) => {
-        dbg('link: ' + msg);
-        if (live) setState('finishing');
+      onStatus: (msg) => dbg('link: ' + msg),
+      onScanned: () => {
+        if (live) setState((s) => linkStateAfter(s, 'scanned'));
       },
       beforeLinking: (account) => {
         ws.stop();
@@ -71,7 +84,7 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
         const dbNumber = config.dbKeyFor(creds.aci, creds.number);
         config.prepareAccount(creds.aci);
         // SECURITY-REVIEW: the device password goes to config storage only; it is never logged or shown.
-        config.set({ number: creds.number || creds.aci, dbNumber, aci: creds.aci, deviceId: creds.deviceId, deviceToken: creds.password, deviceName });
+        config.set({ number: creds.number || creds.aci, dbNumber, aci: creds.aci, deviceId: creds.deviceId, deviceToken: creds.password, deviceName, relinkReason: undefined });
         config.saveActiveAccount();
         // SECURITY-REVIEW: the ephemeral backup key is kept in config only until the history import ends.
         config.setHistorySync(link.ephemeralBackupKey ? { aci: creds.aci, key: toBase64(link.ephemeralBackupKey) } : null);
@@ -137,7 +150,7 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
 
   return (
     <Screen title={props.mode === 'add' ? S.addAccount : S.linkTitle} bodyClass="link-screen" bodyRef={body}>
-      {props.mode === 'relink' && <div class="link-note">{S.unlinked}</div>}
+      {props.mode === 'relink' && <div class="link-note">{relinkLine(config.relinkReason())}</div>}
       {content}
       {!busy && state !== 'failed' && <p class="link-steps">{S.linkSteps}</p>}
     </Screen>

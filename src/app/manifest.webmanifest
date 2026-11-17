@@ -51,19 +51,19 @@
         "description": "Ring for incoming calls"
       },
       "device-storage:pictures": {
-        "access": "readcreate",
+        "access": "createonly",
         "description": "Save received photos to the gallery"
       },
       "device-storage:music": {
-        "access": "readcreate",
+        "access": "createonly",
         "description": "Save received voice messages and audio"
       },
       "device-storage:videos": {
-        "access": "readcreate",
+        "access": "createonly",
         "description": "Save received videos"
       },
       "device-storage:sdcard": {
-        "access": "readcreate",
+        "access": "createonly",
         "description": "Save received files"
       }
     },

@@ -62,7 +62,7 @@ export function HistoryScreen() {
     endHistorySync()
       .then(() => db.clearSignalState())
       .then(() => {
-        config.forgetAccount();
+        config.forgetAccount('history');
         location.reload();
       });
   }

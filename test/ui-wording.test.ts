@@ -56,6 +56,28 @@ describe('user-facing wording', () => {
   });
 });
 
+describe('softkey labels', () => {
+  it('fit under the screen: at most 10 characters', () => {
+    const files = (dir: string): string[] =>
+      readdirSync(dir).flatMap((name) => (statSync(join(dir, name)).isDirectory() ? files(join(dir, name)) : /\.tsx?$/.test(name) ? [join(dir, name)] : []));
+    const long: string[] = [];
+    for (const f of files('src/ui')) {
+      const src = readFileSync(f, 'utf8');
+      const softkeyLines = src.split('\n').filter((l) => /useSoftkeys\(|\b(left|center|right|ok):|const label = |class="sk sk-/.test(l) && !/^\s*(\/\/|\*|\/\*\*)/.test(l));
+      for (const l of softkeyLines) {
+        const values = /class="sk sk-/.test(l) ? [l] : Array.from(l.matchAll(/\b(?:left|center|right|ok|label)\s*[:=]\s*([^,;}]*)/g), (m) => m[1]);
+        for (const value of values) {
+          for (const k of value.matchAll(/\bS\.(\w+)/g)) {
+            const v = (S as Record<string, string>)[k[1]];
+            if (typeof v === 'string' && v.length > 10) long.push(f + ': S.' + k[1] + ' "' + v + '"');
+          }
+        }
+      }
+    }
+    assert.deepEqual(long, []);
+  });
+});
+
 describe('friendlyError', () => {
   it('turns network failures into plain sentences', () => {
     assert.equal(friendlyError({ kind: 'network', message: 'TCPSocket error' }), S.errOffline);

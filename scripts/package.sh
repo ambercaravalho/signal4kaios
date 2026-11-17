@@ -29,6 +29,9 @@ if grep -rlE '(^|[^A-Za-z0-9_$])eval[[:space:]]*\(|new[[:space:]]+Function[[:spa
   exit 1
 fi
 
+# --- Privileged CSP: no inline script, style, or handlers in the page ---
+sh scripts/check-html-csp.sh src/app/index.html
+
 # --- Gecko 84: built-ins KaiOS 3.0/3.1 lack ----------------------------------
 # esbuild lowers syntax but not missing built-ins; these would throw only on a KaiOS 3.x phone. Object.hasOwn is covered by scripts/gecko84-polyfill.js.
 if grep -lE 'structuredClone|\.findLast(Index)?\(|AbortSignal\.(timeout|any)|Promise\.withResolvers|\.to(Sorted|Reversed|Spliced)\(|\.at\(' src/app/build/*.js; then

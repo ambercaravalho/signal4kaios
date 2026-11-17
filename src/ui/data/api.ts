@@ -108,7 +108,7 @@ export async function openLinkDatabase(account: { aci: string; number: string })
 
 /** Unlinking forgot the active account: switch to the next saved one, if any. The caller reloads. */
 export function leaveUnlinkedAccount(): void {
-  config.forgetAccount();
+  config.forgetAccount('here');
   const next = config.accounts()[0];
   if (next) config.switchAccount(next.number);
 }
