@@ -13,7 +13,7 @@ import { unarchiveOnActivity } from './chat-state';
 import { isSelfConv, self } from './contacts';
 import { msgId, persistConv, setConvExpire } from './conversations';
 import { emit } from './events';
-import { keepVersion, setPreviewIfLast } from './ingest';
+import { applyEarlyReceipt, keepVersion, setPreviewIfLast } from './ingest';
 import { sendPoll } from './polls';
 import { attachmentLabel, previewOf } from './previews';
 import { convs } from './state';
@@ -39,8 +39,8 @@ export function sendCore(conv: Conversation, rec: Message, payload: SendPayload,
     (res: any) => {
       const newTs = res && res.timestamp ? parseInt(res.timestamp, 10) : ts;
       const oldId = rec.id;
-      if (newTs && newTs !== ts) {
-        db.deleteMessage(oldId);
+      const retimed = !!newTs && newTs !== ts;
+      if (retimed) {
         rec.timestamp = newTs;
         rec.id = msgId(conv.id, newTs, self());
         conv.lastTs = Math.max(conv.lastTs, newTs);
@@ -48,8 +48,10 @@ export function sendCore(conv: Conversation, rec: Message, payload: SendPayload,
       }
       rec.status = 'sent';
       if (res && res.sealed) rec.sealed = true;
+      applyEarlyReceipt(rec);
       keepSentAttachments(rec, payload, res && res.attachments);
       db.putMessage(rec);
+      if (retimed) db.deleteMessage(oldId);
       emit('message-updated', rec, oldId);
       return rec;
     },

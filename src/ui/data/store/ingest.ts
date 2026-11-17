@@ -20,6 +20,28 @@ import { applyRequestResponse } from './requests';
 import { convs, state, typingMap } from './state';
 
 const STATUS_RANK: Record<string, number> = { pending: 0, failed: 0, sent: 1, delivered: 2, read: 3 };
+const EARLY_RECEIPT_MS = 120000;
+const EARLY_RECEIPT_MAX = 200;
+
+/** Receipts for a sent timestamp with no message yet: Signal can re-time a send, and the recipient's receipt can arrive before the send returns the new timestamp. */
+const earlyReceipts = new Map<number, { status: Message['status']; at: number }>();
+
+function keepEarlyReceipt(ts: number, status: Message['status']): void {
+  const now = Date.now();
+  for (const [k, v] of earlyReceipts) if (now - v.at > EARLY_RECEIPT_MS || earlyReceipts.size >= EARLY_RECEIPT_MAX) earlyReceipts.delete(k);
+  const had = earlyReceipts.get(ts);
+  if (had && (STATUS_RANK[had.status] || 0) >= (STATUS_RANK[status] || 0)) return;
+  earlyReceipts.set(ts, { status, at: now });
+}
+
+/** Moves a just-sent message on to a receipt that arrived before it was written. */
+export function applyEarlyReceipt(rec: Message): void {
+  const early = earlyReceipts.get(rec.timestamp);
+  if (!early) return;
+  earlyReceipts.delete(rec.timestamp);
+  if (Date.now() - early.at > EARLY_RECEIPT_MS) return;
+  if ((STATUS_RANK[early.status] || 0) > (STATUS_RANK[rec.status] || 0)) rec.status = early.status;
+}
 
 /** A decrypted frame the database couldn't store. The server can't decrypt it for us again, so the caller holds on to it and retries. */
 export class SaveError extends Error {}
@@ -223,9 +245,9 @@ function applyReceipt(peer: string, kind: string, timestamps: number[]): void {
         rec = await db.getMessage(msgId(cid, ts, self()));
         if (rec) break;
       }
-      if (!rec) return;
       // As in Signal, turning off your own read receipts hides other people's too.
       const next = kind === 'read' && config.sendReadReceipts() ? 'read' : 'delivered';
+      if (!rec) return keepEarlyReceipt(ts, next);
       if ((STATUS_RANK[next] || 0) > (STATUS_RANK[rec.status] || 0)) {
         rec.status = next;
         emit('message-updated', rec, undefined);
@@ -273,6 +295,7 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
         keepVersion(rec);
         rec.body = ev.newBody;
         rec.styles = ev.newStyles || [];
+        delete rec.raw;
         rec.edited = true;
         if (ev.timestamp) rec.editedAt = ev.timestamp;
         setPreviewIfLast(ev.convId, rec, ev.newBody);

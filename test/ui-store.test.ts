@@ -95,6 +95,17 @@ describe('store', () => {
     assert.equal(rec.edited, true);
   });
 
+  it('edits a message from its latest text once another device has edited it', async () => {
+    (signal as any).send = async () => ({ timestamp: 1900 });
+    const sent = await store.sendText(ALICE, 'meet at **6**');
+    assert.equal(sent.raw, 'meet at **6**');
+    store.ingestRaw({ envelope: { sourceNumber: ME, timestamp: 1910, syncMessage: { sentMessage: { destinationNumber: ALICE, timestamp: 1910, editMessage: { targetSentTimestamp: 1900, dataMessage: { timestamp: 1910, message: 'meet at 7' } } } } } });
+    await settle();
+    const rec = (await db.getMessage(ALICE + '|1900|' + ME))!;
+    assert.equal(rec.body, 'meet at 7');
+    assert.equal(rec.raw, undefined);
+  });
+
   it('forwards text with its formatting and an attachment without its mentions', async () => {
     const sent: any[] = [];
     (signal as any).send = async (payload: any) => {
@@ -137,6 +148,23 @@ describe('store', () => {
     store.ingestRaw({ envelope: { sourceNumber: ALICE, receiptMessage: { isDelivery: true, timestamps: [5000] } } });
     await settle();
     assert.equal((await db.getMessage(ALICE + '|5000|' + ME))!.status, 'read');
+  });
+
+  it('keeps a receipt that arrives before a re-timed send returns, and keeps the message while it moves', async () => {
+    let finish: (v: unknown) => void = () => {};
+    (signal as any).send = () => new Promise((r) => (finish = r));
+    const sending = store.sendText(ALICE, 'retimed');
+    await settle();
+    const pending = (await db.getMessagesPage(ALICE, Infinity, 50)).find((m) => m.body === 'retimed')!;
+    assert.equal(pending.status, 'pending');
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, receiptMessage: { isDelivery: true, timestamps: [5300] } } });
+    await settle();
+    finish({ timestamp: 5300 });
+    const rec = await sending;
+    await settle();
+    assert.equal(rec.status, 'delivered');
+    assert.equal((await db.getMessage(ALICE + '|5300|' + ME))!.status, 'delivered');
+    assert.equal(await db.getMessage(pending.id), undefined);
   });
 
   it('starts the default timer on the first message to a new chat and keeps private delivery', async () => {
