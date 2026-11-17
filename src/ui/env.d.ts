@@ -9,6 +9,13 @@ interface B2gDomRequest<T = unknown> {
 
 interface B2gDeviceStorage {
   addNamed(blob: Blob, name: string): B2gDomRequest<unknown> | Promise<unknown>;
+  /** The storage area's mount point on the file system, or "unknown". */
+  storagePath?: string;
+}
+
+interface B2gExternalApi {
+  /** A token for a session with the phone's system services (api-daemon). */
+  getToken(): Promise<string>;
 }
 
 interface B2gAlarm {
@@ -25,6 +32,7 @@ interface B2gAlarmManager {
 interface B2gNavigator {
   getDeviceStorage?(kind: string): B2gDeviceStorage | null;
   alarmManager?: B2gAlarmManager;
+  externalapi?: B2gExternalApi;
 }
 
 interface Navigator {

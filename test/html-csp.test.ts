@@ -33,4 +33,10 @@ describe('the manifest', () => {
     assert.ok(storage.length > 0);
     for (const k of storage) assert.equal(perms[k].access, 'createonly', k);
   });
+
+  it('installs its own updates only through the Sideload service, never with full app management', () => {
+    const perms = JSON.parse(readFileSync('src/app/manifest.webmanifest', 'utf8')).b2g_features.permissions;
+    assert.ok(perms.sideload);
+    assert.equal(perms['webapps-manage'], undefined);
+  });
 });

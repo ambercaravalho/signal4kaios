@@ -42,7 +42,7 @@ function encodeBasicAuth(username: string, password: string): string {
   return 'Basic ' + btoa(username + ':' + password);
 }
 
-function xhrSend(method: string, url: string, headers: Record<string, string>, body: BodyInit | Uint8Array | null, timeout: number, maxBytes?: number): Promise<Res> {
+function xhrSend(method: string, url: string, headers: Record<string, string>, body: BodyInit | Uint8Array | null, timeout: number, maxBytes?: number, onProgress?: (loaded: number) => void): Promise<Res> {
   return new Promise((resolve, reject) => {
     const xhr = mozSystemXhr() || new XMLHttpRequest();
     xhr.open(method, url, true);
@@ -66,6 +66,7 @@ function xhrSend(method: string, url: string, headers: Record<string, string>, b
         return;
       }
       progress();
+      if (onProgress) onProgress(e.loaded);
     };
     if (xhr.upload) xhr.upload.onprogress = progress;
     xhr.onload = () => {
@@ -210,4 +211,24 @@ function rawBinary(method: string, url: string, body?: Uint8Array | null, header
   return rawRequest(method, url, body, headers, timeout, maxBytes).then((res) => res.body);
 }
 
-export const http = { request, rawRequest, rawBinary };
+export interface ExternalOptions {
+  body?: string;
+  headers?: Record<string, string>;
+  maxBytes: number;
+  timeout?: number;
+  onProgress?: (loaded: number) => void;
+}
+
+/** A request to a host other than Signal's (Beacon's releases, the phone's install service), with download progress. Rejects on non-2xx with `status` set. */
+function external(method: 'GET' | 'POST', url: string, opts: ExternalOptions): Promise<Uint8Array> {
+  if (net.isPinnedUrl(url) || isSignalUrl(url)) return Promise.reject(netError('network', 'network'));
+  return xhrSend(method, url, opts.headers || {}, opts.body == null ? null : opts.body, opts.timeout || 30000, opts.maxBytes, opts.onProgress).then((res) => {
+    if (res.status >= 200 && res.status < 300) return res.body;
+    const err: HttpError = new Error('HTTP ' + res.status);
+    err.kind = 'http';
+    err.status = res.status;
+    throw err;
+  });
+}
+
+export const http = { request, rawRequest, rawBinary, external };

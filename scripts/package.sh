@@ -69,6 +69,22 @@ rm -f dist/signal4kaios.zip dist/signal4kaios-*.zip
 # The ZIP ships AGPL-3.0 libsignal inside the wasm module, so the license terms travel with it.
 zip -qj dist/signal4kaios.zip LICENSE NOTICE
 cp dist/signal4kaios.zip "dist/signal4kaios-$ASSET_VERSION.zip"
-echo "OK: dist/signal4kaios.zip and dist/signal4kaios-$ASSET_VERSION.zip (version $VERSION)"
+
+# --- Update metadata ---------------------------------------------------------
+# The app reads update.json from the latest release to find, size-check, and checksum the ZIP before installing it over itself.
+ZIP_NAME="signal4kaios-$ASSET_VERSION.zip"
+if command -v sha256sum >/dev/null 2>&1; then
+  ZIP_SHA256=$(sha256sum "dist/$ZIP_NAME" | cut -d' ' -f1)
+else
+  ZIP_SHA256=$(shasum -a 256 "dist/$ZIP_NAME" | cut -d' ' -f1)
+fi
+ZIP_SIZE=$(wc -c < "dist/$ZIP_NAME" | tr -d ' ')
+SECURITY=false
+if awk -v h="## v$ASSET_VERSION" '$0 == h { on = 1; next } on && /^## / { exit } on' CHANGELOG.md | grep -q '^### Security[[:space:]]*$'; then
+  SECURITY=true
+fi
+printf '{"version":"%s","tag":"v%s","zip":"%s","size":%s,"sha256":"%s","security":%s}\n' "$VERSION" "$ASSET_VERSION" "$ZIP_NAME" "$ZIP_SIZE" "$ZIP_SHA256" "$SECURITY" > dist/update.json
+
+echo "OK: dist/signal4kaios.zip, dist/$ZIP_NAME, and dist/update.json (version $VERSION)"
 echo
 echo "Install on KaiOS 3.0/3.1/4.0: sh scripts/install.sh   (needs adb + appscmd)"

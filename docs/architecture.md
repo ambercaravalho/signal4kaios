@@ -110,6 +110,7 @@ src/
     screens/              one module per screen or group of related screens
     screens/settings/     the Settings sub-screens
     data/                 ws, db, config, http, attachments, platform (B2G APIs), wasm-reload
+    data/updates/         finding, downloading, checking, and installing Beacon's own updates
     data/store/           conversations, messages, sends, and the event hub, behind the data/store.ts barrel
     data/normalize/       JSON frames to store events, behind the data/normalize.ts barrel
     theme/                CSS tokens and styles
@@ -144,6 +145,28 @@ The app is a single Preact tree built for Gecko 84, the oldest engine it support
 | [`theme/`](../src/ui/theme) | KaiOS metrics (header, softkey bar, list rows) with Signal's light and dark colors, switched by `data-theme` on `<html>` |
 
 Startup ([`main.tsx`](../src/ui/main.tsx)) loads libsignal and opens the database, then shows the chats if the phone is linked, or the welcome and linking screens if not. If libsignal or the database can't load, it shows a startup error with a restart option instead.
+
+### Updates
+
+KaiOS's own app manager (`AppsManager` in `api-daemon`) can't update Beacon, even for an app holding `webapps-manage`: it installs only packages signed with KaiOS's production certificate (an unsigned ZIP fails with `InvalidSignature`), and it won't install over an app that was installed from a ZIP. The installer that does take an unsigned ZIP is `api-daemon`'s local socket, which `appscmd` uses over USB and web apps can't reach. Instead, [`data/updates/`](../src/ui/data/updates) uses the community install services that OStore's Manual Install relies on, which run natively on the phone.
+
+```mermaid
+flowchart TD
+  check["Open, foreground, or wake: at most once a day"] --> meta["GET releases/latest/download/update.json"]
+  meta --> newer{"Newer than installed?"}
+  newer -->|yes| offer["Home banner, Settings row, Options item; notification for a security release"]
+  offer --> confirmStep["User confirms"]
+  confirmStep --> zip["Download the ZIP, check size and SHA-256, save to phone storage"]
+  zip --> service{"Install service?"}
+  service -->|"Sideload, Flipfull, or appscmd"| install["Close the socket, install over Beacon, reload"]
+  service -->|none| manual["Show OStore's Manual Install steps"]
+```
+
+- **Release metadata.** [`scripts/package.sh`](../scripts/package.sh) writes `dist/update.json` (`version`, `tag`, `zip`, `size`, `sha256`, and `security`, which is true when the version's `CHANGELOG.md` section has a `### Security` heading), and [`release.yml`](../.github/workflows/release.yml) attaches it next to the ZIP. GitHub serves the newest stable release's copy at `releases/latest/download/update.json`, which skips pre-releases and doesn't count against the API rate limit.
+- **Checking** ([`check.ts`](../src/ui/data/updates/check.ts)). With **Check for updates automatically** on (the default), Beacon checks after the chats load, when it comes back to the foreground, and on the wake alarm, at most once every 24 hours, or an hour after a failed check. `update.json` is untrusted: the version must be `major.minor.patch`, the tag and file name must be exactly `v<version>` and `signal4kaios-<version>.zip`, the size at most 10 MB, and the hash 64 lowercase hex characters, or the whole file is ignored.
+- **Downloading** ([`download.ts`](../src/ui/data/updates/download.ts)). The ZIP comes from `releases/download/v<version>/`, is capped at the listed size, and must match the listed SHA-256 before it's saved to `sdcard` storage as `signal4kaios-<version>.zip`. That storage is create-only, so a name that's taken gets `-2`, `-3`, and so on.
+- **Installing** ([`install.ts`](../src/ui/data/updates/install.ts)). Beacon asks three services at once and uses the first in this order that answers within five seconds: `api-daemon`'s Sideload service (systems with the Sideload patch, for apps granted the `sideload` permission), Flipfull's bridge on the TCL Flip 4 (which stages the ZIP and must report the origin `signal4kaios` before Beacon lets it install), and the appscmd daemon on `127.0.0.1:5431`. Their scripts load only from fixed `http://127.0.0.1/` addresses. Before installing, Beacon closes the WebSocket and flushes pending storage writes; if the install fails, it reconnects. With no service, it keeps the saved ZIP and shows OStore's Manual Install steps.
+- **After an update**, the first launch of a newer version says **Beacon updated to …** (`lastRunVersion` in `s4k.config`).
 
 ## Receiving
 
@@ -395,4 +418,5 @@ Upgrading from a database older than version 4 discards the protocol state and a
 - **CSP.** The privileged-app CSP forbids `eval`, `new Function`, and inline scripts, and `scripts/package.sh` fails the build if any shipped script contains them, or if `index.html` has an inline `<script>` or `<style>`, a `style` or `on*` attribute, or a `javascript:` URL (`scripts/check-html-csp.sh`). On KaiOS 4.0 the ServiceWorker adds only `'wasm-unsafe-eval'` to `api-daemon`'s policy ([WebAssembly on KaiOS 4.0](#webassembly-on-kaios-40)).
 - **Screen lock** ([`src/ui/data/screen-lock.ts`](../src/ui/data/screen-lock.ts)) keeps only a salted PBKDF2-SHA-256 hash of the PIN in `s4k.config`, and the wrong-PIN count, so a restart doesn't reset the wait. The wait counts from when it started and restarts if the phone's clock moves back, capped at 15 minutes, so changing the clock can't skip it; it only passes while Beacon is open. It covers the UI and nothing else: the databases aren't encrypted with the PIN. It steps aside while a call's screen is showing, which takes every key and can't navigate anywhere else, and covers the app again when that screen closes. The PIN is read from the keypad's digit keys with no text field focused, so the keyboard never sees it.
 - **Profile key.** Only the primary phone rotates the profile key; Signal-Desktop as a linked device doesn't either. A Storage Service pull whose `AccountRecord.profileKey` differs from ours replaces the account's key and drops our cached credential for the old one.
+- **Updates.** Beacon installs only a ZIP whose size and SHA-256 match the latest release's `update.json`, both fetched over HTTPS from GitHub, and only through the phone's own install service; it never asks for `webapps-manage`. The checksum catches a damaged download, not a compromised GitHub account or release workflow, which could change both files ([Updates](#updates)).
 - **Logs.** The debug log never records keys, passwords, or provisioning codes, and a shared log has phone numbers, account IDs, usernames, and long tokens shortened. Everyday screens show plain-language errors (`friendlyError` in [`src/ui/errors.ts`](../src/ui/errors.ts)); the technical detail goes only to the log, which Settings > Debug shows.

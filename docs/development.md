@@ -118,8 +118,10 @@ To update, copy the same files from the new tags, update `buf.yaml`, and run `np
 ## Releasing
 
 1. Bump `b2g_features.version` in [`src/app/manifest.webmanifest`](../src/app/manifest.webmanifest) and `version` in [`package.json`](../package.json). Never change `id` or `origin` (`signal4kaios`).
-2. Add a `## v<version>` section to [`CHANGELOG.md`](../CHANGELOG.md); it becomes the release notes.
-3. Commit, tag `v<version>`, and push the tag. [`release.yml`](../.github/workflows/release.yml) builds the wasm module with the pinned toolchain, runs the tests, packages, and publishes the [GitHub Release](https://github.com/ambercaravalho/signal4kaios/releases).
+2. Add a `## v<version>` section to [`CHANGELOG.md`](../CHANGELOG.md); it becomes the release notes. For a release that fixes a security problem, give it a `### Security` heading: `update.json` then marks it as a security update, and installed copies show a notification for it.
+3. Commit, tag `v<version>`, and push the tag. [`release.yml`](../.github/workflows/release.yml) builds the wasm module with the pinned toolchain, runs the tests, packages, and publishes the [GitHub Release](https://github.com/ambercaravalho/signal4kaios/releases) with the ZIP and `update.json`. The notes are the changelog section, the install steps, and a **Full Changelog** link to the previous release.
+
+Installed copies find the release through `releases/latest/download/update.json`, so publishing a stable release offers it to every phone within about a day; pre-releases (tags with a `-` suffix) are never offered. Don't delete or replace the assets of the latest release, or update checks fail until the next one ([how updates work](architecture.md#updates)).
 
 ## Conventions
 

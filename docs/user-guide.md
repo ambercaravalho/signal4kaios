@@ -170,7 +170,7 @@ Calls start on the earpiece. **Back** doesn't leave the call screen, so the call
 | **Notifications** | Notification profile; Show; Sound; Reactions to your messages; what still notifies in muted chats (see [Notifications](#notifications)) |
 | **Privacy** | Read receipts; Typing indicators; Default timer for new chats; Private delivery icon; Phone number; Screen lock; Blocked; Proxy |
 | **Appearance** | Theme: light or dark; Text size: Small, Normal, Large, or Extra large; Chat color: Automatic or one of Signal's 22 bubble colors, for every chat without its own (all on this phone only) |
-| **Help** | Short guides by topic, Source code, and the version |
+| **Help** | Short guides by topic, Source code, the version, Check for updates, and Check for updates automatically |
 | **Debug** | Technical details for troubleshooting (see below) |
 
 **Linked device → Unlink this phone** removes Beacon from **Linked devices** on your main phone and deletes this phone's messages and keys. If you saved another account, Beacon switches to it. Without a connection to Signal it asks first, and then only unlinks here; remove the entry from **Linked devices** yourself afterwards. When your main phone unlinks Beacon, Beacon deletes its keys, keeps your messages, and shows the Link screen. Signal also removes a linked device that hasn't been opened for about 30 days, so open Beacon at least once a month; after that, it shows the Link screen in the same way.
@@ -184,6 +184,8 @@ Each account has its own history on the phone, and switching accounts restarts B
 If you change your number on your main phone, Beacon follows: it shows **Your number changed to …**, keeps your chats and history, and stays linked. Messages sent to your new number arrive as usual.
 
 **Help** lists guides on getting started, message history, keys, chats and messages, chat folders, groups and safety numbers, settings, the proxy, notifications, what Beacon can't do, and troubleshooting. Each opens a page with a QR code for the matching section of these docs: scan it with another phone, or press **Open** to read it in the phone's browser. **Learn more** at the bottom of Privacy, Chats, Chat folders, Notifications, Phone number, Screen lock, and Proxy, and in the safety number's **Options**, opens the same kind of page, as do **Help** on the welcome screen and when Beacon can't start, and **How to link** in the linking screen's **Options**.
+
+**Updates.** When a new version is out, the chat list shows **Beacon … is available**, and **Options** on the chat list, the top of **Settings**, and **Help** offer **Update to Beacon …**. A security update also shows a notification. Beacon installs the update itself where the phone allows it, or saves it for OStore's Manual Install; see [Updating](setup.md#updating). **Help → Check for updates automatically** (on by default, on this phone only) checks about once a day by asking GitHub, which sees your phone's internet address.
 
 **Profile → Photo** picks a picture from the gallery or camera, crops the middle square, and saves it at 512 by 512 pixels; with a photo set, it offers **Choose photo** and **Remove photo**. Your photo is encrypted with your profile key like the rest of your profile, and your main phone and other devices pick up the change. A photo set on your main phone shows here too.
 

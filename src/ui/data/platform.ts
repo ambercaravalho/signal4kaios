@@ -63,21 +63,38 @@ export function chooseFile(accept?: string): Promise<File | null> {
   });
 }
 
+function deviceStorage(kind: string): B2gDeviceStorage | null {
+  const api = b2g();
+  try {
+    return api && api.getDeviceStorage ? api.getDeviceStorage(kind) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Save a blob to "pictures", "music", "videos", or "sdcard". */
 export function saveToDevice(kind: string, blob: Blob, name: string): Promise<unknown> {
-  const api = b2g();
-  let storage: B2gDeviceStorage | null = null;
-  try {
-    storage = api && api.getDeviceStorage ? api.getDeviceStorage(kind) : null;
-  } catch {
-    storage = null;
-  }
+  const storage = deviceStorage(kind);
   if (!storage) return Promise.reject(new Error('storage unavailable'));
   try {
     return fromRequest(storage.addNamed(blob, name));
   } catch (e) {
     return Promise.reject(e);
   }
+}
+
+/** Save a blob like `saveToDevice` and resolve to its path on the file system, for a system service that reads it. */
+export function saveToDevicePath(kind: string, blob: Blob, name: string): Promise<string> {
+  const storage = deviceStorage(kind);
+  if (!storage) return Promise.reject(new Error('storage unavailable'));
+  const mount = (storage.storagePath || '').replace(/\/+$/, '');
+  if (!mount || mount === 'unknown') return Promise.reject(new Error('storage path unknown'));
+  return saveToDevice(kind, blob, name).then((stored) => {
+    const rel = typeof stored === 'string' && stored ? stored : name;
+    // Composite storage answers "/<storage name>/<file>" rather than a path under the mount point.
+    if (rel.indexOf(mount + '/') === 0) return rel;
+    return mount + '/' + rel.replace(/^\/+[^/]+\/(?=.)/, '').replace(/^\/+/, '');
+  });
 }
 
 let alarmQueue: Promise<unknown> = Promise.resolve();

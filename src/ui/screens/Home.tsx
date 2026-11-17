@@ -11,6 +11,7 @@ import { Screen } from '../components/Screen';
 import { muteItem } from '../components/setting-rows';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { toast } from '../components/Toast';
+import { UpdateBanner } from '../components/UpdateBanner';
 import { fmtTime } from '../data/format';
 import * as store from '../data/store';
 import type { Conversation } from '../data/types';
@@ -19,7 +20,7 @@ import { APP_NAME, fmt, S } from '../strings';
 import { openChat } from './Chat';
 import { ChatSettingsScreen } from './ChatSettings';
 import { NewChatScreen, SearchScreen } from './SearchList';
-import { SettingsScreen } from './Settings';
+import { SettingsScreen, updateMenuItem } from './Settings';
 
 const ARCHIVED_ROW = 'archived';
 
@@ -70,7 +71,10 @@ function deleteChatItem(conv: Conversation) {
 }
 
 function homeOptions(conv: Conversation | undefined): void {
+  const update = updateMenuItem();
   showOptions([
+    update,
+    update && DIVIDER,
     conv && { label: S.chatSettings, onSelect: () => router.push(ChatSettingsScreen, { convId: conv.id }) },
     conv && { label: conv.pinned ? S.unpinChat : S.pinChat, onSelect: () => store.setConvPinned(conv.id, !conv.pinned) || toast(S.pinLimit) },
     conv && { label: S.archive, onSelect: () => store.setArchived(conv.id, true) },
@@ -119,7 +123,13 @@ export function HomeScreen() {
   const name = custom ? folder!.name : folders.length > 1 ? S.allChats : APP_NAME;
 
   return (
-    <Screen title={folders.length > 1 ? fmt(S.folderTitle, { name }) : name} banner={<ConnectionBanner />}>
+    <Screen title={folders.length > 1 ? fmt(S.folderTitle, { name }) : name} banner={
+        <>
+          <ConnectionBanner />
+          <UpdateBanner />
+        </>
+      }
+    >
       <RowList
         rows={rows}
         empty={empty}
