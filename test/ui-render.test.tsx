@@ -9,6 +9,7 @@ import { Badge, ListItem } from '../src/ui/components/List';
 import { confirm, dialogKey, DIVIDER, menuRows, pick, showOptions } from '../src/ui/components/Overlays';
 import { QrCode } from '../src/ui/components/Qr';
 import { RichText } from '../src/ui/components/RichText';
+import { focusIndex } from '../src/ui/components/RowList';
 import { AUTOMATIC, CHAT_COLORS, chatColorOptions } from '../src/ui/data/chat-colors';
 import { signal } from '../src/ui/data/api';
 import { config } from '../src/ui/data/config';
@@ -245,6 +246,13 @@ describe('screens', () => {
     };
     await openPhone('+15550004');
     assert.equal(_stackForTest().length, 1);
+  });
+
+  it('keeps focus on the same chat when the list reorders, and follows the user when they move', () => {
+    assert.equal(focusIndex(['b', 'a', 'c'], 1, { key: 'c', navIndex: 1 }), 2, 'a new message moved another chat to the top');
+    assert.equal(focusIndex(['b', 'a', 'c'], 2, { key: 'a', navIndex: 1 }), 2, 'the user pressed Down');
+    assert.equal(focusIndex(['b', 'c'], 1, { key: 'a', navIndex: 1 }), 1, 'a deleted chat leaves focus in place');
+    assert.equal(focusIndex([undefined, undefined], 1, { navIndex: 1 }), 1);
   });
 
   it('reads a number typed without a country code as one in our own country', () => {

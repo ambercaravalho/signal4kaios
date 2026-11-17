@@ -1,4 +1,5 @@
 import type { ComponentChildren, VNode } from 'preact';
+import { useLayoutEffect, useRef } from 'preact/hooks';
 import { useListNav } from '../app/focus';
 import { SoftkeyLabels, useKeys, useSoftkeys } from '../app/router';
 import { S } from '../strings';
@@ -26,6 +27,13 @@ function isAction(r: Row): r is ActionRow {
   return !!r && !('section' in r);
 }
 
+/** Which row has focus: the row with the key that had it before, when the rows changed under it rather than the user moving, else where the user moved. A row that's gone leaves focus at the same place. */
+export function focusIndex(keys: Array<string | undefined>, navIndex: number, last: { key?: string; navIndex: number }): number {
+  if (navIndex !== last.navIndex || last.key === undefined) return navIndex;
+  const at = keys.indexOf(last.key);
+  return at >= 0 ? at : navIndex;
+}
+
 /** A navigable list of rows with section separators. Enter runs the focused row's `onSelect`. The list owns its entry's softkeys: `softkeys` adds left/right labels for the focused row and `onKey` handles them. */
 export function RowList(props: {
   rows: Row[];
@@ -47,10 +55,16 @@ export function RowList(props: {
       if (r && r.onSelect) r.onSelect();
     },
   });
-  const row = actions[nav.index];
+  const last = useRef<{ key?: string; navIndex: number }>({ navIndex: nav.index });
+  const index = focusIndex(actions.map((r) => r.key), nav.index, last.current);
+  last.current = { key: actions[index] && actions[index].key, navIndex: index };
+  useLayoutEffect(() => {
+    if (index !== nav.index) nav.setIndex(index);
+  });
+  const row = actions[index];
   const extra = props.softkeys ? props.softkeys(row) : {};
   useSoftkeys({ center: row && row.onSelect ? row.action || S.select : null, ...extra });
-  useKeys((e) => (props.onKey ? props.onKey(e, row, nav.index) : false));
+  useKeys((e) => (props.onKey ? props.onKey(e, row, index) : false));
 
   if (!actions.length && props.empty) return <>{props.empty}</>;
   let n = -1;
@@ -62,7 +76,7 @@ export function RowList(props: {
         return (
           <ListItem
             key={r.key || r.label + i}
-            focused={n === nav.index}
+            focused={n === index}
             primary={r.label}
             secondary={r.sub}
             meta={r.meta}
