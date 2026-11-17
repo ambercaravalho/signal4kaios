@@ -102,7 +102,7 @@ export function unlink(): Promise<void> {
 
 /** Point the store at the account being linked, with no keys or sessions left from an earlier link of it; its history stays. */
 export async function openLinkDatabase(account: { aci: string; number: string }): Promise<void> {
-  await db.useAccount(account.number || account.aci);
+  await db.useAccount(config.dbKeyFor(account.aci, account.number));
   await db.clearSignalState();
 }
 

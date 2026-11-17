@@ -254,4 +254,28 @@ describe('acknowledging messages', () => {
     await settle();
     assert.equal(preKeyChecks, 2);
   });
+
+  it('never puts the password in a URL: without the pinned client it doesn’t connect', () => {
+    const s = signal as any;
+    const urls: string[] = [];
+    const g = globalThis as any;
+    const realWs = g.WebSocket;
+    g.WebSocket = function (url: string) {
+      urls.push(url);
+      return new FakeSocket();
+    };
+    s.net.isPinnedUrl = () => false;
+    const before = sockets.length;
+    try {
+      ws.stop();
+      ws.connect();
+      assert.deepEqual(urls, []);
+      assert.equal(sockets.length, before);
+    } finally {
+      g.WebSocket = realWs;
+      s.net.isPinnedUrl = () => true;
+      ws.connect();
+      current().open();
+    }
+  });
 });

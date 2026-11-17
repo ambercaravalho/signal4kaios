@@ -584,6 +584,7 @@ export const S = {
   unlock: 'Unlock',
   forgotPin: 'Forgot PIN',
   forgotPinBody: 'Without the PIN, delete all data and link again to get back in. Your Signal account stays.',
+  forgotPinConfirm: 'Every account, message, and setting here will be deleted. Press OK to delete.',
   screenLockOn: 'Screen lock is on',
   screenLockOff: 'Screen lock is off',
   appearance: 'Appearance',

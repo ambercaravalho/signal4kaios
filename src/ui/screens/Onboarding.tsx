@@ -68,9 +68,10 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
       },
       onLinked: (creds, link) => {
         session.current = null;
+        const dbNumber = config.dbKeyFor(creds.aci, creds.number);
         config.prepareAccount(creds.aci);
         // SECURITY-REVIEW: the device password goes to config storage only; it is never logged or shown.
-        config.set({ number: creds.number || creds.aci, dbNumber: creds.number || creds.aci, aci: creds.aci, deviceId: creds.deviceId, deviceToken: creds.password, deviceName });
+        config.set({ number: creds.number || creds.aci, dbNumber, aci: creds.aci, deviceId: creds.deviceId, deviceToken: creds.password, deviceName });
         config.saveActiveAccount();
         // SECURITY-REVIEW: the ephemeral backup key is kept in config only until the history import ends.
         config.setHistorySync(link.ephemeralBackupKey ? { aci: creds.aci, key: toBase64(link.ephemeralBackupKey) } : null);

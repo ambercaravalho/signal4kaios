@@ -30,7 +30,8 @@ export interface ScreenLockConfig {
   iterations: number;
   lockAfter: number;
   failures: number;
-  retryAt: number;
+  /** What's left of the wait after wrong PINs, counted down only while the app runs. */
+  waitLeftMs: number;
 }
 
 /** Message history the phone offered when this account was linked, until it is imported or skipped. `chunks` were downloaded so far; `downloaded` once the whole archive is in. */
@@ -91,6 +92,8 @@ interface ConfigData {
   preKeysCheckedAt?: Record<string, number>;
   /** Every database Beacon has opened on this phone, so Delete all data can find them where the browser can't list them. */
   knownDatabases?: string[];
+  /** Each account's database key (`dbNumber`) by ACI, kept after an unlink so relinking with a new number finds its history. */
+  accountDatabases?: Record<string, string>;
   /** The `ACCOUNT_KEYS` settings of each saved account (by ACI) other than the active one, whose settings are at the top level. */
   accountSettings?: Record<string, Partial<ConfigData>>;
   [k: string]: unknown;
@@ -291,7 +294,7 @@ export const config = {
       iterations: s.iterations,
       lockAfter: typeof s.lockAfter === 'number' && s.lockAfter >= 0 ? s.lockAfter : 60,
       failures: typeof s.failures === 'number' && s.failures > 0 ? s.failures : 0,
-      retryAt: typeof s.retryAt === 'number' && s.retryAt > 0 ? s.retryAt : 0,
+      waitLeftMs: typeof s.waitLeftMs === 'number' && s.waitLeftMs > 0 ? Math.min(s.waitLeftMs, 15 * 60000) : 0,
     };
   },
 
@@ -338,7 +341,21 @@ export const config = {
     if (i >= 0) list[i] = entry;
     else list.push(entry);
     c.accounts = list;
+    if (entry.aci && entry.dbNumber) c.accountDatabases = Object.assign({}, c.accountDatabases, { [entry.aci]: entry.dbNumber });
     write(c);
+  },
+
+  /** The key of the database the account with `aci` already has on this phone, else `number`; a relink after a number change opens the old one. */
+  dbKeyFor(aci: string, number: string): string {
+    const c = read();
+    if (aci) {
+      const known = c.accountDatabases && c.accountDatabases[aci];
+      if (typeof known === 'string' && known) return known;
+      if (c.aci === aci && (c.dbNumber || c.number)) return (c.dbNumber || c.number) as string;
+      const a = (c.accounts || []).find((x) => x.aci === aci);
+      if (a && (a.dbNumber || a.number)) return a.dbNumber || a.number;
+    }
+    return number || aci;
   },
 
   /** The active account has a new number; its database keeps the name it was created under. */
@@ -358,6 +375,7 @@ export const config = {
     const aci = c.aci;
     c.deviceToken = '';
     c.deviceId = 0;
+    if (aci && (c.dbNumber || num)) c.accountDatabases = Object.assign({}, c.accountDatabases, { [aci]: c.dbNumber || num });
     c.accounts = (c.accounts || []).filter((a) => a.number !== num && (!aci || a.aci !== aci));
     write(c);
   },

@@ -16,8 +16,8 @@ export function lockAfterLabel(secs: number): string {
   return fmt(S.nMinutes, { n: Math.round(secs / 60) });
 }
 
-export function pinWaitMessage(retryAt: number): string {
-  return fmt(S.pinWait, { time: screenLock.waitLabel(retryAt - Date.now()) });
+export function pinWaitMessage(waitMs: number): string {
+  return fmt(S.pinWait, { time: screenLock.waitLabel(waitMs) });
 }
 
 /** A PIN to open the app, and how long it may sit in the background first. Turning it off needs the PIN. */
@@ -40,7 +40,7 @@ export function ScreenLockScreen() {
   }
 
   async function turnOff(): Promise<void> {
-    const waiting = screenLock.retryAt();
+    const waiting = screenLock.waitLeft();
     if (waiting) {
       toast(pinWaitMessage(waiting));
       return;
@@ -49,7 +49,7 @@ export function ScreenLockScreen() {
     if (!pin) return;
     const res = await screenLock.check(pin);
     if (!res.ok) {
-      toast(res.retryAt ? pinWaitMessage(res.retryAt) : S.wrongPin);
+      toast(res.waitMs ? pinWaitMessage(res.waitMs) : S.wrongPin);
       return;
     }
     screenLock.disable();

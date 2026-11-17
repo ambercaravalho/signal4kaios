@@ -12,6 +12,11 @@ const PBKDF2_ITERATIONS = 100000;
 const FREE_ATTEMPTS = 3;
 const FIRST_DELAY_MS = 30000;
 const MAX_DELAY_MS = 15 * 60000;
+/** How much of a wait may pass between saves of what's left. */
+const SAVE_EVERY_MS = 5000;
+
+/** Time that only moves forward while Beacon runs; changing the phone's clock doesn't move it. */
+const clock = (): number => performance.now();
 
 export interface PinHash {
   salt: string;
@@ -40,7 +45,7 @@ export async function verifyPin(pin: string, stored: PinHash): Promise<boolean> 
   return diff === 0;
 }
 
-/** Whether coming back after being hidden since `hiddenAt` needs the PIN. */
+/** Whether coming back after being hidden since `hiddenAt` (on the same clock as `now`) needs the PIN. */
 export function lockDue(lockAfterSecs: number, hiddenAt: number | null, now: number): boolean {
   return hiddenAt !== null && now - hiddenAt >= lockAfterSecs * 1000;
 }
@@ -70,7 +75,8 @@ export function lockAfter(): number {
 export async function enable(pin: string, after = DEFAULT_LOCK_AFTER): Promise<void> {
   if (!validPin(pin)) throw new Error('PIN must be 4 to 8 digits');
   const h = await hashPin(pin);
-  const s: ScreenLockConfig = { ...h, lockAfter: after, failures: 0, retryAt: 0 };
+  const s: ScreenLockConfig = { ...h, lockAfter: after, failures: 0, waitLeftMs: 0 };
+  anchor = null;
   config.set({ screenLock: s });
 }
 
@@ -83,26 +89,41 @@ export function setLockAfter(secs: number): void {
   if (s) config.set({ screenLock: { ...s, lockAfter: secs } });
 }
 
-/** When the next PIN may be tried, in ms since the epoch; 0 when it can be tried now. */
-export function retryAt(now = Date.now()): number {
-  const s = config.screenLock();
-  return s && s.retryAt > now ? s.retryAt : 0;
+/** The saved wait as of `at` on the running clock; a restart starts again from what was saved. */
+let anchor: { at: number; left: number } | null = null;
+
+function saveLeft(s: ScreenLockConfig, left: number, now: number): void {
+  anchor = left ? { at: now, left } : null;
+  config.set({ screenLock: { ...s, waitLeftMs: left } });
 }
 
-/** Check a PIN, counting wrong ones so repeated guesses have to wait. Wrong guesses are remembered across restarts. */
-export async function check(pin: string, now = Date.now()): Promise<{ ok: boolean; retryAt: number }> {
+/** How long until the next PIN may be tried; 0 when it can be tried now. The wait passes only while Beacon runs, so setting the clock forward doesn't end it. */
+export function waitLeft(now = clock(), save = false): number {
   const s = config.screenLock();
-  if (!s) return { ok: true, retryAt: 0 };
-  if (s.retryAt > now) return { ok: false, retryAt: s.retryAt };
+  if (!s || !s.waitLeftMs) {
+    anchor = null;
+    return 0;
+  }
+  if (!anchor || now < anchor.at) anchor = { at: now, left: s.waitLeftMs };
+  const left = Math.max(0, anchor.left - (now - anchor.at));
+  if (save || !left || s.waitLeftMs - left >= SAVE_EVERY_MS) saveLeft(s, left, now);
+  return left;
+}
+
+/** Check a PIN, counting wrong ones so repeated guesses have to wait. Wrong guesses and what's left of a wait are remembered across restarts. */
+export async function check(pin: string, now = clock()): Promise<{ ok: boolean; waitMs: number }> {
+  const left = waitLeft(now, true);
+  const s = config.screenLock();
+  if (!s) return { ok: true, waitMs: 0 };
+  if (left) return { ok: false, waitMs: left };
   if (await verifyPin(pin, s)) {
-    if (s.failures || s.retryAt) config.set({ screenLock: { ...s, failures: 0, retryAt: 0 } });
-    return { ok: true, retryAt: 0 };
+    if (s.failures || s.waitLeftMs) saveLeft({ ...s, failures: 0 }, 0, now);
+    return { ok: true, waitMs: 0 };
   }
   const failures = s.failures + 1;
   const delay = retryDelayMs(failures);
-  const next = delay ? now + delay : 0;
-  config.set({ screenLock: { ...s, failures, retryAt: next } });
-  return { ok: false, retryAt: next };
+  saveLeft({ ...s, failures }, delay, now);
+  return { ok: false, waitMs: delay };
 }
 
 let locked = false;
@@ -135,12 +156,13 @@ export function onLockChange(fn: () => void): () => void {
 }
 
 /** The app was hidden or shown again: lock at once for "immediately", or on return once the wait has passed. */
-export function visibilityChanged(hidden: boolean, now = Date.now()): void {
+export function visibilityChanged(hidden: boolean, now = clock()): void {
   if (!enabled()) {
     hiddenAt = null;
     return;
   }
   if (hidden) {
+    waitLeft(now, true);
     if (hiddenAt === null) hiddenAt = now;
     if (lockAfter() === 0) setLocked(true);
     return;
