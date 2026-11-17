@@ -82,6 +82,7 @@ export function MessageDetailsScreen(props: { msg: Message }) {
   else if (conv) fields.push([S.to, conv.name]);
   fields.push([m.incoming ? S.received : S.sent, fmtTimeFull(m.timestamp)]);
   if (!m.incoming && STATUS_LABEL[m.status]) fields.push([S.status, STATUS_LABEL[m.status]]);
+  if (!m.incoming && m.notDelivered) fields.push([S.notSentTo, plural(m.notDelivered, S.memberOne, S.memberMany)]);
   if (m.edited) fields.push([S.edited, S.yes]);
   if (m.expiresAt) fields.push([S.disappearsIn, fmtDuration((m.expiresAt - Date.now()) / 1000)]);
   const privately = !!m.sealed && config.sealedSenderIndicators();

@@ -143,6 +143,24 @@ export function markViewed(m: Message): void {
 }
 
 /** Clear a chat's unread count, tell our other devices, and send read receipts (up to 10) for what was unread. */
+const READ_PAGE = 100;
+/** How far back reading a chat looks for messages to send receipts for. */
+const READ_PAGES = 20;
+
+/** Received messages newer than `since`, oldest first; notices such as group changes aren't messages anyone sent. */
+async function unreadSince(convId: string, since: number): Promise<Message[]> {
+  let rows: Message[] = [];
+  let before = Number.MAX_SAFE_INTEGER;
+  for (let i = 0; i < READ_PAGES; i++) {
+    const page = await db.getMessagesPage(convId, before, READ_PAGE);
+    const newer = page.filter((r) => r.timestamp > since);
+    rows = newer.concat(rows);
+    if (page.length < READ_PAGE || newer.length < page.length) break;
+    before = page[0].timestamp;
+  }
+  return rows.filter((r) => r.incoming && !r.notice);
+}
+
 export function markRead(convId: string): void {
   const conv = convs[convId];
   if (!conv) return;
@@ -156,10 +174,16 @@ export function markRead(convId: string): void {
   // A message request stays unread for the sender until it's accepted, as in Signal.
   if (conv.request) persistConv(conv);
   else
-    db.getMessagesPage(convId, Number.MAX_SAFE_INTEGER, 25).then((rows) => {
-      const pending = rows.filter((r) => r.incoming && r.timestamp > (conv.lastReadTs || 0));
+    unreadSince(convId, conv.lastReadTs || 0).then((pending) => {
       const receipt = config.sendReadReceipts();
-      for (const r of pending.slice(-10)) signal.sendReadReceipt(r.author, r.timestamp, { receipt }).catch((e) => dbg('receipt failed ' + (e && e.message)));
+      const bySender = new Map<string, number[]>();
+      for (const r of pending) {
+        if (!r.author) continue;
+        const list = bySender.get(r.author) || [];
+        list.push(r.timestamp);
+        bySender.set(r.author, list);
+      }
+      bySender.forEach((ts, author) => signal.sendReadReceipts(author, ts, { receipt }).catch((e) => dbg('receipt failed ' + (e && e.message))));
       if (pending.length) conv.lastReadTs = pending[pending.length - 1].timestamp;
       persistConv(conv);
     });

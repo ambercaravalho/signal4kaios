@@ -66,6 +66,8 @@ interface ConfigData {
   /** Seconds; the disappearing-message timer new 1:1 chats start with. */
   defaultExpireTimer?: number;
   keepMutedArchived?: boolean;
+  /** The account's quick reactions from Storage Service, in order; an empty slot uses Signal's default. */
+  reactionEmoji?: string[];
   /** The account's defaults for muted chats and reactions, shared through Storage Service. */
   notifyMentionsIfMuted?: boolean;
   notifyRepliesIfMuted?: boolean;
@@ -112,6 +114,8 @@ const ACCOUNT_KEYS = [
   'linkPreviews',
   'sealedSenderIndicators',
   'defaultExpireTimer',
+  'keepMutedArchived',
+  'reactionEmoji',
   'sharePhoneNumber',
   'findableByNumber',
   'notifyMentionsIfMuted',
@@ -220,6 +224,11 @@ export const config = {
   typingIndicators: onUnlessOff('typingIndicators'),
   linkPreviews: onUnlessOff('linkPreviews'),
   sealedSenderIndicators: offUnlessOn('sealedSenderIndicators'),
+
+  reactionEmoji(): string[] {
+    const v = read().reactionEmoji;
+    return Array.isArray(v) ? v.map((e) => (typeof e === 'string' ? e : '')) : [];
+  },
 
   defaultExpireTimer(): number {
     const v = read().defaultExpireTimer;

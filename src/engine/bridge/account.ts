@@ -140,7 +140,7 @@ const writeProfileOverride = savedStorageWrite('notificationProfileOverride', (o
   },
 ]);
 
-type AccountToggle = 'readReceipts' | 'typingIndicators' | 'linkPreviews' | 'sealedSenderIndicators';
+type AccountToggle = 'readReceipts' | 'typingIndicators' | 'linkPreviews' | 'sealedSenderIndicators' | 'keepMutedChatsArchived';
 
 const writeAccountToggle = savedStorageWrite('accountToggle', (field: AccountToggle, on: boolean): StorageMutation[] => [
   {
@@ -306,6 +306,11 @@ export const accountMethods = {
   /** Whether links we send get previews (`AccountRecord.linkPreviews`), shared with our other devices. */
   async setLinkPreviews(on: boolean): Promise<void> {
     await writeAccountToggle('linkPreviews', on);
+  },
+
+  /** Whether muted chats stay archived when a message arrives (`AccountRecord.keepMutedChatsArchived`), shared with our other devices. */
+  async setKeepMutedChatsArchived(on: boolean): Promise<void> {
+    await writeAccountToggle('keepMutedChatsArchived', on);
   },
 
   /** Whether we send read receipts (`AccountRecord.readReceipts`), shared with our other devices. */

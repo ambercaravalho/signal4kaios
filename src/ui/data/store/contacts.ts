@@ -1,5 +1,6 @@
 /* Contacts and groups from the directory, and who is us. */
 
+import { S } from '../../strings';
 import { type SyncedContact, syncedContacts, syncedGroups } from '../api';
 import { config } from '../config';
 import { db } from '../db';
@@ -36,10 +37,14 @@ export function contactByKey(key: string): Contact | undefined {
 }
 
 /** A person's name for message authors and member lists; never "Note to Self". */
+const BARE_ID = /^(PNI:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A person's name; someone known only by their Signal ID, until their profile name arrives, is "Unknown". */
 export function displayName(key: string): string {
   const c = contactByKey(key);
-  if (c && c.name && c.name !== SELF_NAME) return c.name;
-  return key || '?';
+  const name = c && c.name && c.name !== SELF_NAME ? c.name : key;
+  if (!name) return '?';
+  return BARE_ID.test(name) ? S.unknown : name;
 }
 
 export function directName(key: string, fallback: string): string {

@@ -88,6 +88,16 @@ describe('friendlyError', () => {
     assert.equal(friendlyError(err('UsernameRateLimited')), S.errRateLimited);
   });
 
+  it('says what went wrong with a group change, a changed safety number, or Signal’s challenge', () => {
+    const err = (name: string, status?: number) => Object.assign(new Error('x'), { name, status });
+    assert.equal(friendlyError(err('LastAdmin')), S.errLastAdmin);
+    assert.equal(friendlyError(err('GroupChangeForbidden', 403)), S.errGroupAdminsOnly);
+    assert.equal(friendlyError(err('GroupChangeConflict', 409)), S.errGroupConflict);
+    assert.equal(friendlyError(err('NotAMember')), S.errNotAMember);
+    assert.equal(friendlyError(err('UntrustedIdentity')), S.errSafetyNumber);
+    assert.equal(friendlyError({ kind: 'http', status: 428 }), S.errChallenge);
+  });
+
   it('never echoes the raw message', () => {
     const raw = 'libsignal: invalid PreKey bundle for ACI abc';
     assert.equal(friendlyError(new Error(raw)), S.errGeneric);

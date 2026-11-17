@@ -16,13 +16,19 @@ export function ChatsSettingsScreen() {
   const refresh = useRefresh();
   const rows: Row[] = [
     toggleRow('fmt', S.textFormatting, config.styledText(), (v) => (config.set({ styledText: v }), refresh()), S.textFormattingHint),
-    toggleRow('muted', S.keepMutedArchived, config.keepMutedArchived(), (v) => (config.set({ keepMutedArchived: v }), refresh())),
+    toggleRow('muted', S.keepMutedArchived, config.keepMutedArchived(), setKeepMutedArchived),
     toggleRow('previews', S.generateLinkPreviews, config.linkPreviews(), setLinkPreviews, S.generateLinkPreviewsHint),
     { section: '' },
     { key: 'folders', label: S.chatFolders, sub: config.chatFolders().length ? plural(foldersInOrder().length, S.folderOne, S.folderMany) : undefined, action: S.open, onSelect: () => router.push(ChatFoldersScreen, {}) },
     { section: '' },
     guideRow('settings'),
   ];
+
+  function setKeepMutedArchived(on: boolean): void {
+    config.set({ keepMutedArchived: on });
+    refresh();
+    signal.setKeepMutedChatsArchived(on).catch((e) => toast(friendlyError(e)));
+  }
 
   function setLinkPreviews(on: boolean): void {
     config.set({ linkPreviews: on });

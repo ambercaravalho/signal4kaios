@@ -5,7 +5,7 @@ import { randomBytes, toBase64 } from '../src/engine/bytes';
 import { accountMethods } from '../src/engine/bridge/account';
 import { contactMethods } from '../src/engine/bridge/contact-actions';
 import { contactIds, recordPeerProfileKey, syncedContacts, syncedGroups } from '../src/engine/bridge/contacts';
-import { mergeGroupState } from '../src/engine/bridge/group-state';
+import { markAskedToJoin, mergeGroupState } from '../src/engine/bridge/group-state';
 import { client, httpJson, storageQueue, store } from '../src/engine/bridge/context';
 import { conversationIdentifier } from '../src/engine/bridge/delivery';
 import { incomingMethods } from '../src/engine/bridge/incoming';
@@ -359,6 +359,9 @@ describe('read receipts', () => {
       sent.length = 0;
       await outgoingMethods.sendReadReceipt(BOB, 2000, { receipt: true });
       assert.deepEqual(sent, ['receipt ' + BOB + ' receiptMessage', 'sync ' + BOB + ' 2000']);
+      sent.length = 0;
+      await outgoingMethods.sendReadReceipts(BOB, Array.from({ length: 150 }, (_, i) => 3000 + i), { receipt: true });
+      assert.deepEqual(sent.map((l) => l.split(' ')[0] + ' ' + (l.match(/,/g) || []).length), ['receipt 0', 'sync 99', 'receipt 0', 'sync 49']);
     } finally {
       c.sendContentToRecipient = sendContentToRecipient;
       c.sendSyncMessage = sendSyncMessage;
@@ -431,6 +434,33 @@ describe('group invites', () => {
     kv.set('syncedGroups', [{ id: gk.sendId, internal_id: gk.internalId, masterKey: toBase64(masterKey), revision: 1, name: 'Group', members: [BOB], admins: [], blocked: false, unvetted: true }]);
     await mergeGroupState({ ...state([BOB, ALICE], []), invitedBy: {} }, { author: BOB, revision: 2, timestamp: 1 });
     assert.equal((await syncedGroups())[0].messageRequest, undefined);
+  });
+
+  it('learns members’ profile keys from the group, without keeping them on the group', async () => {
+    kv.set('syncedContacts', [{ uuid: BOB, number: '+15550002', name: 'Bob', profile_name: 'Bob B', profileKey: '' }]);
+    kv.set('syncedGroups', []);
+    const key = toBase64(new Uint8Array(32).fill(4));
+    await mergeGroupState({ ...state([BOB, CAROL, ALICE], []), profileKeys: { [BOB]: key, [CAROL]: key, [ALICE]: key } });
+    const contacts = kv.get('syncedContacts') as any[];
+    assert.equal(contacts.find((c) => c.uuid === BOB).profileKey, key);
+    assert.equal(contacts.find((c) => c.uuid === CAROL).profileKey, key);
+    assert.equal(contacts.some((c) => c.uuid === ALICE), false, 'not our own');
+    assert.equal((await syncedGroups())[0].profileKeys, undefined);
+  });
+
+  it('opens a group we asked to join when a stranger approves us, and only that once', async () => {
+    const approved = () => mergeGroupState({ ...state([CAROL, ALICE], []), admins: [CAROL], invitedBy: {} }, { author: CAROL, revision: 2, timestamp: 1 });
+    const fresh = () => kv.set('syncedGroups', [{ id: gk.sendId, internal_id: gk.internalId, masterKey: toBase64(masterKey), revision: 1, name: 'Group', members: [CAROL], admins: [], blocked: false, unvetted: true }]);
+    kv.set('syncedContacts', []);
+    fresh();
+    await markAskedToJoin(gk.internalId, true);
+    await approved();
+    assert.equal((await syncedGroups())[0].messageRequest, undefined);
+    assert.deepEqual(kv.get('askedToJoin'), []);
+
+    fresh();
+    await approved();
+    assert.equal((await syncedGroups())[0].messageRequest, true, 'without asking, a stranger adding us is a request');
   });
 });
 

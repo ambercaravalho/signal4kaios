@@ -39,6 +39,8 @@ type PreviewInit = MessageInitShape<typeof PreviewSchema>;
 /** Signal-Desktop's composer limit. */
 const MAX_ATTACHMENTS = 32;
 const MAX_PREVIEW_IMAGE_BYTES = 1024 * 1024;
+/** Read receipts and Read syncs per message, as Signal-Desktop batches them. */
+const READ_BATCH = 100;
 
 export interface SendPayload {
   recipients: string[];
@@ -129,7 +131,7 @@ export const outgoingMethods = {
   /**
    * Send an outgoing message, edit, or attachment. `message` is the plain body; `styles` are its formatting ranges.
    */
-  async send(payload: SendPayload): Promise<{ timestamp: number; sealed: boolean; attachments: string[] }> {
+  async send(payload: SendPayload): Promise<{ timestamp: number; sealed: boolean; notDelivered: number; attachments: string[] }> {
     const bodyText = payload.message || '';
     let sent: AttachmentPointer[] = [];
     const res = await sendDataMessage(
@@ -168,7 +170,7 @@ export const outgoingMethods = {
       },
       { editTimestamp: payload.edit_timestamp }
     );
-    return { timestamp: res.timestamp, sealed: res.sealed, attachments: sent.map((p) => pointerDescriptor(p, p.contentType || '', p.fileName || '')) };
+    return { timestamp: res.timestamp, sealed: res.sealed, notDelivered: res.failed.length, attachments: sent.map((p) => pointerDescriptor(p, p.contentType || '', p.fileName || '')) };
   },
 
   async sendReaction(recipient: string, targetAuthor: string, targetTimestamp: number, emoji: string, remove: boolean): Promise<void> {
@@ -245,8 +247,9 @@ export const outgoingMethods = {
     return res.timestamp;
   },
 
-  /** Change a 1:1 chat's disappearing-message timer with an explicit EXPIRATION_TIMER_UPDATE message and a newer `expireTimerVersion`, as Signal-Desktop does. */
-  async setDirectExpireTimer(recipient: string, seconds: number): Promise<void> {
+  /** Change a 1:1 chat's disappearing-message timer with an explicit EXPIRATION_TIMER_UPDATE message and a newer `expireTimerVersion`, as Signal-Desktop does. Resolves to that version. */
+  async setDirectExpireTimer(recipient: string, seconds: number): Promise<number> {
+    let sentVersion = 0;
     await sendDataMessage(recipient, async (target) => {
       if (target.isGroup) throw new Error('Use the group settings to change a group timer');
       const ids = await contactIds(target.peers[0]);
@@ -256,6 +259,7 @@ export const outgoingMethods = {
         c.expireTimerVersion = version;
         c.expireTimer = seconds;
       });
+      sentVersion = version;
       const acc = await store.getAccount();
       return {
         flags: DataMessage_Flags.EXPIRATION_TIMER_UPDATE,
@@ -264,6 +268,7 @@ export const outgoingMethods = {
         profileKey: acc ? acc.profileKey : undefined,
       };
     });
+    return sentVersion;
   },
 
   async sendTyping(recipient: string, started: boolean): Promise<void> {
@@ -285,20 +290,22 @@ export const outgoingMethods = {
 
   /** We read a message: a READ receipt to the sender when `receipt` is set, and always a Read sync to our other devices, as Signal-Desktop does. */
   async sendReadReceipt(recipient: string, timestamp: number, opts: { receipt: boolean }): Promise<void> {
-    const now = Date.now();
+    await outgoingMethods.sendReadReceipts(recipient, [timestamp], opts);
+  },
+
+  /** `sendReadReceipt` for several messages from one sender: one receipt and one sync for each 100 messages. */
+  async sendReadReceipts(recipient: string, timestamps: number[], opts: { receipt: boolean }): Promise<void> {
     const aci = await resolveAci(recipient);
-    if (!aci) return;
-    if (opts.receipt && !(await isBlockedRecipient(aci)) && !(await isBlockedRecipient(recipient))) {
-      await client.sendContentToRecipient(
-        aci,
-        create(ContentSchema, { content: { case: 'receiptMessage', value: { type: ReceiptMessage_Type.READ, timestamp: [BigInt(timestamp)] } } }),
-        now
-      );
+    if (!aci || !timestamps.length) return;
+    const receipt = opts.receipt && !(await isBlockedRecipient(aci)) && !(await isBlockedRecipient(recipient));
+    for (let i = 0; i < timestamps.length; i += READ_BATCH) {
+      const batch = timestamps.slice(i, i + READ_BATCH).map((t) => BigInt(t));
+      const now = Date.now();
+      if (receipt) {
+        await client.sendContentToRecipient(aci, create(ContentSchema, { content: { case: 'receiptMessage', value: { type: ReceiptMessage_Type.READ, timestamp: batch } } }), now);
+      }
+      await client.sendSyncMessage(create(ContentSchema, { content: { case: 'syncMessage', value: { read: batch.map((timestamp) => ({ senderAci: aci, timestamp })) } } }), now);
     }
-    await client.sendSyncMessage(
-      create(ContentSchema, { content: { case: 'syncMessage', value: { read: [{ senderAci: aci, timestamp: BigInt(timestamp) }] } } }),
-      now
-    );
   },
 
   /** We opened a voice message, video, or view-once media: a VIEWED receipt to the sender when `receipt` is set, and a Viewed sync (plus ViewOnceOpen for view-once) to our other devices, as Signal-Desktop does. */

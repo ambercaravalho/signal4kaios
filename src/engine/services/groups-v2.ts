@@ -59,6 +59,8 @@ export interface GroupV2Metadata {
   invite_link: string;
   /** Who invited each pending member (`MemberPendingProfileKey.addedByUserId`); dropped once merged into `addedBy`. */
   invitedBy?: Record<string, string>;
+  /** Each member's profile key (base64) by ACI, from `Member.profileKey`; dropped once recorded on the member's contact. */
+  profileKeys?: Record<string, string>;
   /** Profile sharing is on for the group (Storage Service `GroupV2Record.whitelisted`). */
   whitelisted?: boolean;
   /** Who added or invited us, when we know. */
@@ -256,11 +258,18 @@ export function decodeGroupState(keys: DerivedGroupV2Keys, group: Group): GroupV
 
   const members: string[] = [];
   const admins: string[] = [];
+  const profileKeys: Record<string, string> = {};
   for (const m of group.members) {
     const [id] = decryptMemberIds(keys, [m.userId]);
     if (!id) continue;
     members.push(id);
     if (m.role === Member_Role.ADMINISTRATOR) admins.push(id);
+    if (m.profileKey.length === 0) continue;
+    try {
+      profileKeys[id] = toBase64(libsignal.groupDecryptProfileKey(keys.secretParams, m.profileKey, id));
+    } catch {
+      // a key that doesn't verify for this member is ignored
+    }
   }
   const pending = decryptMemberIds(
     keys,
@@ -307,6 +316,7 @@ export function decodeGroupState(keys: DerivedGroupV2Keys, group: Group): GroupV
     link_mode: !linkOn ? 'disabled' : linkAccess === AccessControl_AccessRequired.ADMINISTRATOR ? 'enabled-with-approval' : 'enabled',
     invite_link: linkOn ? groupInviteLink(keys.masterKey, group.inviteLinkPassword) : '',
     invitedBy,
+    profileKeys,
   };
 }
 

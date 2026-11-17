@@ -139,6 +139,8 @@ export interface Message {
   serverGuid?: string;
   /** Delivered without revealing the sender to Signal's servers (Sealed Sender); for our messages, to every recipient. */
   sealed?: boolean;
+  /** Group members our message couldn't be sent to. */
+  notDelivered?: number;
   /** Earlier versions, oldest first; `editedAt` is when the current text was sent. */
   history?: MessageVersion[];
   editedAt?: number;
@@ -169,6 +171,8 @@ export interface Conversation {
   /** "Mark as unread" with nothing actually unread; opening the chat clears it. */
   markedUnread?: boolean;
   expireTimer?: number;
+  /** The highest timer version a 1:1 chat's timer came with. */
+  expireTimerVersion?: number;
   /** The oldest received message whose disappearing timer waits for it to be read. */
   expiryFrom?: number;
   /** This chat's bubble color (a `CHAT_COLORS` name); unset follows the default. */

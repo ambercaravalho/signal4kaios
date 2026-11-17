@@ -463,6 +463,8 @@ describe('screens', () => {
     assert.equal(backAction('Backspace', { ...at, tray: 1, draft: 'hi' }), 'pass', 'Back deletes a typed character first');
     assert.equal(backAction('SoftLeft', { ...at, tray: 1, quote: true }), 'clear');
     assert.equal(backAction('Backspace', { ...at, onComposer: false, tray: 1 }), 'unfocus');
+    assert.equal(backAction('SoftLeft', { ...at, onComposer: false }), 'unfocus', 'Back on a message returns to the composer, not out of the chat');
+    assert.equal(backAction('SoftLeft', { ...at, onComposer: false, quote: true }), 'clear');
     assert.ok(asksBeforeDiscard('recording'));
     assert.ok(asksBeforeDiscard('stopped'));
     assert.ok(!asksBeforeDiscard('starting'));

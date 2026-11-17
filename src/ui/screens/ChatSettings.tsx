@@ -31,8 +31,14 @@ function linkLabel(mode: string): string {
 async function chooseTimer(conv: Conversation): Promise<void> {
   const secs = await pickTimer(S.disappearingMessages, conv.expireTimer || 0);
   if (secs === undefined || !conv.sendId) return;
-  const p: Promise<unknown> = conv.type === 'group' ? signal.updateGroup(conv.sendId, { expiration_time: secs }) : signal.setDirectExpireTimer(conv.sendId, secs);
-  await runAction(p, S.disappearingMessages + ': ' + expireLabel(secs), () => store.setConvExpire(conv.id, secs));
+  let version = 0;
+  const p: Promise<unknown> =
+    conv.type === 'group'
+      ? signal.updateGroup(conv.sendId, { expiration_time: secs })
+      : signal.setDirectExpireTimer(conv.sendId, secs).then((v) => {
+          version = v;
+        });
+  await runAction(p, S.disappearingMessages + ': ' + expireLabel(secs), () => store.setConvExpire(conv.id, secs, version));
 }
 
 const FOLLOW_DEFAULT = 'default';

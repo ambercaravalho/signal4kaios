@@ -323,9 +323,9 @@ export class SignalClient {
   }
 
   /**
-   * Send a group Content to every member. With `group` and its endorsements, members with an endorsement get one Sender Key message through `PUT /v1/messages/multi_recipient`; everyone else, and everyone when that fails, gets individual Sealed Sender (or identified) 1:1 messages. Errors for single members are collected; the call fails only if no member received it. Resolves to whether every member got it sealed.
+   * Send a group Content to every member. With `group` and its endorsements, members with an endorsement get one Sender Key message through `PUT /v1/messages/multi_recipient`; everyone else, and everyone when that fails, gets individual Sealed Sender (or identified) 1:1 messages. Errors for single members are collected, and those members added to `failed`; the call fails only if no member received it. Resolves to whether every member got it sealed.
    */
-  async sendGroupContent(recipients: string[], content: Content, timestamp: number, online = false, group?: SenderKeyGroup): Promise<boolean> {
+  async sendGroupContent(recipients: string[], content: Content, timestamp: number, online = false, group?: SenderKeyGroup, failed?: string[]): Promise<boolean> {
     const auth = await this.authHeader();
     const targets = Array.from(new Set(recipients.filter((p) => p && p !== auth.aci && isAci(p))));
     let pairwise = targets;
@@ -347,6 +347,7 @@ export class SignalClient {
         delivered++;
       } catch (err) {
         lastError = err;
+        if (failed) failed.push(peer);
       }
     }
     if (targets.length > 0 && delivered === 0 && lastError) throw lastError;

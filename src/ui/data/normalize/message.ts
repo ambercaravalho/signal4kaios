@@ -179,7 +179,7 @@ export function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: 
     return [{ type: 'pollEnd', convId, author, targetTimestamp: num(dm.pollTerminate.targetSentTimestamp), timestamp: num(dm.timestamp) || num(env.timestamp) }];
   }
 
-  if (dm.expirationTimerUpdate) return [{ type: 'timer', convId, seconds: num(dm.expiresInSeconds), author, timestamp: num(dm.timestamp) || num(env.timestamp) }];
+  if (dm.expirationTimerUpdate) return [{ type: 'timer', convId, seconds: num(dm.expiresInSeconds), version: num(dm.expireTimerVersion), author, timestamp: num(dm.timestamp) || num(env.timestamp) }];
   if (dm.groupCallUpdate) return noticeEvent(env, { kind: 'groupCall', timestamp: at }, conv, author);
   if (dm.payment) return noticeEvent(env, { kind: 'payment', value: dm.payment.kind, timestamp: at }, conv, author);
 
@@ -205,6 +205,7 @@ export function dataMessageEvents(env: any, dm: any, incoming: boolean, nameOf: 
     quote: dm.storyContext ? storyQuoteOf(dm.storyContext) : quoteOf(dm),
     attachments: attachments.map((a) => attachmentOf(a, !!dm.viewOnce)),
     expiresInSeconds: num(dm.expiresInSeconds),
+    expireTimerVersion: num(dm.expireTimerVersion),
   };
   if (card) ev.contactCard = card;
   if (poll) ev.poll = poll;

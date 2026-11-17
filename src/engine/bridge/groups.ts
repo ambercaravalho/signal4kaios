@@ -34,7 +34,7 @@ import { invalidateBlocked, sendBlockedSync } from './blocked';
 import { client, httpBinary, httpJson, savedStorageWrite, serverUrl, store } from './context';
 import { resolveAci, syncedContacts, syncedGroups, updateSyncedGroup } from './contacts';
 import { dataContent, type DataMessageInit, syncSent } from './delivery';
-import { groupDeps, groupMasterKey, mergeGroupState } from './group-state';
+import { groupDeps, groupMasterKey, markAskedToJoin, mergeGroupState } from './group-state';
 
 const writeJoinedGroup = savedStorageWrite('joinedGroup', (masterKey: string) => [joinedGroupMutation(fromBase64(masterKey))]);
 
@@ -176,7 +176,10 @@ export const groupMethods = {
     const cred = await fetchExpiringProfileKeyCredential(store, httpJson, SERVER_PUBLIC_PARAMS, acc.aci, acc.profileKey, serverUrl());
     const presentation = libsignal.groupProfileKeyCredentialPresentation(SERVER_PUBLIC_PARAMS, keys.secretParams, cred);
     const res = await joinGroupViaLink(groupDeps(), link.masterKey, link.password, presentation);
-    if (!res.joined) return { joined: false, internalId: keys.internalId, name: '' };
+    if (!res.joined) {
+      await markAskedToJoin(keys.internalId, true);
+      return { joined: false, internalId: keys.internalId, name: '' };
+    }
 
     const state = await fetchGroupState(store, httpJson, httpBinary, link.masterKey, serverUrl());
     await mergeGroupState(state);
@@ -190,6 +193,7 @@ export const groupMethods = {
   async cancelGroupLinkRequest(url: string): Promise<void> {
     const link = requireLink(url);
     await cancelGroupJoinRequest(groupDeps(), link.masterKey, link.password);
+    await markAskedToJoin(deriveGroupV2Keys(link.masterKey).internalId, false);
   },
 
   async setGroupAdmins(groupSendId: string, ids: string[], admin: boolean): Promise<GroupV2Metadata | null> {

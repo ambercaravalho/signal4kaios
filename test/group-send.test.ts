@@ -301,4 +301,18 @@ describe('SignalClient Sender Key group sends', () => {
     assert.equal(t.puts('/v1/messages/multi_recipient').length, 0);
     assert.deepEqual(t.oneToOne().sort(), [BOB, CAROL].sort());
   });
+
+  it('names the members a send couldn’t reach, and still sends to the rest', async () => {
+    const t = await setup([BOB, CAROL]);
+    const c = t.client as any;
+    const real = c.sendContentToRecipient.bind(c);
+    c.sendContentToRecipient = async (peer: string, ...rest: any[]) => {
+      if (peer === CAROL) throw Object.assign(new Error('HTTP 500'), { status: 500 });
+      return real(peer, ...rest);
+    };
+    const failed: string[] = [];
+    await t.client.sendGroupContent([BOB, CAROL], t.content('half'), 4000, false, { ...t.group, endorsements: null }, failed);
+    assert.deepEqual(failed, [CAROL]);
+    assert.deepEqual(t.oneToOne(), [BOB]);
+  });
 });

@@ -48,6 +48,7 @@ export function sendCore(conv: Conversation, rec: Message, payload: SendPayload,
       }
       rec.status = 'sent';
       if (res && res.sealed) rec.sealed = true;
+      if (res && res.notDelivered > 0) rec.notDelivered = res.notDelivered;
       applyEarlyReceipt(rec);
       keepSentAttachments(rec, payload, res && res.attachments);
       db.putMessage(rec);
@@ -134,7 +135,7 @@ function withDefaultTimer(conv: Conversation, send: () => Promise<Message>): Pro
   return signal
     .setDirectExpireTimer(conv.sendId, secs)
     .then(
-      () => setConvExpire(conv.id, secs),
+      (version) => setConvExpire(conv.id, secs, version),
       (e) => dbg('default timer failed: ' + (e && e.message))
     )
     .then(send);

@@ -84,6 +84,7 @@ export function Bubble(props: { m: Message; focused: boolean; showAuthor: boolea
       </div>
       {!m.deleted && <Reactions reactions={m.reactions} />}
       {m.status === 'failed' && <div class="msg-failed">{S.notSent}</div>}
+      {m.status !== 'failed' && !!m.notDelivered && <div class="msg-failed">{S.sentToSome}</div>}
     </div>
   );
 }

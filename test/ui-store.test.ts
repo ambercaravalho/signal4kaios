@@ -9,6 +9,8 @@ import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
 import { migrateMute, MUTED_ALWAYS } from '../src/ui/data/store/mute';
 import { state as storeState } from '../src/ui/data/store/state';
+import { outOfGroup } from '../src/ui/screens/group-perms';
+import { S } from '../src/ui/strings';
 import { settle } from './helpers';
 
 const ME = '+15550000';
@@ -219,6 +221,31 @@ describe('store', () => {
     assert.deepEqual(rec.mentions, [{ name: 'Bob', uuid: 'aci-bob' }]);
   });
 
+  it('knows when we’re no longer in a group, but not before its state arrives', () => {
+    const g = (members: string[], masterKey = 'mk') => ({ id: 'group.x', internal_id: 'x', masterKey, members }) as any;
+    assert.equal(outOfGroup(g(['aci-bob', 'aci-carol'])), true);
+    assert.equal(outOfGroup(g(['aci-bob', 'aci-me'])), false);
+    assert.equal(outOfGroup(g([], '')), false);
+    assert.equal(outOfGroup(g([])), false);
+    assert.equal(outOfGroup(null), false);
+  });
+
+  it('calls someone known only by their Signal ID “Unknown”', () => {
+    assert.equal(store.displayName('8a1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d'), S.unknown);
+    assert.equal(store.displayName('PNI:8a1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d'), S.unknown);
+    assert.equal(store.displayName('+15550009999'), '+15550009999');
+  });
+
+  it('remembers group members a message couldn’t reach', async () => {
+    (signal as any).send = async () => ({ timestamp: 5150, notDelivered: 2 });
+    const rec = await store.sendText(ALICE, 'to most of you');
+    assert.equal(rec.status, 'sent');
+    assert.equal(rec.notDelivered, 2);
+    assert.equal((await db.getMessage(rec.id))!.notDelivered, 2);
+    (signal as any).send = async () => ({ timestamp: 5160 });
+    assert.equal((await store.sendText(ALICE, 'to all')).notDelivered, undefined);
+  });
+
   it('keeps mentions in a photo’s caption', async () => {
     const sent: any[] = [];
     (signal as any).send = async (payload: any) => {
@@ -387,7 +414,7 @@ describe('store', () => {
     (signal as any).syncChatState = async (s: any) => {
       synced.push(s);
     };
-    (signal as any).sendReadReceipt = async () => {};
+    (signal as any).sendReadReceipts = async () => {};
     store.markRead(ALICE);
     synced.length = 0;
     store.setMarkedUnread(ALICE, true);
@@ -570,6 +597,35 @@ describe('store', () => {
     assert.equal(store.conversation(CAROL), undefined);
   });
 
+  it('takes a chat’s timer only from a newer timer version, and never from a group message', async () => {
+    const PEER = '+15550077';
+    const at = Date.now();
+    const dm = (n: number, extra: any) => ({ envelope: { sourceNumber: PEER, timestamp: at + n, dataMessage: { timestamp: at + n, message: 'm' + n, ...extra } } });
+    store.ingestRaw(dm(1, { expiresInSeconds: 3600, expireTimerVersion: 2 }));
+    await settle();
+    assert.equal(store.conversation(PEER)!.expireTimer, 3600);
+    store.ingestRaw(dm(2, { expiresInSeconds: 0, expireTimerVersion: 1 }));
+    store.ingestRaw(dm(3, { expiresInSeconds: 0 }));
+    await settle();
+    assert.equal(store.conversation(PEER)!.expireTimer, 3600, 'an older version or none leaves it');
+    store.ingestRaw(dm(4, { expiresInSeconds: 60, expireTimerVersion: 3 }));
+    await settle();
+    assert.equal(store.conversation(PEER)!.expireTimer, 60);
+    store.ingestRaw(dm(5, { expirationTimerUpdate: true, expiresInSeconds: 0, expireTimerVersion: 2 }));
+    await settle();
+    assert.equal(store.conversation(PEER)!.expireTimer, 60, 'an older timer update is ignored too');
+
+    await db.kvSet('syncedGroups', [{ id: 'group.VElN', internal_id: 'VElN', masterKey: '', revision: 1, name: 'Timers', members: ['aci-dave'], admins: [], pending: [], expireTimer: 86400, blocked: false, link_mode: 'disabled', invite_link: '' }]);
+    await store.refreshDirectory();
+    const inGroup = (n: number, secs: number) => ({ envelope: { sourceNumber: '+15550004', sourceUuid: 'aci-dave', timestamp: at + n, dataMessage: { timestamp: at + n, groupInfo: { groupId: 'VElN' }, message: 'g' + n, expiresInSeconds: secs } } });
+    store.ingestRaw(inGroup(6, 86400));
+    await settle();
+    const before = store.conversation('g:VElN')!.expireTimer;
+    store.ingestRaw(inGroup(7, 0));
+    await settle();
+    assert.equal(store.conversation('g:VElN')!.expireTimer, before, 'a group’s timer comes from its state');
+  });
+
   it('applies admin deletes only from people the group lists as admins', async () => {
     await db.kvSet('syncedContacts', [{ uuid: 'aci-dave', number: '+15550004', name: 'Dave' }]);
     await db.kvSet('syncedGroups', [{ id: 'group.R1JQ', internal_id: 'R1JQ', masterKey: '', revision: 1, name: 'Team', members: ['aci-admin', 'aci-dave'], admins: ['aci-admin'], pending: [], expireTimer: 0, blocked: false, link_mode: 'disabled', invite_link: '' }]);
@@ -725,8 +781,8 @@ describe('store', () => {
     const ERIN = '+15550006';
     const receipts: any[] = [];
     const responses: any[] = [];
-    (signal as any).sendReadReceipt = async (to: string, ts: number) => {
-      receipts.push([to, ts]);
+    (signal as any).sendReadReceipts = async (to: string, ts: number[]) => {
+      for (const t of ts) receipts.push([to, t]);
     };
     (signal as any).sendMessageRequestResponse = async (to: string, response: string) => {
       responses.push([to, response]);
@@ -748,8 +804,8 @@ describe('store', () => {
 
   it('doesn’t read what arrives in a chat left open while Beacon is in the background', async () => {
     const receipts: any[] = [];
-    (signal as any).sendReadReceipt = async (to: string, ts: number) => {
-      receipts.push([to, ts]);
+    (signal as any).sendReadReceipts = async (to: string, ts: number[]) => {
+      for (const t of ts) receipts.push([to, t]);
     };
     store.markRead(ALICE);
     await settle();
@@ -773,10 +829,28 @@ describe('store', () => {
     store.setOpenConv(null);
   });
 
+  it('sends one batch of read receipts for every unread message, but none for a notice', async () => {
+    const PEER = ALICE;
+    store.markRead(PEER);
+    await settle();
+    const at = Math.max(Date.now(), (store.conversation(PEER)!.lastReadTs || 0) + 1);
+    const calls: any[] = [];
+    (signal as any).sendReadReceipts = async (to: string, ts: number[]) => void calls.push([to, ts]);
+    const dm = (n: number, extra: any) => ({ envelope: { sourceNumber: PEER, timestamp: at + n, dataMessage: { timestamp: at + n, message: 'm' + n, ...extra } } });
+    for (let n = 1; n <= 12; n++) store.ingestRaw(dm(n, {}));
+    store.ingestRaw(dm(13, { expirationTimerUpdate: true, expiresInSeconds: 60, expireTimerVersion: 2 }));
+    await settle();
+    store.markRead(PEER);
+    await settle();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], PEER);
+    assert.deepEqual(calls[0][1], Array.from({ length: 12 }, (_, i) => at + i + 1));
+  });
+
   it('still syncs what we read to our other devices with read receipts off', async () => {
     const reads: any[] = [];
-    (signal as any).sendReadReceipt = async (to: string, ts: number, opts: { receipt: boolean }) => {
-      reads.push([to, ts, opts.receipt]);
+    (signal as any).sendReadReceipts = async (to: string, ts: number[], opts: { receipt: boolean }) => {
+      for (const t of ts) reads.push([to, t, opts.receipt]);
     };
     const ts = Math.max(Date.now(), (store.conversation(ALICE)!.lastReadTs || 0) + 1);
     store.ingestRaw(incoming(ts, 'read me'));
