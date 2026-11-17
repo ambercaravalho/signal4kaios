@@ -288,6 +288,11 @@ export const accountMethods = {
     return replayStorageWrites();
   },
 
+  /** Pull Storage Service: contacts and their nicknames, groups, and account settings. */
+  syncStorage(): Promise<boolean> {
+    return syncFromStorageService();
+  },
+
   /** The account's notification defaults (`AccountRecord` fields 55 to 58), shared with our other devices. Only the fields that are set change. */
   async setNotificationDefaults(d: { reactions?: boolean; mentionsIfMuted?: boolean; repliesIfMuted?: boolean; callsIfMuted?: boolean }): Promise<void> {
     await writeNotificationDefaults(d);

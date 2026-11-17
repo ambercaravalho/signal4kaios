@@ -3,10 +3,15 @@
 import { toBase64 } from '../bytes';
 import { host } from '../host';
 import { isAci } from '../net/proto';
+import type { SyncedContact as BlobContact } from '../net/receive';
+import type { StorageContactRecord } from '../services/storage';
 import { client, store } from './context';
 import { queuePeerName } from './peer-names';
 
-/** A `syncedContacts` entry; fields come from contact sync, Storage Service, and profiles, so every one is optional. */
+/**
+ * A `syncedContacts` entry; fields come from contact sync, Storage Service, and profiles, so every one is optional.
+ * Each name source has its own field so one never overwrites another: `nickname` ({given_name, family_name}; unset until a Storage pull or rename sets it, an empty pair means none), `systemName` (address book), `profile_name`, and the legacy `name`.
+ */
 export type SyncedContactRow = Record<string, any>;
 /** A `syncedGroups` entry: the group's `GroupV2Metadata` plus local flags. */
 export type SyncedGroupRow = Record<string, any>;
@@ -36,6 +41,42 @@ export async function mergeSyncedContacts<T>(items: T[], idOf: (item: T) => stri
     if (id) byId.set(id, merge(item, byId.get(id) || {}));
   }
   await saveSyncedContacts(Array.from(byId.values()));
+}
+
+function joinName(...parts: Array<string | undefined>): string {
+  return parts.filter(Boolean).join(' ');
+}
+
+/** A contact's Storage Service record merged into its directory entry. A nickname set here but not uploaded yet survives a pull that only re-reads the old record. */
+export function mergeStorageContact(sc: StorageContactRecord, prev: SyncedContactRow): SyncedContactRow {
+  const takeNickname = sc.changed || prev.nickname === undefined;
+  return {
+    ...prev,
+    uuid: sc.aci || prev.uuid || '',
+    number: sc.e164 || prev.number || '',
+    name: prev.name || sc.e164 || sc.aci || '',
+    nickname: takeNickname ? { given_name: sc.nicknameGivenName || '', family_name: sc.nicknameFamilyName || '' } : prev.nickname,
+    systemName: sc.systemNickname || joinName(sc.systemGivenName, sc.systemFamilyName) || prev.systemName,
+    profile_name: joinName(sc.givenName, sc.familyName) || prev.profile_name,
+    username: sc.username || prev.username,
+    blocked: sc.blocked ?? prev.blocked ?? false,
+    whitelisted: !!sc.whitelisted,
+    systemContact: !!sc.systemContact,
+    profileKey: sc.profileKey ? toBase64(sc.profileKey) : prev.profileKey,
+  };
+}
+
+/** A contact from the primary phone's contacts sync merged into its directory entry; its name is the address-book name, so it never replaces a nickname or profile name. */
+export function mergeBlobContact(sc: BlobContact, prev: SyncedContactRow): SyncedContactRow {
+  return {
+    ...prev,
+    uuid: sc.uuid || prev.uuid || '',
+    number: sc.number || prev.number || '',
+    name: prev.name || sc.number || sc.uuid,
+    systemName: sc.name || prev.systemName,
+    expireTimer: sc.expireTimer,
+    blocked: prev.blocked ?? false,
+  };
 }
 
 /** A contact's ACI and phone number from either one, via `syncedContacts`. */

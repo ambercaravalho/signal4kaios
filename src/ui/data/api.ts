@@ -17,7 +17,10 @@ export interface SyncedContact {
   expireTimer?: number;
   username?: string;
   profile_name?: string;
+  /** Unset until a Storage pull or rename sets it; an empty pair means no nickname. */
   nickname?: { name?: string; given_name?: string; family_name?: string };
+  /** The name in the primary phone's address book. */
+  systemName?: string;
   profile?: { given_name?: string; lastname?: string; has_avatar?: boolean };
 }
 
@@ -58,21 +61,8 @@ export function groupDetail(groupId: string): Promise<GroupDetail> {
 }
 
 /** Rename a contact for you (a Signal nickname, synced to your devices). */
-export async function renameContact(recipient: string, name: string): Promise<void> {
-  const list = await syncedContacts();
-  let found = false;
-  for (const c of list) {
-    if (c.number === recipient || c.uuid === recipient) {
-      c.name = name;
-      found = true;
-    }
-  }
-  if (!found) {
-    const isNumber = recipient.indexOf('+') === 0;
-    list.push({ uuid: isNumber ? '' : recipient, number: isNumber ? recipient : '', name: name || recipient, blocked: false, expireTimer: 0 });
-  }
-  await db.kvSet('syncedContacts', list);
-  await signal.setContactNickname(recipient, name);
+export function renameContact(recipient: string, name: string): Promise<void> {
+  return signal.setContactNickname(recipient, name);
 }
 
 /** The profile is saved here only once Signal has it, so a failed upload doesn't show a name nobody else sees. */

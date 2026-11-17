@@ -35,6 +35,7 @@ async function saveDirectory(contacts: HistoryContact[], groups: HistoryGroup[])
         uuid: c.aci || prev.uuid || '',
         number: c.e164 || prev.number || '',
         name: prev.name || c.name || c.e164 || c.aci,
+        nickname: prev.nickname ?? c.nickname,
         blocked: prev.blocked ?? c.blocked,
         whitelisted: prev.whitelisted ?? c.whitelisted,
         profileKey: prev.profileKey || c.profileKey,

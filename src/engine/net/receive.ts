@@ -207,7 +207,7 @@ export function parseContactsSyncBlob(blobBytes: Uint8Array): SyncedContact[] {
       contacts.push({
         uuid,
         number: c.number || '',
-        name: c.name || c.number || uuid,
+        name: c.name || '',
         expireTimer: c.expireTimer || 0,
       });
     }

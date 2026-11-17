@@ -9,7 +9,9 @@ import { ALICE, BOB } from './helpers';
 import { loadWasmForTests } from './support';
 import { contentToNormalizedFrame, decodeAttachmentDescriptor } from '../src/engine/net/incoming-json';
 import { parseContactsSyncBlob } from '../src/engine/net/receive';
+import { mergeBlobContact, mergeStorageContact } from '../src/engine/bridge/contacts';
 import { reportSpam } from '../src/engine/services/report-spam';
+import type { StorageContactRecord } from '../src/engine/services/storage';
 
 before(() => {
   loadWasmForTests();
@@ -30,7 +32,45 @@ describe('Sync and service IDs', () => {
     assert.equal(contacts.length, 2);
     assert.equal(contacts[0].name, 'Alice');
     assert.equal(contacts[1].uuid, '22222222-2222-4222-8222-222222222222');
+    assert.equal(contacts[1].name, '', 'no placeholder name');
     assert.equal(contacts[1].expireTimer, 60);
+  });
+
+  describe('keeping nicknames', () => {
+    const nick = (given: string, family = '') => ({ given_name: given, family_name: family });
+    const pulled = (init: Partial<StorageContactRecord>): StorageContactRecord => ({ changed: false, aci: ALICE, e164: '+15550001111', ...init });
+
+    it('a contacts sync from the phone sets only the address-book name', () => {
+      const prev = { uuid: ALICE, number: '+15550001111', name: 'Alice', nickname: nick('Ali'), profile_name: 'Alice Ortiz', systemName: 'Alice O.' };
+      const named = mergeBlobContact({ uuid: ALICE, number: '+15550001111', name: 'Alice Ortiz-Lee', expireTimer: 0 }, prev);
+      assert.deepEqual([named.nickname, named.name, named.profile_name, named.systemName], [nick('Ali'), 'Alice', 'Alice Ortiz', 'Alice Ortiz-Lee']);
+      const unnamed = mergeBlobContact({ uuid: ALICE, number: '+15550001111', name: '', expireTimer: 0 }, prev);
+      assert.deepEqual([unnamed.nickname, unnamed.name, unnamed.systemName], [nick('Ali'), 'Alice', 'Alice O.']);
+      assert.equal(mergeBlobContact({ uuid: ALICE, number: '', name: '', expireTimer: 0 }, {}).name, ALICE, 'a new entry starts with a placeholder');
+    });
+
+    it('a pull that re-reads an unchanged record keeps a nickname set here', () => {
+      const prev = { uuid: ALICE, number: '+15550001111', name: 'Alice', nickname: nick('Ali') };
+      assert.deepEqual(mergeStorageContact(pulled({ givenName: 'Alice' }), prev).nickname, nick('Ali'));
+    });
+
+    it('a record another device changed sets or clears the nickname', () => {
+      const prev = { uuid: ALICE, number: '+15550001111', name: 'Alice', nickname: nick('Ali') };
+      assert.deepEqual(mergeStorageContact(pulled({ changed: true, nicknameGivenName: 'Al', nicknameFamilyName: 'O.' }), prev).nickname, nick('Al', 'O.'));
+      assert.deepEqual(mergeStorageContact(pulled({ changed: true }), prev).nickname, nick(''));
+    });
+
+    it('an entry from before nicknames had their own field picks the nickname up from any record', () => {
+      const merged = mergeStorageContact(pulled({ nicknameGivenName: 'Ali' }), { uuid: ALICE, number: '+15550001111', name: 'Ali' });
+      assert.deepEqual(merged.nickname, nick('Ali'));
+    });
+
+    it('keeps the profile name and the address-book name apart', () => {
+      const merged = mergeStorageContact(pulled({ givenName: 'Alice', familyName: 'Ortiz', systemGivenName: 'Mom' }), { uuid: ALICE, number: '+15550001111', name: '+15550001111' });
+      assert.deepEqual([merged.profile_name, merged.systemName, merged.name], ['Alice Ortiz', 'Mom', '+15550001111']);
+      assert.equal(mergeStorageContact(pulled({ systemNickname: 'Ma', systemGivenName: 'Mom' }), {}).systemName, 'Ma');
+      assert.equal(mergeStorageContact(pulled({}), { systemName: 'Mom', profile_name: 'Alice' }).systemName, 'Mom', 'a record without names keeps the old ones');
+    });
   });
 
   it('turns pin, unpin, and timer-update data messages into normalize frames', () => {

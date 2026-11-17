@@ -2,4 +2,4 @@
 
 export { decryptStorageValue, deriveStorageItemKey, deriveStorageManifestKey, deriveStorageServiceKey } from './crypto';
 export { setNotifyForMentionsIfMuted, setPhoneNumberPrivacy, toOptionalBool, mutateStorage, StorageWriteQueue, type StorageMutation, type StorageReplay } from './mutate';
-export { pullFromStorageService, resolveLegacyNotifyForMentionsIfMuted } from './pull';
+export { pullFromStorageService, resolveLegacyNotifyForMentionsIfMuted, type StorageContactRecord } from './pull';

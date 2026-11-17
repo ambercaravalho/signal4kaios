@@ -71,7 +71,13 @@ export const contactMethods = {
   /** Set or clear a contact's nickname (Storage Service `ContactRecord.nickname`, shown on all your devices). */
   async setContactNickname(id: string, name: string): Promise<void> {
     const parts = (name || '').trim().split(/\s+/).filter(Boolean);
-    await writeNickname(id, parts[0] || '', parts.slice(1).join(' '));
+    const given = parts[0] || '';
+    const family = parts.slice(1).join(' ');
+    await updateSyncedContact(await knownContact(id), (c) => {
+      c.nickname = { given_name: given, family_name: family };
+    });
+    host().directoryChanged().catch(() => {});
+    await writeNickname(id, given, family);
   },
 
   /** Block or unblock a person like Signal-Desktop: Blocked sync to our devices, then `ContactRecord.blocked` (and profile sharing off while blocked) in Storage Service. */

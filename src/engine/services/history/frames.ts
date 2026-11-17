@@ -27,10 +27,13 @@ type Where = { convId: string; groupInternalId: string | null };
 type Person = { key: string; aci: string };
 
 function contactName(c: Contact): string {
-  const nick = c.nickname ? [c.nickname.given, c.nickname.family].filter(Boolean).join(' ') : '';
   const system = [c.systemGivenName, c.systemFamilyName].filter(Boolean).join(' ');
   const profile = [c.profileGivenName, c.profileFamilyName].filter(Boolean).join(' ');
-  return (nick || c.systemNickname || system || profile).slice(0, 200);
+  return (c.systemNickname || system || profile).slice(0, 200);
+}
+
+function contactNickname(c: Contact): { given_name: string; family_name: string } {
+  return { given_name: (c.nickname ? c.nickname.given : '').slice(0, 200), family_name: (c.nickname ? c.nickname.family : '').slice(0, 200) };
 }
 
 function e164Of(c: Contact): string {
@@ -97,7 +100,7 @@ export const createFrameMapper: CreateFrameMapper = (self: HistorySelf, groupIdO
       const e164 = e164Of(c);
       if (!aci && !e164) return null;
       people.set(id, { key: e164 || aci, aci });
-      const out: HistoryContact = { t: 'contact', aci, e164, name: contactName(c), blocked: c.blocked, whitelisted: c.profileSharing };
+      const out: HistoryContact = { t: 'contact', aci, e164, name: contactName(c), nickname: contactNickname(c), blocked: c.blocked, whitelisted: c.profileSharing };
       if (c.profileKey && c.profileKey.length === 32) out.profileKey = toBase64(c.profileKey);
       return out;
     }
