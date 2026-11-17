@@ -41,13 +41,13 @@ APPSCMD=/path/to/appscmd sh scripts/install.sh
 3. Scan the QR code on the KaiOS screen.
 4. When your main phone asks, choose **Transfer message history** to bring your recent messages to Beacon, or **Don't transfer** to start empty.
 
-The KaiOS phone then finishes linking. With a transfer, it shows **Message history** while the history arrives (see below); otherwise it opens your chats.
+The KaiOS phone then finishes linking. If that fails partway, Beacon removes the half-linked device from your account again, so press **Retry** and scan a new code. With a transfer, it shows **Message history** while the history arrives (see below); otherwise it opens your chats.
 
 ### Message history
 
 After you choose **Transfer message history**, Beacon says **Waiting for your phone…** while your main phone prepares the history, then **Downloading messages…** and **Adding messages…** with how far along it is. Keep both phones open and online; a long history takes a few minutes. New messages wait on Signal's servers meanwhile and arrive once Beacon opens your chats.
 
-- **Skip** (right softkey) goes on without the history.
+- **Skip** (right softkey) goes on without the history, after asking: the history can only be transferred while linking.
 - If the download stops, for example when the phone loses its connection, press **Retry**. Closing Beacon in the middle is fine too: it picks up where it stopped the next time it opens.
 - If your main phone asks to link again, Beacon says so and **Link again** returns to the QR code.
 
@@ -81,6 +81,8 @@ The phone was removed under **Linked devices** on your main phone, or you upgrad
 <summary><strong>"Beacon couldn't start" screen</strong></summary>
 
 The screen says whether part of the app is missing (reinstall the ZIP), the phone's software is too old, or the phone stopped part of Beacon from loading. For the last one, restart the phone and open Beacon again; if it keeps happening, [open an issue](https://github.com/ambercaravalho/signal4kaios/issues) with the text from **Show details**, which has the technical reason.
+
+If it says it couldn't open your messages, restart the phone first. If that keeps happening, **Options → Delete all data** deletes every account, message, and setting in Beacon (your Signal account stays), and you can link again.
 
 </details>
 

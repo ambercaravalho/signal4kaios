@@ -33,7 +33,8 @@ import { AppearanceScreen } from '../src/ui/screens/settings/Appearance';
 import { HELP_TOPICS, HelpScreen } from '../src/ui/screens/settings/Help';
 import { NotificationsScreen } from '../src/ui/screens/settings/Notifications';
 import { saveProfile } from '../src/ui/screens/settings/Profile';
-import { StartupErrorScreen } from '../src/ui/screens/StartupError';
+import { skipHistory } from '../src/ui/screens/History';
+import { StartupErrorScreen, storageErrorOptions } from '../src/ui/screens/StartupError';
 import { DEBUG, fmt, S } from '../src/ui/strings';
 import { settle } from './helpers';
 
@@ -440,5 +441,16 @@ describe('screens', () => {
     assert.ok(asksBeforeDiscard('stopped'));
     assert.ok(!asksBeforeDiscard('starting'));
     assert.ok(!asksBeforeDiscard('failed'));
+  });
+
+  it('asks before skipping message history, and offers Delete all data when storage won’t open', () => {
+    router.reset(HomeScreen, {});
+    skipHistory();
+    const top = _stackForTest()[_stackForTest().length - 1];
+    assert.ok(top.overlay);
+    assert.match(html(), new RegExp(S.skipHistory.replace('?', '\\?')));
+    router.pop();
+    const labels = storageErrorOptions().map((o) => (o && typeof o === 'object' ? o.label : o));
+    assert.deepEqual(labels, [S.help, '-', S.deleteAllData]);
   });
 });

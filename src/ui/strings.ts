@@ -641,6 +641,8 @@ export const S = {
   historyAdding: 'Adding messages… {n}%',
   historyKeepOpen: 'Keep Beacon open until this finishes.',
   historyFailed: 'Couldn’t get your message history.',
+  skipHistory: 'Skip message history?',
+  skipHistoryBody: 'Older messages won’t be on this phone. Your phone sends history only while linking, so getting it later means linking again.',
   historyRelink: 'Your main phone asked to link this phone again.',
   linkAgain: 'Link again',
 

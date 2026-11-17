@@ -96,7 +96,7 @@ export interface ProvisioningSession {
 }
 
 /** Completes linking once the ProvisionMessage has been decrypted: registers this device and uploads its PreKeys. */
-async function finishLinking(
+export async function finishLinking(
   store: SignalProtocolStore,
   httpRequest: SignalHttpJsonFn,
   prov: ProvisionMessage,
@@ -175,35 +175,42 @@ async function finishLinking(
     throw new Error('Signal server returned an unexpected link response');
   }
   const creds: AccountCredentials = { ...provisional, deviceId: linkRes.deviceId };
-  await store.saveAccount(creds);
-  await saveOwnIdentityKey(store, aci, aciIdentity.pubKey, { number: creds.number || undefined, uuid: aci });
-  if (pni && pniIdentity) await saveOwnIdentityKey(store, 'PNI:' + pni, pniIdentity.pubKey);
-  await recordPreKeyRotation(store, 'aci', { signedPreKey: aciSignedPreKey, pqLastResortPreKey: aciPqLastResortPreKey });
-  if (pniSignedPreKey && pniPqLastResortPreKey) await recordPreKeyRotation(store, 'pni', { signedPreKey: pniSignedPreKey, pqLastResortPreKey: pniPqLastResortPreKey });
-
-  if (onStatus) onStatus('Uploading PreKeys\u2026');
   const auth = accountBasicAuth({ aci, deviceId: creds.deviceId, password });
-  await httpRequest(
-    'PUT',
-    '/v2/keys?identity=aci',
-    {
-      preKeys: await generateOneTimePreKeys(store, 'aci', ONE_TIME_PRE_KEY_COUNT),
-      pqPreKeys: await generateKyberPreKeys(store, 'aci', aciIdentity, ONE_TIME_PRE_KEY_COUNT, false),
-    },
-    { baseUrl: httpBase, basicAuth: auth, timeout: 30000 }
-  );
-  if (hasE164) {
+  try {
+    await store.saveAccount(creds);
+    await saveOwnIdentityKey(store, aci, aciIdentity.pubKey, { number: creds.number || undefined, uuid: aci });
+    if (pni && pniIdentity) await saveOwnIdentityKey(store, 'PNI:' + pni, pniIdentity.pubKey);
+    await recordPreKeyRotation(store, 'aci', { signedPreKey: aciSignedPreKey, pqLastResortPreKey: aciPqLastResortPreKey });
+    if (pniSignedPreKey && pniPqLastResortPreKey) await recordPreKeyRotation(store, 'pni', { signedPreKey: pniSignedPreKey, pqLastResortPreKey: pniPqLastResortPreKey });
+
+    if (onStatus) onStatus('Uploading PreKeys\u2026');
     await httpRequest(
       'PUT',
-      '/v2/keys?identity=pni',
+      '/v2/keys?identity=aci',
       {
-        preKeys: await generateOneTimePreKeys(store, 'pni', ONE_TIME_PRE_KEY_COUNT),
-        pqPreKeys: await generateKyberPreKeys(store, 'pni', pniIdentity!, ONE_TIME_PRE_KEY_COUNT, false),
+        preKeys: await generateOneTimePreKeys(store, 'aci', ONE_TIME_PRE_KEY_COUNT),
+        pqPreKeys: await generateKyberPreKeys(store, 'aci', aciIdentity, ONE_TIME_PRE_KEY_COUNT, false),
       },
       { baseUrl: httpBase, basicAuth: auth, timeout: 30000 }
-    ).catch(() => {
-      // Signal-Desktop also tolerates PNI PreKey upload failures
-    });
+    );
+    if (hasE164) {
+      await httpRequest(
+        'PUT',
+        '/v2/keys?identity=pni',
+        {
+          preKeys: await generateOneTimePreKeys(store, 'pni', ONE_TIME_PRE_KEY_COUNT),
+          pqPreKeys: await generateKyberPreKeys(store, 'pni', pniIdentity!, ONE_TIME_PRE_KEY_COUNT, false),
+        },
+        { baseUrl: httpBase, basicAuth: auth, timeout: 30000 }
+      ).catch(() => {
+        // Signal-Desktop also tolerates PNI PreKey upload failures
+      });
+    }
+  } catch (e) {
+    // A device the server registered but that has no PreKeys can't receive messages, and would stay in the phone's list of linked devices.
+    // SECURITY-REVIEW: the new device's own credentials authorize removing it; they go only to Signal's server and are never logged.
+    await httpRequest('DELETE', '/v1/devices/' + creds.deviceId, null, { baseUrl: httpBase, basicAuth: auth, timeout: 15000 }).catch(() => {});
+    throw e;
   }
   return creds;
 }
