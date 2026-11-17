@@ -31,6 +31,7 @@ import { LinkScreen, linkStateAfter, relinkLine, WelcomeScreen } from '../src/ui
 import { openPhone } from '../src/ui/screens/open-link';
 import { NewChatScreen, SearchScreen } from '../src/ui/screens/SearchList';
 import { SettingsScreen } from '../src/ui/screens/Settings';
+import { AboutScreen } from '../src/ui/screens/settings/About';
 import { AppearanceScreen } from '../src/ui/screens/settings/Appearance';
 import { HELP_TOPICS, HelpScreen } from '../src/ui/screens/settings/Help';
 import { NotificationsScreen } from '../src/ui/screens/settings/Notifications';
@@ -323,6 +324,7 @@ describe('screens', () => {
       [SettingsScreen, {}],
       [NotificationsScreen, {}],
       [HelpScreen, {}],
+      [AboutScreen, {}],
       [WelcomeScreen, {}],
       [StartupErrorScreen, { reason: 'blocked', detail: 'LibsignalUnavailableError: wasm blocked' }],
     ];
@@ -355,12 +357,19 @@ describe('screens', () => {
     assert.equal(row.end, 'chevron');
   });
 
-  it('lists every help topic, then the source and version', () => {
+  it('lists every help topic, and leaves the source and version to About Beacon', () => {
     router.reset(HelpScreen, {});
-    const out = text(html());
-    for (const topic of HELP_TOPICS) assert.ok(out.includes(GUIDES[topic].title), topic);
-    assert.ok(out.includes(S.sourceCode));
-    assert.ok(out.includes(S.unofficial));
+    const help = text(html());
+    for (const topic of HELP_TOPICS) assert.ok(help.includes(GUIDES[topic].title), topic);
+    assert.ok(!help.includes(S.sourceCode));
+    assert.ok(!help.includes(S.checkForUpdates));
+    router.reset(SettingsScreen, {});
+    const settings = text(html());
+    assert.ok(settings.indexOf(S.debug) >= 0 && settings.indexOf(S.debug) < settings.indexOf(S.aboutApp), 'About Beacon comes last, after Debug');
+    router.reset(AboutScreen, {});
+    const about = text(html());
+    const order = [S.version, S.unofficial, S.checkForUpdates, S.autoUpdateCheck, S.sourceCode].map((s) => about.indexOf(s));
+    assert.ok(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1])), 'version, then updates, then source: ' + about);
   });
 
   it('draws a pictogram on empty lists', () => {

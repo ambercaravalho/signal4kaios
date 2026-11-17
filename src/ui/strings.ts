@@ -607,6 +607,7 @@ export const S = {
   chatColorAutomatic: 'Automatic',
   chatColorDefault: 'Default ({name})',
   help: 'Help',
+  aboutApp: 'About Beacon',
   version: 'Version',
   unofficial: 'Unofficial app. Not affiliated with Signal.',
   checkForUpdates: 'Check for updates',

@@ -36,11 +36,11 @@ APPSCMD=/path/to/appscmd sh scripts/install.sh
 
 ### Updating
 
-Beacon checks for a new version about once a day. When there is one, the chat list says so, and a security update also shows a notification. To install it, open **Options → Update to Beacon …** on the chat list, or the same row in **Settings** or **Settings → Help**. Your chats and settings carry over.
+Beacon checks for a new version about once a day. When there is one, the chat list says so, and a security update also shows a notification. To install it, open **Options → Update to Beacon …** on the chat list, or the same row in **Settings** or **Settings → About Beacon**. Your chats and settings carry over.
 
 - On phones where OStore can install from the phone's storage (the Sideload patch, Flipfull on the TCL Flip 4, or the appscmd service), Beacon downloads the update, checks it, installs it, and opens again.
-- On other phones, Beacon saves `signal4kaios-<version>.zip` to the phone's storage and tells you to install it with OStore: **Manual Install → Install app from sdcard**. Delete old update ZIPs from the phone's files whenever you like.
-- To check now, use **Settings → Help → Check for updates**. **Check for updates automatically** turns the daily check off; each check asks GitHub, which sees your phone's internet address.
+- On other phones, Beacon saves `signal4kaios-<version>.zip` to the phone's storage and tells you to install it with OStore: **Manual Install → Install app from sdcard**. Beacon deletes the update ZIPs it saved once the new version starts, or when a newer update replaces one you didn't install.
+- To check now, use **Settings → About Beacon → Check for updates**. **Check for updates automatically** turns the daily check off; each check asks GitHub, which sees your phone's internet address.
 
 > [!IMPORTANT]
 > Versions before 2.11.0 can't update themselves. Install 2.11.0 or later the same way you installed Beacon the first time; it updates itself after that.

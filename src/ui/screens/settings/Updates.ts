@@ -1,4 +1,4 @@
-/* The update rows and actions shared by Settings, Help, and the chat list's options. */
+/* The update rows and actions shared by Settings, About Beacon, and the chat list's options. */
 
 import { alertDialog, confirm } from '../../components/Overlays';
 import type { ActionRow } from '../../components/RowList';

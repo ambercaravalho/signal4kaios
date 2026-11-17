@@ -2,4 +2,5 @@
 
 export { availableUpdate, checkForUpdate, isChecking, maybeCheckForUpdate, noteLaunchVersion, type UpdateInfo } from './check';
 export { applyUpdate, updatePercent, updateStep, type UpdateOutcome } from './apply';
+export { deleteInstalledUpdates } from './download';
 export { detectInstaller } from './install';

@@ -2,6 +2,15 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.11.1
+
+About Beacon gets its own place in Settings. On v2.11.0, update from Beacon itself: **Options → Update to Beacon 2.11.1** on the chat list. Your chats and settings carry over.
+
+### Changed
+
+- **Settings → About Beacon**, at the bottom of Settings, holds the version, **Check for updates**, **Check for updates automatically**, and Source code, which used to be at the bottom of **Help**. Help now lists only the guides.
+- **Old updates are deleted.** Beacon deletes the update files it saved to your phone once the new version starts, or when a newer update replaces one you didn't install. To do that, Beacon now has permission to read and delete files in the phone's storage; it only deletes the update files it saved itself. Photos, music, and videos stay add-only.
+
 ## v2.11.0
 
 Beacon now updates itself. Install this version over v2.10.9 the way you installed Beacon before, one last time; your chats and settings carry over, and after that Beacon finds and downloads new versions itself.
