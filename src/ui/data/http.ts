@@ -1,6 +1,6 @@
 /* HTTP to Signal's servers. Signal's certificates chain to Signal's own root, which KaiOS doesn't trust, so `*.signal.org` requests go through the engine's pinned TLS client over `tcp-socket`. Other hosts, and environments without `TCPSocket`, use mozSystem XHR (privileged app: no CORS). A 401 for the active device means it was unlinked from the phone; `onUnlinked` fires once. */
 
-import { net } from '../../engine/net/transport';
+import { isClockError, net } from '../../engine/net/transport';
 import type { HostHttpOptions, HostRawResponse } from '../../engine/host';
 import { config } from './config';
 import { dbg } from './log';
@@ -9,7 +9,7 @@ import { mozSystemXhr } from './platform';
 const MAX_REDIRECTS = 3;
 
 export interface HttpError extends Error {
-  kind?: 'network' | 'timeout' | 'http';
+  kind?: 'network' | 'timeout' | 'http' | 'clock';
   status?: number;
   body?: any;
 }
@@ -27,7 +27,7 @@ export function onUnlinked(fn: () => void): void {
   unlinkedHandler = fn;
 }
 
-function netError(message: string, kind: 'network' | 'timeout'): HttpError {
+function netError(message: string, kind: 'network' | 'timeout' | 'clock'): HttpError {
   const err: HttpError = new Error(message);
   err.kind = kind;
   return err;
@@ -112,6 +112,7 @@ function pinnedSend(method: string, url: string, headers: Record<string, string>
     (e: any) => {
       if (e && e.kind === 'timeout') throw netError('timeout', 'timeout');
       if (e && e.kind === 'protocol' && /too large/.test(e.message)) throw tooLarge();
+      if (e && e.kind === 'tls' && isClockError(String(e.message))) throw netError('clock', 'clock');
       dbg('http: pinned TLS ' + method + ' failed: ' + (e && e.message));
       throw netError('network', 'network');
     }

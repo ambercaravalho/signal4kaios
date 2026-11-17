@@ -642,7 +642,7 @@ export const S = {
   historyKeepOpen: 'Keep Beacon open until this finishes.',
   historyFailed: 'Couldn’t get your message history.',
   skipHistory: 'Skip message history?',
-  skipHistoryBody: 'Older messages won’t be on this phone. Your phone sends history only while linking, so getting it later means linking again.',
+  skipHistoryBody: 'Older messages won’t be on this phone. Your phone sends them only while linking, so you’d need to link again.',
   historyRelink: 'Your main phone asked to link this phone again.',
   linkAgain: 'Link again',
 
@@ -662,6 +662,7 @@ export const S = {
   errTimeout: 'This is taking too long. Check your connection and try again.',
   errUnlinked: 'This phone is no longer linked to your Signal account.',
   errRateLimited: 'Too many tries. Wait a little, then try again.',
+  errClock: 'Check that the phone’s date and time are right.',
   errNotFound: 'Not found.',
   errNotAllowed: 'You don’t have permission to do that.',
   errGeneric: 'Something went wrong. Try again.',

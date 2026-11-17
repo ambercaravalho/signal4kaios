@@ -87,6 +87,13 @@ If it says it couldn't open your messages, restart the phone first. If that keep
 </details>
 
 <details>
+<summary><strong>"Check that the phone's date and time are right"</strong></summary>
+
+Beacon checks Signal's certificates against the phone's clock, so a clock that's far off makes every connection fail. Set the date and time in the phone's **Settings → Device → Date & Time** (or turn on automatic time), and Beacon connects again on its own.
+
+</details>
+
+<details>
 <summary><strong>Contacts or groups show as numbers or IDs</strong></summary>
 
 Run **Settings → Linked device → Sync with your phone** while your main phone is online.

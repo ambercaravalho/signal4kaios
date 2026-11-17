@@ -13,6 +13,7 @@ import { connectTls, TlsSession } from './tls-stream';
 import { PinnedWebSocket } from './websocket';
 
 export type { HttpRequest, HttpResponse } from './http1';
+export { isClockError } from './tls-stream';
 
 /** The `WebSocket` subset both the platform socket and `PinnedWebSocket` provide. */
 export interface SocketLike {
