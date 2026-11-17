@@ -173,6 +173,12 @@ export interface OwnProfileWrite {
   avatarUrlPath?: string | null;
 }
 
+/** A profile name as given and family names: the first word, then the rest. */
+export function splitProfileName(name: string): [string, string] {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return [parts[0] || '', parts.slice(1).join(' ')];
+}
+
 /**
  * Write our profile with `PUT /v1/profile` like Signal-Desktop: version and commitment from zkgroup, and padded encrypted fields. Fields not in `patch` are carried over from the current profile so a name change doesn't clear the about text; with no name in either, nothing is written and the result is null.
  *
@@ -200,9 +206,7 @@ export async function uploadOwnProfile(
   let givenName: string;
   let familyName: string;
   if (patch.name && patch.name.trim()) {
-    const parts = patch.name.trim().split(/\s+/);
-    givenName = parts[0];
-    familyName = parts.slice(1).join(' ');
+    [givenName, familyName] = splitProfileName(patch.name);
   } else if (current && current.givenName) {
     givenName = current.givenName;
     familyName = current.familyName;

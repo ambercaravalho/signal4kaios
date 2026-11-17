@@ -6,10 +6,11 @@ import { dbg } from '../log';
 import type { ChatRef, MessageEvent } from '../normalize';
 import type { PickedMention } from '../styled';
 import type { Attachment, Connection, Conversation, Message } from '../types';
-import { acceptanceKnown, altKeyOf, contactByKey, directName, displayName, isSelfKey, refreshDirectory, self } from './contacts';
+import { acceptanceKnown, altKeyOf, canonicalDirectId, contactByKey, directName, displayName, isSelfKey, refreshDirectory, self } from './contacts';
 import { emit } from './events';
 import { applyNotice, ingestRaw } from './ingest';
 import { migrateMute, scheduleUnmute } from './mute';
+import { outboxKey } from './send';
 import { contactsByKey, convs, state, typingMap } from './state';
 
 export function msgId(convId: string, ts: number, author: string): string {
@@ -114,6 +115,55 @@ export async function removeChat(conv: Conversation): Promise<void> {
   emit('conversations');
 }
 
+const merging: Record<string, Promise<void>> = {};
+
+/** Fold 1:1 chat `fromId` into `toId` once they turn out to be the same person: the messages move (with what Retry needs), and the chat keeps the newest activity, the furthest read point, and the settings either had. */
+export function mergeConversations(fromId: string, toId: string): Promise<void> {
+  const from = convs[fromId];
+  if (!from || from.type !== 'direct' || !toId || fromId === toId) return merging[fromId] || Promise.resolve();
+  delete convs[fromId];
+  const to = convs[toId] || { ...from, id: toId, sendId: toId };
+  if (to !== from && convs[toId]) {
+    const newer = (from.lastTs || 0) > (to.lastTs || 0) ? from : to;
+    to.lastTs = Math.max(to.lastTs || 0, from.lastTs || 0);
+    to.lastPreview = newer.lastPreview;
+    to.lastReadTs = Math.max(to.lastReadTs || 0, from.lastReadTs || 0);
+    to.unread = (to.unread || 0) + (from.unread || 0);
+    to.archived = newer.archived;
+    if (newer.expireTimer !== undefined) to.expireTimer = newer.expireTimer;
+    if (from.expiryFrom) to.expiryFrom = Math.min(to.expiryFrom || from.expiryFrom, from.expiryFrom);
+    if (!to.draft && from.draft) {
+      to.draft = from.draft;
+      to.draftMentions = from.draftMentions;
+    }
+    if (from.pinned) to.pinned = true;
+    if (from.markedUnread) to.markedUnread = true;
+    if ((from.mutedUntil || 0) > (to.mutedUntil || 0)) to.mutedUntil = from.mutedUntil;
+    for (const k of ['mentionsIfMuted', 'repliesIfMuted', 'callsIfMuted', 'chatColor', 'reportToken'] as const) if (to[k] === undefined && from[k] !== undefined) (to as any)[k] = from[k];
+    if (!from.request) delete to.request;
+  }
+  convs[toId] = to;
+  persistConv(to);
+  emit('conversations');
+  const run = (async () => {
+    for (const m of await db.moveMessages(fromId, toId)) {
+      if (m.rec.status !== 'failed' || !m.rec.attachments.length) continue;
+      for (let i = 0; i < m.rec.attachments.length; i++) {
+        const kept = await db.getAttachment(outboxKey(m.oldId, i)).catch(() => undefined);
+        if (!kept) continue;
+        await db.putAttachment(outboxKey(m.rec.id, i), kept.blob, kept.type);
+        await db.deleteAttachment(outboxKey(m.oldId, i));
+      }
+    }
+    await db.deleteConversation(fromId);
+    emit('conversations');
+  })();
+  merging[fromId] = run;
+  return run.finally(() => {
+    delete merging[fromId];
+  });
+}
+
 export function chatFor(ref: ChatRef): Conversation | undefined {
   const alt = altKeyOf(ref.key);
   return convs[ref.key] || (alt ? convs[alt] : undefined);
@@ -155,7 +205,7 @@ export function setConversationName(convId: string, name: string): void {
 
 /** The direct chat with a contact, created empty if needed. */
 export function conversationWith(contact: { number?: string; uuid?: string; name?: string }): Conversation {
-  const convId = contact.number || contact.uuid || '';
+  const convId = canonicalDirectId(contact.number || contact.uuid || '');
   let conv = convs[convId];
   if (!conv) {
     conv = newConv(convId, 'direct', directName(convId, contact.name || convId), convId);
@@ -172,6 +222,7 @@ export function groupConversation(internalId: string): Conversation {
   if (!conv) {
     const g = state.groupsByInternal[internalId];
     conv = newConv(convId, 'group', g ? g.name : 'Group', g ? g.id : null, internalId);
+    if (g && g.request) conv.request = true;
     convs[convId] = conv;
     persistConv(conv);
     emit('conversations');
@@ -192,6 +243,7 @@ export function joinedGroupConversation(internalId: string, name: string): Conve
 }
 
 const PENDING_PAGE = 20;
+const EXPIRY_ON_READ = 'expiryOnRead';
 
 /** A message still pending from before the app started was cut off when Beacon closed: mark it failed, which offers Retry. */
 async function failStalePending(startedAt: number): Promise<void> {
@@ -206,6 +258,19 @@ async function failStalePending(startedAt: number): Promise<void> {
   }
 }
 
+/** Before 2.10.6 a received message's timer started when it arrived; un-start the ones still unread, once, so they start when read. */
+async function repairEarlyTimers(): Promise<void> {
+  if (await db.kvGet(EXPIRY_ON_READ)) return;
+  for (const conv of Object.values(convs)) {
+    if (!(conv.lastTs > (conv.lastReadTs || 0))) continue;
+    const cleared = await db.startExpiry(conv.id, (conv.lastReadTs || 0) + 1, Number.MAX_SAFE_INTEGER, 0, true);
+    if (!cleared.length) continue;
+    conv.expiryFrom = Math.min(conv.expiryFrom || cleared[0].timestamp, cleared[0].timestamp);
+    persistConv(conv);
+  }
+  await db.kvSet(EXPIRY_ON_READ, true);
+}
+
 export async function init(): Promise<void> {
   try {
     for (const c of await db.allContacts()) {
@@ -218,6 +283,7 @@ export async function init(): Promise<void> {
       convs[c.id] = c;
       if (migrateMute(c)) persistConv(c);
     }
+    await repairEarlyTimers().catch((e) => dbg('timer repair failed: ' + (e && e.message)));
     state.ready = true;
     emit('conversations');
     failStalePending(Date.now()).catch((e) => dbg('pending check failed: ' + (e && e.message)));

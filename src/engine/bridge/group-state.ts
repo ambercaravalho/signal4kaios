@@ -31,6 +31,20 @@ async function vetNewGroup(g: SyncedGroupRow, invitedBy: Record<string, string>,
   if (groupIsRequest(!!g.whitelisted, addedBy, self, adder)) g.messageRequest = true;
 }
 
+/** In Signal an invite always waits for Accept, whoever sent it: we're invited while only `pending` lists us, and accepted (maybe on another device) once `members` does. */
+async function markInvite(g: SyncedGroupRow): Promise<void> {
+  const acc = await store.getAccount();
+  const mine = [host().config.aci() || '', acc && acc.pni ? acc.pni : ''].map((id) => id.replace(/^PNI:/i, '').toLowerCase()).filter(Boolean);
+  const isMe = (id: string) => mine.indexOf(String(id).replace(/^PNI:/i, '').toLowerCase()) >= 0;
+  if ((g.pending || []).some(isMe) && !(g.members || []).some(isMe)) {
+    g.messageRequest = true;
+    g.pendingInvite = true;
+  } else if (g.pendingInvite) {
+    delete g.messageRequest;
+    delete g.pendingInvite;
+  }
+}
+
 /** Save a group's new state, and tell the app what changed since the state we had; the change is attributed only when it's the very next revision. */
 export async function mergeGroupState(state: GroupV2Metadata, hint?: GroupChangeHint): Promise<void> {
   const list = await syncedGroups();
@@ -39,6 +53,7 @@ export async function mergeGroupState(state: GroupV2Metadata, hint?: GroupChange
   const merged: SyncedGroupRow = { ...prev, ...state, blocked: prev.blocked ?? false, archived: prev.archived };
   delete merged.invitedBy;
   if (merged.unvetted) await vetNewGroup(merged, state.invitedBy || {}, hint);
+  await markInvite(merged);
   if (idx >= 0) list[idx] = merged;
   else list.push(merged);
   await saveSyncedGroups(list);

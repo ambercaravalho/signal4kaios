@@ -10,7 +10,7 @@ export function MessageMeta(props: { m: Message }) {
     <span class="msg-meta">
       {m.pinned && <Icon name="pin" />}
       {m.edited && !m.deleted && <span>{S.edited}</span>}
-      {m.expiresAt ? <Icon name="timer" /> : null}
+      {m.expireSecs ? <Icon name="timer" /> : null}
       <span>{fmtClock(m.timestamp)}</span>
       {!m.incoming && <StatusIcon status={m.status} />}
     </span>

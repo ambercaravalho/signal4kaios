@@ -80,7 +80,7 @@ function keepSentAttachments(rec: Message, payload: SendPayload, ids: unknown): 
 /** Thrown by Retry when a failed message's attachment bytes are no longer cached, so it can't be sent again. */
 export class RetryUnavailableError extends Error {}
 
-function outboxKey(msgId: string, i: number): string {
+export function outboxKey(msgId: string, i: number): string {
   return 'outbox:' + msgId + ':' + i;
 }
 

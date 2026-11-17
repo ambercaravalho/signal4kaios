@@ -272,4 +272,58 @@ describe('Storage Service (Signal-Desktop key derivation)', () => {
     assert.deepEqual(batches, [3, 1]);
     assert.equal(written, 2);
   });
+
+  function memoryJournal() {
+    let saved: any[] = [];
+    return { load: async () => JSON.parse(JSON.stringify(saved)), save: async (l: any[]) => void (saved = JSON.parse(JSON.stringify(l))), peek: () => saved };
+  }
+
+  it('writes at once when flushed, instead of after the delay', async () => {
+    const batches: number[] = [];
+    const q = new StorageWriteQueue(async (m) => { batches.push(m.length); return true; }, () => {}, 60000);
+    const queued = q.enqueue([{ type: 'account', update: () => {} }]);
+    await q.flush();
+    await queued;
+    assert.deepEqual(batches, [1]);
+  });
+
+  it('keeps a saved call until its write succeeds, and replays it in a later run', async () => {
+    const journal = memoryJournal();
+    const failing = new StorageWriteQueue(async () => { throw Object.assign(new Error('offline'), { status: 0 }); }, () => {}, 60000, journal);
+    const lost = failing.enqueue([{ type: 'account', update: () => {} }], { method: 'readReceipts', args: [false] });
+    await failing.flush().catch(() => {});
+    await lost.catch(() => {});
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(journal.peek().map((r) => [r.method, r.args]), [['readReceipts', [false]]]);
+
+    const applied: unknown[] = [];
+    const next = new StorageWriteQueue(async (m) => { m.forEach((x: any) => x.update({})); return true; }, () => {}, 60000, journal);
+    await next.replaySaved((r) => [{ type: 'account', update: () => void applied.push([r.method, ...r.args]) }]);
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(applied, [['readReceipts', false]]);
+    assert.deepEqual(journal.peek(), [], 'written, so no longer saved');
+
+    await next.replaySaved(() => { throw new Error('nothing to replay'); });
+    assert.deepEqual(applied, [['readReceipts', false]]);
+  });
+
+  it('drops a saved call it can no longer build, and still writes after a 409 retry', async () => {
+    const masterKey = randomBytes(32);
+    const store = storageStore(masterKey);
+    const srv = await serveStorage(masterKey);
+    const journal = memoryJournal();
+    await journal.save([{ id: 'old', method: 'gone', args: [] }]);
+    const q = new StorageWriteQueue((m) => mutateStorage(store, srv.httpJson as any, srv.httpBinary, 'https://chat.signal.org', m), () => {}, 60000, journal);
+    await q.replaySaved(() => { throw new Error('unknown'); });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(journal.peek(), []);
+
+    srv.conflictNext(1);
+    const queued = q.enqueue([{ type: 'contact', aci: ALICE, update: (c) => { c.blocked = false; } }], { method: 'contactBlocked', args: [ALICE, false, 1] });
+    await q.flush();
+    await queued;
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(srv.version(), 8n);
+    assert.deepEqual(journal.peek(), []);
+  });
 });

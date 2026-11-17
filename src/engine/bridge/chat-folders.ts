@@ -4,7 +4,7 @@ import { fromBase64, randomBytes, toBase64 } from '../bytes';
 import { chatFolderId, ensureAllChatsFolder, type FolderRecipient, markChatFolderDeleted, writeChatFolder } from '../services/storage/chat-folders';
 import type { StorageMutation } from '../services/storage';
 import { contactIds, syncedGroups } from './contacts';
-import { storageQueue } from './context';
+import { savedStorageWrite } from './context';
 
 /** A folder as the settings screen edits it. Chats are named the way the app keys them: a number or ACI, or `g:` + a group's internal ID. */
 export interface ChatFolderEdit {
@@ -41,6 +41,26 @@ async function recipientsOf(keys: string[]): Promise<FolderRecipient[]> {
   return out;
 }
 
+const writeChatFolderEdit = savedStorageWrite('chatFolder', async (id: string, folder: ChatFolderEdit, isNew: boolean, position?: number): Promise<StorageMutation[]> => {
+  const fields = { ...folder, included: await recipientsOf(folder.included), excluded: await recipientsOf(folder.excluded) };
+  const mutations: StorageMutation[] = [{ type: 'chatFolder', id: chatFolderId(id), update: (f) => writeChatFolder(f, fields, isNew ? position : undefined) }];
+  if (isNew) mutations.unshift({ type: 'chatFolder', allChats: true, update: ensureAllChatsFolder });
+  return mutations;
+});
+
+const writeChatFolderDeleted = savedStorageWrite('chatFolderDeleted', (id: string, at: number): StorageMutation[] => [{ type: 'chatFolder', id: chatFolderId(id), existing: true, update: (f) => markChatFolderDeleted(f, at) }]);
+
+const writeChatFolderOrder = savedStorageWrite('chatFolderOrder', (ids: string[]): StorageMutation[] =>
+  ids.map((id, position) => ({
+    type: 'chatFolder',
+    id: chatFolderId(id),
+    existing: true,
+    update: (f) => {
+      if (f.deletedAtTimestampMs === 0n) f.position = position;
+    },
+  }))
+);
+
 export const chatFolderMethods = {
   /**
    * Create or change a custom folder; resolves to its ID. A new folder goes at `position`; the first one also creates the "All chats" folder, as Signal does.
@@ -48,29 +68,17 @@ export const chatFolderMethods = {
   async saveChatFolder(folder: ChatFolderEdit, position?: number): Promise<string> {
     const name = folder.name.normalize().trim();
     if (!name) throw new Error('A chat folder needs a name');
-    const id = folder.id ? chatFolderId(folder.id) : randomBytes(16);
-    const fields = { ...folder, name, included: await recipientsOf(folder.included), excluded: await recipientsOf(folder.excluded) };
-    const mutations: StorageMutation[] = [{ type: 'chatFolder', id, update: (f) => writeChatFolder(f, fields, folder.id ? undefined : position) }];
-    if (!folder.id) mutations.unshift({ type: 'chatFolder', allChats: true, update: ensureAllChatsFolder });
-    await storageQueue.enqueue(mutations);
-    return toBase64(id);
+    const id = folder.id || toBase64(randomBytes(16));
+    await writeChatFolderEdit(id, { ...folder, id, name }, !folder.id, position);
+    return id;
   },
 
   async deleteChatFolder(id: string): Promise<void> {
-    const now = Date.now();
-    await storageQueue.enqueue([{ type: 'chatFolder', id: chatFolderId(id), existing: true, update: (f) => markChatFolderDeleted(f, now) }]);
+    await writeChatFolderDeleted(id, Date.now());
   },
 
   /** Give each folder in `ids` (the "All chats" folder included) the position of its index. */
   async reorderChatFolders(ids: string[]): Promise<void> {
-    const mutations: StorageMutation[] = ids.map((id, position) => ({
-      type: 'chatFolder',
-      id: chatFolderId(id),
-      existing: true,
-      update: (f) => {
-        if (f.deletedAtTimestampMs === 0n) f.position = position;
-      },
-    }));
-    await storageQueue.enqueue(mutations);
+    await writeChatFolderOrder(ids);
   },
 };

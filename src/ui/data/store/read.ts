@@ -46,11 +46,23 @@ export async function recountUnread(convId: string): Promise<void> {
   if (!conv.unread) dismissNotifications(convId);
 }
 
+/** Starts the disappearing timers of the received messages read up to `throughTs`, as Signal does on read. */
+export async function startTimers(convId: string, throughTs: number): Promise<void> {
+  const conv = convs[convId];
+  if (!conv || !conv.expiryFrom || conv.expiryFrom > throughTs) return;
+  const from = conv.expiryFrom;
+  if (throughTs >= (conv.lastTs || 0)) delete conv.expiryFrom;
+  else conv.expiryFrom = throughTs + 1;
+  persistConv(conv);
+  for (const rec of await db.startExpiry(convId, from, throughTs, Date.now())) emit('message-updated', rec, undefined);
+}
+
 /** Another of our devices read up to `ts` in this chat: what came after it stays unread. */
 async function readUpTo(convId: string, ts: number): Promise<void> {
   const conv = convs[convId];
   if (!conv) return;
   conv.lastReadTs = Math.max(conv.lastReadTs || 0, ts);
+  await startTimers(convId, ts);
   return recountUnread(convId);
 }
 
@@ -139,6 +151,7 @@ export function markRead(convId: string): void {
     conv.markedUnread = false;
     syncChatState(conv, { markedUnread: false });
   }
+  startTimers(convId, Number.MAX_SAFE_INTEGER).catch((e) => dbg('timer start failed ' + (e && e.message)));
   // A message request stays unread for the sender until it's accepted, as in Signal.
   if (conv.request) persistConv(conv);
   else

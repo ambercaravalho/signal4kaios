@@ -3,9 +3,8 @@ import { confirm } from '../../components/Overlays';
 import { Row, RowList } from '../../components/RowList';
 import { Screen } from '../../components/Screen';
 import { toast } from '../../components/Toast';
-import { signal, unlink } from '../../data/api';
+import { leaveUnlinkedAccount, signal, unlink, wipeAllData } from '../../data/api';
 import { config } from '../../data/config';
-import { db } from '../../data/db';
 import * as http from '../../data/http';
 import { dbg } from '../../data/log';
 import * as ws from '../../data/ws';
@@ -16,10 +15,8 @@ import { LinkScreen } from '../Onboarding';
 /** Every account's database and all settings, then a fresh start at the welcome screen. */
 export async function deleteAllData(): Promise<void> {
   ws.stop();
-  for (const a of config.accounts()) await db.useAccount(a.dbNumber || a.number).then(() => db.wipe()).catch(() => {});
-  await db.useAccount(null).then(() => db.wipe()).catch(() => {});
-  config.clear();
-  location.reload();
+  if (await wipeAllData()) location.reload();
+  else toast(S.deleteAllDataFailed);
 }
 
 export function LinkedDeviceScreen() {
@@ -43,7 +40,7 @@ export function LinkedDeviceScreen() {
       return;
     }
     await unlink();
-    config.forgetAccount();
+    leaveUnlinkedAccount();
     location.reload();
   }
 

@@ -89,7 +89,51 @@ interface ConfigData {
   accounts?: SavedAccount[];
   /** When each account (by ACI) last checked its PreKeys on the server. */
   preKeysCheckedAt?: Record<string, number>;
+  /** Every database Beacon has opened on this phone, so Delete all data can find them where the browser can't list them. */
+  knownDatabases?: string[];
+  /** The `ACCOUNT_KEYS` settings of each saved account (by ACI) other than the active one, whose settings are at the top level. */
+  accountSettings?: Record<string, Partial<ConfigData>>;
   [k: string]: unknown;
+}
+
+/** Settings that belong to one Signal account: its profile, what Storage Service shares with its other devices, and its pending history. The rest belong to the phone. */
+const ACCOUNT_KEYS = [
+  'deviceName',
+  'username',
+  'usernameLink',
+  'profileName',
+  'profileAbout',
+  'profileAboutEmoji',
+  'sendReadReceipts',
+  'typingIndicators',
+  'linkPreviews',
+  'sealedSenderIndicators',
+  'defaultExpireTimer',
+  'sharePhoneNumber',
+  'findableByNumber',
+  'notifyMentionsIfMuted',
+  'notifyRepliesIfMuted',
+  'notifyCallsIfMuted',
+  'notifyReactions',
+  'notificationProfiles',
+  'notificationProfileOverride',
+  'chatFolders',
+  'stickerPacks',
+  'historySync',
+] as const;
+
+/** Moves the active account's settings into `accountSettings` and brings `aci`'s back (or the defaults for an account seen for the first time). */
+function swapAccountSettings(c: ConfigData, aci: string, keepActive: boolean): void {
+  const saved = Object.assign({}, c.accountSettings);
+  if (keepActive && c.aci) {
+    const mine: Partial<ConfigData> = {};
+    for (const k of ACCOUNT_KEYS) if (c[k] !== undefined) mine[k] = c[k] as never;
+    saved[c.aci] = mine;
+  }
+  for (const k of ACCOUNT_KEYS) delete c[k];
+  Object.assign(c, saved[aci] || {});
+  delete saved[aci];
+  c.accountSettings = saved;
 }
 
 function read(): ConfigData {
@@ -318,7 +362,27 @@ export const config = {
     write(c);
   },
 
-  /** Make a saved account active. The caller reloads so the right database and connection are used. */
+  knownDatabases(): string[] {
+    const v = read().knownDatabases;
+    return Array.isArray(v) ? v.filter((n) => typeof n === 'string') : [];
+  },
+
+  noteDatabase(name: string): void {
+    const c = read();
+    const list = Array.isArray(c.knownDatabases) ? c.knownDatabases : [];
+    if (list.indexOf(name) >= 0) return;
+    c.knownDatabases = list.concat([name]);
+    write(c);
+  },
+
+  /** Before a newly linked account's credentials are saved: put the active account's settings aside and start `aci` with its own (relinking the active account keeps them). */
+  prepareAccount(aci: string): void {
+    const c = read();
+    if (!aci || c.aci === aci) return;
+    swapAccountSettings(c, aci, (c.accounts || []).some((a) => !!c.aci && a.aci === c.aci));
+    write(c);
+  },
+
   preKeysCheckedAt(): number {
     const c = read();
     const at = c.preKeysCheckedAt && c.aci ? c.preKeysCheckedAt[c.aci] : 0;
@@ -332,10 +396,12 @@ export const config = {
     write(c);
   },
 
+  /** Make a saved account active, with its own settings. The caller reloads so the right database and connection are used. */
   switchAccount(number: string): boolean {
     const c = read();
     const a = (c.accounts || []).find((x) => x.number === number);
     if (!a) return false;
+    if (a.aci !== c.aci) swapAccountSettings(c, a.aci, (c.accounts || []).some((x) => !!c.aci && x.aci === c.aci));
     c.serverUrl = a.serverUrl || DEFAULT_SIGNAL_SERVER;
     c.number = a.number || '';
     c.dbNumber = a.dbNumber || a.number || '';

@@ -8,7 +8,7 @@ import { Screen } from '../components/Screen';
 import { toast } from '../components/Toast';
 import { toBase64 } from '../../engine/bytes';
 import type { ProvisioningSession } from '../../engine/net/provisioning';
-import { signal } from '../data/api';
+import { openLinkDatabase, signal } from '../data/api';
 import { config } from '../data/config';
 import { db } from '../data/db';
 import { dbg } from '../data/log';
@@ -64,10 +64,11 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
       beforeLinking: (account) => {
         ws.stop();
         switched = true;
-        return db.useAccount(account.number || account.aci);
+        return openLinkDatabase(account);
       },
       onLinked: (creds, link) => {
         session.current = null;
+        config.prepareAccount(creds.aci);
         // SECURITY-REVIEW: the device password goes to config storage only; it is never logged or shown.
         config.set({ number: creds.number || creds.aci, dbNumber: creds.number || creds.aci, aci: creds.aci, deviceId: creds.deviceId, deviceToken: creds.password, deviceName });
         config.saveActiveAccount();

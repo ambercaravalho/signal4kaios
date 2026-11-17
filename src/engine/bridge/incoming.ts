@@ -19,6 +19,25 @@ onIdentityKeyChanged((aci) => {
   })().catch(() => {});
 });
 
+/** Identified envelopes and synced sends often name a person by ACI alone; add the number our contacts know, so the app files them in the same chat as one started by number. */
+async function addKnownNumbers(frame: { envelope: any }): Promise<{ envelope: any }> {
+  const env = frame && frame.envelope;
+  if (!env) return frame;
+  if (!env.sourceNumber && isAci(env.sourceUuid)) {
+    const ids = await contactIds(env.sourceUuid);
+    if (ids.e164) {
+      env.sourceNumber = ids.e164;
+      env.source = ids.e164;
+    }
+  }
+  const sent = env.syncMessage && env.syncMessage.sentMessage;
+  if (sent && !sent.destinationNumber && isAci(sent.destinationUuid) && !(sent.groupInfo && sent.groupInfo.groupId)) {
+    const ids = await contactIds(sent.destinationUuid);
+    if (ids.e164) sent.destinationNumber = ids.e164;
+  }
+  return frame;
+}
+
 export const incomingMethods = {
   /** Decode a binary WebSocket frame from `wss://chat.signal.org/v1/websocket/`. */
   decodeWsFrame(buf: ArrayBuffer | Uint8Array) {
@@ -56,7 +75,7 @@ export const incomingMethods = {
         host().dbg(`call: message not handled (${err && err.message})`);
         return true;
       });
-      return took ? null : res.normalizedFrame;
+      return took ? null : addKnownNumbers(res.normalizedFrame);
     }
 
     const groupMessage = c.case === 'dataMessage' ? c.value : c.case === 'editMessage' ? c.value.dataMessage : undefined;
@@ -88,6 +107,6 @@ export const incomingMethods = {
       }
       handleIncomingSyncMessage(res.envelope, res.content).catch(() => {});
     }
-    return res.normalizedFrame;
+    return addKnownNumbers(res.normalizedFrame);
   },
 };

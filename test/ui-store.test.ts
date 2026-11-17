@@ -740,6 +740,26 @@ describe('store', () => {
     assert.equal(store.conversation('g:R1RQ')!.request, undefined);
   });
 
+  it('lists an invite on Home as a request before any message arrives, and Accept takes it up', async () => {
+    const invite = { id: 'group.R1IV', internal_id: 'R1IV', masterKey: '', revision: 1, name: 'Picnic', members: ['aci-dave'], admins: ['aci-dave'], pending: ['aci-me'], expireTimer: 0, blocked: false, link_mode: 'disabled', invite_link: '', messageRequest: true, pendingInvite: true, addedBy: 'aci-dave' };
+    await db.kvSet('syncedGroups', [invite]);
+    await store.refreshDirectory();
+    const listed = store.conversations().find((c) => c.id === 'g:R1IV');
+    assert.ok(listed, 'shown on Home');
+    assert.equal(listed!.request, true);
+    assert.equal(listed!.name, 'Picnic');
+
+    const answers: any[] = [];
+    (signal as any).answerGroupRequest = async (sendId: string, response: string) => {
+      answers.push([sendId, response]);
+    };
+    await store.acceptRequest('g:R1IV');
+    assert.deepEqual(answers, [['group.R1IV', 'accept']]);
+    assert.equal(store.conversation('g:R1IV')!.request, undefined);
+    await db.kvSet('syncedGroups', [{ ...invite, members: ['aci-dave', 'aci-me'], pending: [], messageRequest: undefined, pendingInvite: undefined }]);
+    await store.refreshDirectory();
+  });
+
   it('asks our phone for attachments the servers dropped, and gives up when the phone no longer has the message', async () => {
     const IVY = '+15550011';
     const asked: any[] = [];
@@ -946,6 +966,68 @@ describe('store', () => {
     assert.ok(await db.getMessage(old.id), 'the message stays so it can be deleted');
   });
 
+  it('files a message that names someone by ACI in the chat started with their number', async () => {
+    const HANK = '+15550040';
+    await db.kvSet('syncedContacts', [{ uuid: 'aci-hank', number: HANK, name: 'Hank' }]);
+    await store.refreshDirectory();
+    const conv = store.conversationWith({ number: HANK });
+    assert.equal(store.conversationWith({ uuid: 'aci-hank' }).id, HANK);
+    const ts = Date.now() + 400000;
+    store.ingestRaw({ envelope: { sourceUuid: 'aci-hank', timestamp: ts, dataMessage: { timestamp: ts, message: 'hi by ACI' } } });
+    await settle();
+    assert.equal(store.conversation('aci-hank'), undefined);
+    assert.equal(conv.lastTs, ts);
+    assert.ok(await db.getMessage(HANK + '|' + ts + '|' + HANK));
+  });
+
+  it('merges two chats with one person once their number and ACI are linked, keeping read state and Retry', async () => {
+    const IVY = '+15550050';
+    await db.kvSet('syncedContacts', [{ uuid: 'aci-ivy', number: '', name: 'Ivy', whitelisted: true }]);
+    await store.refreshDirectory();
+    const ts = Date.now() + 500000;
+    for (const at of [ts, ts + 1]) store.ingestRaw({ envelope: { sourceUuid: 'aci-ivy', timestamp: at, dataMessage: { timestamp: at, message: 'from ACI ' + at } } });
+    await settle();
+    store.markRead('aci-ivy');
+    await settle();
+    let last: any;
+    const off = store.on('message', (m) => (last = m));
+    (signal as any).send = async () => {
+      throw new Error('offline');
+    };
+    const photo = { dataUri: 'data:image/jpeg;filename=c.jpg;base64,BwgJ', contentType: 'image/jpeg', filename: 'c.jpg', size: 3 };
+    await assert.rejects(store.sendAttachments('aci-ivy', [photo], 'pic'));
+    await settle();
+    off();
+    const failed = (await db.getMessage(last.id))!;
+    assert.equal(failed.status, 'failed');
+    store.ingestRaw({ envelope: { sourceNumber: ME, timestamp: ts + 2, syncMessage: { sentMessage: { destinationNumber: IVY, timestamp: ts + 2, message: 'from my phone' } } } });
+    await settle();
+    assert.ok(store.conversation(IVY) && store.conversation('aci-ivy'), 'two chats for now');
+
+    await db.kvSet('syncedContacts', [{ uuid: 'aci-ivy', number: IVY, name: 'Ivy', whitelisted: true }]);
+    await store.refreshDirectory();
+    await settle();
+    assert.equal(store.conversation('aci-ivy'), undefined);
+    const conv = store.conversation(IVY)!;
+    assert.equal(conv.lastTs, ts + 2);
+    assert.ok(conv.lastReadTs >= ts + 1, 'read state kept');
+    assert.equal(conv.unread, 0);
+    for (const at of [ts, ts + 1]) assert.ok(await db.getMessage(IVY + '|' + at + '|' + IVY), 'moved ' + at);
+    assert.equal(await db.getMessage('aci-ivy|' + ts + '|aci-ivy'), undefined);
+    assert.ok(await db.getMessage(IVY + '|' + (ts + 2) + '|' + ME));
+    assert.equal((await db.getMessagesPage('aci-ivy', Number.MAX_SAFE_INTEGER, 10)).length, 0);
+
+    const moved = (await db.getMessage(IVY + '|' + failed.timestamp + '|' + failed.author))!;
+    assert.equal(moved.status, 'failed');
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: ts + 3, attachments: ['desc-merged'] };
+    };
+    await store.retryMessage(moved);
+    assert.deepEqual(sent[0].base64_attachments, [photo.dataUri]);
+  });
+
   it('applies read syncs to the chat the message is in, leaving newer messages unread', async () => {
     await db.kvSet('syncedContacts', [{ uuid: 'aci-erin', number: '+15550020', name: 'Erin' }, { uuid: 'aci-finn', number: '', name: 'aci-finn' }]);
     await db.kvSet('syncedGroups', [{ id: 'group.R1RS', internal_id: 'R1RS', masterKey: '', revision: 1, name: 'Club', members: ['aci-me', 'aci-erin'], admins: [], pending: [], expireTimer: 0, blocked: false, link_mode: 'disabled', invite_link: '' }]);
@@ -983,6 +1065,64 @@ describe('store', () => {
     readSync('aci-finn', ts + 3);
     await settle();
     assert.equal(store.conversation(finn.id)!.unread, 0, 'a contact known only by ACI');
+  });
+
+  it('starts a received disappearing message’s timer when it’s read, here or on another device', async () => {
+    const GINA = '+15550030';
+    await db.kvSet('syncedContacts', [{ uuid: 'aci-gina', number: GINA, name: 'Gina' }]);
+    await store.refreshDirectory();
+    const ts = Date.now() + 200000;
+    const vanishing = (at: number) => ({ envelope: { sourceNumber: GINA, sourceUuid: 'aci-gina', timestamp: at, dataMessage: { timestamp: at, message: 'psst ' + at, expiresInSeconds: 60 } } });
+    const readSync = (at: number) => store.ingestRaw({ envelope: { sourceNumber: ME, syncMessage: { readMessages: [{ senderUuid: 'aci-gina', timestamp: at }] } } });
+    const stored = async (at: number) => (await db.getMessage(GINA + '|' + at + '|' + GINA))!;
+    store.ingestRaw(vanishing(ts));
+    store.ingestRaw(vanishing(ts + 1));
+    await settle();
+    assert.equal((await stored(ts)).expireSecs, 60);
+    assert.equal((await stored(ts)).expiresAt, undefined, 'unread, so the timer waits');
+    await store.purgeExpired();
+    assert.ok(await db.getMessage(GINA + '|' + ts + '|' + GINA), 'not purged before it is read');
+
+    readSync(ts);
+    await settle();
+    const started = (await stored(ts)).expiresAt!;
+    assert.ok(Math.abs(started - (Date.now() + 60000)) < 5000, 'a read on another device starts it');
+    assert.equal((await stored(ts + 1)).expiresAt, undefined, 'the newer one still waits');
+
+    store.markRead(GINA);
+    await settle();
+    assert.ok((await stored(ts + 1)).expiresAt, 'reading here starts it');
+
+    readSync(ts + 5);
+    await settle();
+    store.ingestRaw(vanishing(ts + 5));
+    await settle();
+    assert.ok((await stored(ts + 5)).expiresAt, 'read elsewhere before it arrived, so it starts at once');
+  });
+
+  it('starts a disappearing message sent from another device at its send time', async () => {
+    const sentAt = Date.now() - 30000;
+    store.ingestRaw({ envelope: { sourceNumber: ME, timestamp: sentAt, syncMessage: { sentMessage: { destinationNumber: '+15550030', timestamp: sentAt, message: 'from my phone', expiresInSeconds: 3600 } } } });
+    await settle();
+    assert.equal((await db.getMessage('+15550030|' + sentAt + '|' + ME))!.expiresAt, sentAt + 3600000);
+  });
+
+  it('restarts timers that began on arrival before 2.10.6, once, for messages still unread', async () => {
+    const GINA = '+15550030';
+    const ts = Date.now() + 300000;
+    store.ingestRaw({ envelope: { sourceNumber: GINA, timestamp: ts + 1, dataMessage: { timestamp: ts + 1, message: 'newest' } } });
+    await settle();
+    const id = GINA + '|' + ts + '|' + GINA;
+    await db.putMessage({ id, convId: GINA, incoming: true, author: GINA, authorName: '', timestamp: ts, body: 'old style', styles: [], quote: null, attachments: [], reactions: {}, status: 'received', deleted: false, edited: false, expireSecs: 60, expiresAt: Date.now() + 1000 });
+    await db.kvSet('expiryOnRead', false);
+    await store.init();
+    clearInterval(storeState.purgeTimer!);
+    storeState.purgeTimer = null;
+    await settle();
+    assert.equal((await db.getMessage(id))!.expiresAt, undefined);
+    store.markRead(GINA);
+    await settle();
+    assert.ok((await db.getMessage(id))!.expiresAt! > Date.now() + 50000);
   });
 
   it('resolves once a frame is stored, and rejects with SaveError when the database refuses a write', async () => {
