@@ -17,7 +17,7 @@ import { GUIDES } from '../src/ui/data/guides';
 import * as store from '../src/ui/data/store';
 import type { Message } from '../src/ui/data/types';
 import { askViewOnce } from '../src/ui/components/chat/useChatComposer';
-import { Bubble, ChatScreen, mainActions, PinnedBar } from '../src/ui/screens/Chat';
+import { Bubble, canForward, ChatScreen, mainActions, PinnedBar } from '../src/ui/screens/Chat';
 import { ChatSettingsScreen } from '../src/ui/screens/ChatSettings';
 import { DebugScreen } from '../src/ui/screens/Debug';
 import { guideRow, openGuide } from '../src/ui/screens/Guide';
@@ -155,6 +155,9 @@ describe('screens', () => {
     const base = { id: 'm2', convId: ALICE, author: ALICE, timestamp: 1000, body: '', incoming: true, status: 'received', attachments: [], reactions: {} } as unknown as Message;
     const photo = { ...base, attachments: [{ id: 'a1', contentType: 'image/jpeg', size: 10 }] } as Message;
     assert.deepEqual(mainActions(photo, false), ['attachment']);
+    const album = { ...base, attachments: [photo.attachments[0], { id: 'a2', contentType: 'image/jpeg', size: 12 }] } as Message;
+    assert.ok(canForward(album));
+    assert.ok(!canForward({ ...album, attachments: [album.attachments[0], { ...album.attachments[1], id: '' }] } as Message));
     assert.deepEqual(mainActions({ ...base, body: 'see https://signal.org', status: 'failed', incoming: false } as Message, true), ['retry', 'readFull', 'openLink']);
     assert.deepEqual(mainActions({ ...photo, deleted: true } as Message, false), []);
     assert.deepEqual(mainActions({ ...base, body: 'hi' } as Message, false), []);

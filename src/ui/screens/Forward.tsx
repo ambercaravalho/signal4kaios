@@ -23,21 +23,18 @@ export function ForwardScreen(props: { msg: Message }) {
   async function forwardTo(convId: () => string, name: string): Promise<void> {
     if (busy || !(await confirm({ title: S.forward, body: fmt(S.forwardTo, { name }), ok: S.send }))) return;
     const m = props.msg;
-    const att = m.attachments[0];
     setBusy(true);
-    let uri: string | undefined;
+    const uris: string[] = [];
     try {
-      if (att) {
-        toast(S.preparingFile);
-        uri = await readDataUri(await loadAttachment(att), att.filename);
-      }
+      if (m.attachments.length) toast(S.preparingFile);
+      for (const att of m.attachments) uris.push(await readDataUri(await loadAttachment(att), att.filename));
     } catch (e) {
       setBusy(false);
       toast(friendlyError(e, S.attachmentFailed));
       return;
     }
     router.pop();
-    store.forwardMessage(convId(), m, uri).then(
+    store.forwardMessage(convId(), m, uris).then(
       () => toast(S.forwarded),
       (e) => toast(sendError(e))
     );

@@ -29,7 +29,7 @@ import { ChatSettingsScreen } from './ChatSettings';
 
 export { Bubble } from '../components/chat/Bubble';
 export { NoticeLine } from '../components/chat/NoticeLine';
-export { mainActions, type MainAction } from '../components/chat/message-options';
+export { canForward, mainActions, type MainAction } from '../components/chat/message-options';
 
 export function openChat(convId: string, targetTs?: number): void {
   router.push(ChatScreen, { convId, targetTs });

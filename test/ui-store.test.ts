@@ -114,13 +114,19 @@ describe('store', () => {
     };
     const src = (await db.getMessage(ALICE + '|1500|' + ALICE))!;
     const fwd = { ...src, body: 'hi @Bob', styles: [{ start: 0, length: 2, style: 'BOLD' }], mentions: [{ name: 'Bob', uuid: 'aci-bob' }], attachments: [{ id: 'x', contentType: 'image/png', filename: 'a.png', size: 3 }] };
-    const rec = await store.forwardMessage(ALICE, fwd, 'data:image/png;base64,AAAA');
+    const rec = await store.forwardMessage(ALICE, fwd, ['data:image/png;base64,AAAA']);
     assert.equal(sent[0].message, 'hi @Bob');
     assert.deepEqual(sent[0].styles, [{ start: 0, length: 2, style: 'BOLD' }]);
     assert.equal(sent[0].mentions, undefined);
     assert.deepEqual(sent[0].base64_attachments, ['data:image/png;base64,AAAA']);
     assert.equal(rec.attachments[0].id, '');
     assert.equal(rec.incoming, false);
+
+    const album = { ...src, body: '', attachments: [{ id: 'x', contentType: 'image/png', filename: 'a.png', size: 3, width: 4, height: 4 }, { id: 'y', contentType: 'image/jpeg', filename: 'b.jpg', size: 3 }] };
+    const both = await store.forwardMessage(ALICE, album, ['data:image/png;base64,AAAA', 'data:image/jpeg;base64,BBBB']);
+    assert.deepEqual(sent[1].base64_attachments, ['data:image/png;base64,AAAA', 'data:image/jpeg;base64,BBBB']);
+    assert.deepEqual(sent[1].attachment_meta, [{ width: 4, height: 4 }, null]);
+    assert.deepEqual(both.attachments.map((a) => a.filename), ['a.png', 'b.jpg']);
   });
 
   it('sends with formatting and the chat timer, then tracks receipts', async () => {

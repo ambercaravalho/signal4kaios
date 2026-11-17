@@ -272,22 +272,22 @@ export function sendEdit(rec: Message, newText: string, mentions: PickedMention[
   });
 }
 
-/** A copy of `m` in another chat. Text keeps its formatting but not its mentions; `dataUri` carries the attachment's bytes when it has one. */
-export function forwardMessage(convId: string, m: Message, dataUri?: string): Promise<Message> {
+/** A copy of `m` in another chat. Text keeps its formatting but not its mentions; `dataUris` carries the bytes of each attachment, in order. */
+export function forwardMessage(convId: string, m: Message, dataUris: string[] = []): Promise<Message> {
   let conv: Conversation;
   try {
     conv = convForSend(convId);
   } catch (e) {
     return Promise.reject(e);
   }
-  const src = dataUri ? m.attachments[0] : undefined;
-  const attachments: Attachment[] = src ? [localAttachment({ dataUri: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: src.voiceNote, waveform: src.waveform, duration: src.duration, blurHash: src.blurHash, width: src.width, height: src.height })] : [];
+  const srcs = m.attachments.slice(0, dataUris.length);
+  const attachments: Attachment[] = srcs.map((src) => localAttachment({ dataUri: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: src.voiceNote, waveform: src.waveform, duration: src.duration, blurHash: src.blurHash, width: src.width, height: src.height }));
   return withDefaultTimer(conv, () => {
     const rec = newOutgoingRec(conv, { body: m.body, styles: m.styles || [], attachments });
     const payload: SendPayload = { ...basePayload(conv, m.body), styles: m.styles || [] };
-    if (dataUri) payload.base64_attachments = [dataUri];
-    const meta = src && outgoingMeta(src);
-    if (meta) payload.attachment_meta = [meta];
+    if (srcs.length) payload.base64_attachments = dataUris.slice(0, srcs.length);
+    const meta = srcs.map(outgoingMeta);
+    if (meta.some(Boolean)) payload.attachment_meta = meta;
     return sendCore(conv, rec, payload, previewOf(rec));
   });
 }

@@ -61,7 +61,7 @@ OK on a message opens its options. The first one is what the message is most lik
 
 - **React**: pick from six quick reactions or any emoji; pick your current reaction again to remove it.
 - **Reply** and **Copy text**.
-- **Forward** sends the text (with its formatting) or the attachment to another chat, contact, or group after you confirm. View-once media can't be forwarded.
+- **Forward** sends the text (with its formatting) and every attachment, including all the photos in an album, to another chat, contact, or group after you confirm. View-once media can't be forwarded.
 - **Edit** (up to 10 times) and **Delete for everyone** on your own messages for 24 hours, as in Signal. Group admins also get **Delete for everyone** on other people's messages for 24 hours; those read **An admin deleted this message.**
 - **Pin message** (for everyone in the chat), **Message details**, and **Delete for me**, which also deletes the message on your other linked devices.
 - **Message details** shows the full text, when it was sent, its status, reactions, when it disappears, earlier versions of an edited message, and **Delivered privately** when **Private delivery icon** is on in **Settings → Privacy**.
