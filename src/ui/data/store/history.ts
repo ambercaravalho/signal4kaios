@@ -23,9 +23,15 @@ export class HistoryImport {
   private whitelisted = new Map<string, boolean>();
   private outgoing = new Set<string>();
   private added = new Map<string, number>();
+  private existing = new Set<string>();
+  /** Chats that got something other than a safety-number notice. */
+  private substantive = new Set<string>();
 
   constructor(existing: Conversation[], private selfKey: string) {
-    for (const c of existing) this.convs.set(c.id, c);
+    for (const c of existing) {
+      this.convs.set(c.id, c);
+      this.existing.add(c.id);
+    }
   }
 
   private nameOf = (key: string): string => this.names.get(key) || key;
@@ -117,6 +123,7 @@ export class HistoryImport {
       const counts = isNotice ? noticeAlerts(rec.notice!) && h.author !== this.selfKey : rec.incoming;
       if (counts && !h.read) c.unread = (c.unread || 0) + 1;
       if (!rec.incoming) this.outgoing.add(c.id);
+      if (!rec.notice || rec.notice.kind !== 'safetyNumber') this.substantive.add(c.id);
       this.added.set(c.id, (this.added.get(c.id) || 0) + 1);
     }
   }
@@ -149,6 +156,11 @@ export class HistoryImport {
   async finish(): Promise<void> {
     for (const c of Array.from(this.convs.values())) {
       if (!this.added.has(c.id) && !c.pinned && !c.archived && !c.mutedUntil) continue;
+      // The phone files a key change in the person's 1:1 thread even if you never messaged them; like Signal, a chat with only those stays hidden.
+      if (c.type === 'direct' && !c.pinned && !this.existing.has(c.id) && this.added.has(c.id) && !this.substantive.has(c.id)) {
+        await db.pruneConversation(c.id, 0);
+        continue;
+      }
       if (c.id !== this.selfKey && this.whitelisted.get(c.id) === false && !this.outgoing.has(c.id)) c.request = true;
       await db.putConversation(c);
       await db.pruneConversation(c.id, PRUNE_KEEP);

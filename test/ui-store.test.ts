@@ -1312,6 +1312,37 @@ describe('store', () => {
     assert.ok((await db.getMessage(id))!.expiresAt! > Date.now() + 50000);
   });
 
+  it('removes 1:1 chats holding only safety-number notices, once, keeping pinned chats and chats with messages', async () => {
+    const ONLY = '+15550041';
+    const PINNED = '+15550042';
+    const MIXED = '+15550043';
+    const notice = (convId: string, ts: number) => ({ id: convId + '|' + ts + '|' + convId, convId, incoming: true, author: convId, authorName: '', timestamp: ts, body: '', styles: [], quote: null, attachments: [], reactions: {}, status: 'received' as const, deleted: false, edited: false, notice: { kind: 'safetyNumber' as const } });
+    const chat = (id: string, extra: Record<string, unknown> = {}) => ({ id, type: 'direct' as const, sendId: id, name: id, lastTs: 7000, lastPreview: '', unread: 0, lastReadTs: 0, request: true, ...extra });
+    for (const id of [ONLY, PINNED, MIXED]) await db.putMessage(notice(id, 7000));
+    await db.putMessage({ ...notice(MIXED, 7100), id: MIXED + '|7100|' + MIXED, body: 'hi', notice: undefined });
+    await db.putConversation(chat(ONLY));
+    await db.putConversation(chat(PINNED, { pinned: true }));
+    await db.putConversation(chat(MIXED));
+    await db.kvSet('safetyNoticeChatsDropped', false);
+    await store.init();
+    clearInterval(storeState.purgeTimer!);
+    storeState.purgeTimer = null;
+    await settle();
+    assert.equal(store.conversation(ONLY), undefined);
+    assert.equal(await db.countMessages(ONLY), 0);
+    assert.ok((await db.allConversations()).every((c) => c.id !== ONLY));
+    assert.ok(store.conversation(PINNED));
+    assert.ok(store.conversation(MIXED));
+
+    await db.putMessage(notice(ONLY, 7200));
+    await db.putConversation(chat(ONLY));
+    await store.init();
+    clearInterval(storeState.purgeTimer!);
+    storeState.purgeTimer = null;
+    await settle();
+    assert.ok(store.conversation(ONLY), 'runs only once');
+  });
+
   it('resolves once a frame is stored, and rejects with SaveError when the database refuses a write', async () => {
     await store.ingestRaw(incoming(9400, 'stored first'));
     assert.equal((await db.getMessage(ALICE + '|9400|' + ALICE))!.body, 'stored first', 'stored by the time it resolves');
