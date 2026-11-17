@@ -2,6 +2,18 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.10.9
+
+Upright photos and the latest libsignal. Install over v2.10.8; your chats and settings carry over.
+
+### Fixed
+
+- **Photos taken sideways** now arrive upright. Beacon removes location and camera data from photos before sending them, and that used to lose which way up the photo was taken. This applies to your profile photo and link preview images too.
+
+### Changed
+
+- **libsignal 0.108.0.** Beacon now uses Signal's latest encryption library, which also rejects a kind of forged first message that an honest Signal app never sends.
+
 ## v2.10.8
 
 The last fixes from the pre-launch review: accounts and security, voice messages, groups, calls, and many smaller rough edges. Install over v2.10.7; your chats and settings carry over.

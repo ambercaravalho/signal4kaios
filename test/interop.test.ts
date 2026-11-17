@@ -10,7 +10,7 @@ import { gzipSync } from 'node:zlib';
 import { AccountEntropyPool, BackupKey } from '@signalapp/libsignal-client/dist/AccountKeys.js';
 import { Aci } from '@signalapp/libsignal-client/dist/Address.js';
 import { MessageBackupKey } from '@signalapp/libsignal-client/dist/MessageBackup.js';
-import { encryptProvisionMessage, RecvProvisionCiphertextState } from '@signalapp/libsignal-client/dist/Provisioning.js';
+import { encryptProvisionMessage, ProvisioningPublicKey, RecvProvisionCiphertextState } from '@signalapp/libsignal-client/dist/Provisioning.js';
 import * as zk from '@signalapp/libsignal-client/zkgroup';
 
 import { fromBase64, fromHex, randomBytes, toBase64, toHex, uuidToBytes } from '../src/engine/bytes';
@@ -267,11 +267,11 @@ describe('Interop: identity and account keys', () => {
   it('provisioning envelopes open across implementations', () => {
     const msg = text('serialized ProvisionMessage');
     const ours = new libsignal.ProvisioningReceiver();
-    assert.deepEqual(ours.decryptEnvelope(u8(encryptProvisionMessage(u8(ours.publicKey()), msg))), msg);
+    assert.deepEqual(ours.decryptEnvelope(u8(encryptProvisionMessage(ProvisioningPublicKey.deserialize(u8(ours.publicKey())), msg))), msg);
     ours.free();
 
     const theirs = RecvProvisionCiphertextState.generate();
-    assert.deepEqual(u8(theirs.decryptEnvelope(u8(libsignal.provisioningEncrypt(u8(theirs.publicKey), msg)))), msg);
+    assert.deepEqual(u8(theirs.decryptEnvelope(u8(libsignal.provisioningEncrypt(u8(theirs.publicKey.serialize()), msg)))), msg);
   });
 });
 

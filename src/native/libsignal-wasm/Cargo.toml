@@ -9,17 +9,17 @@ description = "Thin wasm-bindgen wrapper over Signal's official libsignal crates
 [lib]
 crate-type = ["cdylib"]
 
-# Every libsignal crate is pinned to the same official release commit (libsignal v0.106.2).
+# Every libsignal crate is pinned to the same official release commit (libsignal v0.108.0).
 # Bump all of them together; see docs/development.md "Bumping the libsignal pin".
 [dependencies]
-libsignal-protocol = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
-libsignal-account-keys = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
-libsignal-message-backup = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
-libsignal-provisioning = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
-usernames = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
-zkgroup = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
+libsignal-protocol = { git = "https://github.com/signalapp/libsignal", rev = "8be00c282001caa3585d18de0f044c6d500348ab" }
+libsignal-account-keys = { git = "https://github.com/signalapp/libsignal", rev = "8be00c282001caa3585d18de0f044c6d500348ab" }
+libsignal-message-backup = { git = "https://github.com/signalapp/libsignal", rev = "8be00c282001caa3585d18de0f044c6d500348ab" }
+libsignal-provisioning = { git = "https://github.com/signalapp/libsignal", rev = "8be00c282001caa3585d18de0f044c6d500348ab" }
+usernames = { git = "https://github.com/signalapp/libsignal", rev = "8be00c282001caa3585d18de0f044c6d500348ab" }
+zkgroup = { git = "https://github.com/signalapp/libsignal", rev = "8be00c282001caa3585d18de0f044c6d500348ab" }
 # Contact discovery attestation (src/cdsi.rs). It links BoringSSL, which build.sh compiles for WASI with wasi-sdk.
-attest = { git = "https://github.com/signalapp/libsignal", rev = "850942581c06fa65c0323fd52029afa02fa1a1ba" }
+attest = { git = "https://github.com/signalapp/libsignal", rev = "8be00c282001caa3585d18de0f044c6d500348ab" }
 
 async-trait = "0.1.79"
 futures-util = { version = "=0.3.32", default-features = false }
