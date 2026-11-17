@@ -376,7 +376,7 @@ Each account has its own IndexedDB database ([`src/ui/data/db.ts`](../src/ui/dat
 | --- | --- |
 | `messages`, `conversations`, `contacts` | Chat history and the conversation list |
 | `kv` | Synced contacts and groups, credentials caches, settings, and the downloaded history archive's chunks until the import ends |
-| `attachments` | Cached decrypted media (LRU) |
+| `attachments` | Cached decrypted media (LRU, up to 150 files and 50 MB; unsent files Retry needs go last, and avatars and view-once markers stay) |
 | `signal_keystore`, `signal_identities`, `signal_sessions`, `signal_prekeys`, `signal_sender_keys` | Serialized libsignal records and remote identity keys |
 
 Upgrading from a database older than version 4 discards the protocol state and asks you to link again. The database is named after the account's number, which isn't known until the `ProvisionMessage` arrives, so linking switches to the new account's database (`db.useAccount`) before it saves any keys.

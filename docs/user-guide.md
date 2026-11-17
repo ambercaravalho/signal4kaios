@@ -100,9 +100,9 @@ A group opens as a request when you're invited to it, whoever invited you, or wh
 
 ## Media
 
-**Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file). Photos, videos, and files wait above the message box (for example **2 photos**) so you can attach more and type a caption; **Send** sends them together as one message, and **Options → Remove attachments** clears them. Voice recordings send right away on their own. A message can carry up to 32 attachments and 25 MB in total, and each file is sent with its name. Photos are sent at Signal's Standard quality, up to 1600 pixels on the longest side, and without the location, camera, and time details the camera saved in them; GIFs are sent as they are.
+**Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file). Photos, videos, and files wait above the message box (for example **2 photos**) so you can attach more and type a caption; **Send** sends them together as one message, and **Options → Remove attachments** clears them. Leaving the chat with attachments waiting asks first, since they aren't kept. Voice recordings send right away on their own. A message can carry up to 32 attachments and 25 MB in total, and each file is sent with its name. Photos are sent at Signal's Standard quality, up to 1600 pixels on the longest side, and without the location, camera, and time details the camera saved in them; GIFs are sent as they are.
 
-**Options → Record voice message** starts recording at once. The first time, KaiOS asks whether Beacon may use the microphone. The sheet shows the time and how loud you are; **Stop** ends the recording, then **Send** sends it on its own (your draft stays in the message box) and **Cancel** throws it away. Recordings stop by themselves at 15 minutes. Beacon sends them as MP3 with a waveform, so they play on every Signal app, and a long one takes a few seconds to prepare.
+**Options → Record voice message** starts recording at once. The first time, KaiOS asks whether Beacon may use the microphone. The sheet shows the time and how loud you are; **Stop** ends the recording, then **Send** sends it on its own (your draft stays in the message box) and **Cancel** or Back throws it away after asking. Recordings stop by themselves at 15 minutes. Beacon sends them as MP3 with a waveform, so they play on every Signal app, and a long one takes a few seconds to prepare.
 
 - Voice messages show their waveform and length in the chat.
 - A message with several attachments has **View attachments** first in its options, which lists them to open one.
@@ -111,7 +111,7 @@ A group opens as a request when you're invited to it, whoever invited you, or wh
 - Signal's servers keep attachments for a limited time. When one is gone, Beacon shows **Asking your phone…** and asks your main phone to upload it again, as Signal Desktop does; this needs a recent Signal on the phone. If the phone doesn't have it either, it says **No longer available**. View-once media is never asked for.
 - Voice messages, audio, and video play in the viewer: OK plays or pauses. Video depends on the phone's codecs; H.264 MP4 is the safe choice.
 - **Save to phone** puts the file in the gallery, music, videos, or files.
-- View-once media can be viewed once, then it's gone, including when you open it on another device. To send your own, pick a photo or video with **Options → Attach**, then choose **Send as view-once**; it goes right away, without a caption. **Attach** instead adds it above the message box as usual.
+- View-once media can be viewed once, then it's gone, including when you open it on another device. It counts as viewed once it's on screen, so leaving while it downloads lets you open it later. To send your own, pick a photo or video with **Options → Attach**, then choose **Send as view-once**; it goes right away, without a caption. **Attach** instead adds it above the message box as usual.
 - Opening a voice message, video, or view-once media tells the sender you viewed it when read receipts are on.
 - **Chat settings → Media** lists a chat's photos, videos, voice messages, and files, newest first, with a thumbnail for photos already on the phone. OK opens one in the viewer. View-once media isn't listed.
 
@@ -217,7 +217,7 @@ Keep Beacon open in the background to get notifications. Nothing is lost when it
 
 ## What lives on the phone
 
-Message history exists only on the phone. It starts with the history your main phone sent when you linked, if you chose **Transfer message history** there ([Setup](setup.md#message-history)), or else from when you linked. Each chat keeps about its **500 most recent messages**, and viewed media is kept in a small cache. **Settings → Linked device → Delete all data** removes everything.
+Message history exists only on the phone. It starts with the history your main phone sent when you linked, if you chose **Transfer message history** there ([Setup](setup.md#message-history)), or else from when you linked. Each chat keeps about its **500 most recent messages**, and viewed media is kept in a small cache of up to 150 files and 50 MB. **Settings → Linked device → Delete all data** removes everything.
 
 The transferred history also brings your chat colors: the default color and each chat's own, when they're one of Signal's preset colors. A chat with a custom color you made on your phone uses the default here.
 

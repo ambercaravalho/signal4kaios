@@ -3,12 +3,18 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { router, useKeys, useSoftkeys } from '../app/router';
 import { fmtLength } from '../data/format';
-import { VoiceRecorder, type VoiceNote } from '../data/voice-recorder';
+import { type RecorderState, VoiceRecorder, type VoiceNote } from '../data/voice-recorder';
 import { fmt, S } from '../strings';
 import { Icon } from './Icon';
+import { confirm } from './Overlays';
 import { toast } from './Toast';
 
 const TICK_MS = 100;
+
+/** Whether cancelling would throw away something recorded, so it asks first. */
+export function asksBeforeDiscard(state: RecorderState): boolean {
+  return state === 'recording' || state === 'stopped' || state === 'encoding';
+}
 
 function RecorderView(props: { recorder: VoiceRecorder; resolve(note: VoiceNote | null): void }) {
   const rec = props.recorder;
@@ -62,8 +68,13 @@ function RecorderView(props: { recorder: VoiceRecorder; resolve(note: VoiceNote 
     if (e.key === 'Enter') {
       if (rec.state === 'recording') rec.stop().then(() => tick((n) => n + 1));
       else send();
-    } else if (e.key === 'SoftLeft' || e.key === 'Backspace') done(null);
-    else return false;
+    } else if (e.key === 'SoftLeft' || e.key === 'Backspace') {
+      if (!asksBeforeDiscard(rec.state)) done(null);
+      else
+        confirm({ title: S.discardVoice, ok: S.discard, danger: true }).then((ok) => {
+          if (ok) done(null);
+        });
+    } else return false;
     return true;
   });
 

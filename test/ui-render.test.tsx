@@ -17,6 +17,8 @@ import { GUIDES } from '../src/ui/data/guides';
 import * as store from '../src/ui/data/store';
 import type { Message } from '../src/ui/data/types';
 import { askViewOnce } from '../src/ui/components/chat/useChatComposer';
+import { backAction } from '../src/ui/components/chat/useChatKeys';
+import { asksBeforeDiscard } from '../src/ui/components/VoiceRecorder';
 import { Bubble, canForward, ChatScreen, mainActions, PinnedBar } from '../src/ui/screens/Chat';
 import { ChatSettingsScreen } from '../src/ui/screens/ChatSettings';
 import { DebugScreen } from '../src/ui/screens/Debug';
@@ -408,5 +410,20 @@ describe('screens', () => {
       config.set({ profileName: undefined, profileAbout: undefined });
     }
     assert.deepEqual(bodies, [{ name: 'Mia P' }, { name: 'Mia P', about: 'new about' }]);
+  });
+
+  it('asks before Back throws away attachments in the tray or a voice recording', () => {
+    const at = { onComposer: true, draft: '', quote: false, editing: false, tray: 0 };
+    assert.equal(backAction('Backspace', at), 'pass');
+    assert.equal(backAction('SoftLeft', at), 'pass');
+    assert.equal(backAction('Backspace', { ...at, tray: 2 }), 'askLeave');
+    assert.equal(backAction('SoftLeft', { ...at, tray: 1 }), 'askLeave');
+    assert.equal(backAction('Backspace', { ...at, tray: 1, draft: 'hi' }), 'pass', 'Back deletes a typed character first');
+    assert.equal(backAction('SoftLeft', { ...at, tray: 1, quote: true }), 'clear');
+    assert.equal(backAction('Backspace', { ...at, onComposer: false, tray: 1 }), 'unfocus');
+    assert.ok(asksBeforeDiscard('recording'));
+    assert.ok(asksBeforeDiscard('stopped'));
+    assert.ok(!asksBeforeDiscard('starting'));
+    assert.ok(!asksBeforeDiscard('failed'));
   });
 });
