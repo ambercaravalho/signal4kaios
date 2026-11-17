@@ -26,14 +26,13 @@
 </div>
 
 > [!NOTE]
-> Beacon is a work in progress. Everyday messaging, groups, sync, and one-to-one voice calls work, but some Signal features don't; [Known limitations](docs/user-guide.md#known-limitations) lists them. Video calls, group calls, stories, and payments won't be added: video doesn't suit a low-powered phone with a single rear camera, and stories and payments see little use. When one of those arrives, Beacon shows a line in the chat pointing you to your phone.
+> Beacon is a work in progress. Everyday messaging, groups, sync, and one-to-one voice calls work, but some Signal features don't; [Known limitations](docs/user-guide.md#known-limitations) lists them. Video calls, group calls, stories, and payments won't be added.
 
 ## Why Beacon
 
 - **It's really Signal.** Your messages use the same end-to-end encryption as the official apps, and they reach the people you talk to on Android, iPhone, and Desktop as normal Signal messages.
 - **Private by design.** Keys are created and kept on the phone. There's no gateway, no bridge, and no computer to leave running.
 - **Built for keypads.** Lists, menus, and softkeys follow KaiOS conventions, so every action is a few key presses away and nothing needs a touchscreen.
-- **Plain language.** Screens say what they do in everyday words; the technical details live in **Settings → Debug** for when you need them.
 
 ## Quickstart
 
