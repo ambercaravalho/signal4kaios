@@ -110,7 +110,7 @@ The module then imports eight `wasi_snapshot_preview1` functions. esbuild aliase
 | Folder | Source |
 | --- | --- |
 | `src/protos/signal-desktop/` | [Signal-Desktop](https://github.com/signalapp/Signal-Desktop/tree/main/protos) v8.34.0 (`Backups.proto`, `DeviceMessages.proto`, `DeviceName.proto`, `Groups.proto`, `SignalService.proto`, `SignalStorage.proto`) |
-| `src/protos/libsignal/` | [libsignal](https://github.com/signalapp/libsignal/tree/main/rust/net/src/proto) v0.106.2 (`chat_websocket.proto`, `cds2.proto`) |
+| `src/protos/libsignal/` | [libsignal](https://github.com/signalapp/libsignal/tree/main/rust/net/src/proto) v0.108.0 (`chat_websocket.proto`, `cds2.proto`) |
 | `src/protos/ringrtc/` | [RingRTC](https://github.com/signalapp/ringrtc/tree/main/protobuf/protobuf) v2.75.0 (`signaling.proto`, `rtp_data.proto`, `group_call.proto`) |
 
 To update, copy the same files from the new tags, update `buf.yaml`, and run `npm run gen:protos`. [buf](https://buf.build/docs/) and [protoc-gen-es](https://github.com/bufbuild/protobuf-es) regenerate `src/engine/gen/`, which is committed; CI fails if it differs from a fresh generation.

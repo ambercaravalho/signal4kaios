@@ -31,7 +31,7 @@ mod tls;
 mod username;
 mod zk;
 
-pub const LIBSIGNAL_VERSION: &str = "0.106.2";
+pub const LIBSIGNAL_VERSION: &str = "0.108.0";
 
 #[wasm_bindgen(js_name = libsignalVersion)]
 pub fn libsignal_version() -> String {

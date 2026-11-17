@@ -21,7 +21,7 @@ import { connect, contentBytes, envelopeBytes, loadWasmForTests, newAccount } fr
 import { decryptEnvelope, DecryptFailure } from '../src/engine/net/receive';
 
 before(() => {
-  assert.equal(loadWasmForTests(), '0.106.2');
+  assert.equal(loadWasmForTests(), '0.108.0');
 });
 
 describe('libsignal sessions (PQXDH + ratchet)', () => {
