@@ -52,7 +52,8 @@ export type SignalHttpBinaryFn = (
   url: string,
   body?: Uint8Array | null,
   headers?: Record<string, string>,
-  timeout?: number
+  timeout?: number,
+  maxBytes?: number
 ) => Promise<Uint8Array>;
 
 /** Raw CDN request that also exposes the status and the `Location` (resumable CDN2 uploads) and `Content-Range` (resumable downloads) headers. */

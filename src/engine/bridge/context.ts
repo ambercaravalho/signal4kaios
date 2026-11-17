@@ -20,8 +20,8 @@ export const httpJson: SignalHttpJsonFn = (method, path, body, opts) =>
     timeout: opts?.timeout,
   });
 
-export function httpBinary(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<Uint8Array> {
-  return host().http.rawBinary(method, url, body, headers, timeout);
+export function httpBinary(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number, maxBytes?: number): Promise<Uint8Array> {
+  return host().http.rawBinary(method, url, body, headers, timeout, maxBytes);
 }
 
 function httpRaw(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number) {

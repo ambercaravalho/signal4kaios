@@ -18,7 +18,8 @@ export interface HostRawResponse {
 
 export interface HostHttp {
   request(method: string, path: string, body: unknown, opts?: HostHttpOptions): Promise<any>;
-  rawBinary(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<Uint8Array>;
+  /** `maxBytes` caps the response body; a longer one fails the request. */
+  rawBinary(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number, maxBytes?: number): Promise<Uint8Array>;
   rawRequest(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<HostRawResponse>;
 }
 

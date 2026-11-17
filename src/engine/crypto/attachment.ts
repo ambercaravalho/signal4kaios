@@ -19,6 +19,11 @@ export function attachmentPaddedSize(size: number): number {
   return Math.max(541, Math.floor(1.05 ** Math.ceil(Math.log(size) / Math.log(1.05))));
 }
 
+/** Signal-Desktop's getAttachmentCiphertextLength: the IV, the AES-CBC blocks over the padded plaintext (PKCS#7 always adds at least one byte), and the MAC. */
+export function attachmentCiphertextLength(size: number): number {
+  return 16 + (Math.floor(attachmentPaddedSize(size) / 16) + 1) * 16 + 32;
+}
+
 /**
  * Pad and encrypt an attachment buffer for upload to Signal CDN; the pointer's `size` must carry the unpadded length.
  */

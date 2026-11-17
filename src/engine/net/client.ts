@@ -1,7 +1,7 @@
 /* Outbound Signal client: device fanout with 409/410 handling, Sealed Sender delivery, retry receipts, attachment upload and download, and identity verification. */
 
 import { constantTimeEqual, fromBase64, toBase64 } from '../bytes';
-import { decryptAttachment, encryptAttachment } from '../crypto/attachment';
+import { attachmentCiphertextLength, decryptAttachment, encryptAttachment } from '../crypto/attachment';
 import { hashSha256, padMessagePlaintext } from '../crypto/primitives';
 import {
   AttachmentPointer,
@@ -525,7 +525,8 @@ export class SignalClient {
     const cdnBase = SIGNAL_CDNS[desc.cdnNumber];
     if (!cdnBase) throw new Error('Unknown attachment CDN ' + desc.cdnNumber);
 
-    const encryptedBytes = await this.httpBinary('GET', `${cdnBase}/attachments/${encodeURIComponent(desc.cdnKey)}`, null, {}, 60000);
+    const maxBytes = desc.size > 0 ? attachmentCiphertextLength(desc.size) : undefined;
+    const encryptedBytes = await this.httpBinary('GET', `${cdnBase}/attachments/${encodeURIComponent(desc.cdnKey)}`, null, {}, 60000, maxBytes);
     const decrypted = await decryptAttachment(encryptedBytes, desc.key, desc.digest);
     const bytes = desc.size > 0 && desc.size <= decrypted.length ? decrypted.subarray(0, desc.size) : decrypted;
     if (!desc.digest && desc.plaintextHash && !constantTimeEqual(hashSha256(bytes), desc.plaintextHash)) throw new Error('Attachment plaintext hash mismatch');

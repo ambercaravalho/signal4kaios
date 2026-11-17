@@ -33,12 +33,16 @@ function netError(message: string, kind: 'network' | 'timeout'): HttpError {
   return err;
 }
 
+function tooLarge(): HttpError {
+  return new Error('response is too large');
+}
+
 function encodeBasicAuth(username: string, password: string): string {
   // SECURITY-REVIEW: Signal device credentials go only to Signal's servers over HTTPS Basic auth and are never logged.
   return 'Basic ' + btoa(username + ':' + password);
 }
 
-function xhrSend(method: string, url: string, headers: Record<string, string>, body: BodyInit | Uint8Array | null, timeout: number): Promise<Res> {
+function xhrSend(method: string, url: string, headers: Record<string, string>, body: BodyInit | Uint8Array | null, timeout: number, maxBytes?: number): Promise<Res> {
   return new Promise((resolve, reject) => {
     const xhr = mozSystemXhr() || new XMLHttpRequest();
     xhr.open(method, url, true);
@@ -54,10 +58,19 @@ function xhrSend(method: string, url: string, headers: Record<string, string>, b
       clearTimeout(watchdog);
       watchdog = setTimeout(expire, timeout);
     };
-    xhr.onprogress = progress;
+    xhr.onprogress = (e: ProgressEvent) => {
+      if (maxBytes && e.loaded > maxBytes) {
+        clearTimeout(watchdog);
+        xhr.abort();
+        reject(tooLarge());
+        return;
+      }
+      progress();
+    };
     if (xhr.upload) xhr.upload.onprogress = progress;
     xhr.onload = () => {
       clearTimeout(watchdog);
+      if (maxBytes && xhr.response && xhr.response.byteLength > maxBytes) return reject(tooLarge());
       resolve({
         status: xhr.status,
         body: xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0),
@@ -74,18 +87,18 @@ function xhrSend(method: string, url: string, headers: Record<string, string>, b
 }
 
 /* Redirects are followed here; one that leaves Signal's hosts drops the Authorization header and continues over XHR. */
-function pinnedSend(method: string, url: string, headers: Record<string, string>, body: Uint8Array | null, timeout: number, redirects: number): Promise<Res> {
-  return net.request({ method, url, headers, body, timeoutMs: timeout }).then(
+function pinnedSend(method: string, url: string, headers: Record<string, string>, body: Uint8Array | null, timeout: number, redirects: number, maxBytes?: number): Promise<Res> {
+  return net.request({ method, url, headers, body, timeoutMs: timeout, maxResponseBytes: maxBytes }).then(
     (res) => {
       const location = res.headers.location;
       if (res.status >= 300 && res.status < 400 && res.status !== 304 && location && redirects < MAX_REDIRECTS) {
         const next = new URL(location, url).toString();
         const nextMethod = res.status === 303 || ((res.status === 301 || res.status === 302) && method === 'POST') ? 'GET' : method;
         const nextBody = nextMethod === 'GET' ? null : body;
-        if (net.isPinnedUrl(next)) return pinnedSend(nextMethod, next, headers, nextBody, timeout, redirects + 1);
+        if (net.isPinnedUrl(next)) return pinnedSend(nextMethod, next, headers, nextBody, timeout, redirects + 1, maxBytes);
         const offHost: Record<string, string> = {};
         for (const k of Object.keys(headers)) if (k.toLowerCase() !== 'authorization') offHost[k] = headers[k];
-        return xhrSend(nextMethod, next, offHost, nextBody, timeout);
+        return xhrSend(nextMethod, next, offHost, nextBody, timeout, maxBytes);
       }
       return {
         status: res.status,
@@ -98,6 +111,7 @@ function pinnedSend(method: string, url: string, headers: Record<string, string>
     },
     (e: any) => {
       if (e && e.kind === 'timeout') throw netError('timeout', 'timeout');
+      if (e && e.kind === 'protocol' && /too large/.test(e.message)) throw tooLarge();
       dbg('http: pinned TLS ' + method + ' failed: ' + (e && e.message));
       throw netError('network', 'network');
     }
@@ -114,13 +128,13 @@ function isSignalUrl(url: string): boolean {
 }
 
 /* With a Signal proxy set, nothing for Signal's hosts may go out directly: without the pinned client the request fails instead of falling back to XHR. */
-function send(method: string, url: string, headers: Record<string, string>, body: string | Uint8Array | null, timeout: number): Promise<Res> {
+function send(method: string, url: string, headers: Record<string, string>, body: string | Uint8Array | null, timeout: number, maxBytes?: number): Promise<Res> {
   if (net.isPinnedUrl(url)) {
     const bytes = typeof body === 'string' ? new TextEncoder().encode(body) : body;
-    return pinnedSend(method, url, headers, bytes || null, timeout, 0);
+    return pinnedSend(method, url, headers, bytes || null, timeout, 0, maxBytes);
   }
   if (net.proxy() && isSignalUrl(url)) return Promise.reject(netError('network', 'network'));
-  return xhrSend(method, url, headers, body, timeout);
+  return xhrSend(method, url, headers, body, timeout, maxBytes);
 }
 
 /** A JSON request to a Signal service path. Resolves to the parsed body (or a Blob with `binary`); rejects with an `HttpError`. */
@@ -181,8 +195,8 @@ function request(method: string, path: string, body: unknown, opts: HostHttpOpti
 }
 
 /** A raw binary request (CDN attachments, Storage Service protobufs). Rejects on non-2xx with `status` set. */
-function rawRequest(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<HostRawResponse> {
-  return send(method, url, headers || {}, body || null, timeout || 60000).then((res) => {
+function rawRequest(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number, maxBytes?: number): Promise<HostRawResponse> {
+  return send(method, url, headers || {}, body || null, timeout || 60000, maxBytes).then((res) => {
     if (res.status >= 200 && res.status < 300) return { status: res.status, body: res.body, location: res.header('Location'), range: res.header('Content-Range') };
     const err: HttpError = new Error('HTTP ' + res.status);
     err.kind = 'http';
@@ -191,8 +205,8 @@ function rawRequest(method: string, url: string, body?: Uint8Array | null, heade
   });
 }
 
-function rawBinary(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number): Promise<Uint8Array> {
-  return rawRequest(method, url, body, headers, timeout).then((res) => res.body);
+function rawBinary(method: string, url: string, body?: Uint8Array | null, headers?: Record<string, string>, timeout?: number, maxBytes?: number): Promise<Uint8Array> {
+  return rawRequest(method, url, body, headers, timeout, maxBytes).then((res) => res.body);
 }
 
 export const http = { request, rawRequest, rawBinary };

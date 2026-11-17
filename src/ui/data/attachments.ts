@@ -18,10 +18,10 @@ export function isImage(att: Attachment): boolean {
 }
 
 export function autoDownloads(att: Attachment): boolean {
-  return !!att.id && isImage(att) && !att.viewOnce && (!att.size || att.size <= AUTO_DOWNLOAD_BYTES);
+  return !!att.id && isImage(att) && !att.viewOnce && !!att.size && att.size > 0 && att.size <= AUTO_DOWNLOAD_BYTES;
 }
 
-/** The attachment's bytes from cache or Signal's servers. View-once media is kept only in memory and marked as viewed. */
+/** The attachment's bytes from cache or Signal's servers. View-once media is kept only in memory; `markViewed` marks it once it's on screen. */
 export function loadAttachment(att: Attachment): Promise<Blob> {
   if (!att.id) return Promise.reject(new NotDownloadableError('no id'));
   if (!pending[att.id]) {
@@ -33,8 +33,7 @@ export function loadAttachment(att: Attachment): Promise<Blob> {
           return row.blob;
         }
         return signal.downloadAttachmentBlob(att.id).then((blob) => {
-          if (att.viewOnce) db.putAttachment(att.id, new Blob([]), '');
-          else db.putAttachment(att.id, blob, att.contentType).then(() => db.pruneAttachments(ATTACHMENT_CACHE_KEEP));
+          if (!att.viewOnce) db.putAttachment(att.id, blob, att.contentType).then(() => db.pruneAttachments(ATTACHMENT_CACHE_KEEP));
           return blob;
         });
       })

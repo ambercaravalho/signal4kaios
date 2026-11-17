@@ -3,7 +3,7 @@ import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { forgetUnlinkedDevice, setReadReceipts, setTypingIndicators, signal, updateProfile } from '../src/ui/data/api';
-import { cachedAttachment, ViewedOnceError } from '../src/ui/data/attachments';
+import { autoDownloads, cachedAttachment, loadAttachment, ViewedOnceError } from '../src/ui/data/attachments';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
@@ -464,6 +464,21 @@ describe('store', () => {
     } finally {
       (db as any).putAttachment = putAttachment;
     }
+  });
+
+  it('marks view-once media as viewed when it’s shown, not when it downloads', async () => {
+    (signal as any).downloadAttachmentBlob = async () => new Blob(['secret']);
+    (signal as any).sendViewed = async () => {};
+    store.ingestRaw(incoming(9150, '', { attachments: [{ id: 'att-once-late', contentType: 'image/jpeg' }], viewOnce: true }));
+    await settle();
+    const rec = (await db.getMessage(ALICE + '|9150|' + ALICE))!;
+    assert.equal((await loadAttachment(rec.attachments[0])).size, 6);
+    await settle();
+    assert.equal(await db.getAttachment('att-once-late'), undefined, 'leaving before it shows leaves it to open later');
+    assert.equal((await loadAttachment(rec.attachments[0])).size, 6);
+    store.markViewed(rec);
+    await settle();
+    await assert.rejects(loadAttachment(rec.attachments[0]), (e: unknown) => e instanceof ViewedOnceError);
   });
 
   it('lists a chat’s media newest first without view-once or unsaved sends', async () => {
@@ -1218,6 +1233,30 @@ describe('store', () => {
     let kept = 0;
     for (let i = 0; i < 4; i++) if (await db.getAttachment('att-fill-' + i)) kept++;
     assert.ok(kept <= 2);
+  });
+
+  it('keeps the attachment cache within its byte budget, dropping unsent files last', async () => {
+    const big = (n: number) => new Blob([new Uint8Array(n)]);
+    await db.putAttachment('outbox:m1:0', big(400), 'image/jpeg');
+    for (let i = 0; i < 4; i++) {
+      await new Promise((r) => setTimeout(r, 2));
+      await db.putAttachment('att-big-' + i, big(300), 'image/jpeg');
+    }
+    await db.putAttachment('avatar:alice', big(500), 'image/jpeg');
+    await db.pruneAttachments(150, 1000);
+    assert.ok(await db.getAttachment('outbox:m1:0'), 'the bytes Retry needs stay');
+    assert.ok(await db.getAttachment('avatar:alice'), 'avatars are kept');
+    assert.ok(await db.getAttachment('att-big-3'), 'the newest file stays');
+    assert.ok(await db.getAttachment('att-big-2'));
+    assert.equal(await db.getAttachment('att-big-1'), undefined);
+    assert.equal(await db.getAttachment('att-big-0'), undefined);
+  });
+
+  it('downloads only photos whose size is known and small on their own', () => {
+    assert.ok(autoDownloads({ id: 'a', contentType: 'image/jpeg', size: 1000 } as any));
+    assert.ok(!autoDownloads({ id: 'a', contentType: 'image/jpeg', size: 0 } as any));
+    assert.ok(!autoDownloads({ id: 'a', contentType: 'image/jpeg' } as any));
+    assert.ok(!autoDownloads({ id: 'a', contentType: 'image/jpeg', size: 5_000_000 } as any));
   });
 
   it('deletes the keys but keeps the messages when Signal unlinks this phone', async () => {
