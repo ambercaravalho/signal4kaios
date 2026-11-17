@@ -13,13 +13,13 @@
 <table>
   <tr>
     <td align="center"><img src="docs/images/welcome.png" alt="Welcome screen with the Beacon icon and a Start softkey" width="200"><br><sub><b>Link in a minute</b></sub></td>
-    <td align="center"><img src="docs/images/chats.png" alt="Chat list with a pinned chat, unread counts, a muted chat, and a typing indicator" width="200"><br><sub><b>All your chats</b></sub></td>
-    <td align="center"><img src="docs/images/chat-dark.png" alt="A conversation in dark mode with a reply, bold text, reactions, and read ticks" width="200"><br><sub><b>Replies, reactions, formatting</b></sub></td>
+    <td align="center"><img src="docs/images/chats.png" alt="Chat list in the All chats folder with a pinned chat, a group, unread counts, a typing indicator, and a muted chat" width="200"><br><sub><b>Chats, groups, and folders</b></sub></td>
+    <td align="center"><img src="docs/images/chat-dark.png" alt="A conversation in dark mode with a reply, bold text, a reaction, read ticks, and a voice message" width="200"><br><sub><b>Replies, reactions, voice messages</b></sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/message-options.png" alt="Message options menu with React, Reply, Copy text, and Pin message" width="200"><br><sub><b>Everything one key away</b></sub></td>
-    <td align="center"><img src="docs/images/chat-settings.png" alt="Chat settings with the contact's avatar, nickname, and disappearing messages" width="200"><br><sub><b>Per-chat settings</b></sub></td>
-    <td align="center"><img src="docs/images/settings.png" alt="Settings with the profile, linked device, chats, and privacy" width="200"><br><sub><b>Light and dark themes</b></sub></td>
+    <td align="center"><img src="docs/images/group-poll.png" alt="A group chat with a poll showing vote counts and the option you picked" width="200"><br><sub><b>Polls in groups</b></sub></td>
+    <td align="center"><img src="docs/images/call.png" alt="A voice call in progress with Speaker, Mute, and End softkeys" width="200"><br><sub><b>One-to-one voice calls</b></sub></td>
+    <td align="center"><img src="docs/images/about.png" alt="About Beacon with the version, Check for updates, and automatic update checks turned on" width="200"><br><sub><b>Updates built in</b></sub></td>
   </tr>
 </table>
 
