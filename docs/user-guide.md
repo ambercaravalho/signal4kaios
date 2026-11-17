@@ -234,7 +234,7 @@ Beacon doesn't support every Signal feature. This section lists what's missing o
 These won't be added, and Beacon points you to your main phone for them instead:
 
 - **Video calls**, which don't suit the phone's power or its single rear camera.
-- **Group calls**. A group call shows as a line asking you to join it from your main phone.
+- **Group calls**, voice or video. A group call shows as a line asking you to join it from your main phone; only one-to-one voice calls work in Beacon.
 - **Stories**. Stories your contacts post don't show at all; replies and reactions to yours show in the chat.
 - **Payments**. A payment shows as a line asking you to check your main phone.
 
@@ -250,3 +250,12 @@ These work only partly:
 | "Contact joined Signal" alerts | Not shown. Beacon looks a number up with Signal only when you start a chat with it, not your whole address book. |
 | Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |
 | Calls while Beacon is closed | They don't ring here, for the same reason. Your main phone still rings, and once Beacon opens, a call you didn't answer shows as **Missed voice call**. |
+| Scanning safety numbers with the official apps | Beacon's QR code follows Signal's format, but it hasn't yet been checked against a real Android phone or iPhone. If a scan says the numbers don't match, compare the numbers on both screens instead. |
+| Photos taken sideways | Beacon re-encodes photos to remove location and camera data, and a photo taken sideways may arrive rotated. |
+| Playing long voice messages | Recording works up to 15 minutes, but playback loads the whole message at once, so a long one can take a moment to start. |
+| Link previews for local addresses | Links to your own network, like `192.168.1.1` or a `.local` name, get no preview. A public web address that leads to one still gets a preview, because Beacon can't look addresses up itself. |
+| Screen lock wait after wrong PINs | The wait only counts down while Beacon is open. |
+| One person in two chats | Someone Beacon knows only by their Signal account, not their number, can show as a second chat until your contacts sync from your main phone; the chats then merge. |
+| Messages when the phone's storage is full | Beacon warns you, holds the messages it couldn't save, and saves them once there's space. If you close Beacon before then, those messages are lost. |
+| **Delete all data** on KaiOS 3.0 and 3.1 | It can't find chat databases that Beacon versions before v2.10.6 stopped tracking, because KaiOS 3.x can't list them. Uninstalling Beacon removes those too. |
+| Numbers typed without `+` or `00` | They're read as numbers in your own country, with a leading 0 dropped except in Italy. In countries with other dialling rules, type the number with `+` and the country code. |
