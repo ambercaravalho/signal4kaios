@@ -2,6 +2,14 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.11.3
+
+No more message requests from safety number changes. On v2.11.0 or later, update from Beacon itself: **Options → Update to Beacon 2.11.3** on the chat list. Your chats and settings carry over.
+
+### Fixed
+
+- **Safety number changes no longer show up as message requests.** The history your phone sends when you link records a safety number change for people you've never messaged, and Beacon made a chat, usually a message request, for each of them. Beacon now leaves those out, like Signal does, and the first time 2.11.3 starts it removes the chats that hold nothing but safety number changes. Pinned chats and chats with any messages stay. Nothing is deleted on your other devices.
+
 ## v2.11.2
 
 Nicknames stay put. On v2.11.0 or later, update from Beacon itself: **Options → Update to Beacon 2.11.2** on the chat list. Your chats and settings carry over.
