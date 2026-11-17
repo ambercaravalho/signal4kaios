@@ -318,6 +318,7 @@
 .msg-wave {
   flex: 1;
   min-width: 0;
+  width: 9.6rem;
   height: 2rem;
   display: flex;
   align-items: center;
