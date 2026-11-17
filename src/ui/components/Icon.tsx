@@ -25,6 +25,7 @@ const PATHS: Record<string, string> = {
   gear: 'M12 9a3 3 0 100 6 3 3 0 000-6zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2',
   bell: 'M6 16v-5a6 6 0 0112 0v5l2 2H4zM10 21h4',
   help: 'M12 3a9 9 0 100 18 9 9 0 000-18zM9.5 9.5a2.5 2.5 0 114 2c-1 .7-1.5 1.2-1.5 2.5M12 17v.5',
+  download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
 };
 
 export function Icon(props: { name: keyof typeof PATHS | string; class?: string }) {

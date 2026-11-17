@@ -18,6 +18,10 @@ export function friendlyError(err: unknown, fallback: string = S.errGeneric): st
   if (e.name === 'GroupChangeConflict') return S.errGroupConflict;
   if (e.name === 'NotAMember') return S.errNotAMember;
   if (e.name === 'UntrustedIdentity') return S.errSafetyNumber;
+  if (e.name === 'UpdateUnavailable') return S.errUpdateUnavailable;
+  if (e.name === 'UpdateCorrupt') return S.errUpdateCorrupt;
+  if (e.name === 'UpdateStorage') return S.errUpdateStorage;
+  if (e.name === 'UpdateInstall') return S.errUpdateInstall;
   // A linked device can't solve Signal's challenge (a captcha); the main phone can.
   if (e.status === 428) return S.errChallenge;
   if (e.kind === 'clock' || isClockError(msg)) return S.errClock;

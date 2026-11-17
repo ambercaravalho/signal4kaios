@@ -2,6 +2,19 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.11.0
+
+Beacon now updates itself. Install this version over v2.10.9 the way you installed Beacon before, one last time; your chats and settings carry over, and later versions arrive on their own.
+
+### Added
+
+- **Updates without a computer.** Beacon checks for a new version about once a day. When one is out, the chat list says so, and a security update also shows a notification. **Options → Update to Beacon …** downloads it, checks that it arrived intact, and installs it over Beacon on phones where OStore can install from the phone's storage. On other phones, Beacon saves the update to your phone and shows how to install it with OStore's **Manual Install**.
+- **Settings → Help → Check for updates**, and **Check for updates automatically**, which is on by default. Each check asks GitHub, which sees your phone's internet address.
+
+### Changed
+
+- **Release notes** list only the changes written for each release, without GitHub's list of merged pull requests, and keep the **Full Changelog** link.
+
 ## v2.10.9
 
 Upright photos and the latest libsignal. Install over v2.10.8; your chats and settings carry over.

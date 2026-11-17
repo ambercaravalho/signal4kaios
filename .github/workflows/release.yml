@@ -45,10 +45,13 @@ jobs:
 
           - **KaiOS 3.0 / 3.1 / 4.0:** copy \`$ASSET\` (still zipped) to the phone and install it from OStore's **Manual Install** tab → **Install app from sdcard**, or sideload it (unzipped) with \`appscmd\`; see [Setup](https://github.com/$REPO/blob/main/docs/setup.md).
           EOF
+          PREVIOUS=$(gh api "repos/$REPO/releases" --jq "[.[] | select((.draft | not) and .tag_name != \"$TAG\")][0].tag_name // empty")
+          if [ -n "$PREVIOUS" ]; then
+            printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' "$REPO" "$PREVIOUS" "$TAG" >> notes.md
+          fi
           PRERELEASE=""
           case "$TAG" in *-*) PRERELEASE="--prerelease" ;; esac
-          gh release create "$TAG" "dist/$ASSET" \
+          gh release create "$TAG" "dist/$ASSET" dist/update.json \
             --title "$TAG" \
             --notes-file notes.md \
-            --generate-notes \
             $PRERELEASE

@@ -14,7 +14,8 @@ import { hasServiceWorker } from './data/platform';
 import { applyProxy } from './data/proxy';
 import * as screenLock from './data/screen-lock';
 import * as store from './data/store';
-import { setupWake, WAKE_CACHE } from './data/wake';
+import { maybeCheckForUpdate, noteLaunchVersion } from './data/updates';
+import { setupWake, WAKE_ALARM, WAKE_CACHE } from './data/wake';
 import { reloadUnderServiceWorker } from './data/wasm-reload';
 import * as ws from './data/ws';
 import { fmt, S } from './strings';
@@ -79,6 +80,19 @@ function registerServiceWorker(): void {
   }
 }
 
+/** Look for a newer Beacon once the chats are up, then whenever the app comes back to the foreground or wakes; `maybeCheckForUpdate` keeps it to about once a day. */
+function installUpdateChecks(): void {
+  maybeCheckForUpdate();
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) maybeCheckForUpdate();
+  });
+  if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
+    navigator.serviceWorker.addEventListener('message', (evt) => {
+      if (evt && evt.data && evt.data.type === WAKE_ALARM) maybeCheckForUpdate();
+    });
+  }
+}
+
 function onUnlinked(): void {
   dbg('auth: this device was unlinked');
   ws.stop();
@@ -94,6 +108,7 @@ function start(): void {
   store.on('storage-error', () => toast(S.storageError, 4000));
   store.on('save-error', () => toast(S.messagesNotSaved, 5000));
   onNumberChange((number) => toast(fmt(S.numberChanged, { number }), 5000));
+  noteLaunchVersion().then((version) => version && toast(fmt(S.updatedTo, { version }), 4000));
 
   // Message history from linking is imported before the first connection, so nothing new lands in the middle of it.
   if (config.isConfigured() && config.historySync()) {
@@ -114,6 +129,7 @@ function start(): void {
     ws.connect();
     ws.installWakeHandlers();
     openPendingConversation();
+    installUpdateChecks();
     setTimeout(() => {
       for (const c of store.conversations().concat(store.archivedConversations())) db.pruneConversation(c.id, PRUNE_KEEP).catch(() => {});
     }, 5000);

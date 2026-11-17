@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'preact/hooks';
+import { useRefresh, useStoreEvents } from '../../app/hooks';
 import { Row, RowList } from '../../components/RowList';
 import { Screen } from '../../components/Screen';
 import { GUIDES, GuideTopic } from '../../data/guides';
 import { appVersion } from '../../data/platform';
 import { APP_NAME, S } from '../../strings';
 import { openGuide } from '../Guide';
+import { autoUpdateRow, updateRow } from './Updates';
 
 export const HELP_TOPICS: GuideTopic[] = ['setup', 'history', 'keys', 'chats', 'folders', 'groups', 'settings', 'proxy', 'notifications', 'limitations', 'troubleshooting'];
 
 /** Short pointers into the full guide; each topic shows a QR code and can open in the browser. */
 export function HelpScreen() {
+  useStoreEvents(['update']);
+  const refresh = useRefresh();
   const [version, setVersion] = useState('');
   useEffect(() => {
     appVersion().then(setVersion);
@@ -23,6 +27,8 @@ export function HelpScreen() {
           { section: APP_NAME },
           topic('source'),
           { key: 'about', label: S.version + ' ' + (version || '…'), sub: S.unofficial },
+          updateRow(),
+          autoUpdateRow(refresh),
         ]}
       />
     </Screen>

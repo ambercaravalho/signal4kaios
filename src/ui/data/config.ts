@@ -99,6 +99,13 @@ interface ConfigData {
   accountDatabases?: Record<string, string>;
   /** Why the Link screen is asking to link again. */
   relinkReason?: RelinkReason;
+  autoUpdateCheck?: boolean;
+  /** When Beacon last asked for a newer release. */
+  updateCheckedAt?: number;
+  /** The newest version a security notification was already shown for. */
+  updateNotified?: string;
+  /** The version that ran last, so the first launch after an update can say so. */
+  lastRunVersion?: string;
   /** The `ACCOUNT_KEYS` settings of each saved account (by ACI) other than the active one, whose settings are at the top level. */
   accountSettings?: Record<string, Partial<ConfigData>>;
   [k: string]: unknown;
@@ -175,7 +182,8 @@ type FlagKey =
   | 'notifyReactions'
   | 'notifySound'
   | 'sharePhoneNumber'
-  | 'proxyEnabled';
+  | 'proxyEnabled'
+  | 'autoUpdateCheck';
 
 const text = (k: StringKey) => (): string => {
   const v = read()[k];
@@ -299,6 +307,24 @@ export const config = {
   /** The Signal proxy's hostname, kept while the proxy is turned off. */
   proxyAddress: text('proxyAddress'),
   proxyEnabled: offUnlessOn('proxyEnabled'),
+
+  /** Look for a newer Beacon about once a day; on this phone only. */
+  autoUpdateCheck: onUnlessOff('autoUpdateCheck'),
+
+  updateCheckedAt(): number {
+    const v = read().updateCheckedAt;
+    return typeof v === 'number' && v > 0 ? v : 0;
+  },
+
+  updateNotified(): string {
+    const v = read().updateNotified;
+    return typeof v === 'string' ? v : '';
+  },
+
+  lastRunVersion(): string {
+    const v = read().lastRunVersion;
+    return typeof v === 'string' ? v : '';
+  },
 
   screenLock(): ScreenLockConfig | null {
     const s = read().screenLock;

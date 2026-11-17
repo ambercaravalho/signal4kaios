@@ -64,7 +64,10 @@
       },
       "device-storage:sdcard": {
         "access": "createonly",
-        "description": "Save received files"
+        "description": "Save received files and Beacon updates"
+      },
+      "sideload": {
+        "description": "Install Beacon updates"
       }
     },
     "serviceworker": {

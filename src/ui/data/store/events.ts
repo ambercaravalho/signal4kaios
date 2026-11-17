@@ -15,6 +15,8 @@ export interface StoreEvents {
   'storage-error': [string];
   /** New messages couldn't be stored and are being held for a retry. */
   'save-error': [];
+  /** A newer release was found, or checking, downloading, or installing it moved on. */
+  update: [];
 }
 
 export type Listener<K extends keyof StoreEvents> = (...args: StoreEvents[K]) => void;
