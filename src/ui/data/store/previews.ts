@@ -57,6 +57,7 @@ function callText(n: Notice): string {
   if (n.outcome === 'missed') return S.missedCallLine;
   if (n.outcome === 'declined') return S.declinedCallLine;
   if (n.outcome === 'unanswered') return S.unansweredCallLine;
+  if (n.outcome === 'failed') return S.failedCallLine;
   const line = n.direction === 'outgoing' ? S.outgoingCallLine : S.incomingCallLine;
   return n.durationMs && n.durationMs >= 1000 ? line + ' · ' + fmtLength(n.durationMs / 1000) : line;
 }

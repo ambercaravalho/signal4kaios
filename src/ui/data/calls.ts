@@ -28,11 +28,13 @@ let problem: CallProblem = null;
 let audio: CallAudioIO | null = null;
 let ignoredId: string | null = null;
 let silencedId: string | null = null;
+let answeringId: string | null = null;
 let notifiedConv: string | null = null;
 let cpuLock: WakeLock | null = null;
 let screenLock: WakeLock | null = null;
 
 export function installCalls(): void {
+  signal.setCallFilter(ringsHere);
   signal.onCallState(onState);
   const s = signal.callState();
   if (s) onState(s);
@@ -70,8 +72,29 @@ export function placeCall(peer: string): Promise<void> {
   return signal.startCall(peer);
 }
 
+/** Opens the microphone, then accepts, so the first words aren't lost while it starts; a call the microphone can't open for is declined. */
 export function answerCall(): void {
-  signal.acceptCall();
+  if (!state || state.direction !== 'incoming' || state.phase !== 'incoming' || answeringId === state.callId) return;
+  const id = state.callId;
+  answeringId = id;
+  tone.stop();
+  const io = audio || new CallAudioIO(signal);
+  const opening = audio ? Promise.resolve() : io.start(speaker);
+  audio = io;
+  opening.then(
+    () => {
+      if (audio === io && state && state.callId === id) signal.acceptCall();
+    },
+    (e) => {
+      if (audio !== io) return;
+      dbg('call: microphone failed before answering ' + (e && e.name));
+      audio = null;
+      io.stop();
+      problem = 'mic';
+      signal.declineCall();
+      emit();
+    }
+  );
 }
 
 /** Stop the ringtone and vibration and leave the call ringing, so it can still be answered. */
@@ -121,6 +144,7 @@ function onState(s: CallState | null): void {
   if (fresh) {
     speaker = false;
     problem = null;
+    answeringId = null;
     if (s!.direction === 'incoming' && s!.phase === 'incoming' && !ringsHere(s!.peer)) {
       dbg('call: not ringing for a message request');
       ignoredId = s!.callId;
@@ -141,7 +165,7 @@ function onState(s: CallState | null): void {
 
 function syncTone(s: CallState | null): void {
   const conv = s ? callConversation(s.peer) : undefined;
-  const ringing = !!s && s.direction === 'incoming' && s.phase === 'incoming';
+  const ringing = !!s && s.direction === 'incoming' && s.phase === 'incoming' && s.callId !== answeringId;
   if (ringing) {
     if (s!.callId !== silencedId && (!conv || shouldNotify(conv, { call: true }))) tone.start('ring', 'ringer', true);
     if (conv && document.hidden && notifiedConv !== conv.id) {
@@ -160,7 +184,7 @@ function syncTone(s: CallState | null): void {
 }
 
 function syncAudio(s: CallState | null): void {
-  const live = !!s && (s.phase === 'connected' || (s.phase === 'connecting' && s.direction === 'incoming'));
+  const live = !!s && (s.phase === 'connected' || (s.direction === 'incoming' && (s.phase === 'connecting' || (s.phase === 'incoming' && s.callId === answeringId))));
   if (live && !audio) {
     const io = new CallAudioIO(signal);
     audio = io;

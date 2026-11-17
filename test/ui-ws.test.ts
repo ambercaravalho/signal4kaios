@@ -66,6 +66,15 @@ function showNotifications(on: boolean): void {
   else delete (globalThis as any).Notification;
 }
 
+describe('the server’s time', () => {
+  it('reads X-Signal-Timestamp from a request’s headers, in any case, and nothing else', () => {
+    assert.equal(ws.signalTimestamp(['Content-Type:application/x-protobuf', 'X-Signal-Timestamp:1700000000123']), 1700000000123);
+    assert.equal(ws.signalTimestamp(['x-signal-timestamp: 1700000000123']), 1700000000123);
+    assert.equal(ws.signalTimestamp(['X-Signal-Timestamp:soon']), undefined);
+    assert.equal(ws.signalTimestamp(undefined), undefined);
+  });
+});
+
 describe('acknowledging messages', () => {
   const put = db.putMessage;
 

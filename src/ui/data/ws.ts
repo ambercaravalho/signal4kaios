@@ -213,6 +213,16 @@ function dropSocket(s: SocketLike): void {
   if (onclose) onclose({ code: 1006, reason: 'keepalive', wasClean: false });
 }
 
+/** The server's time from a request's `X-Signal-Timestamp` header, or undefined without a usable one. */
+export function signalTimestamp(headers: unknown): number | undefined {
+  if (!Array.isArray(headers)) return undefined;
+  for (const h of headers) {
+    const m = /^x-signal-timestamp:\s*(\d{1,15})\s*$/i.exec(String(h));
+    if (m) return parseInt(m[1], 10) || undefined;
+  }
+  return undefined;
+}
+
 function onMessage(from: SocketLike, data: unknown): void {
   if (from === sock) keepaliveUnanswered = false;
   if (typeof data === 'string') return;
@@ -235,7 +245,7 @@ function onMessage(from: SocketLike, data: unknown): void {
     const silent = drainingQueue && quietDrain;
     framesThisSession += 1;
     lastMessage = Date.now();
-    const work = signal.processIncomingEnvelope(req.body).then(
+    const work = signal.processIncomingEnvelope(req.body, signalTimestamp(req.headers)).then(
       (frame) => {
         if (!frame) return ackOn(from, req.id);
         const item = { frame, reqId: req.id, sock: from };

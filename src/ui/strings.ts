@@ -265,6 +265,7 @@ export const S = {
   missedCallLine: 'Missed voice call',
   declinedCallLine: 'Declined voice call',
   unansweredCallLine: 'Unanswered voice call',
+  failedCallLine: 'Voice call failed',
   safetyNumberChanged: 'Your safety number with {name} has changed',
   startedGroupCall: '{name} started a group call. Join it from your phone.',
   groupCall: 'Group call. Join it from your phone.',

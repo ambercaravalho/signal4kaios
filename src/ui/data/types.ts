@@ -39,7 +39,7 @@ export interface Quote {
 export type NoticeKind = 'missedCall' | 'call' | 'safetyNumber' | 'groupCall' | 'pollEnded' | 'timer' | 'groupUpdate' | 'payment' | 'storyReaction';
 
 export type CallDirection = 'incoming' | 'outgoing';
-export type CallOutcome = 'accepted' | 'declined' | 'missed' | 'unanswered';
+export type CallOutcome = 'accepted' | 'declined' | 'missed' | 'unanswered' | 'failed';
 
 /** A line in the chat about the chat itself rather than a message someone wrote. The message's author is who made the change, or '' when that isn't known. */
 export interface Notice {
