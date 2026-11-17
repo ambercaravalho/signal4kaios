@@ -148,7 +148,7 @@ Startup ([`main.tsx`](../src/ui/main.tsx)) loads libsignal and opens the databas
 
 ### Updates
 
-KaiOS's own app manager (`AppsManager` in `api-daemon`, which needs the certified-only `webapps-manage` permission) only updates apps installed from a signed update manifest, and it can't install a ZIP from the phone's storage, so it can't update a Beacon installed from a ZIP. Instead, [`data/updates/`](../src/ui/data/updates) uses the community install service that OStore's Manual Install relies on.
+KaiOS's own app manager (`AppsManager` in `api-daemon`) can't update Beacon, even for an app holding `webapps-manage`: it installs only packages signed with KaiOS's production certificate (an unsigned ZIP fails with `InvalidSignature`), and it won't install over an app that was installed from a ZIP. The installer that does take an unsigned ZIP is `api-daemon`'s local socket, which `appscmd` uses over USB and web apps can't reach. Instead, [`data/updates/`](../src/ui/data/updates) uses the community install services that OStore's Manual Install relies on, which run natively on the phone.
 
 ```mermaid
 flowchart TD

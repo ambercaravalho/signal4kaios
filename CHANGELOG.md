@@ -4,7 +4,7 @@ Each `## v<version>` section becomes the notes of that GitHub Release; the relea
 
 ## v2.11.0
 
-Beacon now updates itself. Install this version over v2.10.9 the way you installed Beacon before, one last time; your chats and settings carry over, and later versions arrive on their own.
+Beacon now updates itself. Install this version over v2.10.9 the way you installed Beacon before, one last time; your chats and settings carry over, and after that Beacon finds and downloads new versions itself.
 
 ### Added
 
