@@ -272,6 +272,21 @@ async function repairEarlyTimers(): Promise<void> {
   await db.kvSet(EXPIRY_ON_READ, true);
 }
 
+const SAFETY_NOTICE_CHATS_DROPPED = 'safetyNoticeChatsDropped';
+const NOTICE_ONLY_PAGE = 50;
+
+/** Before 2.11.3 the history import made a 1:1 chat, often a message request, for everyone with a key change on the phone; remove the ones that still hold only those notices, once. */
+async function dropSafetyNoticeChats(): Promise<void> {
+  if (await db.kvGet(SAFETY_NOTICE_CHATS_DROPPED)) return;
+  for (const conv of Object.values(convs)) {
+    if (conv.type !== 'direct' || conv.pinned || conv.draft) continue;
+    const page = await db.getMessagesPage(conv.id, Number.MAX_SAFE_INTEGER, NOTICE_ONLY_PAGE);
+    if (!page.length || page.length >= NOTICE_ONLY_PAGE || !page.every((m) => m.notice && m.notice.kind === 'safetyNumber')) continue;
+    await removeChat(conv);
+  }
+  await db.kvSet(SAFETY_NOTICE_CHATS_DROPPED, true);
+}
+
 export async function init(): Promise<void> {
   try {
     for (const c of await db.allContacts()) {
@@ -285,6 +300,7 @@ export async function init(): Promise<void> {
       if (migrateMute(c)) persistConv(c);
     }
     await repairEarlyTimers().catch((e) => dbg('timer repair failed: ' + (e && e.message)));
+    await dropSafetyNoticeChats().catch((e) => dbg('notice-only chat cleanup failed: ' + (e && e.message)));
     state.ready = true;
     emit('conversations');
     failStalePending(Date.now()).catch((e) => dbg('pending check failed: ' + (e && e.message)));

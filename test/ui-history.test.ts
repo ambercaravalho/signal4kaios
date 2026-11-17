@@ -64,6 +64,31 @@ describe('message history import', () => {
     assert.equal(convs.find((c) => c.id === CAROL)!.request, true);
   });
 
+  it('makes no chat, and no message request, for someone whose thread holds only safety-number changes', async () => {
+    const STRANGER = '+15550111';
+    const FRIEND = '+15550112';
+    const KEPT = '+15550113';
+    const run = new HistoryImport([{ id: KEPT, type: 'direct', sendId: KEPT, name: KEPT, lastTs: 0, lastPreview: '', unread: 0, lastReadTs: 0 }], ME);
+    const safety = (ts: number, convId: string, groupInternalId: string | null = null) => msg(ts, { convId, author: convId === 'g:grp7' ? STRANGER : convId, groupInternalId, dm: undefined, notice: { kind: 'safetyNumber' } });
+    await run.apply([
+      { t: 'contact', aci: '', e164: STRANGER, name: 'Stranger', blocked: false, whitelisted: false },
+      safety(5000, STRANGER),
+      safety(5100, STRANGER),
+      safety(5200, FRIEND),
+      msg(5300, { convId: FRIEND, author: FRIEND }),
+      safety(5400, 'g:grp7', 'grp7'),
+      safety(5500, KEPT),
+    ]);
+    await run.finish();
+    const convs = await db.allConversations();
+    assert.equal(convs.find((c) => c.id === STRANGER), undefined);
+    assert.equal(await db.countMessages(STRANGER), 0);
+    assert.equal(await db.countMessages(FRIEND), 2, 'a chat with a real message keeps its notice');
+    assert.ok(convs.find((c) => c.id === 'g:grp7'), 'a group keeps its notice');
+    assert.equal(await db.countMessages('g:grp7'), 1);
+    assert.equal(await db.countMessages(KEPT), 1, 'a chat that was already here keeps its notice');
+  });
+
   it('keeps the newest messages of a long chat', async () => {
     const run = new HistoryImport([], ME);
     const id = '+15550099';
