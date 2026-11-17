@@ -1,6 +1,7 @@
 import { net } from '../../engine/net/transport';
 import { useStoreEvents } from '../app/hooks';
 import { connectionState } from '../data/store';
+import { connectionProblem } from '../data/ws';
 import { S } from '../strings';
 import { Banner } from './Toast';
 
@@ -9,6 +10,7 @@ export function ConnectionBanner() {
   useStoreEvents(['connection']);
   const state = connectionState();
   if (state === 'open') return null;
+  if (connectionProblem() === 'clock') return <Banner tone="warn">{S.errClock}</Banner>;
   const proxied = !!net.proxy();
   const closed = proxied ? S.offlineProxy : S.offline;
   const connecting = proxied ? S.connectingProxy : S.connecting;

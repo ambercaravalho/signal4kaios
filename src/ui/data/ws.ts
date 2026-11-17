@@ -7,11 +7,12 @@ import { scheduleAlarm } from './platform';
 import { holdNotifications, ingestRaw, refreshDirectory, releaseNotifications, setConnection } from './store';
 import { emit } from './store/events';
 import { SaveError } from './store/ingest';
-import type { SocketLike } from '../../engine/net/transport';
+import { isClockError, type SocketLike } from '../../engine/net/transport';
 import { WAKE_ALARM } from './wake';
 
 const CLOSE_UNAUTHORIZED = 4001;
 const CLOSE_FORBIDDEN = 4003;
+const CLOSE_TLS = 1015;
 const SOCK_CONNECTING = 0;
 const SOCK_OPEN = 1;
 const HEARTBEAT_MS = 30000;
@@ -48,6 +49,12 @@ let drainWork: Array<Promise<unknown>> = [];
 let drainGen = 0;
 let unlinkedHandler: (() => void) | null = null;
 let lastMessage = 0;
+let problem: 'clock' | null = null;
+
+/** Why the last connection failed, when it's something the user can fix; cleared once a connection opens. */
+export function connectionProblem(): 'clock' | null {
+  return problem;
+}
 
 export function onUnlinked(fn: () => void): void {
   unlinkedHandler = fn;
@@ -317,11 +324,13 @@ export function connect(): void {
     if (keepaliveTimer) clearInterval(keepaliveTimer);
     keepaliveUnanswered = false;
     keepaliveTimer = setInterval(() => keepalive(s), KEEPALIVE_MS);
+    problem = null;
     setConnection('open');
   };
   s.onmessage = (evt) => onMessage(s, evt.data);
   s.onclose = (evt) => {
     lastCloseAt = Date.now();
+    problem = evt.code === CLOSE_TLS && isClockError(evt.reason || '') ? 'clock' : null;
     if (keepaliveTimer) {
       clearInterval(keepaliveTimer);
       keepaliveTimer = null;

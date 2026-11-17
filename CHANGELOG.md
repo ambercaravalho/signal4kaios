@@ -2,6 +2,31 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.10.7
+
+Smaller fixes for calls, messages, media, your profile, linking, and the connection. Install over v2.10.6; your chats and settings carry over.
+
+### Fixed
+
+- **Screen lock after a call.** With the screen lock on, Beacon locks again as soon as a call ends, instead of a few seconds later, and a notification tapped in that moment no longer opens a chat.
+- **Back on a ringing call** now silences the ringtone and vibration and leaves the call on screen to answer. The left softkey and End still decline.
+- **Calls stay up longer on weak connections.** When renewing the call's relay fails, Beacon tries once more instead of letting the call drop a few minutes later.
+- **Message status** now moves on to delivered or read even when the receipt arrives before Signal has finished sending the message.
+- **Backslashes** you type, as in `C:\path`, now stay in the message; a backslash only stops a formatting marker like `*` from formatting.
+- **Editing a message edited on another device** now starts from its latest text.
+- **Forward** now sends every attachment in a message, including all the photos in an album. Before, messages with more than one attachment couldn't be forwarded.
+- **Downloads** stop at the size the sender's message gave, and photos of unknown size no longer download on their own.
+- **Storage.** The attachment cache now keeps at most 50 MB as well as at most 150 files, so a few videos can't fill the phone. Files a failed message needs for **Retry** are the last to go.
+- **View-once media** counts as viewed once it's on screen, so leaving while it downloads lets you open it later.
+- **Back asks first** before it throws away attachments waiting in a chat or a voice recording.
+- **Saving your profile** no longer shows a new name, About, or emoji when Signal didn't get it; Beacon says the save failed instead. Choosing a username now says whether it's taken, not valid, or tried too often.
+- **Linking.** If linking fails after your main phone approved it, Beacon removes the half-linked device from your account again, so **Retry** starts clean. **Skip** on the message history screen asks first, since history can only be transferred while linking.
+- **When Beacon can't open its storage**, the error screen's **Options** now has **Delete all data**, so you can start again without reinstalling.
+- **A wrong date or time** on the phone now gets **Check that the phone's date and time are right** instead of a plain connection error, in the connection banner too.
+- **Phone numbers without a country code** in **New chat** are now read as numbers in your own country, with the leading 0 dropped (except in Italy), and **Not found on Signal** says which number was looked up.
+- **List focus** stays on the same chat when the chats list reorders, for example when a new message arrives.
+- **Docs.** The user guide now says that Signal removes a linked device that hasn't been opened for about 30 days, and that a call ends if the phone switches networks. The setup guide and architecture notes now describe the debug log and where the device password is kept accurately.
+
 ## v2.10.6
 
 Fixes for disappearing messages, accounts, group invites, settings sync, your profile, and duplicate chats. Install over v2.10.5; your chats and settings carry over.

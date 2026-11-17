@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useKeys, useSoftkeys } from '../app/router';
 import { Spinner } from '../components/List';
+import { confirm } from '../components/Overlays';
 import { Screen } from '../components/Screen';
 import { config } from '../data/config';
 import { db } from '../data/db';
@@ -19,6 +20,13 @@ function phaseLabel(p: HistoryPhase | null): string {
 /** Once the history is in, or skipped, the app starts as usual. */
 function leave(): void {
   endHistorySync().then(() => location.reload());
+}
+
+/** Skip asks first: the main phone sends history only while linking, so it can't be fetched later. */
+export function skipHistory(): Promise<void> {
+  return confirm({ title: S.skipHistory, body: S.skipHistoryBody, ok: S.skip }).then((ok) => {
+    if (ok) leave();
+  });
 }
 
 /** After linking, while the main phone sends message history (link-and-sync): waiting, downloading, then adding. The app stays offline until this ends, so nothing new arrives in the middle; Skip goes on without history. */
@@ -63,7 +71,7 @@ export function HistoryScreen() {
   useKeys((e) => {
     if (e.key === 'Enter' && state === 'failed') setAttempt((n) => n + 1);
     else if (e.key === 'Enter' && state === 'relink') relink();
-    else if (e.key === 'SoftRight' && state !== 'relink') leave();
+    else if (e.key === 'SoftRight' && state !== 'relink') skipHistory();
     else if (e.key === 'Backspace' || e.key === 'SoftLeft') return true;
     else return false;
     return true;

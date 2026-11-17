@@ -9,15 +9,19 @@ import { Badge, ListItem } from '../src/ui/components/List';
 import { confirm, dialogKey, DIVIDER, menuRows, pick, showOptions } from '../src/ui/components/Overlays';
 import { QrCode } from '../src/ui/components/Qr';
 import { RichText } from '../src/ui/components/RichText';
+import { focusIndex } from '../src/ui/components/RowList';
 import { AUTOMATIC, CHAT_COLORS, chatColorOptions } from '../src/ui/data/chat-colors';
 import { signal } from '../src/ui/data/api';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import { GUIDES } from '../src/ui/data/guides';
+import { callingCode, toE164 } from '../src/ui/data/phone-number';
 import * as store from '../src/ui/data/store';
 import type { Message } from '../src/ui/data/types';
 import { askViewOnce } from '../src/ui/components/chat/useChatComposer';
-import { Bubble, ChatScreen, mainActions, PinnedBar } from '../src/ui/screens/Chat';
+import { backAction } from '../src/ui/components/chat/useChatKeys';
+import { asksBeforeDiscard } from '../src/ui/components/VoiceRecorder';
+import { Bubble, canForward, ChatScreen, mainActions, PinnedBar } from '../src/ui/screens/Chat';
 import { ChatSettingsScreen } from '../src/ui/screens/ChatSettings';
 import { DebugScreen } from '../src/ui/screens/Debug';
 import { guideRow, openGuide } from '../src/ui/screens/Guide';
@@ -31,7 +35,8 @@ import { AppearanceScreen } from '../src/ui/screens/settings/Appearance';
 import { HELP_TOPICS, HelpScreen } from '../src/ui/screens/settings/Help';
 import { NotificationsScreen } from '../src/ui/screens/settings/Notifications';
 import { saveProfile } from '../src/ui/screens/settings/Profile';
-import { StartupErrorScreen } from '../src/ui/screens/StartupError';
+import { skipHistory } from '../src/ui/screens/History';
+import { StartupErrorScreen, storageErrorOptions } from '../src/ui/screens/StartupError';
 import { DEBUG, fmt, S } from '../src/ui/strings';
 import { settle } from './helpers';
 
@@ -155,6 +160,9 @@ describe('screens', () => {
     const base = { id: 'm2', convId: ALICE, author: ALICE, timestamp: 1000, body: '', incoming: true, status: 'received', attachments: [], reactions: {} } as unknown as Message;
     const photo = { ...base, attachments: [{ id: 'a1', contentType: 'image/jpeg', size: 10 }] } as Message;
     assert.deepEqual(mainActions(photo, false), ['attachment']);
+    const album = { ...base, attachments: [photo.attachments[0], { id: 'a2', contentType: 'image/jpeg', size: 12 }] } as Message;
+    assert.ok(canForward(album));
+    assert.ok(!canForward({ ...album, attachments: [album.attachments[0], { ...album.attachments[1], id: '' }] } as Message));
     assert.deepEqual(mainActions({ ...base, body: 'see https://signal.org', status: 'failed', incoming: false } as Message, true), ['retry', 'readFull', 'openLink']);
     assert.deepEqual(mainActions({ ...photo, deleted: true } as Message, false), []);
     assert.deepEqual(mainActions({ ...base, body: 'hi' } as Message, false), []);
@@ -230,6 +238,7 @@ describe('screens', () => {
     assert.equal(_stackForTest().length, 2);
     assert.ok(_stackForTest()[1].overlay);
     assert.ok(text(html()).includes(S.phoneNotFound));
+    assert.ok(text(html()).includes('+15550003'), 'says which number was looked up');
 
     router.reset(HomeScreen, {});
     answer = async () => {
@@ -237,6 +246,29 @@ describe('screens', () => {
     };
     await openPhone('+15550004');
     assert.equal(_stackForTest().length, 1);
+  });
+
+  it('keeps focus on the same chat when the list reorders, and follows the user when they move', () => {
+    assert.equal(focusIndex(['b', 'a', 'c'], 1, { key: 'c', navIndex: 1 }), 2, 'a new message moved another chat to the top');
+    assert.equal(focusIndex(['b', 'a', 'c'], 2, { key: 'a', navIndex: 1 }), 2, 'the user pressed Down');
+    assert.equal(focusIndex(['b', 'c'], 1, { key: 'a', navIndex: 1 }), 1, 'a deleted chat leaves focus in place');
+    assert.equal(focusIndex([undefined, undefined], 1, { navIndex: 1 }), 1);
+  });
+
+  it('reads a number typed without a country code as one in our own country', () => {
+    assert.equal(toE164('07700 900123', '+447700900000'), '+447700900123');
+    assert.equal(toE164('0044 7700 900123', '+15550000000'), '+447700900123');
+    assert.equal(toE164('011 44 7700 900123', '+15550000000'), '+447700900123');
+    assert.equal(toE164('(555) 010-2030', '+15550000000'), '+15550102030');
+    assert.equal(toE164('1 555 010 2030', '+15550000000'), '+15550102030');
+    assert.equal(toE164('06 12345678', '+33612345678'), '+33612345678');
+    assert.equal(toE164('06 123 4567', '+390612345678'), '+39061234567', 'Italy keeps its leading 0');
+    assert.equal(toE164('8 912 345 67 89', '+79000000000'), '+79123456789');
+    assert.equal(toE164('612 345 678', '+34600000000'), '+34612345678');
+    assert.equal(toE164('+49 30 123456', '+447700900000'), '+4930123456');
+    assert.equal(toE164('15550102030', ''), '+15550102030', 'without our own number it reads as international');
+    assert.equal(callingCode('+353861234567'), '353');
+    assert.equal(callingCode('+4930123456'), '49');
   });
 
   it('draws options and dialogs as overlays above the screen', () => {
@@ -405,5 +437,46 @@ describe('screens', () => {
       config.set({ profileName: undefined, profileAbout: undefined });
     }
     assert.deepEqual(bodies, [{ name: 'Mia P' }, { name: 'Mia P', about: 'new about' }]);
+  });
+
+  it('keeps the old name when the profile upload fails', async () => {
+    const real = signal.updateOwnProfile;
+    (signal as any).updateOwnProfile = async () => {
+      throw new Error('The profile was not written');
+    };
+    config.set({ profileName: 'Mia Park' });
+    try {
+      await saveProfile({ name: 'Mia P' });
+      assert.equal(config.profileName(), 'Mia Park');
+    } finally {
+      (signal as any).updateOwnProfile = real;
+      config.set({ profileName: undefined });
+    }
+  });
+
+  it('asks before Back throws away attachments in the tray or a voice recording', () => {
+    const at = { onComposer: true, draft: '', quote: false, editing: false, tray: 0 };
+    assert.equal(backAction('Backspace', at), 'pass');
+    assert.equal(backAction('SoftLeft', at), 'pass');
+    assert.equal(backAction('Backspace', { ...at, tray: 2 }), 'askLeave');
+    assert.equal(backAction('SoftLeft', { ...at, tray: 1 }), 'askLeave');
+    assert.equal(backAction('Backspace', { ...at, tray: 1, draft: 'hi' }), 'pass', 'Back deletes a typed character first');
+    assert.equal(backAction('SoftLeft', { ...at, tray: 1, quote: true }), 'clear');
+    assert.equal(backAction('Backspace', { ...at, onComposer: false, tray: 1 }), 'unfocus');
+    assert.ok(asksBeforeDiscard('recording'));
+    assert.ok(asksBeforeDiscard('stopped'));
+    assert.ok(!asksBeforeDiscard('starting'));
+    assert.ok(!asksBeforeDiscard('failed'));
+  });
+
+  it('asks before skipping message history, and offers Delete all data when storage won’t open', () => {
+    router.reset(HomeScreen, {});
+    skipHistory();
+    const top = _stackForTest()[_stackForTest().length - 1];
+    assert.ok(top.overlay);
+    assert.match(html(), new RegExp(S.skipHistory.replace('?', '\\?')));
+    router.pop();
+    const labels = storageErrorOptions().map((o) => (o && typeof o === 'object' ? o.label : o));
+    assert.deepEqual(labels, [S.help, '-', S.deleteAllData]);
   });
 });

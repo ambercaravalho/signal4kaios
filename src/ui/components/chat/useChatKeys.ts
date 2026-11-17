@@ -1,7 +1,8 @@
 import type { RefObject } from 'preact';
-import { useKeys, useSoftkeys } from '../../app/router';
+import { router, useKeys, useSoftkeys } from '../../app/router';
 import type { Message } from '../../data/types';
 import { S } from '../../strings';
+import { confirm } from '../Overlays';
 import type { useChatComposer } from './useChatComposer';
 
 /** How far Up and Down scroll through a message taller than the screen before focus moves on. */
@@ -22,6 +23,14 @@ export interface ChatKeysOptions {
   acceptRequest(): void;
   messageOptions(m: Message): void;
   chatOptions(): void;
+}
+
+/** What the left softkey or Back does in a chat: `pass` leaves it to the router (go back, or delete a typed character), and leaving with attachments waiting to be sent asks first. */
+export function backAction(key: 'SoftLeft' | 'Backspace', s: { onComposer: boolean; draft: string; quote: boolean; editing: boolean; tray: number }): 'pass' | 'unfocus' | 'clear' | 'askLeave' {
+  if (key === 'Backspace' && !s.onComposer) return 'unfocus';
+  if (key === 'Backspace' && s.draft) return 'pass';
+  if (s.quote || s.editing) return 'clear';
+  return s.tray ? 'askLeave' : 'pass';
 }
 
 /** A chat's keys: Up and Down move between messages and the composer, OK sends or opens a message's options. Returns whether focus is on the composer. */
@@ -77,17 +86,17 @@ export function useChatKeys(o: ChatKeysOptions): boolean {
         o.chatOptions();
         return true;
       case 'SoftLeft':
-        if (!quote && !editing) return false;
-        composer.clearContext();
-        return true;
-      case 'Backspace':
-        if (!onComposer) {
-          o.setFocusedId(null);
-          return true;
+      case 'Backspace': {
+        const act = backAction(e.key, { onComposer, draft, quote: !!quote, editing: !!editing, tray: tray.length });
+        if (act === 'unfocus') o.setFocusedId(null);
+        else if (act === 'clear') composer.clearContext();
+        else if (act === 'askLeave') {
+          confirm({ title: S.discardAttachments, ok: S.discard, danger: true }).then((ok) => {
+            if (ok) router.pop();
+          });
         }
-        if (draft || (!quote && !editing)) return false;
-        composer.clearContext();
-        return true;
+        return act !== 'pass';
+      }
     }
     return false;
   });

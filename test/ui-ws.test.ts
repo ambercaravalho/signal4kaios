@@ -19,7 +19,7 @@ class FakeSocket {
   acks: number[] = [];
   onopen: ((e: unknown) => void) | null = null;
   onmessage: ((e: { data: unknown }) => void) | null = null;
-  onclose: ((e: { code: number }) => void) | null = null;
+  onclose: ((e: { code: number; reason?: string }) => void) | null = null;
   onerror: ((e: unknown) => void) | null = null;
   send(bytes: Uint8Array): void {
     this.acks.push(bytes[0]);
@@ -225,6 +225,20 @@ describe('acknowledging messages', () => {
     assert.equal(store.connectionState(), 'closed');
     ws.connect();
     assert.notEqual(current(), live);
+  });
+
+  it('says to check the clock when the connection fails on a certificate date, until it connects', async () => {
+    const live = current();
+    live.onclose!({ code: 1015, reason: 'secure connection failed: invalid peer certificate: certificate not valid yet: verification time 1 (UNIX)' });
+    assert.equal(store.connectionState(), 'closed');
+    assert.equal(ws.connectionProblem(), 'clock');
+    ws.connect();
+    current().open();
+    assert.equal(ws.connectionProblem(), null);
+    current().onclose!({ code: 1006, reason: 'connection lost' });
+    assert.equal(ws.connectionProblem(), null);
+    ws.connect();
+    current().open();
   });
 
   it('checks PreKeys when the socket opens, at most every 12 hours', async () => {

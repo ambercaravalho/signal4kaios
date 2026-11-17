@@ -13,7 +13,10 @@ import { outgoingMethods } from '../src/engine/bridge/outgoing';
 import { resetPeerNamesForTest } from '../src/engine/bridge/peer-names';
 import { ContentSchema } from '../src/engine/gen/SignalService_pb';
 import { type EngineHost, setEngineHost } from '../src/engine/host';
+import { finishLinking } from '../src/engine/net/provisioning';
 import { create } from '../src/engine/net/proto';
+import { ProvisionMessageSchema } from '../src/engine/gen/DeviceMessages_pb';
+import { MemorySignalStore } from '../src/engine/protocol/store';
 import { libsignal } from '../src/engine/protocol/libsignal';
 import { loadPreKeyRotation, PRE_KEY_ROTATION_MS } from '../src/engine/protocol/prekeys';
 import { identityRecord, safetyNumber, saveIdentityKey, saveOwnIdentityKey, setIdentityTrust } from '../src/engine/protocol/protocol';
@@ -510,5 +513,37 @@ describe('our own profile', () => {
     cfg.set = (p: any) => void patches.push(p);
     await accountMethods.hydrateOwnProfile();
     assert.deepEqual(patches, [{ profileName: 'Ann Lea', profileAbout: 'Gardening', profileAboutEmoji: '' }]);
+  });
+
+  it('fails a profile save it couldn’t upload, so the app doesn’t show a name Signal never got', async () => {
+    const withKey = await store.getAccount();
+    await store.saveAccount({ ...withKey!, profileKey: undefined as any });
+    const puts: string[] = [];
+    http.request = async (method: string, path: string) => {
+      if (method === 'PUT') puts.push(path);
+      return {};
+    };
+    try {
+      await assert.rejects(accountMethods.updateOwnProfile({ name: 'Ann Lee' }), /not written/);
+      assert.deepEqual(puts, []);
+    } finally {
+      await store.saveAccount(withKey!);
+    }
+  });
+});
+
+describe('linking', () => {
+  it('removes the device it just registered when its keys can’t be uploaded', async () => {
+    const kp = libsignal.keyPairGenerate() as { publicKey: Uint8Array; privateKey: Uint8Array };
+    const prov = create(ProvisionMessageSchema, { aci: ALICE, aciIdentityKeyPublic: kp.publicKey, aciIdentityKeyPrivate: kp.privateKey, provisioningCode: 'code-1', number: '' });
+    const calls: Array<[string, string, string]> = [];
+    const request = async (method: string, path: string, _body: unknown, opts?: any) => {
+      calls.push([method, path, opts && opts.basicAuth ? opts.basicAuth.username : '']);
+      if (path === '/v1/devices/link') return { deviceId: 4, uuid: ALICE };
+      if (path.startsWith('/v2/keys')) throw Object.assign(new Error('HTTP 500'), { status: 500 });
+      return {};
+    };
+    await assert.rejects(finishLinking(new MemorySignalStore(), request as any, prov, 'Beacon'), /HTTP 500/);
+    assert.deepEqual(calls[calls.length - 1], ['DELETE', '/v1/devices/4', ALICE + '.4']);
   });
 });

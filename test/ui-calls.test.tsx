@@ -5,7 +5,7 @@ import { renderToString } from 'preact-render-to-string';
 
 import type { CallState } from '../src/engine';
 import { _stackForTest, router, RouterView } from '../src/ui/app/router';
-import { _setCallStateForTest, callView } from '../src/ui/data/calls';
+import { _ringingForTest, _setCallStateForTest, callView, silenceRinging } from '../src/ui/data/calls';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import { parseFrame } from '../src/ui/data/normalize';
@@ -145,18 +145,37 @@ describe('call screen', () => {
     assert.equal(_stackForTest().length, 1);
   });
 
-  it('shows a call over the screen lock, and locks again once the call is cleared', async () => {
+  it('shows a call over the screen lock, and locks again as soon as the call ends', async () => {
     await screenLock.enable('4821');
     screenLock.lockNow();
     assert.match(renderToString(<LockGate />), /class="lock"/);
     _setCallStateForTest(state({ callId: '203' }));
     assert.ok(router.has(CallScreen));
     assert.equal(renderToString(<LockGate />), '');
+    _setCallStateForTest(state({ callId: '203', phase: 'connected', connectedAt: Date.now() }));
+    assert.equal(renderToString(<LockGate />), '');
+    _setCallStateForTest(state({ callId: '203', phase: 'ended', endReason: 'hungUp' }));
+    assert.ok(router.has(CallScreen));
+    assert.match(renderToString(<LockGate />), /class="lock"/);
     _setCallStateForTest(null);
     assert.ok(screenLock.isLocked());
     assert.match(renderToString(<LockGate />), /class="lock"/);
     screenLock.disable();
     screenLock.unlock();
+  });
+
+  it('Back silences the ringing and leaves the call to answer, and the next call rings again', () => {
+    _setCallStateForTest(state({ callId: '204' }));
+    assert.ok(_ringingForTest());
+    silenceRinging();
+    assert.ok(!_ringingForTest());
+    _setCallStateForTest(state({ callId: '204' }));
+    assert.ok(!_ringingForTest());
+    assert.match(text(), /Incoming voice call/);
+    _setCallStateForTest(null);
+    _setCallStateForTest(state({ callId: '205' }));
+    assert.ok(_ringingForTest());
+    _setCallStateForTest(null);
   });
 
   it('doesn’t ring for someone it doesn’t know', () => {

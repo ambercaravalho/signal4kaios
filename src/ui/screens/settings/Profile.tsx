@@ -95,7 +95,7 @@ export function ProfileScreen() {
       refresh();
       return true;
     } catch (e) {
-      toast(friendlyError(e, S.usernameTaken));
+      toast(friendlyError(e));
       return false;
     }
   }

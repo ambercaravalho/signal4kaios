@@ -13,7 +13,7 @@ import { unarchiveOnActivity } from './chat-state';
 import { isSelfConv, self } from './contacts';
 import { msgId, persistConv, setConvExpire } from './conversations';
 import { emit } from './events';
-import { keepVersion, setPreviewIfLast } from './ingest';
+import { applyEarlyReceipt, keepVersion, setPreviewIfLast } from './ingest';
 import { sendPoll } from './polls';
 import { attachmentLabel, previewOf } from './previews';
 import { convs } from './state';
@@ -39,8 +39,8 @@ export function sendCore(conv: Conversation, rec: Message, payload: SendPayload,
     (res: any) => {
       const newTs = res && res.timestamp ? parseInt(res.timestamp, 10) : ts;
       const oldId = rec.id;
-      if (newTs && newTs !== ts) {
-        db.deleteMessage(oldId);
+      const retimed = !!newTs && newTs !== ts;
+      if (retimed) {
         rec.timestamp = newTs;
         rec.id = msgId(conv.id, newTs, self());
         conv.lastTs = Math.max(conv.lastTs, newTs);
@@ -48,8 +48,10 @@ export function sendCore(conv: Conversation, rec: Message, payload: SendPayload,
       }
       rec.status = 'sent';
       if (res && res.sealed) rec.sealed = true;
+      applyEarlyReceipt(rec);
       keepSentAttachments(rec, payload, res && res.attachments);
       db.putMessage(rec);
+      if (retimed) db.deleteMessage(oldId);
       emit('message-updated', rec, oldId);
       return rec;
     },
@@ -270,22 +272,22 @@ export function sendEdit(rec: Message, newText: string, mentions: PickedMention[
   });
 }
 
-/** A copy of `m` in another chat. Text keeps its formatting but not its mentions; `dataUri` carries the attachment's bytes when it has one. */
-export function forwardMessage(convId: string, m: Message, dataUri?: string): Promise<Message> {
+/** A copy of `m` in another chat. Text keeps its formatting but not its mentions; `dataUris` carries the bytes of each attachment, in order. */
+export function forwardMessage(convId: string, m: Message, dataUris: string[] = []): Promise<Message> {
   let conv: Conversation;
   try {
     conv = convForSend(convId);
   } catch (e) {
     return Promise.reject(e);
   }
-  const src = dataUri ? m.attachments[0] : undefined;
-  const attachments: Attachment[] = src ? [localAttachment({ dataUri: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: src.voiceNote, waveform: src.waveform, duration: src.duration, blurHash: src.blurHash, width: src.width, height: src.height })] : [];
+  const srcs = m.attachments.slice(0, dataUris.length);
+  const attachments: Attachment[] = srcs.map((src) => localAttachment({ dataUri: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: src.voiceNote, waveform: src.waveform, duration: src.duration, blurHash: src.blurHash, width: src.width, height: src.height }));
   return withDefaultTimer(conv, () => {
     const rec = newOutgoingRec(conv, { body: m.body, styles: m.styles || [], attachments });
     const payload: SendPayload = { ...basePayload(conv, m.body), styles: m.styles || [] };
-    if (dataUri) payload.base64_attachments = [dataUri];
-    const meta = src && outgoingMeta(src);
-    if (meta) payload.attachment_meta = [meta];
+    if (srcs.length) payload.base64_attachments = dataUris.slice(0, srcs.length);
+    const meta = srcs.map(outgoingMeta);
+    if (meta.some(Boolean)) payload.attachment_meta = meta;
     return sendCore(conv, rec, payload, previewOf(rec));
   });
 }

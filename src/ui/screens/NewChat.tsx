@@ -8,6 +8,8 @@ import type { Row } from '../components/RowList';
 import { contactRow, groupRow, matches, SearchList } from '../components/SearchList';
 import { toast } from '../components/Toast';
 import { signal } from '../data/api';
+import { config } from '../data/config';
+import { toE164 } from '../data/phone-number';
 import * as store from '../data/store';
 import { friendlyError } from '../errors';
 import { fmt, S } from '../strings';
@@ -15,8 +17,7 @@ import { ChatScreen } from './Chat';
 import { openPhone, openSignalLink } from './open-link';
 
 function normalizeNumber(v: string): string {
-  const n = v.replace(/[\s()-]/g, '');
-  return n && n.charAt(0) !== '+' ? '+' + n : n;
+  return toE164(v, config.number());
 }
 
 function looksLikeNumber(v: string): boolean {

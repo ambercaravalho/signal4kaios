@@ -46,9 +46,8 @@ export function mainActions(m: Message, clipped: boolean): MainAction[] {
   return out;
 }
 
-function canForward(m: Message): boolean {
-  const att = m.attachments[0];
-  return !m.deleted && !m.notice && !m.contactCard && m.attachments.length <= 1 && (!!m.body || !!att) && (!att || (!!att.id && !att.viewOnce));
+export function canForward(m: Message): boolean {
+  return !m.deleted && !m.notice && !m.contactCard && (!!m.body || m.attachments.length > 0) && m.attachments.every((att) => !!att.id && !att.viewOnce);
 }
 
 function canChange(m: Message): boolean {

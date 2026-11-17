@@ -11,6 +11,8 @@ const SIGNAL_STORES = ['signal_keystore', 'signal_identities', 'signal_sessions'
 const MAX_TS = 9007199254740991;
 /** How many messages each chat keeps; older ones are pruned. */
 export const PRUNE_KEEP = 500;
+/** The most cached attachment bytes kept, so a few videos can't fill the phone's storage. */
+export const ATTACHMENT_CACHE_BYTES = 50 * 1024 * 1024;
 
 let opened: Promise<IDBDatabase> | null = null;
 let signalStateReset = false;
@@ -350,12 +352,22 @@ export const db = {
   },
 
   /** Keep only the `keep` most recently cached attachments. Avatars (`avatar:*`) are exempt: they are small and bounded by the contact list. So are the empty markers left by opened view-once media, which keep it from being downloaded again. */
-  pruneAttachments(keep: number): Promise<void> {
+  /** Keeps the newest `keep` cached files within `maxBytes`. Avatars and view-once markers are never pruned, and the bytes Retry needs for unsent messages go last. */
+  pruneAttachments(keep: number, maxBytes = ATTACHMENT_CACHE_BYTES): Promise<void> {
     return getAll<{ id: string; ts: number; blob?: Blob }>('attachments').then((rows) => {
       rows = rows.filter((r) => String(r.id).indexOf('avatar:') !== 0 && !(r.blob && r.blob.size === 0));
-      if (rows.length <= keep) return;
-      rows.sort((a, b) => b.ts - a.ts);
-      const drop = rows.slice(keep);
+      const outbox = (r: { id: string }) => (String(r.id).indexOf('outbox:') === 0 ? 0 : 1);
+      rows.sort((a, b) => outbox(a) - outbox(b) || b.ts - a.ts);
+      let kept = 0;
+      let bytes = 0;
+      const drop = rows.filter((r) => {
+        const size = r.blob ? r.blob.size : 0;
+        if (kept >= keep || bytes + size > maxBytes) return true;
+        kept++;
+        bytes += size;
+        return false;
+      });
+      if (!drop.length) return;
       return tx('attachments', 'readwrite', (s) => {
         for (const r of drop) s.delete(r.id);
       });

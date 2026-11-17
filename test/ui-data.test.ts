@@ -291,6 +291,11 @@ describe('styled text', () => {
     assert.deepEqual(parseStyledMarkdown('\\*not\\*'), { body: '*not*', styles: [] });
   });
 
+  it('keeps backslashes that don’t escape a marker', () => {
+    assert.deepEqual(parseStyledMarkdown('C:\\path\\to'), { body: 'C:\\path\\to', styles: [] });
+    assert.deepEqual(parseStyledMarkdown('*C:\\dir* \\'), { body: 'C:\\dir \\', styles: [{ start: 0, length: 6, style: 'ITALIC' }] });
+  });
+
   it('encodes picked mentions as placeholders and moves styles to match', () => {
     const picked = [
       { name: 'Ann', uuid: 'aci-ann' },

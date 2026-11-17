@@ -2,7 +2,7 @@
 
 import { strict as assert } from 'node:assert';
 import { createCipheriv, createDecipheriv, createHash, diffieHellman, generateKeyPairSync, hkdfSync, KeyObject, createPublicKey } from 'node:crypto';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 
 import { IceAgent, parseCandidate, RelayMux } from '../src/engine/calling/ice';
 import { CallManager, MAX_OFFER_AGE_MS, RING_TIMEOUT_MS, type CallDeps, type CallRecord } from '../src/engine/calling/manager';
@@ -25,7 +25,7 @@ import {
   verifyIntegrity,
   xorAddressAttr,
 } from '../src/engine/calling/stun';
-import { StreamFramer, TurnClient } from '../src/engine/calling/turn';
+import { refreshEveryMs, StreamFramer, TurnClient } from '../src/engine/calling/turn';
 import { uuidToBytes } from '../src/engine/bytes';
 import {
   CallMessage_Hangup_Type,
@@ -292,6 +292,42 @@ test('calling: TURN allocates after the 401 challenge, binds a channel, and fram
   ]);
   turn.close();
   assert.equal(log[log.length - 1], 'refresh');
+});
+
+test('calling: TURN refreshes before the allocation runs out, and tries again once when a refresh fails', async () => {
+  assert.equal(refreshEveryMs(600), 300000);
+  assert.equal(refreshEveryMs(100), 40000);
+  assert.equal(refreshEveryMs(20), 30000);
+  mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
+  try {
+    const realm = 'signal';
+    const key = longTermKey('u', realm, 'p');
+    const refreshes: string[] = [];
+    const stream = fakeStream((d) => {
+      const msg = decodeStun(d)!;
+      const tid = msg.transactionId;
+      const reply = (type: number, attrs: Parameters<typeof encodeStun>[0]['attrs'], signed = true) => queueMicrotask(() => stream.onData!(encodeStun({ type, transactionId: tid, attrs }, signed ? key : undefined)));
+      if (msg.type === StunType.AllocateRequest && !attr(msg, StunAttr.MessageIntegrity)) return reply(StunType.AllocateError, [{ type: StunAttr.ErrorCode, value: new Uint8Array([0, 0, 4, 1]) }, textAttr(StunAttr.Realm, realm), textAttr(StunAttr.Nonce, 'n1')], false);
+      if (msg.type === StunType.AllocateRequest) return reply(StunType.AllocateSuccess, [xorAddressAttr(StunAttr.XorRelayedAddress, { ip: '203.0.113.5', port: 50000 }, tid), u32Attr(StunAttr.Lifetime, 120)]);
+      if (msg.type === StunType.RefreshRequest) {
+        refreshes.push(refreshes.length ? 'ok' : 'refused');
+        return reply(refreshes.length === 1 ? StunType.RefreshError : StunType.RefreshSuccess, refreshes.length === 1 ? [{ type: StunAttr.ErrorCode, value: new Uint8Array([0, 0, 5, 0]) }] : []);
+      }
+    });
+    const turn = new TurnClient(stream, { username: 'u', password: 'p' });
+    await turn.allocate();
+    mock.timers.tick(59000);
+    assert.deepEqual(refreshes, []);
+    mock.timers.tick(1000);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    assert.deepEqual(refreshes, ['refused']);
+    mock.timers.tick(10000);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    assert.deepEqual(refreshes, ['refused', 'ok']);
+    turn.close(new Error('done'));
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test('calling: the TURN stream framer rejects frames that are neither STUN nor ChannelData', () => {

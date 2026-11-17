@@ -32,7 +32,7 @@ Beacon follows the KaiOS layout: the bar at the bottom names what the left softk
 
 ## Chats list
 
-Each row shows the avatar (the profile or group photo, or initials on the chat's Signal color), the name, the time, a preview, "Typing…", or your unsent **Draft:**, and an unread count (a plain dot for a chat you marked as unread). Pinned (📌) chats sort first; muted chats show a muted icon. Your own number appears as **Note to Self**. A strip under the header says **Connecting…** or **No connection** while Beacon isn't connected.
+Each row shows the avatar (the profile or group photo, or initials on the chat's Signal color), the name, the time, a preview, "Typing…", or your unsent **Draft:**, and an unread count (a plain dot for a chat you marked as unread). Pinned (📌) chats sort first; muted chats show a muted icon. Your own number appears as **Note to Self**. A strip under the header says **Connecting…** or **No connection** while Beacon isn't connected, or **Check that the phone's date and time are right** when the phone's clock is too far off for Signal's secure connection ([Troubleshooting](setup.md#troubleshooting)).
 
 As in Signal for Android, archived chats sit behind an **Archived chats** row at the bottom of the list, which shows how many there are and appears only when you have some. Open it to see them; **Options** there has Chat settings, Unarchive, Mute, Mark as read or unread, and Delete chat.
 
@@ -61,7 +61,7 @@ OK on a message opens its options. The first one is what the message is most lik
 
 - **React**: pick from six quick reactions or any emoji; pick your current reaction again to remove it.
 - **Reply** and **Copy text**.
-- **Forward** sends the text (with its formatting) or the attachment to another chat, contact, or group after you confirm. View-once media can't be forwarded.
+- **Forward** sends the text (with its formatting) and every attachment, including all the photos in an album, to another chat, contact, or group after you confirm. View-once media can't be forwarded.
 - **Edit** (up to 10 times) and **Delete for everyone** on your own messages for 24 hours, as in Signal. Group admins also get **Delete for everyone** on other people's messages for 24 hours; those read **An admin deleted this message.**
 - **Pin message** (for everyone in the chat), **Message details**, and **Delete for me**, which also deletes the message on your other linked devices.
 - **Message details** shows the full text, when it was sent, its status, reactions, when it disappears, earlier versions of an edited message, and **Delivered privately** when **Private delivery icon** is on in **Settings → Privacy**.
@@ -100,9 +100,9 @@ A group opens as a request when you're invited to it, whoever invited you, or wh
 
 ## Media
 
-**Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file). Photos, videos, and files wait above the message box (for example **2 photos**) so you can attach more and type a caption; **Send** sends them together as one message, and **Options → Remove attachments** clears them. Voice recordings send right away on their own. A message can carry up to 32 attachments and 25 MB in total, and each file is sent with its name. Photos are sent at Signal's Standard quality, up to 1600 pixels on the longest side, and without the location, camera, and time details the camera saved in them; GIFs are sent as they are.
+**Options → Attach** opens the KaiOS picker (camera, gallery, recorder, or any file). Photos, videos, and files wait above the message box (for example **2 photos**) so you can attach more and type a caption; **Send** sends them together as one message, and **Options → Remove attachments** clears them. Leaving the chat with attachments waiting asks first, since they aren't kept. Voice recordings send right away on their own. A message can carry up to 32 attachments and 25 MB in total, and each file is sent with its name. Photos are sent at Signal's Standard quality, up to 1600 pixels on the longest side, and without the location, camera, and time details the camera saved in them; GIFs are sent as they are.
 
-**Options → Record voice message** starts recording at once. The first time, KaiOS asks whether Beacon may use the microphone. The sheet shows the time and how loud you are; **Stop** ends the recording, then **Send** sends it on its own (your draft stays in the message box) and **Cancel** throws it away. Recordings stop by themselves at 15 minutes. Beacon sends them as MP3 with a waveform, so they play on every Signal app, and a long one takes a few seconds to prepare.
+**Options → Record voice message** starts recording at once. The first time, KaiOS asks whether Beacon may use the microphone. The sheet shows the time and how loud you are; **Stop** ends the recording, then **Send** sends it on its own (your draft stays in the message box) and **Cancel** or Back throws it away after asking. Recordings stop by themselves at 15 minutes. Beacon sends them as MP3 with a waveform, so they play on every Signal app, and a long one takes a few seconds to prepare.
 
 - Voice messages show their waveform and length in the chat.
 - A message with several attachments has **View attachments** first in its options, which lists them to open one.
@@ -111,7 +111,7 @@ A group opens as a request when you're invited to it, whoever invited you, or wh
 - Signal's servers keep attachments for a limited time. When one is gone, Beacon shows **Asking your phone…** and asks your main phone to upload it again, as Signal Desktop does; this needs a recent Signal on the phone. If the phone doesn't have it either, it says **No longer available**. View-once media is never asked for.
 - Voice messages, audio, and video play in the viewer: OK plays or pauses. Video depends on the phone's codecs; H.264 MP4 is the safe choice.
 - **Save to phone** puts the file in the gallery, music, videos, or files.
-- View-once media can be viewed once, then it's gone, including when you open it on another device. To send your own, pick a photo or video with **Options → Attach**, then choose **Send as view-once**; it goes right away, without a caption. **Attach** instead adds it above the message box as usual.
+- View-once media can be viewed once, then it's gone, including when you open it on another device. It counts as viewed once it's on screen, so leaving while it downloads lets you open it later. To send your own, pick a photo or video with **Options → Attach**, then choose **Send as view-once**; it goes right away, without a caption. **Attach** instead adds it above the message box as usual.
 - Opening a voice message, video, or view-once media tells the sender you viewed it when read receipts are on.
 - **Chat settings → Media** lists a chat's photos, videos, voice messages, and files, newest first, with a thumbnail for photos already on the phone. OK opens one in the viewer. View-once media isn't listed.
 
@@ -119,7 +119,7 @@ A group opens as a request when you're invited to it, whoever invited you, or wh
 
 Beacon makes and answers one-to-one Signal voice calls, end-to-end encrypted as in Signal. To call someone, open your chat with them and choose **Options → Voice call**. The screen shows **Calling…**, then **Ringing…** while their phone rings, and the call's length once they answer. The first time, KaiOS asks whether Beacon may use the microphone. Someone who hasn't accepted your message request can't take your call yet, and Beacon says so.
 
-When someone calls, Beacon rings and vibrates and shows **Incoming voice call** over whatever is open, with a notification when it's in the background. **Answer** with OK or the Call key, and **Decline** with the left softkey or the End key. In a muted chat the call shows without ringing unless **Notify for calls** is on, and the same goes while a notification profile that doesn't allow the caller or calls is on. As in Signal, someone who isn't in your contacts and whose message request you haven't accepted doesn't ring; their call shows as missed.
+When someone calls, Beacon rings and vibrates and shows **Incoming voice call** over whatever is open, with a notification when it's in the background. **Answer** with OK or the Call key, and **Decline** with the left softkey or the End key. **Back** silences the ringing and vibration and leaves the call on screen, so you can still answer it. In a muted chat the call shows without ringing unless **Notify for calls** is on, and the same goes while a notification profile that doesn't allow the caller or calls is on. As in Signal, someone who isn't in your contacts and whose message request you haven't accepted doesn't ring; their call shows as missed.
 
 During a call:
 
@@ -135,16 +135,17 @@ Calls start on the earpiece. **Back** doesn't leave the call screen, so the call
 - Every call leaves a line in the chat: **Outgoing voice call · 1:05**, **Incoming voice call**, **Missed voice call**, **Declined voice call**, or **Unanswered voice call**. A missed call counts as unread and raises a notification.
 - Beacon is one of your linked devices, so your phone and your other devices ring too. Answering or declining on one stops the others ringing, and Beacon says **Answered on another device** or **Declined on another device**.
 - Your call history is shared with your phone and other devices: calls made here show there, missed calls you've seen there stop counting as unread here, and clearing or deleting calls there removes their lines here.
-- With **Screen lock** on, a call still shows and can be answered without the PIN, and Beacon is locked again when the call ends.
+- With **Screen lock** on, a call still shows and can be answered without the PIN, and Beacon locks again as soon as the call ends.
 - Calls always go through Signal's relay servers, like Signal's **Always relay calls** setting, so the other person doesn't see your IP address.
+- A call doesn't move between networks: if the phone switches between Wi-Fi and mobile data during a call, the call ends and you need to call again.
 
 ## Starting a chat and searching
 
 ## Starting a chat and searching
 
-**New chat** lists your contacts and groups and filters them as you type a name. Type a username to get **Find by username**, or a number to get **Find by phone number**. **Scan** (right softkey) reads someone's Signal QR code (their username code or a phone number), a group's QR code, or a proxy's.
+**New chat** lists your contacts and groups and filters them as you type a name. Type a username to get **Find by username**, or a number to get **Find by phone number**. Start an international number with `+` or `00`; a number without either is read as one in your own country, with its leading 0 dropped (except in Italy), and the row shows the full number it will look up. **Scan** (right softkey) reads someone's Signal QR code (their username code or a phone number), a group's QR code, or a proxy's.
 
-**Find by phone number** opens the chat right away for someone in your contacts. Any other number is looked up with Signal, privately: the lookup runs inside Signal's secure enclave, which the phone checks before sending the number. When the number isn't on Signal, or its owner chose not to be found by number, Beacon says **Not found on Signal**; try their username. Signal limits how many numbers an account can look up, so after many lookups Beacon says how many minutes to wait.
+**Find by phone number** opens the chat right away for someone in your contacts. Any other number is looked up with Signal, privately: the lookup runs inside Signal's secure enclave, which the phone checks before sending the number. When the number isn't on Signal, or its owner chose not to be found by number, Beacon says **Not found on Signal** with the number it looked up; try their username. Signal limits how many numbers an account can look up, so after many lookups Beacon says how many minutes to wait.
 
 **Username links**: **Open link** on a `signal.me` link in a chat, or scanning someone's username QR code, opens a chat with them. When its owner has reset the link, Beacon says **Link no longer works**; ask them for a new one or their username.
 
@@ -173,7 +174,7 @@ Calls start on the earpiece. **Back** doesn't leave the call screen, so the call
 | **Help** | Short guides by topic, Source code, and the version |
 | **Debug** | Technical details for troubleshooting (see below) |
 
-**Linked device → Unlink this phone** removes Beacon from **Linked devices** on your main phone and deletes this phone's messages and keys. If you saved another account, Beacon switches to it. Without a connection to Signal it asks first, and then only unlinks here; remove the entry from **Linked devices** yourself afterwards. When your main phone unlinks Beacon, Beacon deletes its keys, keeps your messages, and shows the Link screen.
+**Linked device → Unlink this phone** removes Beacon from **Linked devices** on your main phone and deletes this phone's messages and keys. If you saved another account, Beacon switches to it. Without a connection to Signal it asks first, and then only unlinks here; remove the entry from **Linked devices** yourself afterwards. When your main phone unlinks Beacon, Beacon deletes its keys, keeps your messages, and shows the Link screen. Signal also removes a linked device that hasn't been opened for about 30 days, so open Beacon at least once a month; after that, it shows the Link screen in the same way.
 
 Each saved account keeps its own profile, username, privacy and notification settings, and chat folders, so switching accounts shows that account's choices straight away. Theme, text size, chat color, notification display and sound, screen lock, and the proxy belong to the phone and stay the same for every account. **Delete all data** removes every account's messages and settings; if part of it can't be deleted, Beacon says so and keeps your settings, so you can try again.
 
@@ -199,7 +200,7 @@ Each account has its own history on the phone, and switching accounts restarts B
 
 If you change your number on your main phone, Beacon follows: it shows **Your number changed to …**, keeps your chats and history, and stays linked. Messages sent to your new number arrive as usual.
 
-**Debug** shows the details a bug report needs: app and library versions, account and device IDs, how many one-time keys the server holds, the connection state, when the last message arrived, storage use, and how many sticker packs and chat folders your account has. It can refresh keys, ask your main phone to sync, reconnect, show the log, and **Share debug log**. The shared log has phone numbers, account IDs, and keys removed.
+**Debug** shows the details a bug report needs: app and library versions, account and device IDs, how many one-time keys the server holds, the connection state, when the last message arrived, storage use, and how many sticker packs and chat folders your account has. It can refresh keys, ask your main phone to sync, reconnect, show the log, and **Share debug log**. The shared log has phone numbers, account IDs, and long tokens shortened.
 ## Notifications
 
 With Beacon in the background, new messages raise a notification unless the chat is muted; group notifications start with the sender's name. Selecting one opens the chat. **Settings → Notifications** has:
@@ -216,7 +217,7 @@ Keep Beacon open in the background to get notifications. Nothing is lost when it
 
 ## What lives on the phone
 
-Message history exists only on the phone. It starts with the history your main phone sent when you linked, if you chose **Transfer message history** there ([Setup](setup.md#message-history)), or else from when you linked. Each chat keeps about its **500 most recent messages**, and viewed media is kept in a small cache. **Settings → Linked device → Delete all data** removes everything.
+Message history exists only on the phone. It starts with the history your main phone sent when you linked, if you chose **Transfer message history** there ([Setup](setup.md#message-history)), or else from when you linked. Each chat keeps about its **500 most recent messages**, and viewed media is kept in a small cache of up to 150 files and 50 MB. **Settings → Linked device → Delete all data** removes everything.
 
 The transferred history also brings your chat colors: the default color and each chat's own, when they're one of Signal's preset colors. A chat with a custom color you made on your phone uses the default here.
 

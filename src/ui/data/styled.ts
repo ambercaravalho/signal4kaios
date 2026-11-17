@@ -19,10 +19,17 @@ const MARKERS: Array<{ o: string; s: TextStyle }> = [
   { o: '`', s: 'MONOSPACE' },
 ];
 
+const ESCAPABLE = '*~`|';
+
+/** A backslash escapes only a formatting marker, so paths and other backslashes are kept as typed. */
+function isEscape(text: string, i: number): boolean {
+  return text.charAt(i) === '\\' && i + 1 < text.length && ESCAPABLE.indexOf(text.charAt(i + 1)) >= 0;
+}
+
 function findClose(text: string, close: string, from: number): number {
   let i = from;
   while (i <= text.length - close.length) {
-    if (text.charAt(i) === '\\') {
+    if (isEscape(text, i)) {
       i += 2;
       continue;
     }
@@ -33,7 +40,7 @@ function findClose(text: string, close: string, from: number): number {
 }
 
 function stripEscapes(s: string): string {
-  return s.replace(/\\(.)/g, '$1');
+  return s.replace(/\\([*~`|])/g, '$1');
 }
 
 /** Turn typed markers (`**bold**`, `*italic*`, `~strike~`, `` `mono` ``, `||spoiler||`) into a plain body plus style ranges. Unmatched markers stay as text. */
@@ -44,7 +51,7 @@ export function parseStyledMarkdown(text: string): { body: string; styles: Style
   let i = 0;
   while (i < text.length) {
     const ch = text.charAt(i);
-    if (ch === '\\' && i + 1 < text.length) {
+    if (isEscape(text, i)) {
       out += text.charAt(i + 1);
       i += 2;
       continue;

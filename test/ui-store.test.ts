@@ -3,7 +3,7 @@ import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { forgetUnlinkedDevice, setReadReceipts, setTypingIndicators, signal, updateProfile } from '../src/ui/data/api';
-import { cachedAttachment, ViewedOnceError } from '../src/ui/data/attachments';
+import { autoDownloads, cachedAttachment, loadAttachment, ViewedOnceError } from '../src/ui/data/attachments';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
@@ -95,6 +95,17 @@ describe('store', () => {
     assert.equal(rec.edited, true);
   });
 
+  it('edits a message from its latest text once another device has edited it', async () => {
+    (signal as any).send = async () => ({ timestamp: 1900 });
+    const sent = await store.sendText(ALICE, 'meet at **6**');
+    assert.equal(sent.raw, 'meet at **6**');
+    store.ingestRaw({ envelope: { sourceNumber: ME, timestamp: 1910, syncMessage: { sentMessage: { destinationNumber: ALICE, timestamp: 1910, editMessage: { targetSentTimestamp: 1900, dataMessage: { timestamp: 1910, message: 'meet at 7' } } } } } });
+    await settle();
+    const rec = (await db.getMessage(ALICE + '|1900|' + ME))!;
+    assert.equal(rec.body, 'meet at 7');
+    assert.equal(rec.raw, undefined);
+  });
+
   it('forwards text with its formatting and an attachment without its mentions', async () => {
     const sent: any[] = [];
     (signal as any).send = async (payload: any) => {
@@ -103,13 +114,19 @@ describe('store', () => {
     };
     const src = (await db.getMessage(ALICE + '|1500|' + ALICE))!;
     const fwd = { ...src, body: 'hi @Bob', styles: [{ start: 0, length: 2, style: 'BOLD' }], mentions: [{ name: 'Bob', uuid: 'aci-bob' }], attachments: [{ id: 'x', contentType: 'image/png', filename: 'a.png', size: 3 }] };
-    const rec = await store.forwardMessage(ALICE, fwd, 'data:image/png;base64,AAAA');
+    const rec = await store.forwardMessage(ALICE, fwd, ['data:image/png;base64,AAAA']);
     assert.equal(sent[0].message, 'hi @Bob');
     assert.deepEqual(sent[0].styles, [{ start: 0, length: 2, style: 'BOLD' }]);
     assert.equal(sent[0].mentions, undefined);
     assert.deepEqual(sent[0].base64_attachments, ['data:image/png;base64,AAAA']);
     assert.equal(rec.attachments[0].id, '');
     assert.equal(rec.incoming, false);
+
+    const album = { ...src, body: '', attachments: [{ id: 'x', contentType: 'image/png', filename: 'a.png', size: 3, width: 4, height: 4 }, { id: 'y', contentType: 'image/jpeg', filename: 'b.jpg', size: 3 }] };
+    const both = await store.forwardMessage(ALICE, album, ['data:image/png;base64,AAAA', 'data:image/jpeg;base64,BBBB']);
+    assert.deepEqual(sent[1].base64_attachments, ['data:image/png;base64,AAAA', 'data:image/jpeg;base64,BBBB']);
+    assert.deepEqual(sent[1].attachment_meta, [{ width: 4, height: 4 }, null]);
+    assert.deepEqual(both.attachments.map((a) => a.filename), ['a.png', 'b.jpg']);
   });
 
   it('sends with formatting and the chat timer, then tracks receipts', async () => {
@@ -137,6 +154,23 @@ describe('store', () => {
     store.ingestRaw({ envelope: { sourceNumber: ALICE, receiptMessage: { isDelivery: true, timestamps: [5000] } } });
     await settle();
     assert.equal((await db.getMessage(ALICE + '|5000|' + ME))!.status, 'read');
+  });
+
+  it('keeps a receipt that arrives before a re-timed send returns, and keeps the message while it moves', async () => {
+    let finish: (v: unknown) => void = () => {};
+    (signal as any).send = () => new Promise((r) => (finish = r));
+    const sending = store.sendText(ALICE, 'retimed');
+    await settle();
+    const pending = (await db.getMessagesPage(ALICE, Infinity, 50)).find((m) => m.body === 'retimed')!;
+    assert.equal(pending.status, 'pending');
+    store.ingestRaw({ envelope: { sourceNumber: ALICE, receiptMessage: { isDelivery: true, timestamps: [5300] } } });
+    await settle();
+    finish({ timestamp: 5300 });
+    const rec = await sending;
+    await settle();
+    assert.equal(rec.status, 'delivered');
+    assert.equal((await db.getMessage(ALICE + '|5300|' + ME))!.status, 'delivered');
+    assert.equal(await db.getMessage(pending.id), undefined);
   });
 
   it('starts the default timer on the first message to a new chat and keeps private delivery', async () => {
@@ -430,6 +464,21 @@ describe('store', () => {
     } finally {
       (db as any).putAttachment = putAttachment;
     }
+  });
+
+  it('marks view-once media as viewed when it’s shown, not when it downloads', async () => {
+    (signal as any).downloadAttachmentBlob = async () => new Blob(['secret']);
+    (signal as any).sendViewed = async () => {};
+    store.ingestRaw(incoming(9150, '', { attachments: [{ id: 'att-once-late', contentType: 'image/jpeg' }], viewOnce: true }));
+    await settle();
+    const rec = (await db.getMessage(ALICE + '|9150|' + ALICE))!;
+    assert.equal((await loadAttachment(rec.attachments[0])).size, 6);
+    await settle();
+    assert.equal(await db.getAttachment('att-once-late'), undefined, 'leaving before it shows leaves it to open later');
+    assert.equal((await loadAttachment(rec.attachments[0])).size, 6);
+    store.markViewed(rec);
+    await settle();
+    await assert.rejects(loadAttachment(rec.attachments[0]), (e: unknown) => e instanceof ViewedOnceError);
   });
 
   it('lists a chat’s media newest first without view-once or unsaved sends', async () => {
@@ -1184,6 +1233,30 @@ describe('store', () => {
     let kept = 0;
     for (let i = 0; i < 4; i++) if (await db.getAttachment('att-fill-' + i)) kept++;
     assert.ok(kept <= 2);
+  });
+
+  it('keeps the attachment cache within its byte budget, dropping unsent files last', async () => {
+    const big = (n: number) => new Blob([new Uint8Array(n)]);
+    await db.putAttachment('outbox:m1:0', big(400), 'image/jpeg');
+    for (let i = 0; i < 4; i++) {
+      await new Promise((r) => setTimeout(r, 2));
+      await db.putAttachment('att-big-' + i, big(300), 'image/jpeg');
+    }
+    await db.putAttachment('avatar:alice', big(500), 'image/jpeg');
+    await db.pruneAttachments(150, 1000);
+    assert.ok(await db.getAttachment('outbox:m1:0'), 'the bytes Retry needs stay');
+    assert.ok(await db.getAttachment('avatar:alice'), 'avatars are kept');
+    assert.ok(await db.getAttachment('att-big-3'), 'the newest file stays');
+    assert.ok(await db.getAttachment('att-big-2'));
+    assert.equal(await db.getAttachment('att-big-1'), undefined);
+    assert.equal(await db.getAttachment('att-big-0'), undefined);
+  });
+
+  it('downloads only photos whose size is known and small on their own', () => {
+    assert.ok(autoDownloads({ id: 'a', contentType: 'image/jpeg', size: 1000 } as any));
+    assert.ok(!autoDownloads({ id: 'a', contentType: 'image/jpeg', size: 0 } as any));
+    assert.ok(!autoDownloads({ id: 'a', contentType: 'image/jpeg' } as any));
+    assert.ok(!autoDownloads({ id: 'a', contentType: 'image/jpeg', size: 5_000_000 } as any));
   });
 
   it('deletes the keys but keeps the messages when Signal unlinks this phone', async () => {

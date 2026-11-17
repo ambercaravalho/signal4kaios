@@ -28,7 +28,7 @@ export async function openPhone(number: string, replace = false): Promise<void> 
   try {
     const res = await signal.lookupNumber(number);
     if (res && res.uuid) openChat(store.conversationWith({ uuid: res.uuid, number: res.number }).id, replace);
-    else alertDialog(S.phoneNotFound, S.phoneNotFoundBody);
+    else alertDialog(S.phoneNotFound, fmt(S.phoneNotFoundBody, { number }));
   } catch (e) {
     const wait = e && (e as { retryAfterSeconds?: number }).retryAfterSeconds;
     toast(typeof wait === 'number' ? fmt(S.phoneLookupLimited, { n: Math.max(1, Math.ceil(wait / 60)) }) : friendlyError(e));

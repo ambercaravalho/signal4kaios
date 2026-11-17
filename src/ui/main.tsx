@@ -4,7 +4,7 @@ import { applyTheme } from './app/theme';
 import { SoftkeyBar } from './components/Screen';
 import { toast, ToastHost } from './components/Toast';
 import { forgetUnlinkedDevice, signal } from './data/api';
-import { inCall } from './data/calls';
+import { callView } from './data/calls';
 import { config } from './data/config';
 import { db, PRUNE_KEEP } from './data/db';
 import { installEngineHost, onNumberChange } from './data/engine-host';
@@ -31,8 +31,8 @@ const PENDING_CONV_KEY = '/__s4k_pending_conv';
 const PENDING_MAX_AGE_MS = 60000;
 
 function openConversation(convId: string | null | undefined): void {
-  // A chat opened over the call screen would hide the call with no way back to it.
-  if (inCall()) return;
+  // A chat opened over the call screen would hide the call with no way back to it, and while an ended call is still on screen the lock isn't checked yet.
+  if (callView()) return;
   if (!convId || store.openConversationId() === convId || !store.conversation(convId)) return;
   openChat(convId);
 }

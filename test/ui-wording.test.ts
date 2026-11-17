@@ -70,6 +70,24 @@ describe('friendlyError', () => {
     assert.equal(friendlyError({ kind: 'http', status: 404 }), S.errNotFound);
   });
 
+  it('blames the phone’s clock when Signal’s certificate looks expired or not yet valid', () => {
+    const tls = (detail: string) => ({ kind: 'tls', message: 'secure connection failed: invalid peer certificate: ' + detail });
+    assert.equal(friendlyError(tls('certificate expired: verification time 1 (UNIX), but certificate is not valid after 0 (1 seconds ago)')), S.errClock);
+    assert.equal(friendlyError(tls('certificate not valid yet: verification time 0 (UNIX), but certificate is not valid before 1 (1 seconds in future)')), S.errClock);
+    assert.equal(friendlyError(tls('NotValidYet')), S.errClock);
+    assert.equal(friendlyError({ kind: 'clock', message: 'clock' }), S.errClock);
+    assert.equal(friendlyError(tls('UnknownIssuer')), S.errOffline);
+    assert.equal(friendlyError(tls('certificate revocation list expired: verification time 1')), S.errOffline);
+  });
+
+  it('tells a taken username from an invalid one and from too many tries', () => {
+    const err = (name: string) => Object.assign(new Error('x'), { name, code: name });
+    assert.equal(friendlyError(err('UsernameUnavailable')), S.usernameTaken);
+    assert.equal(friendlyError(err('UsernameReservationLost')), S.usernameTaken);
+    assert.equal(friendlyError(err('UsernameInvalid')), S.usernameInvalid);
+    assert.equal(friendlyError(err('UsernameRateLimited')), S.errRateLimited);
+  });
+
   it('never echoes the raw message', () => {
     const raw = 'libsignal: invalid PreKey bundle for ACI abc';
     assert.equal(friendlyError(new Error(raw)), S.errGeneric);

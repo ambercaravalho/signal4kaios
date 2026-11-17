@@ -86,9 +86,12 @@ export function LinkScreen(props: { mode: 'first' | 'add' | 'relink' }) {
         if (live) setState('failed');
         if (switched) {
           switched = false;
-          db.useAccount(null).then(() => {
-            if (config.isConfigured()) ws.connect();
-          });
+          db.clearSignalState()
+            .catch(() => {})
+            .then(() => db.useAccount(null))
+            .then(() => {
+              if (config.isConfigured()) ws.connect();
+            });
         }
       },
     });

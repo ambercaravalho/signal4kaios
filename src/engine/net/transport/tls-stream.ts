@@ -14,6 +14,11 @@ export interface TlsSession {
   free(): void;
 }
 
+/** Whether a TLS failure is rustls rejecting a certificate as expired or not yet valid, which on a phone almost always means its clock is wrong. */
+export function isClockError(message: string): boolean {
+  return /certificate (?:expired|not valid yet)|peer certificate: (?:Expired|NotValidYet)\b/i.test(message);
+}
+
 function tlsError(e: unknown): TransportError {
   const err = e as Error;
   if (err && err.name === 'TlsHostNotAllowed') return new TransportError('tls', err.message);

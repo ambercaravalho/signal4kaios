@@ -95,6 +95,14 @@ export class StreamFramer {
   }
 }
 
+const REFRESH_RETRY_MS = 10000;
+
+/** How often to refresh an allocation: halfway through its lifetime, and at least a minute before it ends, as RFC 8656 advises. */
+export function refreshEveryMs(lifetimeSeconds: number): number {
+  const lifetime = Math.min(lifetimeSeconds, 600);
+  return Math.max(30, Math.min(lifetime / 2, lifetime - 60)) * 1000;
+}
+
 /**
  * One TURN allocation. `onPeerData` receives each UDP datagram the relay got from a peer we gave permission to.
  */
@@ -108,6 +116,7 @@ export class TurnClient {
   private key: Uint8Array | null = null;
   private allocation: Allocation | null = null;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private permissions = new Map<string, number>();
   private channels = new Map<string, number>();
   private channelPeers = new Map<number, SocketAddress>();
@@ -145,8 +154,7 @@ export class TurnClient {
     const mapped = readXorAddress(attr(res.msg, StunAttr.XorMappedAddress), res.msg.transactionId);
     const lifetimeSeconds = readU32(attr(res.msg, StunAttr.Lifetime)) || 600;
     this.allocation = { relayed, mapped, lifetimeSeconds };
-    const every = Math.max(30, Math.min(lifetimeSeconds, 600) / 2) * 1000;
-    this.refreshTimer = setInterval(() => this.refresh().catch(() => {}), every);
+    this.refreshTimer = setInterval(() => this.refreshOrRetry(), refreshEveryMs(lifetimeSeconds));
     return this.allocation;
   }
 
@@ -194,6 +202,7 @@ export class TurnClient {
     if (this.closed) return;
     this.closed = true;
     if (this.refreshTimer) clearInterval(this.refreshTimer);
+    if (this.retryTimer) clearTimeout(this.retryTimer);
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);
       p.reject(new TurnError('relay connection closed'));
@@ -210,6 +219,17 @@ export class TurnClient {
     const cb = this.onClosed;
     this.onClosed = null;
     if (cb) cb(err);
+  }
+
+  /** A refresh that fails (a lost reply, a stale nonce) is tried once more before the allocation runs out. */
+  private refreshOrRetry(): void {
+    this.refresh().catch(() => {
+      if (this.closed || this.retryTimer) return;
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = null;
+        if (!this.closed) this.refresh().catch(() => {});
+      }, REFRESH_RETRY_MS);
+    });
   }
 
   private async refresh(): Promise<void> {

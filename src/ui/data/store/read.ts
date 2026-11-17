@@ -130,6 +130,7 @@ export function markViewed(m: Message): void {
   const att = m.attachments[0];
   if (!m.incoming || m.viewed || !tracksViews(att)) return;
   m.viewed = true;
+  if (att.viewOnce && att.id) db.putAttachment(att.id, new Blob([]), '').catch(() => {});
   enqueueMutation(async () => {
     const rec = await db.getMessage(m.id);
     if (!rec || rec.viewed) return;

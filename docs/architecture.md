@@ -376,14 +376,14 @@ Each account has its own IndexedDB database ([`src/ui/data/db.ts`](../src/ui/dat
 | --- | --- |
 | `messages`, `conversations`, `contacts` | Chat history and the conversation list |
 | `kv` | Synced contacts and groups, credentials caches, settings, and the downloaded history archive's chunks until the import ends |
-| `attachments` | Cached decrypted media (LRU) |
+| `attachments` | Cached decrypted media (LRU, up to 150 files and 50 MB; unsent files Retry needs go last, and avatars and view-once markers stay) |
 | `signal_keystore`, `signal_identities`, `signal_sessions`, `signal_prekeys`, `signal_sender_keys` | Serialized libsignal records and remote identity keys |
 
 Upgrading from a database older than version 4 discards the protocol state and asks you to link again. The database is named after the account's number, which isn't known until the `ProvisionMessage` arrives, so linking switches to the new account's database (`db.useAccount`) before it saves any keys.
 
 ## Security model
 
-- **Keys stay on the phone.** Identity keys and sessions live only in IndexedDB, and the device password only in the app's `localStorage`. 2.0.x also cached the login for the ServiceWorker; 2.1.0 deletes that copy on upgrade.
+- **Keys stay on the phone.** Identity keys and sessions live only in IndexedDB. The device password is kept in two places on the phone: the app's settings in `localStorage` (`s4k.config`), and the engine's account record in IndexedDB. 2.0.x also cached the login for the ServiceWorker; 2.1.0 deletes that copy on upgrade.
 - **Untrusted input.** WebSocket frames, protobufs, and HTTP responses are all parsed defensively; a bad frame is logged and dropped.
 - **Sync messages** are accepted only from our own ACI. Recipients must be ACIs.
 - **Identity changes.** A contact's first identity key is trusted on first use. If it later changes, the contact drops to untrusted, and if you had verified them, sending stops until you review the new safety number. Every change adds a safety number notice to the contact's chat, whether Beacon learned the key from a message, a PreKey bundle when sending, a profile, or a sync message; a decrypt reports it through `identityChanged`, and the other paths through `onIdentityKeyChanged`, which [`bridge/incoming.ts`](../src/engine/bridge/incoming.ts) turns into a notice frame.
