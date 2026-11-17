@@ -2,6 +2,41 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.10.8
+
+The last fixes from the pre-launch review: accounts and security, voice messages, groups, calls, and many smaller rough edges. Install over v2.10.7; your chats and settings carry over.
+
+### Fixed
+
+- **Relinking after a number change** now opens your existing history, instead of starting an empty one under the new number.
+- **Link previews** are no longer fetched for addresses on your own network, like a router's page.
+- **Screen lock.** Changing the phone's clock no longer skips the wait after wrong PINs. **Forgot PIN** now asks once more before it deletes everything.
+- **Shared debug logs** also shorten usernames and other phone number formats.
+- **Signing in to Signal** never puts your device password in a web address; without Beacon's secure connection, it doesn't connect.
+- **Long voice messages** are encoded while you record, so even a 15-minute one is ready as soon as you stop and no longer runs the phone out of memory.
+- **Audio files you pick** are no longer sent as voice messages; only recordings are. **Mentions** in a photo's caption now reach the people you mention, and files you save get Signal's names, like `signal-2026-11-16-093000.jpg`.
+- **Asking your main phone for an attachment** waits up to 30 seconds, so a phone that's asleep has time to answer.
+- **Disappearing message timers** follow Signal's timer versions, so an older change from another device no longer overrides a newer one.
+- **Group messages that didn't reach everyone** say **Sent to some members**, and **Message details** says how many members missed it.
+- **Group errors** now say what went wrong, for example **Make another member an admin before you leave** or **Only admins can change that**. When Signal wants your main phone to confirm the account, Beacon says so.
+- **Groups you left** no longer show a message box; **You're no longer in this group.** takes its place.
+- **Joining a group by its link** with an admin's approval opens the group normally once you're approved, instead of as a message request.
+- **Group members' names** now show for people you don't otherwise know, and anyone still loading shows as **Unknown** instead of a long ID.
+- **Quick reactions** are the ones you chose on your main phone, else Signal's defaults in your skin tone. **Keep muted chats archived** is now kept in step with your other devices.
+- **Read receipts** now go out for every unread message when you open a chat, not just the last 10, and never for notices like group changes.
+- **Back on a message** returns to the message box instead of leaving the chat.
+- **Answering a call** opens the microphone first, so your first words reach the caller; if the microphone can't open, the call is declined. A call that couldn't connect or dropped now says **Voice call failed**.
+- **Calls from message requests** no longer connect at all; they show as missed, as in Signal.
+- **Old call offers** are now judged by Signal's clock instead of the phone's, so a phone with the wrong time still rings for new calls.
+- **Archiving a chat unpins it**, as in Signal, and archived chats no longer count toward the 4 pinned chats.
+- **Search** reads only the newest messages it needs, so it's quicker with a long history.
+- **Softkey labels** are short enough to fit, for example **Save**, **Verify**, **From photo**, and **Earpiece**.
+- **Starting Beacon** shows its name on a blue screen instead of a blank one while it loads, and linking shows **Finishing up** only once your main phone has scanned the code.
+- **The link screen** says why you need to link again: unlinked from your main phone, unlinked here, lost keys, or your main phone asking for it.
+- **Wording.** Beacon now says "your main phone" whenever it means your Signal phone.
+- **Storage permission.** Beacon now asks only to add files to the phone, not to read them.
+- **Docs.** The user guide's settings section is reorganized, with its own Debug heading, and the guide and architecture notes describe this version's changes.
+
 ## v2.10.7
 
 Smaller fixes for calls, messages, media, your profile, linking, and the connection. Install over v2.10.6; your chats and settings carry over.
