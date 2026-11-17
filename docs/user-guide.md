@@ -250,7 +250,6 @@ These work only partly:
 | "Contact joined Signal" alerts | Not shown. Beacon looks a number up with Signal only when you start a chat with it, not your whole address book. |
 | Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |
 | Calls while Beacon is closed | They don't ring here, for the same reason. Your main phone still rings, and once Beacon opens, a call you didn't answer shows as **Missed voice call**. |
-| Photos taken sideways | Beacon re-encodes photos to remove location and camera data, and a photo taken sideways may arrive rotated. |
 | Playing long voice messages | Recording works up to 15 minutes, but playback loads the whole message at once, so a long one can take a moment to start. |
 | Link previews for local addresses | Links to your own network, like `192.168.1.1` or a `.local` name, get no preview. A public web address that leads to one still gets a preview, because Beacon can't look addresses up itself. |
 | Screen lock wait after wrong PINs | The wait only counts down while Beacon is open. |
