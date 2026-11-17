@@ -9,6 +9,8 @@ import { db } from '../src/ui/data/db';
 import * as store from '../src/ui/data/store';
 import { migrateMute, MUTED_ALWAYS } from '../src/ui/data/store/mute';
 import { state as storeState } from '../src/ui/data/store/state';
+import { outOfGroup } from '../src/ui/screens/group-perms';
+import { S } from '../src/ui/strings';
 import { settle } from './helpers';
 
 const ME = '+15550000';
@@ -219,6 +221,88 @@ describe('store', () => {
     assert.deepEqual(rec.mentions, [{ name: 'Bob', uuid: 'aci-bob' }]);
   });
 
+  it('searches the newest messages first and stops at the limit, also in a database from before the time index', async () => {
+    const old = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(db.nameFor('search-v4'), 4);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore('messages', { keyPath: 'id' }).createIndex('conv', ['convId', 'timestamp'], { unique: false });
+        for (const n of ['conversations', 'contacts', 'attachments']) req.result.createObjectStore(n, { keyPath: 'id' });
+        req.result.createObjectStore('kv', { keyPath: 'k' });
+        for (const n of ['signal_keystore']) req.result.createObjectStore(n, { keyPath: 'k' });
+        for (const n of ['signal_identities', 'signal_sessions']) req.result.createObjectStore(n, { keyPath: 'address' });
+        for (const n of ['signal_prekeys', 'signal_sender_keys']) req.result.createObjectStore(n, { keyPath: 'id' });
+        for (let i = 1; i <= 5; i++) req.transaction!.objectStore('messages').put({ id: 'm' + i, convId: 'c', timestamp: i * 1000, body: 'needle ' + i, author: ALICE, incoming: true });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    old.close();
+    await db.useAccount('search-v4');
+    try {
+      assert.deepEqual((await db.searchMessages('NEEDLE', 2)).map((m) => m.id), ['m5', 'm4']);
+      assert.deepEqual((await db.searchMessages('needle 1')).map((m) => m.id), ['m1']);
+      const upgraded = await new Promise<IDBDatabase>((resolve) => {
+        const req = indexedDB.open(db.nameFor('search-v4'));
+        req.onsuccess = () => resolve(req.result);
+      });
+      assert.ok(upgraded.transaction('messages').objectStore('messages').indexNames.contains('ts'));
+      upgraded.close();
+    } finally {
+      await db.useAccount(null);
+    }
+  });
+
+  it('knows when we’re no longer in a group, but not before its state arrives', () => {
+    const g = (members: string[], masterKey = 'mk') => ({ id: 'group.x', internal_id: 'x', masterKey, members }) as any;
+    assert.equal(outOfGroup(g(['aci-bob', 'aci-carol'])), true);
+    assert.equal(outOfGroup(g(['aci-bob', 'aci-me'])), false);
+    assert.equal(outOfGroup(g([], '')), false);
+    assert.equal(outOfGroup(g([])), false);
+    assert.equal(outOfGroup(null), false);
+  });
+
+  it('calls someone known only by their Signal ID “Unknown”', () => {
+    assert.equal(store.displayName('8a1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d'), S.unknown);
+    assert.equal(store.displayName('PNI:8a1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d'), S.unknown);
+    assert.equal(store.displayName('+15550009999'), '+15550009999');
+  });
+
+  it('remembers group members a message couldn’t reach', async () => {
+    (signal as any).send = async () => ({ timestamp: 5150, notDelivered: 2 });
+    const rec = await store.sendText(ALICE, 'to most of you');
+    assert.equal(rec.status, 'sent');
+    assert.equal(rec.notDelivered, 2);
+    assert.equal((await db.getMessage(rec.id))!.notDelivered, 2);
+    (signal as any).send = async () => ({ timestamp: 5160 });
+    assert.equal((await store.sendText(ALICE, 'to all')).notDelivered, undefined);
+  });
+
+  it('keeps mentions in a photo’s caption', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 5200 };
+    };
+    const rec = await store.sendAttachments(ALICE, [{ dataUri: 'data:image/jpeg;base64,AAAA', contentType: 'image/jpeg' }], 'for @Bob', { mentions: [{ name: 'Bob', uuid: 'aci-bob' }] });
+    assert.equal(sent[0].message, 'for \uFFFC');
+    assert.deepEqual(sent[0].mentions, [{ start: 4, length: 1, uuid: 'aci-bob' }]);
+    assert.equal(rec.body, 'for @Bob');
+    assert.deepEqual(rec.mentions, [{ name: 'Bob', uuid: 'aci-bob' }]);
+  });
+
+  it('forwards at most 32 attachments', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 5300 };
+    };
+    const many = Array.from({ length: 40 }, (_, i) => ({ id: 'p' + i, contentType: 'image/jpeg', filename: i + '.jpg', size: 3 }));
+    const src = { id: 'fwd-many', convId: ALICE, author: ALICE, timestamp: 900, body: '', attachments: many, incoming: true } as any;
+    const rec = await store.forwardMessage(ALICE, src, many.map(() => 'data:image/jpeg;base64,AAAA'));
+    assert.equal(sent[0].base64_attachments.length, store.MAX_ATTACHMENTS);
+    assert.equal(rec.attachments.length, store.MAX_ATTACHMENTS);
+  });
+
   it('sends a link preview only for a link that is in the message', async () => {
     const sent: any[] = [];
     (signal as any).send = async (payload: any) => {
@@ -277,7 +361,7 @@ describe('store', () => {
     const ts = Date.now() + 61000;
     store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: ts, dataMessage: { timestamp: ts, payment: { kind: 'notification' } } } });
     await settle();
-    assert.equal(store.conversation(ALICE)!.lastPreview, 'Alice sent you a payment. Check your phone to see it.');
+    assert.equal(store.conversation(ALICE)!.lastPreview, 'Alice sent you a payment. Check your main phone to see it.');
     store.ingestRaw({ envelope: { sourceNumber: ALICE, timestamp: ts + 1, dataMessage: { timestamp: ts + 1, reaction: { emoji: '❤️' }, storyContext: { authorUuid: 'aci-me', sentTimestamp: 5 } } } });
     await settle();
     assert.equal(store.conversation(ALICE)!.lastPreview, 'Alice reacted ❤️ to your story');
@@ -285,9 +369,9 @@ describe('store', () => {
 
     store.ingestRaw({ envelope: { sourceNumber: ME, timestamp: ts + 2, syncMessage: { sentMessage: { destinationNumber: ALICE, timestamp: ts + 2, payment: { kind: 'notification' } } } } });
     await settle();
-    assert.equal(store.conversation(ALICE)!.lastPreview, 'You sent a payment. Check your phone to see it.');
+    assert.equal(store.conversation(ALICE)!.lastPreview, 'You sent a payment. Check your main phone to see it.');
     assert.equal(store.conversation(ALICE)!.unread, unread + 2);
-    assert.equal(store.noticeText({ kind: 'payment', value: 'activationRequest' }, ALICE), 'Alice asked you to turn on payments, which you can do on your phone.');
+    assert.equal(store.noticeText({ kind: 'payment', value: 'activationRequest' }, ALICE), 'Alice asked you to turn on payments, which you can do on your main phone.');
     assert.equal(store.noticeText({ kind: 'storyReaction', text: '👍' }, ME), 'You reacted 👍 to their story');
   });
 
@@ -322,6 +406,12 @@ describe('store', () => {
       assert.equal(store.setConvPinned(c.id, true), true);
     }
     assert.equal(store.setConvPinned(ALICE, true), false);
+
+    const first = store.conversationWith({ number: '+15551000' });
+    store.setArchived(first.id, true);
+    assert.equal(store.conversation(first.id)!.pinned, false, 'archiving unpins');
+    assert.equal(store.setConvPinned(ALICE, true), true, 'the freed slot can be used');
+    store.setArchived(first.id, false);
   });
 
   it('mutes a chat until a time, publishes it, and refreshes the list when the mute runs out', async () => {
@@ -361,7 +451,7 @@ describe('store', () => {
     (signal as any).syncChatState = async (s: any) => {
       synced.push(s);
     };
-    (signal as any).sendReadReceipt = async () => {};
+    (signal as any).sendReadReceipts = async () => {};
     store.markRead(ALICE);
     synced.length = 0;
     store.setMarkedUnread(ALICE, true);
@@ -544,6 +634,35 @@ describe('store', () => {
     assert.equal(store.conversation(CAROL), undefined);
   });
 
+  it('takes a chat’s timer only from a newer timer version, and never from a group message', async () => {
+    const PEER = '+15550077';
+    const at = Date.now();
+    const dm = (n: number, extra: any) => ({ envelope: { sourceNumber: PEER, timestamp: at + n, dataMessage: { timestamp: at + n, message: 'm' + n, ...extra } } });
+    store.ingestRaw(dm(1, { expiresInSeconds: 3600, expireTimerVersion: 2 }));
+    await settle();
+    assert.equal(store.conversation(PEER)!.expireTimer, 3600);
+    store.ingestRaw(dm(2, { expiresInSeconds: 0, expireTimerVersion: 1 }));
+    store.ingestRaw(dm(3, { expiresInSeconds: 0 }));
+    await settle();
+    assert.equal(store.conversation(PEER)!.expireTimer, 3600, 'an older version or none leaves it');
+    store.ingestRaw(dm(4, { expiresInSeconds: 60, expireTimerVersion: 3 }));
+    await settle();
+    assert.equal(store.conversation(PEER)!.expireTimer, 60);
+    store.ingestRaw(dm(5, { expirationTimerUpdate: true, expiresInSeconds: 0, expireTimerVersion: 2 }));
+    await settle();
+    assert.equal(store.conversation(PEER)!.expireTimer, 60, 'an older timer update is ignored too');
+
+    await db.kvSet('syncedGroups', [{ id: 'group.VElN', internal_id: 'VElN', masterKey: '', revision: 1, name: 'Timers', members: ['aci-dave'], admins: [], pending: [], expireTimer: 86400, blocked: false, link_mode: 'disabled', invite_link: '' }]);
+    await store.refreshDirectory();
+    const inGroup = (n: number, secs: number) => ({ envelope: { sourceNumber: '+15550004', sourceUuid: 'aci-dave', timestamp: at + n, dataMessage: { timestamp: at + n, groupInfo: { groupId: 'VElN' }, message: 'g' + n, expiresInSeconds: secs } } });
+    store.ingestRaw(inGroup(6, 86400));
+    await settle();
+    const before = store.conversation('g:VElN')!.expireTimer;
+    store.ingestRaw(inGroup(7, 0));
+    await settle();
+    assert.equal(store.conversation('g:VElN')!.expireTimer, before, 'a group’s timer comes from its state');
+  });
+
   it('applies admin deletes only from people the group lists as admins', async () => {
     await db.kvSet('syncedContacts', [{ uuid: 'aci-dave', number: '+15550004', name: 'Dave' }]);
     await db.kvSet('syncedGroups', [{ id: 'group.R1JQ', internal_id: 'R1JQ', masterKey: '', revision: 1, name: 'Team', members: ['aci-admin', 'aci-dave'], admins: ['aci-admin'], pending: [], expireTimer: 0, blocked: false, link_mode: 'disabled', invite_link: '' }]);
@@ -699,8 +818,8 @@ describe('store', () => {
     const ERIN = '+15550006';
     const receipts: any[] = [];
     const responses: any[] = [];
-    (signal as any).sendReadReceipt = async (to: string, ts: number) => {
-      receipts.push([to, ts]);
+    (signal as any).sendReadReceipts = async (to: string, ts: number[]) => {
+      for (const t of ts) receipts.push([to, t]);
     };
     (signal as any).sendMessageRequestResponse = async (to: string, response: string) => {
       responses.push([to, response]);
@@ -722,8 +841,8 @@ describe('store', () => {
 
   it('doesn’t read what arrives in a chat left open while Beacon is in the background', async () => {
     const receipts: any[] = [];
-    (signal as any).sendReadReceipt = async (to: string, ts: number) => {
-      receipts.push([to, ts]);
+    (signal as any).sendReadReceipts = async (to: string, ts: number[]) => {
+      for (const t of ts) receipts.push([to, t]);
     };
     store.markRead(ALICE);
     await settle();
@@ -747,10 +866,28 @@ describe('store', () => {
     store.setOpenConv(null);
   });
 
+  it('sends one batch of read receipts for every unread message, but none for a notice', async () => {
+    const PEER = ALICE;
+    store.markRead(PEER);
+    await settle();
+    const at = Math.max(Date.now(), (store.conversation(PEER)!.lastReadTs || 0) + 1);
+    const calls: any[] = [];
+    (signal as any).sendReadReceipts = async (to: string, ts: number[]) => void calls.push([to, ts]);
+    const dm = (n: number, extra: any) => ({ envelope: { sourceNumber: PEER, timestamp: at + n, dataMessage: { timestamp: at + n, message: 'm' + n, ...extra } } });
+    for (let n = 1; n <= 12; n++) store.ingestRaw(dm(n, {}));
+    store.ingestRaw(dm(13, { expirationTimerUpdate: true, expiresInSeconds: 60, expireTimerVersion: 2 }));
+    await settle();
+    store.markRead(PEER);
+    await settle();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], PEER);
+    assert.deepEqual(calls[0][1], Array.from({ length: 12 }, (_, i) => at + i + 1));
+  });
+
   it('still syncs what we read to our other devices with read receipts off', async () => {
     const reads: any[] = [];
-    (signal as any).sendReadReceipt = async (to: string, ts: number, opts: { receipt: boolean }) => {
-      reads.push([to, ts, opts.receipt]);
+    (signal as any).sendReadReceipts = async (to: string, ts: number[], opts: { receipt: boolean }) => {
+      for (const t of ts) reads.push([to, t, opts.receipt]);
     };
     const ts = Math.max(Date.now(), (store.conversation(ALICE)!.lastReadTs || 0) + 1);
     store.ingestRaw(incoming(ts, 'read me'));
@@ -842,6 +979,7 @@ describe('store', () => {
     await settle();
     store.ingestRaw(answer(null));
     await assert.rejects(gone, (e: unknown) => e instanceof store.NoLongerAvailableError);
+    assert.equal(store.BACKFILL_WAIT_MS, 30000, 'a phone that’s asleep gets time to answer');
   });
 
   it('holds back someone we never accepted once Storage Service has said who we did', async () => {

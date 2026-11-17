@@ -61,7 +61,7 @@ export function SafetyNumberScreen(props: { target: string; name: string }) {
     } else alertDialog(S.safetyNumber, S.scanMismatch);
   }
 
-  useSoftkeys({ center: entry ? (verified ? S.clearVerified : S.markVerified) : null, right: entry ? S.options : null });
+  useSoftkeys({ center: entry ? (verified ? S.skUnverify : S.skVerify) : null, right: entry ? S.options : null });
   useArrowScroll(body);
   useKeys((e) => {
     if (!entry) return false;

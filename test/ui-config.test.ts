@@ -71,6 +71,24 @@ describe('relinking, unlinking, and deleting everything', () => {
     await db.useAccount(null);
   });
 
+  it('relinks into the old database after a number change, even once another account is active', async () => {
+    link(ANN);
+    config.changeNumber('+15550909');
+    link(BEN);
+    assert.ok(config.switchAccount('+15550909'));
+    leaveUnlinkedAccount();
+    assert.equal(config.aci(), BEN.aci);
+
+    await db.useAccount(ANN.number);
+    await db.kvSet('history', 'ann');
+    await openLinkDatabase({ aci: ANN.aci, number: '+15550909' });
+    assert.equal(db.name(), db.nameFor(ANN.number));
+    assert.equal(await db.kvGet('history'), 'ann');
+    await db.useAccount(null);
+    assert.equal(config.dbKeyFor(ANN.aci, '+15550909'), ANN.number);
+    assert.equal(config.dbKeyFor('aci-new', '+15550303'), '+15550303');
+  });
+
   it('switches to the next saved account after unlinking this one', () => {
     link(ANN);
     config.set({ profileName: 'Ann' });

@@ -6,7 +6,7 @@ import type { HostDb } from '../../engine/host';
 import { config } from './config';
 import type { Contact, Conversation, Message } from './types';
 
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const SIGNAL_STORES = ['signal_keystore', 'signal_identities', 'signal_sessions', 'signal_prekeys', 'signal_sender_keys'];
 const MAX_TS = 9007199254740991;
 /** How many messages each chat keeps; older ones are pruned. */
@@ -46,6 +46,8 @@ function open(): Promise<IDBDatabase> {
       const db = req.result;
       const has = (n: string) => db.objectStoreNames.contains(n);
       if (!has('messages')) db.createObjectStore('messages', { keyPath: 'id' }).createIndex('conv', ['convId', 'timestamp'], { unique: false });
+      const messages = req.transaction!.objectStore('messages');
+      if (!messages.indexNames.contains('ts')) messages.createIndex('ts', 'timestamp', { unique: false });
       if (!has('conversations')) db.createObjectStore('conversations', { keyPath: 'id' });
       if (!has('contacts')) db.createObjectStore('contacts', { keyPath: 'id' });
       if (!has('kv')) db.createObjectStore('kv', { keyPath: 'k' });
@@ -319,20 +321,20 @@ export const db = {
     });
   },
 
-  /** Case-insensitive substring search over message text, newest first. */
+  /** Case-insensitive substring search over message text, newest first, reading only until `limit` matches are found. */
   searchMessages(query: string, limit = 50): Promise<Message[]> {
     const q = query.toLowerCase();
     return tx<Message[]>('messages', 'readonly', (s) => {
       const out = { value: [] as Message[] };
-      s.openCursor().onsuccess = (e) => {
+      s.index('ts').openCursor(null, 'prev').onsuccess = (e) => {
         const cur = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
         if (!cur) return;
         const rec = cur.value as Message;
         if (!rec.deleted && rec.body && rec.body.toLowerCase().indexOf(q) >= 0) out.value.push(rec);
-        cur.continue();
+        if (out.value.length < limit) cur.continue();
       };
       return out;
-    }).then((rows) => rows.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit));
+    });
   },
 
   putAttachment(id: string, blob: Blob, type: string): Promise<void> {

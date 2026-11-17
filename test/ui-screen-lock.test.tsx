@@ -6,7 +6,7 @@ import { renderToString } from 'preact-render-to-string';
 import { router, RouterView } from '../src/ui/app/router';
 import { config } from '../src/ui/data/config';
 import * as screenLock from '../src/ui/data/screen-lock';
-import { LockGate } from '../src/ui/screens/Lock';
+import { forgotStep, LockGate } from '../src/ui/screens/Lock';
 import { PrivacyScreen, ScreenLockScreen } from '../src/ui/screens/Settings';
 import { S } from '../src/ui/strings';
 
@@ -72,17 +72,47 @@ describe('screen lock', () => {
 
     await screenLock.enable('4821');
     const t = 5_000_000;
-    assert.deepEqual(await screenLock.check('0000', t), { ok: false, retryAt: 0 });
-    assert.deepEqual(await screenLock.check('1111', t), { ok: false, retryAt: 0 });
-    assert.deepEqual(await screenLock.check('2222', t), { ok: false, retryAt: t + 30000 });
-    assert.equal(screenLock.retryAt(t + 1000), t + 30000);
+    assert.deepEqual(await screenLock.check('0000', t), { ok: false, waitMs: 0 });
+    assert.deepEqual(await screenLock.check('1111', t), { ok: false, waitMs: 0 });
+    assert.deepEqual(await screenLock.check('2222', t), { ok: false, waitMs: 30000 });
+    assert.equal(screenLock.waitLeft(t + 1000), 29000);
     assert.equal(config.screenLock()!.failures, 3, 'kept in settings across restarts');
-    assert.deepEqual(await screenLock.check('4821', t + 1000), { ok: false, retryAt: t + 30000 }, 'even the right PIN waits');
-    assert.deepEqual(await screenLock.check('3333', t + 30000), { ok: false, retryAt: t + 30000 + 60000 });
-    assert.deepEqual(await screenLock.check('4821', t + 90000), { ok: true, retryAt: 0 });
+    assert.deepEqual(await screenLock.check('4821', t + 1000), { ok: false, waitMs: 29000 }, 'even the right PIN waits');
+    assert.deepEqual(await screenLock.check('3333', t + 30000), { ok: false, waitMs: 60000 });
+    assert.deepEqual(await screenLock.check('4821', t + 90000), { ok: true, waitMs: 0 });
     assert.equal(config.screenLock()!.failures, 0);
-    assert.equal(screenLock.retryAt(t + 90000), 0);
+    assert.equal(screenLock.waitLeft(t + 90000), 0);
     screenLock.disable();
+  });
+
+  it('counts a wait down only while the app runs, so changing the clock can’t end it', async () => {
+    await screenLock.enable('4821');
+    const realNow = Date.now;
+    try {
+      for (const pin of ['0000', '1111', '2222']) await screenLock.check(pin, 100);
+      Date.now = () => realNow() + 24 * 60 * MIN;
+      assert.equal(screenLock.waitLeft(10100), 20000, 'a day ahead on the clock changes nothing');
+      assert.equal(config.screenLock()!.waitLeftMs, 20000, 'what’s left is saved');
+      assert.equal(screenLock.waitLeft(50), 20000, 'after a restart the saved wait carries on');
+      assert.deepEqual(await screenLock.check('4821', 5050), { ok: false, waitMs: 15000 });
+      assert.deepEqual(await screenLock.check('4821', 20050), { ok: true, waitMs: 0 });
+    } finally {
+      Date.now = realNow;
+      screenLock.disable();
+    }
+  });
+
+  it('asks once more before Forgot PIN deletes everything, with Delete on OK', () => {
+    let step: any = 'pin';
+    const press = (key: string) => (step = forgotStep(step, key));
+    assert.equal(press('SoftLeft'), 'forgot');
+    assert.equal(press('SoftRight'), 'confirm');
+    assert.equal(press('SoftRight'), 'confirm', 'a second Right does nothing');
+    assert.equal(press('Backspace'), 'pin');
+    press('SoftLeft');
+    press('SoftRight');
+    assert.equal(press('Enter'), 'wipe');
+    assert.equal(forgotStep('forgot', 'Enter'), 'forgot');
   });
 
   it('covers the app with the PIN screen while locked', async () => {

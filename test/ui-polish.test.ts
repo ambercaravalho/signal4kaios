@@ -8,6 +8,7 @@ import { GroupV2RecordSchema, OptionalBool } from '../src/engine/gen/SignalStora
 import { applyAttachmentMeta, receivedMeta } from '../src/engine/services/attachment-meta';
 import { resolveLegacyNotifyForMentionsIfMuted, setNotifyForMentionsIfMuted } from '../src/engine/services/storage';
 import { applyTheme, setTextSize, TEXT_SIZE_PX } from '../src/ui/app/theme';
+import { quickReactions } from '../src/ui/components/Emoji';
 import { signal } from '../src/ui/data/api';
 import { hashPixels, hashToPixels, placeholderSize } from '../src/ui/data/blurhash';
 import { config } from '../src/ui/data/config';
@@ -145,6 +146,21 @@ describe('mentions in muted chats', () => {
     assert.equal(conv.mentionsIfMuted, undefined);
     assert.equal(store.notifiesWhileMuted(conv, 'mentions'), true);
     assert.equal(store.notifiesWhileMuted(conv, 'replies'), true);
+  });
+});
+
+describe('quick reactions', () => {
+  it('uses the account’s choice for each slot, else Signal’s default with the thumbs in our skin tone', () => {
+    assert.deepEqual(quickReactions([], 0), ['❤️', '👍', '👎', '😂', '😮', '😢']);
+    assert.deepEqual(quickReactions([], 3), ['❤️', '👍🏽', '👎🏽', '😂', '😮', '😢']);
+    assert.deepEqual(quickReactions(['🔥', '', '🎉'], 1), ['🔥', '👍🏻', '🎉', '😂', '😮', '😢']);
+  });
+
+  it('keeps the account’s reactions and its keep-muted-chats-archived choice', () => {
+    config.set({ reactionEmoji: ['🔥', 7 as any], keepMutedArchived: false });
+    assert.deepEqual(config.reactionEmoji(), ['🔥', '']);
+    assert.equal(config.keepMutedArchived(), false);
+    config.set({ reactionEmoji: undefined, keepMutedArchived: undefined });
   });
 });
 

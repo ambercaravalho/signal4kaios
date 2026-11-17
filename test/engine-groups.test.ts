@@ -221,6 +221,14 @@ describe('Groups V2 changes (PATCH /v2/groups/)', () => {
     assert.deepEqual(removeMembersActions(snap, [DAVE])!.deleteMembersPendingAdminApproval, [{ deletedUserId: requested }]);
   });
 
+  it('reads each member’s profile key, and skips one that belongs to someone else', () => {
+    const srv = serveGroup();
+    const key = new Uint8Array(32).fill(5);
+    srv.group.members[0].profileKey = libsignal.groupEncryptProfileKey(srv.keys.secretParams, key, ALICE);
+    srv.group.members[1].profileKey = libsignal.groupEncryptProfileKey(srv.keys.secretParams, key, CAROL);
+    assert.deepEqual(decodeGroupState(srv.keys, srv.group).profileKeys, { [ALICE]: toBase64(key) });
+  });
+
   it('accepts an invite to our account or our number, and reads who invited us', () => {
     const srv = serveGroup();
     const enc = (id: string) => libsignal.groupEncryptServiceId(srv.keys.secretParams, id);

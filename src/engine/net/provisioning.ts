@@ -84,6 +84,8 @@ function provisionedMasterKey(prov: ProvisionMessage): Uint8Array | undefined {
 export interface ProvisioningCallbacks {
   onQrUrl: (sgnlUri: string) => void;
   onStatus?: (statusText: string) => void;
+  /** The main phone scanned the code and sent the link; linking itself is still to come. */
+  onScanned?: () => void;
   /** Runs after the ProvisionMessage is decrypted and before anything is written to the store, so the app can point the store at the linked account's database. */
   beforeLinking?: (account: { aci: string; number: string }) => Promise<void> | void;
   /** `ephemeralBackupKey` is set when the phone offered to send message history (link-and-sync). SECURITY-REVIEW: it decrypts that archive; keep it only until the import ends. */
@@ -292,6 +294,7 @@ export function startDeviceProvisioning(
           const pubKeyB64 = toBase64(receiver.publicKey());
           callbacks.onQrUrl(`sgnl://linkdevice?uuid=${encodeURIComponent(uuid)}&pub_key=${encodeURIComponent(pubKeyB64)}&capabilities=${LINK_CAPABILITIES}`);
         } else if (req.path === '/v1/message' && req.body.length > 0) {
+          if (callbacks.onScanned) callbacks.onScanned();
           if (callbacks.onStatus) callbacks.onStatus('Decrypting link credentials\u2026');
           const prov = fromBinary(ProvisionMessageSchema, receiver.decryptEnvelope(req.body));
           // The provisioning socket is no longer needed once the ProvisionMessage arrived.

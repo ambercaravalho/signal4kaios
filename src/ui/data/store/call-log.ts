@@ -17,7 +17,7 @@ const PAGE = 200;
 const UNREAD_PAGE = 50;
 
 /** A later event never takes a call back: an answered call stays answered whichever device says so last. */
-const OUTCOME_RANK: Record<CallOutcome, number> = { missed: 0, unanswered: 0, declined: 1, accepted: 2 };
+const OUTCOME_RANK: Record<CallOutcome, number> = { missed: 0, unanswered: 0, failed: 0, declined: 1, accepted: 2 };
 
 function callMsgId(convId: string, callId: string): string {
   return convId + '|call|' + callId;

@@ -13,7 +13,7 @@ import { ChatScreen } from './Chat';
 
 type LinkInfo = Awaited<ReturnType<typeof signal.groupLinkInfo>>;
 
-/** A group someone shared a link to: its name, size, and description, with Join, Request to join, or Cancel request. */
+/** A group someone shared a link to: its name, size, and description, with Join, Request, or Withdraw. */
 export function JoinGroupScreen(props: { url: string }) {
   const [info, setInfo] = useState<LinkInfo | null | undefined>(undefined);
   const [error, setError] = useState('');
@@ -36,7 +36,7 @@ export function JoinGroupScreen(props: { url: string }) {
 
   async function act(): Promise<void> {
     if (!info || busy) return;
-    if (info.pending && !(await confirm({ title: S.cancelRequest, body: S.cancelRequestConfirm, ok: S.cancelRequest, danger: true }))) return;
+    if (info.pending && !(await confirm({ title: S.cancelRequest, body: S.cancelRequestConfirm, ok: S.skWithdraw, danger: true }))) return;
     setBusy(true);
     try {
       if (info.pending) {
@@ -59,7 +59,7 @@ export function JoinGroupScreen(props: { url: string }) {
     }
   }
 
-  const label = !info || busy ? null : info.pending ? S.cancelRequest : info.approvalRequired ? S.requestToJoin : S.join;
+  const label = !info || busy ? null : info.pending ? S.skWithdraw : info.approvalRequired ? S.skRequest : S.join;
   useSoftkeys({ center: label });
   useKeys((e) => {
     if (e.key === 'Enter' && label) act();

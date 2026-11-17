@@ -27,7 +27,7 @@ import { DebugScreen } from '../src/ui/screens/Debug';
 import { guideRow, openGuide } from '../src/ui/screens/Guide';
 import { ArchivedScreen, HomeScreen } from '../src/ui/screens/Home';
 import { memberAvatar } from '../src/ui/screens/Members';
-import { LinkScreen, WelcomeScreen } from '../src/ui/screens/Onboarding';
+import { LinkScreen, linkStateAfter, relinkLine, WelcomeScreen } from '../src/ui/screens/Onboarding';
 import { openPhone } from '../src/ui/screens/open-link';
 import { NewChatScreen, SearchScreen } from '../src/ui/screens/SearchList';
 import { SettingsScreen } from '../src/ui/screens/Settings';
@@ -116,6 +116,23 @@ describe('screens', () => {
     const out = html();
     assert.match(out, new RegExp(S.linkTitle));
     assert.match(text(out), /unlinked/);
+  });
+
+  it('says why it asks to link again, and shows Finishing up only once the code is scanned', () => {
+    assert.equal(relinkLine('unlinked'), S.unlinked);
+    assert.equal(relinkLine('here'), S.relinkHere);
+    assert.equal(relinkLine('keys'), S.relinkKeys);
+    assert.equal(relinkLine('history'), S.historyRelink);
+    const saved = config.relinkReason();
+    config.forgetAccount('keys');
+    assert.equal(config.relinkReason(), 'keys');
+    config.set({ relinkReason: undefined, deviceToken: 'test-only', deviceId: 2 });
+    assert.equal(config.relinkReason(), saved);
+
+    assert.equal(linkStateAfter('connecting', 'qr'), 'waiting');
+    assert.equal(linkStateAfter('waiting', 'scanned'), 'finishing');
+    assert.equal(linkStateAfter('finishing', 'qr'), 'finishing');
+    assert.equal(linkStateAfter('failed', 'qr'), 'failed');
   });
 
   it('lists chats with previews and unread counts', async () => {
@@ -463,6 +480,8 @@ describe('screens', () => {
     assert.equal(backAction('Backspace', { ...at, tray: 1, draft: 'hi' }), 'pass', 'Back deletes a typed character first');
     assert.equal(backAction('SoftLeft', { ...at, tray: 1, quote: true }), 'clear');
     assert.equal(backAction('Backspace', { ...at, onComposer: false, tray: 1 }), 'unfocus');
+    assert.equal(backAction('SoftLeft', { ...at, onComposer: false }), 'unfocus', 'Back on a message returns to the composer, not out of the chat');
+    assert.equal(backAction('SoftLeft', { ...at, onComposer: false, quote: true }), 'clear');
     assert.ok(asksBeforeDiscard('recording'));
     assert.ok(asksBeforeDiscard('stopped'));
     assert.ok(!asksBeforeDiscard('starting'));

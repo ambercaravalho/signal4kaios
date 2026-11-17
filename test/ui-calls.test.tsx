@@ -5,7 +5,8 @@ import { renderToString } from 'preact-render-to-string';
 
 import type { CallState } from '../src/engine';
 import { _stackForTest, router, RouterView } from '../src/ui/app/router';
-import { _ringingForTest, _setCallStateForTest, callView, silenceRinging } from '../src/ui/data/calls';
+import { signal } from '../src/ui/data/api';
+import { _ringingForTest, _setCallStateForTest, answerCall, callView, silenceRinging } from '../src/ui/data/calls';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import { parseFrame } from '../src/ui/data/normalize';
@@ -85,6 +86,9 @@ describe('call lines', () => {
     await settle();
     assert.equal(store.noticeText((await line('102'))!.notice!, ''), 'Unanswered voice call');
     assert.equal(store.noticeText((await line('103'))!.notice!, ''), 'Declined voice call');
+    store.ingestRaw(callFrame(3300, { callId: '109', direction: 'outgoing', outcome: 'failed', durationMs: 0 }));
+    await settle();
+    assert.equal(store.noticeText((await line('109'))!.notice!, ''), 'Voice call failed');
     assert.equal(store.conversation(ALICE)!.unread, 0);
   });
 
@@ -176,6 +180,33 @@ describe('call screen', () => {
     _setCallStateForTest(state({ callId: '205' }));
     assert.ok(_ringingForTest());
     _setCallStateForTest(null);
+  });
+
+  it('opens the microphone before answering, and declines when it can’t', async () => {
+    const nav = (globalThis as any).navigator;
+    const realMedia = nav.mediaDevices;
+    const sig = signal as any;
+    const real = { accept: sig.acceptCall, decline: sig.declineCall };
+    const calls: string[] = [];
+    let refuse: (e: Error) => void = () => {};
+    Object.defineProperty(nav, 'mediaDevices', { configurable: true, value: { getUserMedia: () => new Promise((_, no) => (refuse = no)) } });
+    sig.acceptCall = () => void calls.push('accept');
+    sig.declineCall = () => void calls.push('decline');
+    try {
+      _setCallStateForTest(state({ callId: '206' }));
+      answerCall();
+      assert.deepEqual(calls, [], 'not accepted while the microphone opens');
+      assert.ok(!_ringingForTest());
+      refuse(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
+      await settle();
+      assert.deepEqual(calls, ['decline']);
+      assert.equal(callView()!.problem, 'mic');
+    } finally {
+      Object.defineProperty(nav, 'mediaDevices', { configurable: true, value: realMedia });
+      sig.acceptCall = real.accept;
+      sig.declineCall = real.decline;
+      _setCallStateForTest(null);
+    }
   });
 
   it('doesn’t ring for someone it doesn’t know', () => {

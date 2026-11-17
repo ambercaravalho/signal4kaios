@@ -561,7 +561,7 @@ const flush = async () => {
 };
 
 /** A call manager over fakes: messages it sends, chat lines it records, and call events it syncs. */
-function callHarness(opts: { identity?: boolean } = {}) {
+function callHarness(opts: { identity?: boolean; rings?: (peer: string) => boolean; relays?: any[] } = {}) {
   const clock = 10_000_000;
   const sent: Array<{ peer: string; msg: CallMessage }> = [];
   const records: CallRecord[] = [];
@@ -572,16 +572,21 @@ function callHarness(opts: { identity?: boolean } = {}) {
       sent.push({ peer, msg });
     },
     identityKeys: async () => (opts.identity === false ? null : { ours: new Uint8Array(33).fill(1), theirs: new Uint8Array(33).fill(2) }),
-    openRelay: async () => ({ relayed: { ip: '203.0.113.1', port: 4000 }, onPeerData: null, onClosed: null, permit: () => Promise.resolve(), send: () => true, close() {} }) as never,
+    openRelay: async () => {
+      const relay = { relayed: { ip: '203.0.113.1', port: 4000 }, onPeerData: null, onClosed: null as null | (() => void), permit: () => Promise.resolve(), send: () => true, close() {} };
+      if (opts.relays) opts.relays.push(relay);
+      return relay as never;
+    },
     newKeys: () => ({ publicKey: () => new Uint8Array(32).fill(3), srtp: () => ({ protectRtp: (p: Uint8Array) => p, unprotectRtp: (p: Uint8Array) => p }) }),
     newAudio: () => new CallAudio({ encode: () => new Uint8Array(40) }, new MarkDecoder()),
     record: (r) => records.push(r),
     syncEvent: (r, e) => synced.push(`${r.direction} ${e}`),
     log: () => {},
     now: () => clock,
+    rings: opts.rings,
   };
   const m = new CallManager(deps);
-  const env = (source = PEER, sourceDevice = 1, age = 0) => ({ source, sourceDevice, serverTimestamp: clock - age });
+  const env = (source = PEER, sourceDevice = 1, age = 0, deliveredAt?: number) => ({ source, sourceDevice, serverTimestamp: clock - age, deliveredAt });
   const kinds = () =>
     sent.map(({ msg }) => (msg.offer ? 'offer' : msg.answer ? 'answer' : msg.iceUpdate.length ? 'ice' : msg.busy ? 'busy' : msg.hangup ? 'hangup ' + CallMessage_Hangup_Type[msg.hangup.type] : '?'));
   return { m, sent, records, synced, env, kinds, outcomes: () => records.map((r) => r.outcome) };
@@ -691,6 +696,40 @@ test('calling: a call that rings out, fails before it is answered, or is ignored
     assert.ok(!x.sent.some((m) => m.msg.hangup));
     assert.deepEqual(x.outcomes(), ['missed']);
   }
+});
+
+test('calling: a call from a message request is missed without opening a relay or answering', async () => {
+  const relays: any[] = [];
+  const h = callHarness({ rings: (peer) => peer !== PEER, relays });
+  assert.equal(await h.m.handle(h.env(), offerMsg(9n)), true);
+  await flush();
+  assert.equal(h.m.state, null);
+  assert.deepEqual(relays, []);
+  assert.deepEqual(h.sent, []);
+  assert.deepEqual(h.outcomes(), ['missed']);
+});
+
+test('calling: an offer’s age comes from the server’s delivery time, not the phone’s clock', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const late = callHarness();
+  await late.m.handle(late.env(PEER, 1, 0, 10_000_000 + MAX_OFFER_AGE_MS + 1), offerMsg(9n));
+  assert.equal(late.m.state, null, 'delivered too late, even though the phone’s clock says it’s new');
+  assert.deepEqual(late.outcomes(), ['missed']);
+
+  const ahead = callHarness();
+  await ahead.m.handle(ahead.env(PEER, 1, MAX_OFFER_AGE_MS + 5_000, 10_000_000 - MAX_OFFER_AGE_MS), offerMsg(10n));
+  await flush();
+  assert.equal(ahead.m.state!.phase, 'incoming', 'rings when the phone’s clock is ahead');
+});
+
+test('calling: a placed call whose relay drops says it failed, not that nobody answered', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const relays: any[] = [];
+  const h = callHarness({ relays });
+  await h.m.startCall(PEER);
+  relays[0].onClosed();
+  assert.equal(h.m.state!.endReason, 'failed');
+  assert.deepEqual(h.outcomes(), ['failed']);
 });
 
 test('calling: an outgoing call offers, syncs that it was placed, and hangs up when nobody answers', async (t) => {

@@ -26,6 +26,7 @@ import type { Conversation, Message } from '../data/types';
 import { friendlyError, sendError } from '../errors';
 import { fmt, S } from '../strings';
 import { ChatSettingsScreen } from './ChatSettings';
+import { outOfGroup } from './group-perms';
 
 export { Bubble } from '../components/chat/Bubble';
 export { NoticeLine } from '../components/chat/NoticeLine';
@@ -78,8 +79,9 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
   const contact = conv && conv.type === 'direct' ? store.contactByKey(conv.id) : undefined;
   const blocked = !!(contact && contact.blocked) || !!(group && group.blocked);
   const request = !blocked && !!(conv && conv.request);
-  const readOnly = !blocked && !request && !canSendIn(group);
-  const canCompose = !blocked && !request && !readOnly;
+  const left = !blocked && !request && outOfGroup(group);
+  const readOnly = !blocked && !request && !left && !canSendIn(group);
+  const canCompose = !blocked && !request && !left && !readOnly;
 
   const composer = useChatComposer(convId, conv, canCompose, setFocusedId);
   const { draft, quote, editing, tray, shownPreview, insertText } = composer;
@@ -291,6 +293,8 @@ export function ChatScreen(props: { convId: string; targetTs?: number }) {
             <div class="composer-request">{requestLine(conv)}</div>
             {conv && conv.type === 'group' ? S.groupRequestHint : S.requestHint}
           </div>
+        ) : left ? (
+          <div class="composer-blocked">{S.notInGroup}</div>
         ) : readOnly ? (
           <div class="composer-blocked">{S.onlyAdminsCanSend}</div>
         ) : (

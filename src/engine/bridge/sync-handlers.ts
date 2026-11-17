@@ -134,6 +134,8 @@ export async function syncFromStorageService(): Promise<boolean> {
     patch.notifyReactions = account.reactionNotifications;
     patch.notificationProfileOverride = account.notificationProfileOverride;
     patch.notificationProfiles = account.notificationProfileSyncDisabled ? [] : res.notificationProfiles;
+    patch.reactionEmoji = account.preferredReactionEmoji;
+    patch.keepMutedArchived = account.keepMutedChatsArchived;
     host().config.set(patch);
     const acc = await store.getAccount();
     if (acc && account.changed) chatState.push({ uuid: acc.aci, number: acc.number || '', archived: !!account.noteToSelfArchived, markedUnread: !!account.noteToSelfMarkedUnread });

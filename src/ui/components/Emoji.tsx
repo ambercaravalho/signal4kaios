@@ -2,13 +2,15 @@ import groups from 'unicode-emoji-json/data-by-group.json';
 import { useMemo, useState } from 'preact/hooks';
 import { useFocusScroll, useListNav } from '../app/focus';
 import { router, useKeys, useSoftkeys } from '../app/router';
+import { config } from '../data/config';
 import { SKIN_TONES, withSkinTone } from '../data/styled';
 import { S } from '../strings';
 import { pick, showOptions } from './Overlays';
 import { Screen } from './Screen';
 
-/** Signal's default reactions. */
-const QUICK_REACTIONS = ['❤️', '👍', '👎', '😂', '😮', '😢'];
+/** Signal's default reactions; only the thumbs take a skin tone. */
+const DEFAULT_REACTIONS = ['❤️', '👍', '👎', '😂', '😮', '😢'];
+const TONED_DEFAULTS = ['👍', '👎'];
 
 const COLS = 6;
 /** The newest emoji release the KaiOS 3.x system emoji font can draw; matches `MAX_EMOJI_VERSION` in scripts/build.mjs. */
@@ -56,6 +58,12 @@ function skinTone(): number {
 
 /** scripts/build.mjs slims entries to plain strings and drops versions it already checked. */
 type EmojiEntry = string | { emoji: string; emoji_version?: string; skin_tone_support?: boolean; skin_tone_support_unicode_version?: string };
+
+/** The reaction bar's emoji, like Signal-Desktop's `getPreferredReactionEmoji`: the account's choice for each slot, else the default in our skin tone. */
+export function quickReactions(preferred: string[], tone: number): string[] {
+  const mod = SKIN_TONES[tone] || '';
+  return DEFAULT_REACTIONS.map((d, i) => preferred[i] || (TONED_DEFAULTS.indexOf(d) >= 0 ? withSkinTone(d, mod) : d));
+}
 
 const drawable = (version: string | undefined) => version === undefined || parseFloat(version) <= MAX_EMOJI_VERSION;
 
@@ -157,8 +165,9 @@ export function pickEmoji(title: string = S.emoji): Promise<string | undefined> 
 }
 
 function ReactionBar(props: { current: string | null; resolve(e: string | null | undefined): void }) {
-  const items = QUICK_REACTIONS.concat(['…']);
-  const initial = Math.max(0, props.current ? QUICK_REACTIONS.indexOf(props.current) : 0);
+  const quick = useMemo(() => quickReactions(config.reactionEmoji(), skinTone()), []);
+  const items = quick.concat(['…']);
+  const initial = Math.max(0, props.current ? quick.indexOf(props.current) : 0);
   const finish = (e: string | null | undefined) => {
     router.pop();
     props.resolve(e);
@@ -175,7 +184,7 @@ function ReactionBar(props: { current: string | null; resolve(e: string | null |
       } else finish(e === props.current ? null : e);
     },
   });
-  useSoftkeys({ left: S.cancel, center: S.select, right: props.current ? S.removeReaction : null });
+  useSoftkeys({ left: S.cancel, center: S.select, right: props.current ? S.skRemove : null });
   useKeys((e) => {
     if (e.key === 'SoftLeft') finish(undefined);
     else if (e.key === 'SoftRight' && props.current) finish(null);

@@ -25,9 +25,9 @@ export interface ChatKeysOptions {
   chatOptions(): void;
 }
 
-/** What the left softkey or Back does in a chat: `pass` leaves it to the router (go back, or delete a typed character), and leaving with attachments waiting to be sent asks first. */
+/** What the left softkey or Back does in a chat: on a message both step back to the composer (the left softkey cancels a reply first), `pass` leaves it to the router (go back, or delete a typed character), and leaving with attachments waiting to be sent asks first. */
 export function backAction(key: 'SoftLeft' | 'Backspace', s: { onComposer: boolean; draft: string; quote: boolean; editing: boolean; tray: number }): 'pass' | 'unfocus' | 'clear' | 'askLeave' {
-  if (key === 'Backspace' && !s.onComposer) return 'unfocus';
+  if (!s.onComposer && (key === 'Backspace' || !(s.quote || s.editing))) return 'unfocus';
   if (key === 'Backspace' && s.draft) return 'pass';
   if (s.quote || s.editing) return 'clear';
   return s.tray ? 'askLeave' : 'pass';

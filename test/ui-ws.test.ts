@@ -66,6 +66,15 @@ function showNotifications(on: boolean): void {
   else delete (globalThis as any).Notification;
 }
 
+describe('the server’s time', () => {
+  it('reads X-Signal-Timestamp from a request’s headers, in any case, and nothing else', () => {
+    assert.equal(ws.signalTimestamp(['Content-Type:application/x-protobuf', 'X-Signal-Timestamp:1700000000123']), 1700000000123);
+    assert.equal(ws.signalTimestamp(['x-signal-timestamp: 1700000000123']), 1700000000123);
+    assert.equal(ws.signalTimestamp(['X-Signal-Timestamp:soon']), undefined);
+    assert.equal(ws.signalTimestamp(undefined), undefined);
+  });
+});
+
 describe('acknowledging messages', () => {
   const put = db.putMessage;
 
@@ -253,5 +262,29 @@ describe('acknowledging messages', () => {
     current().open();
     await settle();
     assert.equal(preKeyChecks, 2);
+  });
+
+  it('never puts the password in a URL: without the pinned client it doesn’t connect', () => {
+    const s = signal as any;
+    const urls: string[] = [];
+    const g = globalThis as any;
+    const realWs = g.WebSocket;
+    g.WebSocket = function (url: string) {
+      urls.push(url);
+      return new FakeSocket();
+    };
+    s.net.isPinnedUrl = () => false;
+    const before = sockets.length;
+    try {
+      ws.stop();
+      ws.connect();
+      assert.deepEqual(urls, []);
+      assert.equal(sockets.length, before);
+    } finally {
+      g.WebSocket = realWs;
+      s.net.isPinnedUrl = () => true;
+      ws.connect();
+      current().open();
+    }
   });
 });

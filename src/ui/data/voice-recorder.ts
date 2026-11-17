@@ -1,7 +1,8 @@
-/* Records a voice message. Gecko's MediaRecorder only makes Ogg Opus, which not every Signal app plays, so the recording is decoded to mono 16 kHz PCM and sent as MP3 with a waveform and length, as Signal-Desktop sends them. */
+/* Records a voice message as MP3 with a waveform and length, as Signal-Desktop sends them (Gecko's MediaRecorder only makes Ogg Opus, which not every Signal app plays). The microphone comes through the call worklet as 16 kHz mono and is encoded as it arrives, so a long recording never sits in memory as raw audio. */
 
 import { Mp3Encoder } from '@breezystack/lamejs';
 import { readDataUri } from './attachments';
+import { WORKLET_URL } from './call-audio';
 import type { OutgoingFile } from './store';
 
 const VOICE_RATE = 16000;
@@ -9,7 +10,6 @@ const MAX_VOICE_MS = 15 * 60 * 1000;
 const MP3_KBPS = 32;
 const MP3_FRAME = 1152;
 const FRAMES_PER_YIELD = 50;
-const RECORDER_SLICE_MS = 1000;
 
 const MAX_WAVEFORM_SIZE = 100;
 const HALF_SIZE = MAX_WAVEFORM_SIZE >>> 1;
@@ -66,24 +66,6 @@ export function waveformBars(waveform: number[], count: number): number[] {
   return out;
 }
 
-/** The channels averaged to one, then each output sample the mean of the input samples it covers. */
-export function toMono(channels: Float32Array[], fromRate: number, toRate: number = VOICE_RATE): Float32Array {
-  const n = channels.length ? channels[0].length : 0;
-  const mono = new Float32Array(n);
-  for (const ch of channels) for (let i = 0; i < n; i++) mono[i] += ch[i] / channels.length;
-  if (fromRate === toRate || !n) return mono;
-  const ratio = fromRate / toRate;
-  const out = new Float32Array(Math.floor(n / ratio));
-  for (let i = 0; i < out.length; i++) {
-    const a = Math.floor(i * ratio);
-    const b = Math.max(a + 1, Math.min(n, Math.floor((i + 1) * ratio)));
-    let sum = 0;
-    for (let j = a; j < b; j++) sum += mono[j];
-    out[i] = sum / (b - a);
-  }
-  return out;
-}
-
 export interface Mp3EncoderLike {
   encodeBuffer(left: Int16Array): Uint8Array | Int8Array;
   flush(): Uint8Array | Int8Array;
@@ -107,88 +89,102 @@ function concat(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
 
 const pause = () => new Promise<void>((r) => setTimeout(r, 0));
 
-/** MP3, waveform, and length for mono PCM. It yields now and then so the screen stays responsive on a slow phone. */
-export async function encodeVoice(pcm: Float32Array, rate: number = VOICE_RATE, encoder: Mp3EncoderLike = new Mp3Encoder(1, rate, MP3_KBPS), onProgress?: (fraction: number) => void, cancelled?: () => boolean): Promise<VoiceNote> {
-  const waveform = new WaveformBuilder();
-  const parts: Uint8Array[] = [];
-  const frame = new Int16Array(MP3_FRAME);
-  let frames = 0;
-  for (let at = 0; at < pcm.length; at += MP3_FRAME) {
-    const end = Math.min(pcm.length, at + MP3_FRAME);
-    const block = end - at === MP3_FRAME ? frame : new Int16Array(end - at);
-    for (let i = at; i < end; i++) {
-      const s = Math.max(-1, Math.min(1, pcm[i]));
-      waveform.push(s);
-      block[i - at] = s < 0 ? s * 0x8000 : s * 0x7fff;
-    }
-    const out = encoder.encodeBuffer(block);
-    if (out.length) parts.push(new Uint8Array(out.buffer, out.byteOffset, out.length).slice());
-    if (++frames % FRAMES_PER_YIELD === 0) {
-      if (onProgress) onProgress(end / pcm.length);
-      await pause();
-      if (cancelled && cancelled()) throw new Error('cancelled');
-    }
-  }
-  const last = encoder.flush();
-  if (last.length) parts.push(new Uint8Array(last.buffer, last.byteOffset, last.length).slice());
-  return { mp3: concat(parts), waveform: waveform.collect(), duration: pcm.length / rate };
+function bytesOf(out: Uint8Array | Int8Array): Uint8Array {
+  return new Uint8Array(out.buffer, out.byteOffset, out.length).slice();
 }
 
-export interface MediaRecorderLike {
-  readonly mimeType: string;
-  ondataavailable: ((e: { data: Blob }) => void) | null;
-  onstop: (() => void) | null;
-  onerror: ((e: unknown) => void) | null;
-  start(timeslice?: number): void;
-  stop(): void;
+/** MP3 frames and the waveform, built as mono samples arrive; only the MP3 is kept. */
+export class VoiceEncoder {
+  readonly #encoder: Mp3EncoderLike;
+  readonly #rate: number;
+  readonly #waveform = new WaveformBuilder();
+  readonly #parts: Uint8Array[] = [];
+  readonly #frame = new Int16Array(MP3_FRAME);
+  #filled = 0;
+  #samples = 0;
+  /** Frames encoded so far. */
+  frames = 0;
+
+  constructor(encoder: Mp3EncoderLike, rate: number = VOICE_RATE) {
+    this.#encoder = encoder;
+    this.#rate = rate;
+  }
+
+  get samples(): number {
+    return this.#samples;
+  }
+
+  push(pcm: Float32Array): void {
+    for (let i = 0; i < pcm.length; i++) {
+      const s = Math.max(-1, Math.min(1, pcm[i]));
+      this.#waveform.push(s);
+      this.#frame[this.#filled++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      if (this.#filled === MP3_FRAME) this.#encode(this.#frame);
+    }
+    this.#samples += pcm.length;
+  }
+
+  finish(): VoiceNote {
+    if (this.#filled) this.#encode(this.#frame.slice(0, this.#filled));
+    const last = this.#encoder.flush();
+    if (last.length) this.#parts.push(bytesOf(last));
+    return { mp3: concat(this.#parts), waveform: this.#waveform.collect(), duration: this.#samples / this.#rate };
+  }
+
+  #encode(block: Int16Array): void {
+    const out = this.#encoder.encodeBuffer(block);
+    if (out.length) this.#parts.push(bytesOf(out));
+    this.#filled = 0;
+    this.frames++;
+  }
+}
+
+/** MP3, waveform, and length for mono PCM already in memory. It yields now and then so the screen stays responsive on a slow phone. */
+export async function encodeVoice(pcm: Float32Array, rate: number = VOICE_RATE, encoder: Mp3EncoderLike = new Mp3Encoder(1, rate, MP3_KBPS), onProgress?: (fraction: number) => void, cancelled?: () => boolean): Promise<VoiceNote> {
+  const enc = new VoiceEncoder(encoder, rate);
+  const step = MP3_FRAME * FRAMES_PER_YIELD;
+  for (let at = 0; at < pcm.length; at += step) {
+    enc.push(pcm.subarray(at, Math.min(pcm.length, at + step)));
+    if (onProgress) onProgress(Math.min(1, (at + step) / pcm.length));
+    await pause();
+    if (cancelled && cancelled()) throw new Error('cancelled');
+  }
+  return enc.finish();
 }
 
 export interface RecorderDeps {
   media(): Promise<MediaStream>;
-  recorder(stream: MediaStream): MediaRecorderLike;
-  /** A live level, 0 to 255, or null where the phone can't measure it. */
-  meter(stream: MediaStream): { level(): number; close(): void } | null;
-  decode(recording: Blob): Promise<{ channels: Float32Array[]; rate: number }>;
+  /** Hands the microphone to `onPcm` as 16 kHz mono blocks until it's closed. */
+  capture(stream: MediaStream, onPcm: (pcm: Float32Array) => void): Promise<{ close(): void }>;
   encoder(rate: number): Mp3EncoderLike;
   now(): number;
 }
 
-const OGG_OPUS = 'audio/ogg;codecs=opus';
-
 function browserDeps(): RecorderDeps {
   return {
     media: () => navigator.mediaDevices.getUserMedia({ audio: true }),
-    recorder: (stream) => {
-      const R = (window as unknown as { MediaRecorder: typeof MediaRecorder }).MediaRecorder;
-      return new R(stream, R.isTypeSupported && R.isTypeSupported(OGG_OPUS) ? { mimeType: OGG_OPUS } : undefined) as unknown as MediaRecorderLike;
-    },
-    meter: (stream) => {
+    capture: async (stream, onPcm) => {
+      const ctx = new AudioContext();
       try {
-        const ctx = new AudioContext();
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 1024;
-        ctx.createMediaStreamSource(stream).connect(analyser);
-        const buf = new Float32Array(analyser.fftSize);
+        await ctx.audioWorklet.addModule(WORKLET_URL);
+        const node = new AudioWorkletNode(ctx, 'call-io', { numberOfInputs: 1, numberOfOutputs: 0, outputChannelCount: [], processorOptions: { capture: true, play: false } });
+        node.port.onmessage = (e: MessageEvent) => {
+          if (e.data && e.data.pcm instanceof Float32Array) onPcm(e.data.pcm);
+        };
+        ctx.createMediaStreamSource(stream).connect(node);
+        if (ctx.state === 'suspended') await ctx.resume();
         return {
-          level: () => {
-            analyser.getFloatTimeDomainData(buf);
-            let sum = 0;
-            for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-            return toPeak(sum / buf.length);
-          },
           close: () => {
+            node.port.postMessage('stop');
+            node.port.onmessage = null;
+            node.disconnect();
             ctx.close().catch(() => {});
           },
         };
-      } catch {
-        return null;
+      } catch (e) {
+        ctx.close().catch(() => {});
+        throw e;
       }
-    },
-    decode: async (recording) => {
-      const audio = await new OfflineAudioContext(1, 1, VOICE_RATE).decodeAudioData(await recording.arrayBuffer());
-      const channels: Float32Array[] = [];
-      for (let i = 0; i < audio.numberOfChannels; i++) channels.push(audio.getChannelData(i));
-      return { channels, rate: audio.sampleRate };
     },
     encoder: (rate) => new Mp3Encoder(1, rate, MP3_KBPS),
     now: () => Date.now(),
@@ -203,14 +199,12 @@ export class VoiceRecorder {
   #deps: RecorderDeps;
   #maxMs: number;
   #stream: MediaStream | null = null;
-  #rec: MediaRecorderLike | null = null;
-  #meter: { level(): number; close(): void } | null = null;
-  #chunks: Blob[] = [];
-  #type = OGG_OPUS;
+  #tap: { close(): void } | null = null;
+  #encoder: VoiceEncoder | null = null;
+  #level = 0;
   #startedAt = 0;
   #stoppedAt = 0;
   #limit: ReturnType<typeof setTimeout> | null = null;
-  #stopped: Promise<void> | null = null;
   /** Runs when the recording stops by itself at the limit. */
   onLimit: (() => void) | null = null;
 
@@ -230,21 +224,13 @@ export class VoiceRecorder {
         return;
       }
       this.#stream = stream;
-      const rec = this.#deps.recorder(stream);
-      this.#rec = rec;
-      this.#type = rec.mimeType || OGG_OPUS;
-      rec.ondataavailable = (e) => {
-        if (e.data && e.data.size) this.#chunks.push(e.data);
-      };
-      this.#stopped = new Promise<void>((resolve) => {
-        rec.onstop = () => resolve();
-        rec.onerror = () => {
-          if (this.state === 'recording') this.state = 'failed';
-          resolve();
-        };
-      });
-      rec.start(RECORDER_SLICE_MS);
-      this.#meter = this.#deps.meter(stream);
+      this.#encoder = new VoiceEncoder(this.#deps.encoder(VOICE_RATE));
+      const tap = await this.#deps.capture(stream, (pcm) => this.#onPcm(pcm));
+      if (this.state !== 'starting') {
+        tap.close();
+        return;
+      }
+      this.#tap = tap;
       this.#startedAt = this.#deps.now();
       this.state = 'recording';
       this.#limit = setTimeout(() => {
@@ -257,13 +243,21 @@ export class VoiceRecorder {
     }
   }
 
+  #onPcm(pcm: Float32Array): void {
+    if (this.state !== 'recording' || !this.#encoder) return;
+    this.#encoder.push(pcm);
+    let sum = 0;
+    for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
+    this.#level = pcm.length ? toPeak(sum / pcm.length) : 0;
+  }
+
   elapsedMs(): number {
     if (!this.#startedAt) return 0;
     return Math.min(this.#maxMs, (this.#stoppedAt || this.#deps.now()) - this.#startedAt);
   }
 
   level(): number {
-    return this.state === 'recording' && this.#meter ? this.#meter.level() : 0;
+    return this.state === 'recording' ? this.#level : 0;
   }
 
   /** Ends the recording and lets go of the microphone. */
@@ -271,58 +265,38 @@ export class VoiceRecorder {
     if (this.state !== 'recording') return;
     this.#stoppedAt = this.#deps.now();
     this.state = 'stopped';
-    const done = this.#stopped;
-    try {
-      if (this.#rec) this.#rec.stop();
-    } catch {
-      /* already inactive */
-    }
     this.#release();
-    if (done) await done;
   }
 
   /** The recording as a voice message. */
   async finish(onProgress?: (fraction: number) => void): Promise<VoiceNote> {
-    if (this.state !== 'stopped') throw new Error('Not stopped');
+    if (this.state !== 'stopped' || !this.#encoder) throw new Error('Not stopped');
     this.state = 'encoding';
+    const enc = this.#encoder;
+    this.#encoder = null;
     try {
-      const { channels, rate } = await this.#deps.decode(new Blob(this.#chunks, { type: this.#type }));
-      this.#chunks = [];
-      if (this.#cancelled()) throw new Error('cancelled');
-      const pcm = toMono(channels, rate, VOICE_RATE);
-      if (!pcm.length) throw new Error('Nothing was recorded');
-      const note = await encodeVoice(pcm, VOICE_RATE, this.#deps.encoder(VOICE_RATE), onProgress, () => this.#cancelled());
-      if (this.#cancelled()) throw new Error('cancelled');
+      if (!enc.samples) throw new Error('Nothing was recorded');
+      const note = enc.finish();
+      if (onProgress) onProgress(1);
       this.state = 'done';
       return note;
     } catch (e) {
-      if (!this.#cancelled()) this.state = 'failed';
+      this.state = 'failed';
       throw e;
     }
   }
 
-  #cancelled(): boolean {
-    return this.state === 'cancelled';
-  }
-
   cancel(): void {
-    if (this.state === 'recording') {
-      try {
-        if (this.#rec) this.#rec.stop();
-      } catch {
-        /* already inactive */
-      }
-    }
     this.#release();
-    this.#chunks = [];
+    this.#encoder = null;
     this.state = 'cancelled';
   }
 
   #release(): void {
     if (this.#limit) clearTimeout(this.#limit);
     this.#limit = null;
-    if (this.#meter) this.#meter.close();
-    this.#meter = null;
+    if (this.#tap) this.#tap.close();
+    this.#tap = null;
     if (this.#stream) this.#stream.getTracks().forEach((t) => t.stop());
     this.#stream = null;
   }

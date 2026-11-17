@@ -104,6 +104,9 @@ interface StorageAccountRecord {
   notificationProfileOverride: HostProfileOverride;
   /** The phone keeps its notification profiles to itself. */
   notificationProfileSyncDisabled: boolean;
+  /** The quick reactions, in order; an empty or missing slot uses Signal's default. */
+  preferredReactionEmoji: string[];
+  keepMutedChatsArchived: boolean;
 }
 
 function fromOptionalBool(v: OptionalBool): boolean | undefined {
@@ -324,6 +327,8 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
         reactionNotifications: a.reactionNotifications !== OptionalBool.DISABLED,
         notificationProfileOverride: readProfileOverride(a.notificationProfileManualOverride),
         notificationProfileSyncDisabled: a.notificationProfileSyncDisabled,
+        preferredReactionEmoji: a.preferredReactionEmoji.slice(0, 6).map((e) => (typeof e === 'string' && e.length <= 32 ? e : '')),
+        keepMutedChatsArchived: a.keepMutedChatsArchived,
       };
     } else if (rec.case === 'notificationProfile') {
       const p = readNotificationProfile(rec.value);

@@ -45,7 +45,7 @@ The KaiOS phone then finishes linking. If that fails partway, Beacon removes the
 
 ### Message history
 
-After you choose **Transfer message history**, Beacon says **Waiting for your phone…** while your main phone prepares the history, then **Downloading messages…** and **Adding messages…** with how far along it is. Keep both phones open and online; a long history takes a few minutes. New messages wait on Signal's servers meanwhile and arrive once Beacon opens your chats.
+After you choose **Transfer message history**, Beacon says **Waiting for your main phone…** while your main phone prepares the history, then **Downloading messages…** and **Adding messages…** with how far along it is. Keep both phones open and online; a long history takes a few minutes. New messages wait on Signal's servers meanwhile and arrive once Beacon opens your chats.
 
 - **Skip** (right softkey) goes on without the history, after asking: the history can only be transferred while linking.
 - If the download stops, for example when the phone loses its connection, press **Retry**. Closing Beacon in the middle is fine too: it picks up where it stopped the next time it opens.
@@ -57,7 +57,7 @@ Each chat keeps its 500 most recent messages, as it does for new ones.
 
 Right after linking, the app asks your main phone for contacts, the blocked list, settings, and account keys, then reads contacts and groups from Signal's encrypted Storage Service. Keep Signal open on the main phone for a moment. Group names and members come from Signal's group server, so a group can show as "Group" for a few seconds the first time.
 
-To sync again later, use **Settings → Linked device → Sync with your phone**.
+To sync again later, use **Settings → Linked device → Sync with your main phone**.
 
 ## Troubleshooting
 
@@ -80,7 +80,7 @@ The phone was removed under **Linked devices** on your main phone, Signal remove
 <details>
 <summary><strong>"Beacon couldn't start" screen</strong></summary>
 
-The screen says whether part of the app is missing (reinstall the ZIP), the phone's software is too old, or the phone stopped part of Beacon from loading. For the last one, restart the phone and open Beacon again; if it keeps happening, [open an issue](https://github.com/ambercaravalho/signal4kaios/issues) with the text from **Show details**, which has the technical reason.
+The screen says whether part of the app is missing (reinstall the ZIP), the phone's software is too old, or the phone stopped part of Beacon from loading. For the last one, restart the phone and open Beacon again; if it keeps happening, [open an issue](https://github.com/ambercaravalho/signal4kaios/issues) with the text from **Details**, which has the technical reason.
 
 If it says it couldn't open your messages, restart the phone first. If that keeps happening, **Options → Delete all data** deletes every account, message, and setting in Beacon (your Signal account stays), and you can link again.
 
@@ -96,7 +96,7 @@ Beacon checks Signal's certificates against the phone's clock, so a clock that's
 <details>
 <summary><strong>Contacts or groups show as numbers or IDs</strong></summary>
 
-Run **Settings → Linked device → Sync with your phone** while your main phone is online.
+Run **Settings → Linked device → Sync with your main phone** while your main phone is online.
 
 </details>
 

@@ -88,28 +88,40 @@ export async function resolveRecipients(ids: string[]): Promise<string[]> {
 }
 
 /** Persist a sender's 32-byte ProfileKey onto `syncedContacts` and in-memory `SignalClient`. */
-export async function recordPeerProfileKey(senderUuid: string, senderE164: string | undefined, profileKeyBytes: Uint8Array): Promise<void> {
-  if (profileKeyBytes.length !== 32 || !isAci(senderUuid)) return;
-  client.setPeerProfileKey(senderUuid, profileKeyBytes);
-  const b64 = toBase64(profileKeyBytes);
+export function recordPeerProfileKey(senderUuid: string, senderE164: string | undefined, profileKeyBytes: Uint8Array): Promise<void> {
+  return recordPeerProfileKeys([{ aci: senderUuid, e164: senderE164, key: profileKeyBytes }]);
+}
+
+/** `recordPeerProfileKey` for many people at once, such as a group's members, with one write. */
+export async function recordPeerProfileKeys(entries: Array<{ aci: string; e164?: string; key: Uint8Array }>): Promise<void> {
+  const valid = entries.filter((e) => e.key.length === 32 && isAci(e.aci));
+  if (!valid.length) return;
   const list = await syncedContacts();
-  let found = false;
-  let changed = false;
-  let named = false;
-  for (const c of list) {
-    if (c.uuid === senderUuid || (senderE164 && c.number === senderE164)) {
-      found = true;
-      if (c.profile_name) named = true;
-      if (c.profileKey !== b64) {
-        c.profileKey = b64;
-        changed = true;
+  let dirty = false;
+  const toName: string[] = [];
+  for (const { aci, e164, key } of valid) {
+    client.setPeerProfileKey(aci, key);
+    const b64 = toBase64(key);
+    let found = false;
+    let changed = false;
+    let named = false;
+    for (const c of list) {
+      if (c.uuid === aci || (e164 && c.number === e164)) {
+        found = true;
+        if (c.profile_name) named = true;
+        if (c.profileKey !== b64) {
+          c.profileKey = b64;
+          changed = true;
+        }
       }
     }
+    if (!found) {
+      list.push({ uuid: aci, number: e164 || '', name: e164 || aci, blocked: false, expireTimer: 0, profileKey: b64 });
+      changed = true;
+    }
+    if (changed) dirty = true;
+    if (changed || !named) toName.push(aci);
   }
-  if (!found) {
-    list.push({ uuid: senderUuid, number: senderE164 || '', name: senderE164 || senderUuid, blocked: false, expireTimer: 0, profileKey: b64 });
-    changed = true;
-  }
-  if (changed) await saveSyncedContacts(list);
-  if (changed || !named) queuePeerName(senderUuid);
+  if (dirty) await saveSyncedContacts(list);
+  toName.forEach(queuePeerName);
 }

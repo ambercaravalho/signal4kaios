@@ -96,11 +96,11 @@ async function senderKeyGroup(internalId: string, masterKey: Uint8Array, members
   return { internalId, secretParams: deriveGroupV2Keys(masterKey).secretParams, endorsements };
 }
 
-/** Resolves to whether every recipient got it sealed. */
-export async function deliver(target: SendTarget, content: Content, ts: number, online = false): Promise<boolean> {
+/** Resolves to whether every recipient got it sealed; group members it couldn't reach are added to `failed`. */
+export async function deliver(target: SendTarget, content: Content, ts: number, online = false, failed?: string[]): Promise<boolean> {
   if (target.isGroup) {
     const group = target.groupV2 && target.internalId ? await senderKeyGroup(target.internalId, target.groupV2.masterKey, target.peers) : undefined;
-    return client.sendGroupContent(target.peers, content, ts, online, group);
+    return client.sendGroupContent(target.peers, content, ts, online, group, failed);
   }
   let sealed = target.peers.length > 0;
   for (const peer of target.peers) if (!(await client.sendContentToRecipient(peer, content, ts, online))) sealed = false;
@@ -114,7 +114,7 @@ export async function sendDataMessage(
   recipient: string,
   build: (target: SendTarget) => DataMessageInit | Promise<DataMessageInit>,
   opts: { groupOnly?: string; editTimestamp?: number } = {}
-): Promise<{ timestamp: number; sealed: boolean; dm: DataMessageInit }> {
+): Promise<{ timestamp: number; sealed: boolean; failed: string[]; dm: DataMessageInit }> {
   const ts = Date.now();
   const target = await groupTargets(recipient);
   if (opts.groupOnly && !target.isGroup) throw new Error(opts.groupOnly);
@@ -122,9 +122,10 @@ export async function sendDataMessage(
   const content = opts.editTimestamp
     ? create(ContentSchema, { content: { case: 'editMessage', value: { targetSentTimestamp: BigInt(opts.editTimestamp), dataMessage: dm } } })
     : dataContent(dm);
-  const sealed = await deliver(target, content, ts);
+  const failed: string[] = [];
+  const sealed = await deliver(target, content, ts, false, failed);
   await client.sendSyncMessage(syncSent(target.isGroup ? '' : target.peers[0], ts, dm, opts.editTimestamp), ts);
-  return { timestamp: ts, sealed, dm };
+  return { timestamp: ts, sealed, failed, dm };
 }
 
 /** A chat as sync messages name it, from its send ID: the group ID, else the person's ACI, else their number. */

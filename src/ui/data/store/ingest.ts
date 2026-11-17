@@ -4,7 +4,7 @@ import { config } from '../config';
 import { db } from '../db';
 import { dbg } from '../log';
 import { type MessageEvent, type NoticeEvent, parseFrame, type StoreEvent } from '../normalize';
-import type { Message, Notice, NoticeKind } from '../types';
+import type { Conversation, Message, Notice, NoticeKind } from '../types';
 import { applyCall, applyCallDelete, applyCallLog } from './call-log';
 import { applyBackfill } from './backfill';
 import { unarchiveOnActivity } from './chat-state';
@@ -88,11 +88,21 @@ export function messageRecord(ev: MessageEvent): Message {
   return rec;
 }
 
+/** Signal-Desktop's timer versioning: a group's timer comes from its state, and a 1:1 chat's changes only with a version at least the chat's. An ordinary message takes part only when it has a version; a timer update from an app too old to send one still applies. */
+export function takesTimer(conv: Pick<Conversation, 'type' | 'expireTimerVersion'>, version: number | undefined, isUpdate: boolean): boolean {
+  if (conv.type !== 'direct') return isUpdate;
+  if (!version) return isUpdate;
+  return version >= (conv.expireTimerVersion || 0);
+}
+
 function applyMessage(ev: MessageEvent, silent: boolean): void {
   const conv = ensureConv(ev);
   const rec = messageRecord(ev);
   if (ev.reportToken && conv.type === 'direct') conv.reportToken = ev.reportToken;
-  if ((conv.expireTimer || 0) !== ev.expiresInSeconds) conv.expireTimer = ev.expiresInSeconds;
+  if (takesTimer(conv, ev.expireTimerVersion, false)) {
+    conv.expireTimer = ev.expiresInSeconds;
+    conv.expireTimerVersion = ev.expireTimerVersion;
+  }
   if (!ev.incoming) delete conv.request;
   const viewing = isViewing(conv.id);
   const read = ev.incoming && !viewing && alreadyRead(conv.id, ev.author, ev.timestamp);
@@ -333,7 +343,12 @@ export function applyEvent(ev: StoreEvent, silent: boolean): void {
       return applyCallLog(ev.action, ev.chat, ev.timestamp);
     case 'timer': {
       const conv = convs[ev.convId];
-      if (!conv || (conv.expireTimer || 0) === ev.seconds) return;
+      if (!conv || !takesTimer(conv, ev.version, true)) return;
+      if (ev.version) conv.expireTimerVersion = Math.max(conv.expireTimerVersion || 0, ev.version);
+      if ((conv.expireTimer || 0) === ev.seconds) {
+        persistConv(conv);
+        return;
+      }
       conv.expireTimer = ev.seconds;
       persistConv(conv);
       emit('conversations');

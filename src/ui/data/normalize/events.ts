@@ -16,6 +16,8 @@ export interface MessageEvent {
   quote: Quote | null;
   attachments: Attachment[];
   expiresInSeconds: number;
+  /** Signal's timer version for a 1:1 chat; 0 from apps too old to send one. */
+  expireTimerVersion?: number;
   contactCard?: ContactCard;
   poll?: Pick<Poll, 'question' | 'options' | 'allowMultiple'>;
   preview?: LinkPreview;
@@ -43,7 +45,7 @@ export type StoreEvent =
   | { type: 'reaction'; convId: string; reactor: string; emoji: string; remove: boolean; targetAuthor: string; targetTimestamp: number }
   | { type: 'remoteDelete'; convId: string; author: string; targetTimestamp: number }
   | { type: 'pin' | 'unpin'; convId: string; targetAuthor: string; targetTimestamp: number }
-  | { type: 'timer'; convId: string; seconds: number; author: string; timestamp: number }
+  | { type: 'timer'; convId: string; seconds: number; version?: number; author: string; timestamp: number }
   | { type: 'typing'; convId: string; author: string; started: boolean }
   | { type: 'receipt'; peer: string; kind: 'read' | 'delivery' | 'other'; timestamps: number[] }
   | { type: 'readSync'; entries: SyncRef[] }

@@ -1,6 +1,7 @@
 /* Link preview checks, ported from Signal-Desktop's LinkPreview.shouldPreviewHref, isLinkSneaky, and getValidLinkPreviews. */
 
 const EXCLUDED_DOMAINS = ['debuglogs.org', 'example', 'example.com', 'example.net', 'example.org', 'invalid', 'localhost', 'onion', 'test'];
+const PRIVATE_SUFFIXES = ['local', 'localhost', 'internal', 'lan', 'home.arpa'];
 const DIRECTIONAL_OVERRIDES = /[\u202c\u202d\u202e]/;
 const UNICODE_DRAWING = /[\u2500-\u25FF]/;
 const VALID_URI_CHARACTERS = /^[%:/?#[\]@!$&'()*+,;=A-Za-z0-9\-._~]*$/;
@@ -27,11 +28,20 @@ function isLinkSneaky(href: string, url: URL): boolean {
   return !VALID_URI_CHARACTERS.test(start < 0 ? '' : href.slice(start));
 }
 
+/** An IP address, or a name only a local network resolves; the phone fetches previews itself, so these would reach the user's own network. */
+function isPrivateHost(host: string): boolean {
+  if (host.indexOf(':') >= 0 || host.indexOf('[') >= 0) return true;
+  const last = host.split('.').pop() || '';
+  if (/^\d+$/.test(last) || /^0x[0-9a-f]*$/i.test(last)) return true;
+  return PRIVATE_SUFFIXES.some((d) => host === d || host.endsWith('.' + d));
+}
+
 export function shouldPreviewHref(href: string): boolean {
   const url = parseUrl(href);
   if (!url || url.protocol !== 'https:') return false;
-  const host = url.hostname;
+  const host = url.hostname.toLowerCase();
   if (EXCLUDED_DOMAINS.some((d) => host === d || host.endsWith('.' + d))) return false;
+  if (isPrivateHost(host)) return false;
   return !isLinkSneaky(href, url);
 }
 

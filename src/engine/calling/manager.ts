@@ -71,7 +71,7 @@ export interface CallRecord {
   callId: string;
   peer: string;
   direction: CallDirection;
-  outcome: 'accepted' | 'declined' | 'missed' | 'unanswered';
+  outcome: 'accepted' | 'declined' | 'missed' | 'unanswered' | 'failed';
   timestamp: number;
   durationMs: number;
 }
@@ -95,12 +95,16 @@ export interface CallDeps {
   syncEvent(rec: CallRecord, event: 'accepted' | 'notAccepted'): void;
   log(msg: string): void;
   now?(): number;
+  /** Whether a call from `peer` rings here; one that doesn't (a message request) is a missed call, with no relay opened and no Answer sent, as in Signal-Desktop. */
+  rings?(peer: string): boolean;
 }
 
 export interface CallEnvelope {
   source: string;
   sourceDevice: number;
   serverTimestamp: number;
+  /** When Signal's server delivered the envelope (its `X-Signal-Timestamp` header), so an offer's age doesn't depend on the phone's clock. */
+  deliveredAt?: number;
 }
 
 interface Leg {
@@ -309,9 +313,10 @@ export class CallManager {
   }
 
   private onOffer(env: CallEnvelope, id: bigint, opaque: Uint8Array): void {
-    const age = Math.max(0, this.now() - env.serverTimestamp);
+    const age = Math.max(0, (env.deliveredAt || this.now()) - env.serverTimestamp);
+    const missed = () => this.deps.record({ callId: id.toString(), peer: env.source, direction: 'incoming', outcome: 'missed', timestamp: env.serverTimestamp || this.now(), durationMs: 0 });
     if (age > MAX_OFFER_AGE_MS) {
-      this.deps.record({ callId: id.toString(), peer: env.source, direction: 'incoming', outcome: 'missed', timestamp: env.serverTimestamp || this.now(), durationMs: 0 });
+      missed();
       return;
     }
     const remote = parseParams(opaque, 'offer');
@@ -332,6 +337,11 @@ export class CallManager {
       }
       if (collision === 'recall') this.end(active, 'remoteHungUp');
       if (collision === 'busy' || collision === 'winner' || collision === 'doubleLoser') return;
+    }
+    if (this.deps.rings && !this.deps.rings(env.source)) {
+      this.deps.log('call: not answering a call from a message request');
+      missed();
+      return;
     }
     const c = this.newCall(id, env.source, 'incoming', env.sourceDevice);
     c.remote = remote;
@@ -658,14 +668,17 @@ export class CallManager {
       c.keys = null;
     }, 500);
     if (c.audio) c.audio.close();
-    const outcome: CallRecord['outcome'] =
-      connected || c.accepted || reason === 'acceptedElsewhere'
-        ? 'accepted'
-        : reason === 'declined' || reason === 'declinedElsewhere'
-          ? 'declined'
-          : c.direction === 'incoming'
-            ? 'missed'
-            : 'unanswered';
+    const outcome: CallRecord['outcome'] = connected
+      ? 'accepted'
+      : reason === 'failed' && (c.direction === 'outgoing' || c.accepted)
+        ? 'failed'
+        : c.accepted || reason === 'acceptedElsewhere'
+          ? 'accepted'
+          : reason === 'declined' || reason === 'declinedElsewhere'
+            ? 'declined'
+            : c.direction === 'incoming'
+              ? 'missed'
+              : 'unanswered';
     if (!(c.direction === 'outgoing' && !c.offerSent)) this.deps.record(this.recordFor(c, outcome));
     this.emit();
   }

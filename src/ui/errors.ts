@@ -13,6 +13,13 @@ export function friendlyError(err: unknown, fallback: string = S.errGeneric): st
   if (e.name === 'UsernameUnavailable' || e.name === 'UsernameReservationLost') return S.usernameTaken;
   if (e.name === 'UsernameInvalid') return S.usernameInvalid;
   if (e.name === 'UsernameRateLimited') return S.errRateLimited;
+  if (e.name === 'LastAdmin') return S.errLastAdmin;
+  if (e.name === 'GroupChangeForbidden') return S.errGroupAdminsOnly;
+  if (e.name === 'GroupChangeConflict') return S.errGroupConflict;
+  if (e.name === 'NotAMember') return S.errNotAMember;
+  if (e.name === 'UntrustedIdentity') return S.errSafetyNumber;
+  // A linked device can't solve Signal's challenge (a captcha); the main phone can.
+  if (e.status === 428) return S.errChallenge;
   if (e.kind === 'clock' || isClockError(msg)) return S.errClock;
   if (e.kind === 'network' || /network|offline|connect|socket/i.test(msg)) return S.errOffline;
   if (e.kind === 'timeout' || /timed? ?out/i.test(msg)) return S.errTimeout;

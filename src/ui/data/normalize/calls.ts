@@ -7,7 +7,7 @@ import type { StoreEvent } from './events';
 import { num, str } from './fields';
 
 const DIRECTIONS: CallDirection[] = ['incoming', 'outgoing'];
-const OUTCOMES: CallOutcome[] = ['accepted', 'declined', 'missed', 'unanswered'];
+const OUTCOMES: CallOutcome[] = ['accepted', 'declined', 'missed', 'unanswered', 'failed'];
 /** A day, longer than any call Signal lets ring and talk for. */
 const MAX_DURATION_MS = 86_400_000;
 

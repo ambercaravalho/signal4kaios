@@ -14,6 +14,11 @@ export function amAdmin(d: GroupDetail | null): boolean {
   return !!d && (d.admins || []).some(store.isSelf);
 }
 
+/** Whether the group's state is known and we're not among its members, because we left or were removed. */
+export function outOfGroup(d: GroupDetail | null): boolean {
+  return !!d && !!d.masterKey && Array.isArray(d.members) && d.members.length > 0 && !d.members.some(store.isSelf);
+}
+
 export function allowed(d: GroupDetail | null, key: PermKey): boolean {
   if (!d) return false;
   const perms = d.permissions || PERM_DEFAULTS;

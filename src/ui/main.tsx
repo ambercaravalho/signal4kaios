@@ -137,6 +137,8 @@ function boot(): void {
     </>,
     document.getElementById('app')!
   );
+  const splash = document.getElementById('splash');
+  if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
 
   // Every Signal operation runs in the libsignal WebAssembly module, so nothing may touch `signal` until it has loaded.
   signal.ready().then(
@@ -147,7 +149,7 @@ function boot(): void {
           // A pre-libsignal database was upgraded and its protocol state discarded, so the old link can't be used.
           if (db.signalStateWasReset() && config.isConfigured()) {
             dbg('boot: protocol state was reset, relink required');
-            config.forgetAccount();
+            config.forgetAccount('keys');
           }
           start();
         },

@@ -114,6 +114,7 @@ describe('Sync and service IDs', () => {
     dropped('http://signal.org/');
     dropped('https://user:pw@signal.org/');
     dropped('https://localhost/x');
+    for (const u of ['https://192.168.1.1/', 'https://10.0.0.1/admin', 'https://0x7f.1/', 'https://2130706433/', 'https://[::1]/', 'https://[fd00::1]/', 'https://printer.local/', 'https://router.lan/', 'https://nas.home.arpa/', 'https://x.internal/']) dropped(u);
     dropped('https://www.example.com/');
     dropped('https://xn--sgnal-m3a.org/');
     dropped('https://signal.org/aquí');

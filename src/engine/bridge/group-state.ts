@@ -6,7 +6,7 @@ import { isAci } from '../net/proto';
 import { diffGroupState, groupChangeAuthor, groupIsRequest, isDecodedGroup } from '../services/group-updates';
 import { deriveGroupV2Keys, fetchGroupState, type GroupV2Metadata } from '../services/groups-v2';
 import { httpBinary, httpJson, serverUrl, store } from './context';
-import { saveSyncedGroups, type SyncedGroupRow, syncedContacts, syncedGroups } from './contacts';
+import { recordPeerProfileKeys, saveSyncedGroups, type SyncedGroupRow, syncedContacts, syncedGroups } from './contacts';
 
 /** Who made the change that brought a group to `revision`, and when it arrived. */
 export interface GroupChangeHint {
@@ -19,9 +19,24 @@ export function groupDeps() {
   return { store, httpJson, httpBinary, serverUrl: serverUrl() };
 }
 
+const ASKED_TO_JOIN = 'askedToJoin';
+
+/** Remember, or forget, that we asked to join a group through its link, so its approval doesn't arrive as a message request. */
+export async function markAskedToJoin(internalId: string, asked: boolean): Promise<void> {
+  const list: string[] = (await host().db.kvGet(ASKED_TO_JOIN)) || [];
+  const next = list.filter((id) => id !== internalId);
+  if (asked) next.push(internalId);
+  if (next.length !== list.length || asked) await host().db.kvSet(ASKED_TO_JOIN, next);
+}
+
 /** Decide once whether a group we just learned about waits as a message request, from who added or invited us. */
 async function vetNewGroup(g: SyncedGroupRow, invitedBy: Record<string, string>, hint: GroupChangeHint | undefined): Promise<void> {
   delete g.unvetted;
+  const asked: string[] = (await host().db.kvGet(ASKED_TO_JOIN)) || [];
+  if (asked.indexOf(g.internal_id) >= 0) {
+    await markAskedToJoin(g.internal_id, false);
+    return;
+  }
   const self = host().config.aci() || '';
   const acc = await store.getAccount();
   const pni = acc && acc.pni ? acc.pni.replace(/^PNI:/i, '') : '';
@@ -52,6 +67,10 @@ export async function mergeGroupState(state: GroupV2Metadata, hint?: GroupChange
   const prev = idx >= 0 ? list[idx] : {};
   const merged: SyncedGroupRow = { ...prev, ...state, blocked: prev.blocked ?? false, archived: prev.archived };
   delete merged.invitedBy;
+  delete merged.profileKeys;
+  const self = host().config.aci() || '';
+  const keys = Object.keys(state.profileKeys || {}).filter((aci) => aci !== self);
+  if (keys.length) await recordPeerProfileKeys(keys.map((aci) => ({ aci, key: fromBase64(state.profileKeys![aci]) }))).catch((e: any) => host().dbg('group profile keys failed: ' + (e && e.message)));
   if (merged.unvetted) await vetNewGroup(merged, state.invitedBy || {}, hint);
   await markInvite(merged);
   if (idx >= 0) list[idx] = merged;

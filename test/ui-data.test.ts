@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { expireLabel, fmtDuration, formatSafetyNumber, initials } from '../src/ui/data/format';
-import { dbg, redactedLog } from '../src/ui/data/log';
+import { dbg, redactedLog, redactLine } from '../src/ui/data/log';
 import { signalLink } from '../src/ui/data/links';
 import { fetchLinkPreview, previewCandidate } from '../src/ui/data/link-preview-fetch';
 import { previewFieldsForSend } from '../src/engine/services/link-previews';
@@ -80,10 +80,10 @@ describe('link previews we send', () => {
       },
       { A: { title: 'T' } }
     );
-    for (const u of ['http://plain.site/', 'https://localhost/', 'https://xn--80ak6aa92e.com/', 'https://r.site/', 'https://d.site/', 'https://j.site/', 'https://e.site/']) {
+    for (const u of ['http://plain.site/', 'https://localhost/', 'https://192.168.0.1/', 'https://printer.local/', 'https://xn--80ak6aa92e.com/', 'https://r.site/', 'https://d.site/', 'https://j.site/', 'https://e.site/']) {
       assert.equal(await fetchLinkPreview(u, t.deps), null, u);
     }
-    assert.ok(!t.fetched.some((f) => f.indexOf('plain.site') >= 0 || f.indexOf('localhost') >= 0));
+    assert.ok(!t.fetched.some((f) => f.indexOf('plain.site') >= 0 || f.indexOf('localhost') >= 0 || f.indexOf('192.168') >= 0 || f.indexOf('.local/') >= 0));
   });
 
   it('only looks for a link to preview when the setting is on and the draft is plain text', () => {
@@ -390,6 +390,18 @@ describe('debug log', () => {
     assert.ok(!out.includes('123456789abc'));
     assert.ok(!out.includes('A'.repeat(40)));
     assert.ok(out.includes('+…67'));
+  });
+
+  it('drops credentials and shortens national numbers and usernames, but keeps timestamps', () => {
+    const r = (l: string) => redactLine(l);
+    assert.equal(r('Authorization: Basic dXNlcjpwYXNz'), 'Authorization: […]');
+    assert.equal(r('wss://x/v1/websocket/?login=abc.2&password=s3cr3t'), 'wss://x/v1/websocket/?login=[…]&password=[…]');
+    assert.equal(r('{"password":"hunter2"}'), '{"password":"[…]"}');
+    assert.equal(r('number 5551234567 sent'), 'number …67 sent');
+    assert.equal(r('call (555) 123-4567'), 'call …67');
+    assert.equal(r('found ann.42'), 'found a….42');
+    assert.equal(r('message 1731800000000 acked'), 'message 1731800000000 acked');
+    assert.equal(r('Beacon 2.10.8 revision 12'), 'Beacon 2.10.8 revision 12');
   });
 });
 

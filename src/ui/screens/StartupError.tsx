@@ -32,7 +32,7 @@ export function storageErrorOptions(): MenuEntry[] {
 /** Shown instead of the app when it can't start. The technical detail is one key away for bug reports. */
 export function StartupErrorScreen(props: { reason: string; detail: string }) {
   const storage = props.reason === 'storage';
-  useSoftkeys({ left: props.detail ? S.showDetails : null, center: S.restart, right: storage ? S.options : S.help });
+  useSoftkeys({ left: props.detail ? S.skDetails : null, center: S.restart, right: storage ? S.options : S.help });
   useKeys((e) => {
     if (e.key === 'Enter') location.reload();
     else if (e.key === 'SoftRight' && storage) showOptions(storageErrorOptions());

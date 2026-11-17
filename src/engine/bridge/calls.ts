@@ -39,7 +39,10 @@ function recordFrame(rec: CallRecord) {
   };
 }
 
+let ringsHere: (peer: string) => boolean = () => true;
+
 export const callManager = new CallManager({
+  rings: (peer) => ringsHere(peer),
   async self() {
     const acc = await account();
     return { aci: acc.aci, deviceId: acc.deviceId };
@@ -94,4 +97,8 @@ export const callMethods = {
   /** The peer's audio for the speaker, or null while there is none. */
   callPull: () => callManager.pull(),
   callSampleRate: CALL_SAMPLE_RATE,
+  /** Which callers ring here; the others' calls are missed without opening a relay. */
+  setCallFilter: (fn: (peer: string) => boolean) => {
+    ringsHere = fn;
+  },
 };

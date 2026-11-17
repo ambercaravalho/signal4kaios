@@ -5,6 +5,7 @@ import type { HostChatFolder, HostNotificationProfile, HostProfileOverride, Host
 const KEY = 's4k.config';
 const DEFAULT_SIGNAL_SERVER = 'https://chat.signal.org';
 
+/** SECURITY-REVIEW: `deviceToken` is the account's device password, kept in this app's localStorage; it is never logged or shown. */
 export interface SavedAccount {
   number: string;
   /** The number the account's database was created under; IndexedDB can't rename it after a number change. */
@@ -30,7 +31,8 @@ export interface ScreenLockConfig {
   iterations: number;
   lockAfter: number;
   failures: number;
-  retryAt: number;
+  /** What's left of the wait after wrong PINs, counted down only while the app runs. */
+  waitLeftMs: number;
 }
 
 /** Message history the phone offered when this account was linked, until it is imported or skipped. `chunks` were downloaded so far; `downloaded` once the whole archive is in. */
@@ -65,6 +67,8 @@ interface ConfigData {
   /** Seconds; the disappearing-message timer new 1:1 chats start with. */
   defaultExpireTimer?: number;
   keepMutedArchived?: boolean;
+  /** The account's quick reactions from Storage Service, in order; an empty slot uses Signal's default. */
+  reactionEmoji?: string[];
   /** The account's defaults for muted chats and reactions, shared through Storage Service. */
   notifyMentionsIfMuted?: boolean;
   notifyRepliesIfMuted?: boolean;
@@ -91,10 +95,17 @@ interface ConfigData {
   preKeysCheckedAt?: Record<string, number>;
   /** Every database Beacon has opened on this phone, so Delete all data can find them where the browser can't list them. */
   knownDatabases?: string[];
+  /** Each account's database key (`dbNumber`) by ACI, kept after an unlink so relinking with a new number finds its history. */
+  accountDatabases?: Record<string, string>;
+  /** Why the Link screen is asking to link again. */
+  relinkReason?: RelinkReason;
   /** The `ACCOUNT_KEYS` settings of each saved account (by ACI) other than the active one, whose settings are at the top level. */
   accountSettings?: Record<string, Partial<ConfigData>>;
   [k: string]: unknown;
 }
+
+/** `unlinked`: the main phone or Signal removed this phone; `here`: it was unlinked in Settings; `keys`: its keys on this phone were lost; `history`: the main phone asked to link again for history. */
+export type RelinkReason = 'unlinked' | 'here' | 'keys' | 'history';
 
 /** Settings that belong to one Signal account: its profile, what Storage Service shares with its other devices, and its pending history. The rest belong to the phone. */
 const ACCOUNT_KEYS = [
@@ -109,6 +120,8 @@ const ACCOUNT_KEYS = [
   'linkPreviews',
   'sealedSenderIndicators',
   'defaultExpireTimer',
+  'keepMutedArchived',
+  'reactionEmoji',
   'sharePhoneNumber',
   'findableByNumber',
   'notifyMentionsIfMuted',
@@ -218,6 +231,11 @@ export const config = {
   linkPreviews: onUnlessOff('linkPreviews'),
   sealedSenderIndicators: offUnlessOn('sealedSenderIndicators'),
 
+  reactionEmoji(): string[] {
+    const v = read().reactionEmoji;
+    return Array.isArray(v) ? v.map((e) => (typeof e === 'string' ? e : '')) : [];
+  },
+
   defaultExpireTimer(): number {
     const v = read().defaultExpireTimer;
     return typeof v === 'number' && v > 0 ? Math.floor(v) : 0;
@@ -291,7 +309,7 @@ export const config = {
       iterations: s.iterations,
       lockAfter: typeof s.lockAfter === 'number' && s.lockAfter >= 0 ? s.lockAfter : 60,
       failures: typeof s.failures === 'number' && s.failures > 0 ? s.failures : 0,
-      retryAt: typeof s.retryAt === 'number' && s.retryAt > 0 ? s.retryAt : 0,
+      waitLeftMs: typeof s.waitLeftMs === 'number' && s.waitLeftMs > 0 ? Math.min(s.waitLeftMs, 15 * 60000) : 0,
     };
   },
 
@@ -322,7 +340,7 @@ export const config = {
     return read().accounts || [];
   },
 
-  /** Insert or update the active account in the saved list. */
+  /** Insert or update the active account in the saved list. SECURITY-REVIEW: copies the device password into the saved account. */
   saveActiveAccount(): void {
     const c = read();
     const list = c.accounts || [];
@@ -338,7 +356,21 @@ export const config = {
     if (i >= 0) list[i] = entry;
     else list.push(entry);
     c.accounts = list;
+    if (entry.aci && entry.dbNumber) c.accountDatabases = Object.assign({}, c.accountDatabases, { [entry.aci]: entry.dbNumber });
     write(c);
+  },
+
+  /** The key of the database the account with `aci` already has on this phone, else `number`; a relink after a number change opens the old one. */
+  dbKeyFor(aci: string, number: string): string {
+    const c = read();
+    if (aci) {
+      const known = c.accountDatabases && c.accountDatabases[aci];
+      if (typeof known === 'string' && known) return known;
+      if (c.aci === aci && (c.dbNumber || c.number)) return (c.dbNumber || c.number) as string;
+      const a = (c.accounts || []).find((x) => x.aci === aci);
+      if (a && (a.dbNumber || a.number)) return a.dbNumber || a.number;
+    }
+    return number || aci;
   },
 
   /** The active account has a new number; its database keeps the name it was created under. */
@@ -351,15 +383,22 @@ export const config = {
     if ((c.accounts || []).some((a) => (!!c.aci && a.aci === c.aci) || a.number === c.dbNumber)) config.saveActiveAccount();
   },
 
-  /** Drop the active account's device credentials, after unlinking or a 401. */
-  forgetAccount(): void {
+  /** Drop the active account's device credentials, after unlinking or a 401; `reason` is what the Link screen says. */
+  forgetAccount(reason: RelinkReason = 'unlinked'): void {
     const c = read();
+    c.relinkReason = reason;
     const num = c.number;
     const aci = c.aci;
     c.deviceToken = '';
     c.deviceId = 0;
+    if (aci && (c.dbNumber || num)) c.accountDatabases = Object.assign({}, c.accountDatabases, { [aci]: c.dbNumber || num });
     c.accounts = (c.accounts || []).filter((a) => a.number !== num && (!aci || a.aci !== aci));
     write(c);
+  },
+
+  relinkReason(): RelinkReason {
+    const v = read().relinkReason;
+    return v === 'here' || v === 'keys' || v === 'history' ? v : 'unlinked';
   },
 
   knownDatabases(): string[] {
@@ -396,7 +435,7 @@ export const config = {
     write(c);
   },
 
-  /** Make a saved account active, with its own settings. The caller reloads so the right database and connection are used. */
+  /** Make a saved account active, with its own settings. The caller reloads so the right database and connection are used. SECURITY-REVIEW: moves the saved device password back to the active account. */
   switchAccount(number: string): boolean {
     const c = read();
     const a = (c.accounts || []).find((x) => x.number === number);

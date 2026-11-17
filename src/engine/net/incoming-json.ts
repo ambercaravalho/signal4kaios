@@ -163,6 +163,7 @@ function convertDataMessageToNormalizeJson(dm: DataMessage, fallbackTs?: number)
     timestamp: num(dm.timestamp) || fallbackTs || Date.now(),
     message: dm.body || (dm.sticker && dm.sticker.emoji ? dm.sticker.emoji : null),
     expiresInSeconds: dm.expireTimer || 0,
+    expireTimerVersion: dm.expireTimerVersion || 0,
     viewOnce: !!dm.isViewOnce,
     mentions,
     textStyles,

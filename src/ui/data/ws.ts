@@ -213,6 +213,16 @@ function dropSocket(s: SocketLike): void {
   if (onclose) onclose({ code: 1006, reason: 'keepalive', wasClean: false });
 }
 
+/** The server's time from a request's `X-Signal-Timestamp` header, or undefined without a usable one. */
+export function signalTimestamp(headers: unknown): number | undefined {
+  if (!Array.isArray(headers)) return undefined;
+  for (const h of headers) {
+    const m = /^x-signal-timestamp:\s*(\d{1,15})\s*$/i.exec(String(h));
+    if (m) return parseInt(m[1], 10) || undefined;
+  }
+  return undefined;
+}
+
 function onMessage(from: SocketLike, data: unknown): void {
   if (from === sock) keepaliveUnanswered = false;
   if (typeof data === 'string') return;
@@ -235,7 +245,7 @@ function onMessage(from: SocketLike, data: unknown): void {
     const silent = drainingQueue && quietDrain;
     framesThisSession += 1;
     lastMessage = Date.now();
-    const work = signal.processIncomingEnvelope(req.body).then(
+    const work = signal.processIncomingEnvelope(req.body, signalTimestamp(req.headers)).then(
       (frame) => {
         if (!frame) return ackOn(from, req.id);
         const item = { frame, reqId: req.id, sock: from };
@@ -284,19 +294,14 @@ export function connect(): void {
   quietDrain = !everConnected;
 
   try {
-    // SECURITY-REVIEW: device credentials go only to Signal's WebSocket endpoint and are never logged. Signal authenticates the upgrade by its Authorization header and treats query-string credentials as an anonymous socket, so only the pinned client (which can set headers) receives messages.
-    const auth = 'Basic ' + btoa(config.login() + ':' + config.deviceToken());
-    if (signal.net.isPinnedUrl(baseUrl)) {
-      sock = signal.net.openWebSocket(baseUrl, { headers: { Authorization: auth, 'X-Signal-Receive-Stories': 'false' } });
-    } else if (signal.net.proxy()) {
-      dbg('ws: a proxy is set but the pinned client is unavailable, not connecting directly');
+    // SECURITY-REVIEW: device credentials go only to Signal's WebSocket endpoint, in the Authorization header, and are never logged or put in a URL. Signal treats query-string credentials as an anonymous socket that gets no messages, so without the pinned client (which can set headers) Beacon doesn't connect.
+    if (!signal.net.isPinnedUrl(baseUrl)) {
+      dbg(signal.net.proxy() ? 'ws: a proxy is set but the pinned client is unavailable, not connecting directly' : 'ws: the pinned client is unavailable, not connecting');
       setConnection('closed');
       return;
-    } else {
-      const ws = new WebSocket(baseUrl + '&login=' + encodeURIComponent(config.login()) + '&password=' + encodeURIComponent(config.deviceToken()));
-      ws.binaryType = 'arraybuffer';
-      sock = ws as unknown as SocketLike;
     }
+    const auth = 'Basic ' + btoa(config.login() + ':' + config.deviceToken());
+    sock = signal.net.openWebSocket(baseUrl, { headers: { Authorization: auth, 'X-Signal-Receive-Stories': 'false' } });
   } catch (e: any) {
     dbg('ws: could not open ' + (e && e.message));
     scheduleReconnect();

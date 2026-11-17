@@ -57,7 +57,7 @@ export const incomingMethods = {
   /**
    * Decrypt a binary Signal `Envelope` from a WebSocket `/api/v1/message` request and return the JSON frame for the app's store.
    */
-  async processIncomingEnvelope(envelopeBytes: Uint8Array): Promise<{ envelope: any } | null> {
+  async processIncomingEnvelope(envelopeBytes: Uint8Array, deliveredAt?: number): Promise<{ envelope: any } | null> {
     const res = await client.enqueueDecryptEnvelope(envelopeBytes, applyOwnKeyChanges);
     if (!res) return null;
     const c = res.content.content;
@@ -71,7 +71,7 @@ export const incomingMethods = {
     if (c.case === 'callMessage') {
       if (fromSelf || !isAci(sender)) return null;
       const env = res.envelope;
-      const took = await callManager.handle({ source: sender, sourceDevice: env.sourceDevice, serverTimestamp: env.serverTimestamp || env.timestamp }, c.value).catch((err) => {
+      const took = await callManager.handle({ source: sender, sourceDevice: env.sourceDevice, serverTimestamp: env.serverTimestamp || env.timestamp, deliveredAt: env.serverTimestamp ? deliveredAt : undefined }, c.value).catch((err) => {
         host().dbg(`call: message not handled (${err && err.message})`);
         return true;
       });

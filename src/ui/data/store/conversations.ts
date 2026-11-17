@@ -169,12 +169,13 @@ export function chatFor(ref: ChatRef): Conversation | undefined {
   return convs[ref.key] || (alt ? convs[alt] : undefined);
 }
 
-/** Remember the chat's disappearing-message timer locally; the caller changes it on Signal's side. */
-export function setConvExpire(convId: string, secs: number): void {
+/** Remember the chat's disappearing-message timer locally, with the timer version it was sent with; the caller changes it on Signal's side. */
+export function setConvExpire(convId: string, secs: number, version?: number): void {
   const conv = convs[convId];
   if (!conv) return;
   const changed = (conv.expireTimer || 0) !== (secs || 0);
   conv.expireTimer = secs || 0;
+  if (version) conv.expireTimerVersion = Math.max(conv.expireTimerVersion || 0, version);
   persistConv(conv);
   emit('conversations');
   if (changed && conv.type === 'direct') timerLine(conv, self(), secs || 0, Date.now());

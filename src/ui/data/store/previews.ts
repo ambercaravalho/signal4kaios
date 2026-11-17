@@ -17,7 +17,8 @@ export function attachmentLabel(attachments: Array<Partial<Attachment>> | undefi
     return photos ? plural(attachments.length, S.photoOne, S.photoMany) : plural(attachments.length, S.attachmentOne, S.attachmentMany);
   }
   if (a.viewOnce) return 'View-once media';
-  if (a.voiceNote || type.indexOf('audio/') === 0) return 'Voice message';
+  if (a.voiceNote) return 'Voice message';
+  if (type.indexOf('audio/') === 0) return a.filename || 'Audio';
   if (type.indexOf('image/') === 0) return 'Photo';
   if (type.indexOf('video/') === 0) return 'Video';
   return a.filename || 'File';
@@ -56,6 +57,7 @@ function callText(n: Notice): string {
   if (n.outcome === 'missed') return S.missedCallLine;
   if (n.outcome === 'declined') return S.declinedCallLine;
   if (n.outcome === 'unanswered') return S.unansweredCallLine;
+  if (n.outcome === 'failed') return S.failedCallLine;
   const line = n.direction === 'outgoing' ? S.outgoingCallLine : S.incomingCallLine;
   return n.durationMs && n.durationMs >= 1000 ? line + ' · ' + fmtLength(n.durationMs / 1000) : line;
 }

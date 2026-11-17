@@ -114,7 +114,7 @@ function ScanScreen(props: { title: string; binary: boolean; resolve(v: string |
       else if (text === null) toast(S.noCodeFound);
     });
 
-  useSoftkeys({ left: S.cancel, center: null, right: S.scanFromPhoto });
+  useSoftkeys({ left: S.cancel, center: null, right: S.skFromPhoto });
   useKeys((e) => {
     if (e.key === 'SoftLeft' || e.key === 'Backspace') finish(undefined);
     else if (e.key === 'SoftRight') fromPhoto();
