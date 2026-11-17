@@ -2,6 +2,15 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v2.11.2
+
+Nicknames stay put. On v2.11.0 or later, update from Beacon itself: **Options → Update to Beacon 2.11.2** on the chat list. Your chats and settings carry over.
+
+### Fixed
+
+- **Nicknames no longer disappear.** A nickname you set, in Beacon or on another device, now stays through syncs with your phone and through app updates. Before, a contacts sync from your phone, or a sync that ran before a new nickname was saved to Signal, could replace it with the contact's phone name, profile name, or number. Nicknames that went missing come back on their own the first time Beacon connects after updating.
+- **Names follow Signal's order:** your nickname, then the name in your phone's contacts, then their profile name, then their username or number.
+
 ## v2.11.1
 
 About Beacon gets its own place in Settings. On v2.11.0, update from Beacon itself: **Options → Update to Beacon 2.11.1** on the chat list. Your chats and settings carry over.
