@@ -511,4 +511,20 @@ describe('our own profile', () => {
     await accountMethods.hydrateOwnProfile();
     assert.deepEqual(patches, [{ profileName: 'Ann Lea', profileAbout: 'Gardening', profileAboutEmoji: '' }]);
   });
+
+  it('fails a profile save it couldn’t upload, so the app doesn’t show a name Signal never got', async () => {
+    const withKey = await store.getAccount();
+    await store.saveAccount({ ...withKey!, profileKey: undefined as any });
+    const puts: string[] = [];
+    http.request = async (method: string, path: string) => {
+      if (method === 'PUT') puts.push(path);
+      return {};
+    };
+    try {
+      await assert.rejects(accountMethods.updateOwnProfile({ name: 'Ann Lee' }), /not written/);
+      assert.deepEqual(puts, []);
+    } finally {
+      await store.saveAccount(withKey!);
+    }
+  });
 });

@@ -260,7 +260,8 @@ export const accountMethods = {
       { name: body.name || host().config.profileName() || DEFAULT_PROFILE_NAME, about: body.about, emoji: body.emoji, sharePhoneNumber: host().config.sharePhoneNumber() },
       serverUrl()
     );
-    if (written && body.name && body.name.trim()) await writeProfileName(...splitProfileName(body.name));
+    if (!written) throw new Error('The profile was not written');
+    if (body.name && body.name.trim()) await writeProfileName(...splitProfileName(body.name));
   },
 
   hydrateOwnProfile,

@@ -70,6 +70,14 @@ describe('friendlyError', () => {
     assert.equal(friendlyError({ kind: 'http', status: 404 }), S.errNotFound);
   });
 
+  it('tells a taken username from an invalid one and from too many tries', () => {
+    const err = (name: string) => Object.assign(new Error('x'), { name, code: name });
+    assert.equal(friendlyError(err('UsernameUnavailable')), S.usernameTaken);
+    assert.equal(friendlyError(err('UsernameReservationLost')), S.usernameTaken);
+    assert.equal(friendlyError(err('UsernameInvalid')), S.usernameInvalid);
+    assert.equal(friendlyError(err('UsernameRateLimited')), S.errRateLimited);
+  });
+
   it('never echoes the raw message', () => {
     const raw = 'libsignal: invalid PreKey bundle for ACI abc';
     assert.equal(friendlyError(new Error(raw)), S.errGeneric);

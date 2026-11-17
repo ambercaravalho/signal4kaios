@@ -484,6 +484,7 @@ export const S = {
   usernameNone: 'Not set',
   usernameHint: 'Like name.01. Leave off the number to get one picked.',
   usernameTaken: 'That username isn’t available. Try another one.',
+  usernameInvalid: 'That username can’t be used. Use 3 to 32 letters, numbers, or _, not starting with a number.',
   deleteUsernameBody: 'Your QR code and link stop working, and someone else could take it.',
   nameRequired: 'Set your name first',
   usernameLink: 'QR code or link',

@@ -75,11 +75,12 @@ export async function renameContact(recipient: string, name: string): Promise<vo
   await signal.setContactNickname(recipient, name);
 }
 
-export function updateProfile(body: { name?: string; about?: string; emoji?: string }): Promise<void> {
+/** The profile is saved here only once Signal has it, so a failed upload doesn't show a name nobody else sees. */
+export async function updateProfile(body: { name?: string; about?: string; emoji?: string }): Promise<void> {
+  await signal.updateOwnProfile(body);
   if (body.name != null) config.set({ profileName: body.name });
   if (body.about != null) config.set({ profileAbout: body.about });
   if (body.emoji != null) config.set({ profileAboutEmoji: body.emoji });
-  return signal.updateOwnProfile(body);
 }
 
 /** Read receipts on or off here and, through Storage Service, on your other devices; a pull would otherwise put back the old value. */

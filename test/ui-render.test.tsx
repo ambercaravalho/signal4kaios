@@ -412,6 +412,21 @@ describe('screens', () => {
     assert.deepEqual(bodies, [{ name: 'Mia P' }, { name: 'Mia P', about: 'new about' }]);
   });
 
+  it('keeps the old name when the profile upload fails', async () => {
+    const real = signal.updateOwnProfile;
+    (signal as any).updateOwnProfile = async () => {
+      throw new Error('The profile was not written');
+    };
+    config.set({ profileName: 'Mia Park' });
+    try {
+      await saveProfile({ name: 'Mia P' });
+      assert.equal(config.profileName(), 'Mia Park');
+    } finally {
+      (signal as any).updateOwnProfile = real;
+      config.set({ profileName: undefined });
+    }
+  });
+
   it('asks before Back throws away attachments in the tray or a voice recording', () => {
     const at = { onComposer: true, draft: '', quote: false, editing: false, tray: 0 };
     assert.equal(backAction('Backspace', at), 'pass');
