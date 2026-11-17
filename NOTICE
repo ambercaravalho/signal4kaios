@@ -24,3 +24,5 @@ The app bundle (src/app/build/app.js) also includes these JavaScript libraries, 
 - Protobuf-ES runtime, @bufbuild/protobuf (https://github.com/bufbuild/protobuf-es), Apache License 2.0 and BSD-3-Clause.
 - blurhash (https://github.com/woltapp/blurhash), MIT License, Copyright (c) 2018 Wolt Enterprises.
 - @breezystack/lamejs (https://github.com/shijinyu/lamejs), a JavaScript port of the LAME MP3 encoder, GNU Lesser General Public License version 3 (LGPL-3.0).
+
+The photo orientation code in src/ui/data/image-scale.ts (its orientation test image, browser check, and canvas transforms) is ported from JavaScript Load Image (https://github.com/blueimp/JavaScript-Load-Image), MIT License, Copyright (c) 2011 Sebastian Tschan, https://blueimp.net.
