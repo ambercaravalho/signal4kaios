@@ -219,6 +219,32 @@ describe('store', () => {
     assert.deepEqual(rec.mentions, [{ name: 'Bob', uuid: 'aci-bob' }]);
   });
 
+  it('keeps mentions in a photo’s caption', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 5200 };
+    };
+    const rec = await store.sendAttachments(ALICE, [{ dataUri: 'data:image/jpeg;base64,AAAA', contentType: 'image/jpeg' }], 'for @Bob', { mentions: [{ name: 'Bob', uuid: 'aci-bob' }] });
+    assert.equal(sent[0].message, 'for \uFFFC');
+    assert.deepEqual(sent[0].mentions, [{ start: 4, length: 1, uuid: 'aci-bob' }]);
+    assert.equal(rec.body, 'for @Bob');
+    assert.deepEqual(rec.mentions, [{ name: 'Bob', uuid: 'aci-bob' }]);
+  });
+
+  it('forwards at most 32 attachments', async () => {
+    const sent: any[] = [];
+    (signal as any).send = async (payload: any) => {
+      sent.push(payload);
+      return { timestamp: 5300 };
+    };
+    const many = Array.from({ length: 40 }, (_, i) => ({ id: 'p' + i, contentType: 'image/jpeg', filename: i + '.jpg', size: 3 }));
+    const src = { id: 'fwd-many', convId: ALICE, author: ALICE, timestamp: 900, body: '', attachments: many, incoming: true } as any;
+    const rec = await store.forwardMessage(ALICE, src, many.map(() => 'data:image/jpeg;base64,AAAA'));
+    assert.equal(sent[0].base64_attachments.length, store.MAX_ATTACHMENTS);
+    assert.equal(rec.attachments.length, store.MAX_ATTACHMENTS);
+  });
+
   it('sends a link preview only for a link that is in the message', async () => {
     const sent: any[] = [];
     (signal as any).send = async (payload: any) => {
@@ -842,6 +868,7 @@ describe('store', () => {
     await settle();
     store.ingestRaw(answer(null));
     await assert.rejects(gone, (e: unknown) => e instanceof store.NoLongerAvailableError);
+    assert.equal(store.BACKFILL_WAIT_MS, 30000, 'a phone that’s asleep gets time to answer');
   });
 
   it('holds back someone we never accepted once Storage Service has said who we did', async () => {

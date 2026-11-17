@@ -91,6 +91,10 @@ export function storageKindFor(type: string): string {
 
 const EXT: Record<string, string> = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp', 'audio/aac': '.aac', 'audio/mpeg': '.mp3', 'audio/ogg': '.ogg', 'audio/mp4': '.m4a', 'video/mp4': '.mp4' };
 
-export function fileNameFor(att: Attachment, type: string): string {
-  return att.filename || 'signal_' + Date.now() + (EXT[type] || '');
+/** Signal-Desktop's getSuggestedFilename: the file's own name, else `signal-YYYY-MM-DD-HHmmss` from when the message was sent. */
+export function fileNameFor(att: Attachment, type: string, sentAt: number = Date.now()): string {
+  if (att.filename) return att.filename;
+  const d = new Date(sentAt);
+  const p = (n: number) => (n < 10 ? '0' : '') + n;
+  return `signal-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}` + (EXT[type] || '');
 }

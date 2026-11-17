@@ -17,7 +17,8 @@ export function attachmentLabel(attachments: Array<Partial<Attachment>> | undefi
     return photos ? plural(attachments.length, S.photoOne, S.photoMany) : plural(attachments.length, S.attachmentOne, S.attachmentMany);
   }
   if (a.viewOnce) return 'View-once media';
-  if (a.voiceNote || type.indexOf('audio/') === 0) return 'Voice message';
+  if (a.voiceNote) return 'Voice message';
+  if (type.indexOf('audio/') === 0) return a.filename || 'Audio';
   if (type.indexOf('image/') === 0) return 'Photo';
   if (type.indexOf('video/') === 0) return 'Video';
   return a.filename || 'File';

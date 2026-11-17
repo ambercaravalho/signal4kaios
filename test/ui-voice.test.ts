@@ -5,8 +5,10 @@ import assert from 'node:assert/strict';
 import { create } from '@bufbuild/protobuf';
 import { AttachmentPointer_Flags, AttachmentPointerSchema } from '../src/engine/gen/SignalService_pb';
 import { applyAttachmentMeta, receivedMeta } from '../src/engine/services/attachment-meta';
+import { fileNameFor } from '../src/ui/data/attachments';
 import { fmtLength } from '../src/ui/data/format';
-import { encodeVoice, type RecorderDeps, toMono, toPeak, VoiceRecorder, voiceNoteFile, WaveformBuilder, waveformBars } from '../src/ui/data/voice-recorder';
+import { attachmentLabel } from '../src/ui/data/store';
+import { encodeVoice, type RecorderDeps, toPeak, VoiceEncoder, VoiceRecorder, voiceNoteFile, WaveformBuilder, waveformBars } from '../src/ui/data/voice-recorder';
 import { settle } from './helpers';
 
 function waveformOf(samples: ArrayLike<number>): number[] {
@@ -27,38 +29,21 @@ class FakeEncoder {
 }
 
 function fakeDeps(over: Partial<RecorderDeps> = {}) {
-  const log = { tracksStopped: 0, meterClosed: false, decoded: 0, started: false, encoder: new FakeEncoder() };
+  const log = { tracksStopped: 0, tapClosed: false, started: false, encoder: new FakeEncoder(), feed: null as ((pcm: Float32Array) => void) | null };
   let clock = 1000;
   const deps: RecorderDeps & { advance(ms: number): void } = {
     advance: (ms) => {
       clock += ms;
     },
     media: async () => ({ getTracks: () => [{ stop: () => log.tracksStopped++ }] }) as unknown as MediaStream,
-    recorder: () => {
-      const rec = {
-        mimeType: 'audio/ogg;codecs=opus',
-        ondataavailable: null as ((e: { data: Blob }) => void) | null,
-        onstop: null as (() => void) | null,
-        onerror: null as ((e: unknown) => void) | null,
-        start: () => {
-          log.started = true;
-        },
-        stop: () => {
-          rec.ondataavailable!({ data: new Blob([new Uint8Array([1, 2, 3])]) });
-          setTimeout(() => rec.onstop!(), 0);
+    capture: async (_stream, onPcm) => {
+      log.started = true;
+      log.feed = onPcm;
+      return {
+        close: () => {
+          log.tapClosed = true;
         },
       };
-      return rec;
-    },
-    meter: () => ({
-      level: () => 128,
-      close: () => {
-        log.meterClosed = true;
-      },
-    }),
-    decode: async (blob) => {
-      log.decoded = blob.size;
-      return { channels: [new Float32Array(48000).fill(0.5), new Float32Array(48000).fill(0.5)], rate: 48000 };
     },
     encoder: () => log.encoder,
     now: () => clock,
@@ -81,13 +66,6 @@ describe('voice messages', () => {
     assert.equal(bars[0], 0);
     assert.equal(bars[bars.length - 1], loud);
     assert.ok(bars.every((v) => v === 0 || v === loud || (v > 0 && v < loud)));
-  });
-
-  it('mixes to mono and resamples to 16 kHz', () => {
-    const mono = toMono([new Float32Array([1, 1, 1, 1, 1, 1]), new Float32Array([0, 0, 0, 0, 0, 0])], 48000);
-    assert.deepEqual(Array.from(mono), [0.5, 0.5]);
-    assert.equal(toMono([new Float32Array(16000)], 16000).length, 16000);
-    assert.equal(toMono([new Float32Array(44100)], 44100).length, 16000);
   });
 
   it('encodes MP3 frames with lamejs', async () => {
@@ -114,7 +92,9 @@ describe('voice messages', () => {
     await rec.start();
     assert.equal(rec.state, 'recording');
     assert.equal(log.started, true);
-    assert.equal(rec.level(), 128);
+    for (let i = 0; i < 50; i++) log.feed!(new Float32Array(320).fill(0.5));
+    assert.equal(rec.level(), toPeak(0.25));
+    assert.equal(log.encoder.samples, 13 * 1152, 'whole MP3 frames are encoded as the audio arrives');
     deps.advance(4500);
     assert.equal(rec.elapsedMs(), 4500);
     await assert.rejects(rec.finish());
@@ -122,19 +102,28 @@ describe('voice messages', () => {
     await rec.stop();
     assert.equal(rec.state, 'stopped');
     assert.equal(log.tracksStopped, 1);
-    assert.equal(log.meterClosed, true);
+    assert.equal(log.tapClosed, true);
     assert.equal(rec.level(), 0);
+    log.feed!(new Float32Array(320).fill(0.5));
     deps.advance(1000);
     assert.equal(rec.elapsedMs(), 4500);
 
-    const progress: number[] = [];
-    const note = await rec.finish((p) => progress.push(p));
+    const note = await rec.finish();
     assert.equal(rec.state, 'done');
-    assert.equal(log.decoded, 3);
-    assert.equal(log.encoder.samples, 16000);
+    assert.equal(log.encoder.samples, 16000, 'audio after Stop is left out');
     assert.equal(note.duration, 1);
     assert.deepEqual(Array.from(note.mp3.slice(-2)), [0xff, 0xee]);
     assert.ok(note.waveform.every((v) => v === toPeak(0.25)));
+  });
+
+  it('keeps only MP3 bytes while recording, however long it runs', () => {
+    const enc = new VoiceEncoder(new FakeEncoder());
+    const block = new Float32Array(320).fill(0.1);
+    for (let i = 0; i < 16000 * 60 * 15 / 320; i++) enc.push(block);
+    const note = enc.finish();
+    assert.equal(note.duration, 15 * 60);
+    assert.equal(note.mp3.length, enc.frames + 1, 'one fake byte per frame plus the flush');
+    assert.ok(note.waveform.length <= 100);
   });
 
   it('stops by itself at the limit', async () => {
@@ -150,28 +139,30 @@ describe('voice messages', () => {
     assert.equal(limited, true);
   });
 
-  it('fails without the microphone, and cancelling drops the recording', async () => {
+  it('fails without the microphone or with nothing recorded, and cancelling drops the recording', async () => {
     const denied = new VoiceRecorder(fakeDeps({ media: () => Promise.reject(new Error('NotAllowedError')) }).deps);
     await assert.rejects(denied.start());
     assert.equal(denied.state, 'failed');
 
+    const noWorklet = fakeDeps({ capture: () => Promise.reject(new Error('NotSupportedError')) });
+    const broken = new VoiceRecorder(noWorklet.deps);
+    await assert.rejects(broken.start());
+    assert.equal(noWorklet.log.tracksStopped, 1, 'the microphone is let go');
+
     const { deps, log } = fakeDeps();
     const rec = new VoiceRecorder(deps);
     await rec.start();
+    log.feed!(new Float32Array(320));
     rec.cancel();
     assert.equal(rec.state, 'cancelled');
     assert.equal(log.tracksStopped, 1);
+    assert.equal(log.tapClosed, true);
     await assert.rejects(rec.finish());
 
-    const slow = fakeDeps({ decode: async () => ({ channels: [new Float32Array(16000 * 30)], rate: 16000 }) });
-    const midway = new VoiceRecorder(slow.deps);
-    await midway.start();
-    await midway.stop();
-    const finishing = midway.finish();
-    await settle(0);
-    midway.cancel();
-    await assert.rejects(finishing, /cancelled/);
-    assert.equal(midway.state, 'cancelled');
+    const silent = new VoiceRecorder(fakeDeps().deps);
+    await silent.start();
+    await silent.stop();
+    await assert.rejects(silent.finish(), /Nothing was recorded/);
   });
 
   it('puts the waveform, length, and voice flag on the pointer', () => {
@@ -199,6 +190,15 @@ describe('voice messages', () => {
     assert.equal(meta.duration, 12.25);
     assert.deepEqual(receivedMeta(create(AttachmentPointerSchema, { contentType: 'audio/mpeg', audioDurationSeconds: Infinity })), {});
     assert.deepEqual(receivedMeta(create(AttachmentPointerSchema, { contentType: 'image/png', audioWaveform: new Uint8Array([1]) })), {});
+  });
+
+  it('saves a voice message under the time it was sent, and labels picked audio by its name', () => {
+    const sentAt = new Date(2026, 10, 16, 9, 5, 7).getTime();
+    assert.equal(fileNameFor({ id: 'v', contentType: 'audio/mpeg', filename: '', size: 1, voiceNote: true }, 'audio/mpeg', sentAt), 'signal-2026-11-16-090507.mp3');
+    assert.equal(fileNameFor({ id: 's', contentType: 'audio/mpeg', filename: 'song.mp3', size: 1 }, 'audio/mpeg', sentAt), 'song.mp3');
+    assert.equal(attachmentLabel([{ contentType: 'audio/mpeg', voiceNote: true }]), 'Voice message');
+    assert.equal(attachmentLabel([{ contentType: 'audio/mpeg', filename: 'song.mp3' }]), 'song.mp3');
+    assert.equal(attachmentLabel([{ contentType: 'audio/mpeg' }]), 'Audio');
   });
 
   it('draws bubble bars and lengths', () => {

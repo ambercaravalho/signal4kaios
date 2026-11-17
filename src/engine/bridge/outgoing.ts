@@ -5,7 +5,6 @@ import type { MessageInitShape } from '@bufbuild/protobuf';
 import { bytesToBlob, fromBase64, uuidToBytes } from '../bytes';
 import {
   type AttachmentPointer,
-  AttachmentPointer_Flags,
   BodyRange_Style,
   BodyRangeSchema,
   ContentSchema,
@@ -120,7 +119,6 @@ async function uploadAttachments(payload: SendPayload): Promise<AttachmentPointe
     const meta = (payload.attachment_meta && payload.attachment_meta[i]) || null;
     const ext = contentType.split('/')[1] || 'bin';
     const ptr = await client.uploadAttachment(bytes, contentType, filename || (meta && meta.voice ? '' : `attachment.${ext}`));
-    if (contentType.startsWith('audio/') && files.length === 1) ptr.flags |= AttachmentPointer_Flags.VOICE_MESSAGE;
     applyAttachmentMeta(ptr, meta);
     out.push(ptr);
   }

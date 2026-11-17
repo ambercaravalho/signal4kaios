@@ -14,7 +14,7 @@ const PLAYBACK_MAX = 4800;
 const PLAYBACK_GROW = 640;
 const PLAYBACK_SHRINK = 320;
 const PLAYBACK_CALM_MS = 10_000;
-const WORKLET_URL = 'build/call-worklet.js';
+export const WORKLET_URL = 'build/call-worklet.js';
 
 type AudioChannelManager = { volumeControlChannel: string };
 

@@ -222,7 +222,7 @@ function localAttachment(f: OutgoingFile): Attachment {
 }
 
 /** One message carrying `files` in order, with `caption` as its text. View-once media goes alone and without a caption, as in Signal. */
-export function sendAttachments(convId: string, files: OutgoingFile[], caption: string, opts: { viewOnce?: boolean; quote?: Quote | null } = {}): Promise<Message> {
+export function sendAttachments(convId: string, files: OutgoingFile[], caption: string, opts: { viewOnce?: boolean; quote?: Quote | null; mentions?: PickedMention[] } = {}): Promise<Message> {
   let conv: Conversation;
   try {
     conv = convForSend(convId);
@@ -238,8 +238,11 @@ export function sendAttachments(convId: string, files: OutgoingFile[], caption: 
   const text = opts.viewOnce ? '' : caption || '';
   return withDefaultTimer(conv, () => {
     const st = styled(text);
+    const mentions = text ? opts.mentions || [] : [];
+    const wire = encodeMentions(st.body, st.styles, mentions);
     const rec = newOutgoingRec(conv, { body: st.body, styles: st.styles, raw: text, attachments: atts, quote: opts.quote || null });
-    const payload: SendPayload = { ...basePayload(conv, st.body), styles: st.styles, base64_attachments: files.map((f) => f.dataUri) };
+    if (wire.mentions.length) rec.mentions = mentions;
+    const payload: SendPayload = { ...basePayload(conv, wire.body), styles: wire.styles, mentions: wire.mentions, base64_attachments: files.map((f) => f.dataUri) };
     const meta = files.map(outgoingMeta);
     if (meta.some(Boolean)) payload.attachment_meta = meta;
     if (opts.viewOnce) payload.view_once = true;
@@ -280,7 +283,7 @@ export function forwardMessage(convId: string, m: Message, dataUris: string[] = 
   } catch (e) {
     return Promise.reject(e);
   }
-  const srcs = m.attachments.slice(0, dataUris.length);
+  const srcs = m.attachments.slice(0, Math.min(dataUris.length, MAX_ATTACHMENTS));
   const attachments: Attachment[] = srcs.map((src) => localAttachment({ dataUri: '', contentType: src.contentType, filename: src.filename, size: src.size, voiceNote: src.voiceNote, waveform: src.waveform, duration: src.duration, blurHash: src.blurHash, width: src.width, height: src.height }));
   return withDefaultTimer(conv, () => {
     const rec = newOutgoingRec(conv, { body: m.body, styles: m.styles || [], attachments });
@@ -324,7 +327,7 @@ export function retryMessage(rec: Message): Promise<Message> {
         width: att.width,
         height: att.height,
       }));
-      const sent = sendAttachments(rec.convId, files, text, { viewOnce: rec.attachments.some((a) => a.viewOnce), quote: rec.quote });
+      const sent = sendAttachments(rec.convId, files, text, { viewOnce: rec.attachments.some((a) => a.viewOnce), quote: rec.quote, mentions: rec.mentions || [] });
       for (const k of keys) db.deleteAttachment(k).catch(() => {});
       return sent;
     });

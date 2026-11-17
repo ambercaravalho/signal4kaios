@@ -11,7 +11,7 @@ import { conversationIdentifier } from '../src/engine/bridge/delivery';
 import { incomingMethods } from '../src/engine/bridge/incoming';
 import { outgoingMethods } from '../src/engine/bridge/outgoing';
 import { resetPeerNamesForTest } from '../src/engine/bridge/peer-names';
-import { ContentSchema } from '../src/engine/gen/SignalService_pb';
+import { AttachmentPointer_Flags, AttachmentPointerSchema, ContentSchema } from '../src/engine/gen/SignalService_pb';
 import { type EngineHost, setEngineHost } from '../src/engine/host';
 import { finishLinking } from '../src/engine/net/provisioning';
 import { create } from '../src/engine/net/proto';
@@ -362,6 +362,29 @@ describe('read receipts', () => {
     } finally {
       c.sendContentToRecipient = sendContentToRecipient;
       c.sendSyncMessage = sendSyncMessage;
+    }
+  });
+});
+
+describe('sending audio', () => {
+  it('flags only a recorded voice message as one, not a picked audio file', async () => {
+    const c = client as any;
+    const saved = { up: c.uploadAttachment, send: c.sendContentToRecipient, sync: c.sendSyncMessage };
+    const flags: number[] = [];
+    c.uploadAttachment = async (_b: Uint8Array, contentType: string, fileName: string) => create(AttachmentPointerSchema, { contentType, fileName });
+    c.sendContentToRecipient = async (_to: string, content: any) => {
+      for (const a of content.content.value.attachments) flags.push(a.flags);
+      return true;
+    };
+    c.sendSyncMessage = async () => {};
+    try {
+      await outgoingMethods.send({ recipients: [BOB], message: '', base64_attachments: ['data:audio/mpeg;filename=song.mp3;base64,AAAA'] } as any);
+      await outgoingMethods.send({ recipients: [BOB], message: '', base64_attachments: ['data:audio/mpeg;base64,AAAA'], attachment_meta: [{ voice: true, duration: 2 }] } as any);
+      assert.deepEqual(flags, [0, AttachmentPointer_Flags.VOICE_MESSAGE]);
+    } finally {
+      c.uploadAttachment = saved.up;
+      c.sendContentToRecipient = saved.send;
+      c.sendSyncMessage = saved.sync;
     }
   });
 });

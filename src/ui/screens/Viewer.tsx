@@ -71,7 +71,7 @@ export function ViewerScreen(props: { att: Attachment; msg?: Message; title: str
 
   function save(): void {
     if (!blob || att.viewOnce) return;
-    saveToDevice(storageKindFor(type), blob, fileNameFor(att, type)).then(
+    saveToDevice(storageKindFor(type), blob, fileNameFor(att, type, props.msg ? props.msg.timestamp : undefined)).then(
       () => toast(S.savedToPhone),
       (e) => {
         dbg('save failed: ' + (e && e.name));

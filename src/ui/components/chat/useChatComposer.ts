@@ -187,7 +187,7 @@ export function useChatComposer(convId: string, conv: Conversation | undefined, 
     if (tray.length) {
       const files = tray;
       setTray([]);
-      store.sendAttachments(convId, files, text, { quote: q }).catch((e) => toast(sendError(e)));
+      store.sendAttachments(convId, files, text, { quote: q, mentions }).catch((e) => toast(sendError(e)));
       return;
     }
     const preview = shownPreview;

@@ -9,7 +9,7 @@ import { chatFor } from './conversations';
 import { updateTarget } from './ingest';
 import { convs } from './state';
 
-export const BACKFILL_WAIT_MS = 10000;
+export const BACKFILL_WAIT_MS = 30000;
 /** How long to keep waiting once the phone says it's still uploading. */
 const PENDING_WAIT_MS = 60000;
 
