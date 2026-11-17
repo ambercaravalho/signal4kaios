@@ -61,7 +61,7 @@ To sync again later, use **Settings → Linked device → Sync with your phone**
 
 ## Troubleshooting
 
-Start with **Settings → Debug**: it shows the connection state, PreKey status, and the debug log, which records decryption errors but never keys or passwords. **Share log** sends a copy with your number and account IDs shortened.
+Start with **Settings → Debug**: it shows the connection state, PreKey status, and the debug log, a trace of the app's recent events (the last 300 lines, kept only in memory) that never includes keys or passwords. **Share log** sends a copy with phone numbers, account IDs, and long tokens shortened.
 
 <details>
 <summary><strong>No QR code on the Link screen</strong></summary>
@@ -73,7 +73,7 @@ Check that the phone is online, then press **Retry**, or open **Options → Get 
 <details>
 <summary><strong>The app went back to the Link screen</strong></summary>
 
-The phone was removed under **Linked devices** on your main phone, or you upgraded from an early v2.0.0 build whose encryption state isn't compatible with libsignal. The Link screen says so; scan the QR code to link again.
+The phone was removed under **Linked devices** on your main phone, Signal removed it after about 30 days without being opened, or you upgraded from an early v2.0.0 build whose encryption state isn't compatible with libsignal. The Link screen says so; scan the QR code to link again.
 
 </details>
 
@@ -89,7 +89,7 @@ If it says it couldn't open your messages, restart the phone first. If that keep
 <details>
 <summary><strong>"Check that the phone's date and time are right"</strong></summary>
 
-Beacon checks Signal's certificates against the phone's clock, so a clock that's far off makes every connection fail. Set the date and time in the phone's **Settings → Device → Date & Time** (or turn on automatic time), and Beacon connects again on its own.
+Beacon checks Signal's certificates against the phone's clock, so a clock that's far off makes every connection fail. Set the date and time in the phone's **Settings** under **Date & Time**, or turn on automatic time, and Beacon connects again on its own.
 
 </details>
 

@@ -292,7 +292,7 @@ export const S = {
   noContacts: 'No contacts yet',
   noContactsHint: 'Find people by username or number, or sync in Settings.',
   phoneNotFound: 'Not found on Signal',
-  phoneNotFoundBody: 'This number isn’t on Signal, or its owner chose not to be found by number. Try their username.',
+  phoneNotFoundBody: '{number} isn’t on Signal, or its owner chose not to be found by number. Try their username.',
   phoneLookupLimited: 'Too many number lookups. Try again in {n} minutes.',
   usernameNotFoundBody: '{name} isn’t a Signal user. Check the username and try again.',
   scanUnsupported: 'This isn’t a Signal contact, group, or proxy code.',

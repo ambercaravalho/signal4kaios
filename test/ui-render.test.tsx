@@ -14,6 +14,7 @@ import { signal } from '../src/ui/data/api';
 import { config } from '../src/ui/data/config';
 import { db } from '../src/ui/data/db';
 import { GUIDES } from '../src/ui/data/guides';
+import { callingCode, toE164 } from '../src/ui/data/phone-number';
 import * as store from '../src/ui/data/store';
 import type { Message } from '../src/ui/data/types';
 import { askViewOnce } from '../src/ui/components/chat/useChatComposer';
@@ -236,6 +237,7 @@ describe('screens', () => {
     assert.equal(_stackForTest().length, 2);
     assert.ok(_stackForTest()[1].overlay);
     assert.ok(text(html()).includes(S.phoneNotFound));
+    assert.ok(text(html()).includes('+15550003'), 'says which number was looked up');
 
     router.reset(HomeScreen, {});
     answer = async () => {
@@ -243,6 +245,22 @@ describe('screens', () => {
     };
     await openPhone('+15550004');
     assert.equal(_stackForTest().length, 1);
+  });
+
+  it('reads a number typed without a country code as one in our own country', () => {
+    assert.equal(toE164('07700 900123', '+447700900000'), '+447700900123');
+    assert.equal(toE164('0044 7700 900123', '+15550000000'), '+447700900123');
+    assert.equal(toE164('011 44 7700 900123', '+15550000000'), '+447700900123');
+    assert.equal(toE164('(555) 010-2030', '+15550000000'), '+15550102030');
+    assert.equal(toE164('1 555 010 2030', '+15550000000'), '+15550102030');
+    assert.equal(toE164('06 12345678', '+33612345678'), '+33612345678');
+    assert.equal(toE164('06 123 4567', '+390612345678'), '+39061234567', 'Italy keeps its leading 0');
+    assert.equal(toE164('8 912 345 67 89', '+79000000000'), '+79123456789');
+    assert.equal(toE164('612 345 678', '+34600000000'), '+34612345678');
+    assert.equal(toE164('+49 30 123456', '+447700900000'), '+4930123456');
+    assert.equal(toE164('15550102030', ''), '+15550102030', 'without our own number it reads as international');
+    assert.equal(callingCode('+353861234567'), '353');
+    assert.equal(callingCode('+4930123456'), '49');
   });
 
   it('draws options and dialogs as overlays above the screen', () => {

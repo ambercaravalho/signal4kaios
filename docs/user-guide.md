@@ -143,9 +143,9 @@ Calls start on the earpiece. **Back** doesn't leave the call screen, so the call
 
 ## Starting a chat and searching
 
-**New chat** lists your contacts and groups and filters them as you type a name. Type a username to get **Find by username**, or a number to get **Find by phone number**. **Scan** (right softkey) reads someone's Signal QR code (their username code or a phone number), a group's QR code, or a proxy's.
+**New chat** lists your contacts and groups and filters them as you type a name. Type a username to get **Find by username**, or a number to get **Find by phone number**. Start an international number with `+` or `00`; a number without either is read as one in your own country, with its leading 0 dropped (except in Italy), and the row shows the full number it will look up. **Scan** (right softkey) reads someone's Signal QR code (their username code or a phone number), a group's QR code, or a proxy's.
 
-**Find by phone number** opens the chat right away for someone in your contacts. Any other number is looked up with Signal, privately: the lookup runs inside Signal's secure enclave, which the phone checks before sending the number. When the number isn't on Signal, or its owner chose not to be found by number, Beacon says **Not found on Signal**; try their username. Signal limits how many numbers an account can look up, so after many lookups Beacon says how many minutes to wait.
+**Find by phone number** opens the chat right away for someone in your contacts. Any other number is looked up with Signal, privately: the lookup runs inside Signal's secure enclave, which the phone checks before sending the number. When the number isn't on Signal, or its owner chose not to be found by number, Beacon says **Not found on Signal** with the number it looked up; try their username. Signal limits how many numbers an account can look up, so after many lookups Beacon says how many minutes to wait.
 
 **Username links**: **Open link** on a `signal.me` link in a chat, or scanning someone's username QR code, opens a chat with them. When its owner has reset the link, Beacon says **Link no longer works**; ask them for a new one or their username.
 
@@ -174,7 +174,7 @@ Calls start on the earpiece. **Back** doesn't leave the call screen, so the call
 | **Help** | Short guides by topic, Source code, and the version |
 | **Debug** | Technical details for troubleshooting (see below) |
 
-**Linked device → Unlink this phone** removes Beacon from **Linked devices** on your main phone and deletes this phone's messages and keys. If you saved another account, Beacon switches to it. Without a connection to Signal it asks first, and then only unlinks here; remove the entry from **Linked devices** yourself afterwards. When your main phone unlinks Beacon, Beacon deletes its keys, keeps your messages, and shows the Link screen.
+**Linked device → Unlink this phone** removes Beacon from **Linked devices** on your main phone and deletes this phone's messages and keys. If you saved another account, Beacon switches to it. Without a connection to Signal it asks first, and then only unlinks here; remove the entry from **Linked devices** yourself afterwards. When your main phone unlinks Beacon, Beacon deletes its keys, keeps your messages, and shows the Link screen. Signal also removes a linked device that hasn't been opened for about 30 days, so open Beacon at least once a month; after that, it shows the Link screen in the same way.
 
 Each saved account keeps its own profile, username, privacy and notification settings, and chat folders, so switching accounts shows that account's choices straight away. Theme, text size, chat color, notification display and sound, screen lock, and the proxy belong to the phone and stay the same for every account. **Delete all data** removes every account's messages and settings; if part of it can't be deleted, Beacon says so and keeps your settings, so you can try again.
 
@@ -200,7 +200,7 @@ Each account has its own history on the phone, and switching accounts restarts B
 
 If you change your number on your main phone, Beacon follows: it shows **Your number changed to …**, keeps your chats and history, and stays linked. Messages sent to your new number arrive as usual.
 
-**Debug** shows the details a bug report needs: app and library versions, account and device IDs, how many one-time keys the server holds, the connection state, when the last message arrived, storage use, and how many sticker packs and chat folders your account has. It can refresh keys, ask your main phone to sync, reconnect, show the log, and **Share debug log**. The shared log has phone numbers, account IDs, and keys removed.
+**Debug** shows the details a bug report needs: app and library versions, account and device IDs, how many one-time keys the server holds, the connection state, when the last message arrived, storage use, and how many sticker packs and chat folders your account has. It can refresh keys, ask your main phone to sync, reconnect, show the log, and **Share debug log**. The shared log has phone numbers, account IDs, and long tokens shortened.
 ## Notifications
 
 With Beacon in the background, new messages raise a notification unless the chat is muted; group notifications start with the sender's name. Selecting one opens the chat. **Settings → Notifications** has:
