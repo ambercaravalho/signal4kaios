@@ -4,7 +4,10 @@ export interface HistoryContact {
   t: 'contact';
   aci: string;
   e164: string;
+  /** Address-book or profile name. */
   name: string;
+  /** An empty pair means no nickname. */
+  nickname?: { given_name: string; family_name: string };
   /** SECURITY-REVIEW: the contact's profile key, base64; kept only in the on-device directory. */
   profileKey?: string;
   blocked: boolean;

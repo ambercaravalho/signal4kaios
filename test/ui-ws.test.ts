@@ -52,6 +52,7 @@ const message =
   async () => ({ envelope: { sourceNumber: from, timestamp: ts, dataMessage: { timestamp: ts, message: 'm' + ts } } });
 
 let preKeyChecks = 0;
+const storageCalls: string[] = [];
 const notified: string[] = [];
 function showNotifications(on: boolean): void {
   (globalThis as any).document.hidden = on;
@@ -94,6 +95,13 @@ describe('acknowledging messages', () => {
     s.encodeWsKeepalive = () => new Uint8Array([0]);
     s.maintainPreKeys = async () => {
       preKeyChecks++;
+    };
+    s.replayStorageWrites = async () => {
+      storageCalls.push('replay');
+    };
+    s.syncStorage = async () => {
+      storageCalls.push('pull');
+      return true;
     };
     s.processIncomingEnvelope = (body: Uint8Array) => decrypted[body[0]]();
     s.net.isPinnedUrl = () => true;
@@ -248,6 +256,13 @@ describe('acknowledging messages', () => {
     assert.equal(ws.connectionProblem(), null);
     ws.connect();
     current().open();
+  });
+
+  it('pulls Storage Service once per launch, after replaying saved writes, so a nickname set offline isn’t undone', async () => {
+    await settle();
+    assert.deepEqual(storageCalls.slice(0, 2), ['replay', 'pull']);
+    assert.equal(storageCalls.filter((c) => c === 'pull').length, 1, 'reconnects only replay');
+    assert.ok(storageCalls.filter((c) => c === 'replay').length > 1);
   });
 
   it('checks PreKeys when the socket opens, at most every 12 hours', async () => {

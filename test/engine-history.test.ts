@@ -57,7 +57,7 @@ function sampleFrames(): Uint8Array[] {
   return [
     info(),
     frame({ case: 'recipient', value: { id: 1n, destination: { case: 'self', value: {} } } }),
-    frame({ case: 'recipient', value: { id: 2n, destination: { case: 'contact', value: { aci: uuidToBytes(BOB), e164: 15550001111n, profileGivenName: 'Bob', profileKey: new Uint8Array(32).fill(1), profileSharing: true } } } }),
+    frame({ case: 'recipient', value: { id: 2n, destination: { case: 'contact', value: { aci: uuidToBytes(BOB), e164: 15550001111n, profileGivenName: 'Bob', nickname: { given: 'Bobby', family: 'B.' }, profileKey: new Uint8Array(32).fill(1), profileSharing: true } } } }),
     frame({ case: 'recipient', value: { id: 3n, destination: { case: 'group', value: { masterKey: groupKey, whitelisted: true, snapshot: { title: { content: { case: 'title', value: 'Book club' } } } } } } }),
     frame({ case: 'chat', value: { id: 10n, recipientId: 2n, pinnedOrder: 1, muteUntilMs: 9223372036854775807n, expirationTimerMs: 3600000n } }),
     frame({ case: 'chat', value: { id: 11n, recipientId: 3n } }),
@@ -116,6 +116,7 @@ describe('link-and-sync frames (Signal-Desktop backups/import)', () => {
     assert.deepEqual(items.map((i) => i.t), ['contact', 'group', 'chat', 'chat', 'message', 'message', 'message', 'message']);
     const [bob, group, chat, groupChat] = items as any[];
     assert.deepEqual([bob.aci, bob.e164, bob.name, bob.whitelisted], [BOB, BOB_NUMBER, 'Bob', true]);
+    assert.deepEqual(bob.nickname, { given_name: 'Bobby', family_name: 'B.' }, 'the nickname is kept apart from the name');
     assert.equal(bob.profileKey, Buffer.from(new Uint8Array(32).fill(1)).toString('base64'));
     assert.deepEqual([group.groupId, group.title, group.whitelisted], ['grp9', 'Book club', true]);
     assert.deepEqual([chat.convId, chat.pinned, chat.mutedUntil, chat.expireTimer], [BOB_NUMBER, true, Number.MAX_SAFE_INTEGER, 3600]);

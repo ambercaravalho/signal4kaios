@@ -28,8 +28,8 @@ const STATE_KEY = 'storageServiceRecords';
 /** Keys of records read from the server (written by another device) that no pull has reported yet. A write also reads new records, so this outlives one call. Unset until the first pull. */
 const UNREPORTED_KEY = 'storageServiceUnreported';
 
-interface StorageContactRecord {
-  /** Another device wrote this record since the last pull. Chat-list state (archive, mute, pins) is only applied from changed records, so a local change made since then isn't undone. */
+export interface StorageContactRecord {
+  /** Another device wrote this record since the last pull. Chat-list state (archive, mute, pins) and the nickname are only applied from changed records, so a local change made since then isn't undone. */
   changed: boolean;
   aci?: string;
   e164?: string;
@@ -37,8 +37,13 @@ interface StorageContactRecord {
   profileKey?: Uint8Array;
   identityKey?: Uint8Array;
   identityState?: TrustLevel;
+  /** Their profile name. */
   givenName?: string;
   familyName?: string;
+  /** The name in the primary phone's address book. */
+  systemGivenName?: string;
+  systemFamilyName?: string;
+  systemNickname?: string;
   username?: string;
   blocked?: boolean;
   /** We share our profile with them: their chat is accepted rather than a message request. */
@@ -262,8 +267,11 @@ function toSyncResult(version: bigint, records: Map<string, StorageRecord>, unre
         profileKey: c.profileKey.length === 32 ? c.profileKey : undefined,
         identityKey: c.identityKey.length === 33 ? c.identityKey : undefined,
         identityState: c.identityKey.length === 33 ? identityStateToTrust(c.identityState) : undefined,
-        givenName: opt(c.givenName, '') || opt(c.systemGivenName, ''),
-        familyName: opt(c.familyName, '') || opt(c.systemFamilyName, ''),
+        givenName: opt(c.givenName, ''),
+        familyName: opt(c.familyName, ''),
+        systemGivenName: opt(c.systemGivenName, ''),
+        systemFamilyName: opt(c.systemFamilyName, ''),
+        systemNickname: opt(c.systemNickname, ''),
         username: opt(c.username, ''),
         blocked: c.blocked,
         whitelisted: c.whitelisted,

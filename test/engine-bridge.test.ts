@@ -123,6 +123,31 @@ describe('names for people we only know from their messages', () => {
   });
 });
 
+describe('nicknames', () => {
+  const q = storageQueue as any;
+  const realWrite = q.write;
+
+  after(() => {
+    q.write = realWrite;
+  });
+
+  it('keeps a new nickname on the contact and writes it to their Storage Service record', async () => {
+    kv.set('syncedContacts', [{ uuid: BOB, number: '+15550001111', name: 'Bob', blocked: false, expireTimer: 0 }]);
+    const record: any = {};
+    q.write = async (muts: any[]) => {
+      for (const m of muts) m.update(record);
+      return false;
+    };
+    await contactMethods.setContactNickname(BOB, 'Bobby from work');
+    await accountMethods.flushStorageWrites();
+    const row = (await syncedContacts())[0];
+    assert.deepEqual(row.nickname, { given_name: 'Bobby', family_name: 'from work' });
+    assert.equal(row.name, 'Bob', 'the older name is left alone');
+    assert.deepEqual([record.nickname.given, record.nickname.family], ['Bobby', 'from work']);
+    assert.equal(directoryChanges, 1);
+  });
+});
+
 describe('our own number', () => {
   it('resolves to our ACI, so backfill requests name Note to Self by ACI', async () => {
     assert.deepEqual(await contactIds(ME_NUMBER), { aci: ALICE, e164: ME_NUMBER });

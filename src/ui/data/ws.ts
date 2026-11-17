@@ -322,10 +322,13 @@ export function connect(): void {
     } else {
       dbg('ws: open');
     }
+    const firstOpen = !everConnected;
     everConnected = true;
     scheduleWakeAlarm();
     maybeMaintainPreKeys();
-    signal.replayStorageWrites().catch((e: any) => dbg('ws: storage replay failed ' + (e && e.message)));
+    const replay = signal.replayStorageWrites().catch((e: any) => dbg('ws: storage replay failed ' + (e && e.message)));
+    // Saved writes such as a new nickname go up before the pull, so the pull can't bring back the old value.
+    if (firstOpen) replay.then(() => signal.syncStorage()).catch((e: any) => dbg('ws: storage pull failed ' + (e && e.message)));
     if (keepaliveTimer) clearInterval(keepaliveTimer);
     keepaliveUnanswered = false;
     keepaliveTimer = setInterval(() => keepalive(s), KEEPALIVE_MS);

@@ -375,6 +375,15 @@ describe('store helpers', () => {
     assert.equal(contactName({ uuid: 'u', number: '+1', name: 'Bea from work', profile_name: 'Bea Ortiz' }), 'Bea from work');
   });
 
+  it('names a contact in Signal-Desktop’s order: nickname, address book, profile, then the older name', () => {
+    const all = { uuid: 'u', number: '+1', name: 'Old', systemName: 'Beatrice', profile_name: 'Bea Ortiz', username: 'bea.01' };
+    assert.equal(contactName({ ...all, nickname: { given_name: 'Bea', family_name: 'from work' } }), 'Bea from work');
+    assert.equal(contactName({ ...all, nickname: { given_name: '', family_name: '' } }), 'Beatrice', 'an empty nickname falls through');
+    assert.equal(contactName({ ...all, systemName: '', nickname: { given_name: '', family_name: '' } }), 'Bea Ortiz', 'profile beats the older name once the nickname is known');
+    assert.equal(contactName({ ...all, systemName: '', profile_name: '', nickname: { given_name: '', family_name: '' } }), 'Old');
+    assert.equal(contactName({ uuid: 'u', number: '+1', name: '+1', nickname: { given_name: '', family_name: '' }, username: 'bea.01' }), 'bea.01', 'a placeholder name is skipped');
+  });
+
   it('labels attachment-only messages', () => {
     assert.equal(attachmentLabel([{ id: '', contentType: 'image/jpeg', filename: '', size: 0 }]), 'Photo');
     assert.equal(attachmentLabel([{ id: '', contentType: 'audio/aac', filename: '', size: 0, voiceNote: true }]), 'Voice message');

@@ -29,7 +29,7 @@ import { usernameLinkUrl } from '../services/usernames';
 import { invalidateBlocked } from './blocked';
 import { callManager } from './calls';
 import { client, httpBinary, httpJson, OWN_AVATAR_PATH, serverUrl, store } from './context';
-import { contactIds, mergeSyncedContacts, saveSyncedContacts, saveSyncedGroups, syncedContacts, syncedGroups, updateSyncedContact, updateSyncedGroup } from './contacts';
+import { contactIds, mergeBlobContact, mergeStorageContact, mergeSyncedContacts, saveSyncedContacts, saveSyncedGroups, syncedContacts, syncedGroups, updateSyncedContact, updateSyncedGroup } from './contacts';
 import { refreshGroup } from './group-state';
 
 const MAX_DEVICE_NAME = 64;
@@ -52,21 +52,7 @@ export async function syncFromStorageService(): Promise<boolean> {
       }
       if (sc.changed) chatState.push({ uuid: sc.aci || '', number: sc.e164 || '', archived: !!sc.archived, mutedUntil: sc.mutedUntilTimestamp || 0, markedUnread: !!sc.markedUnread, callsIfMuted: sc.notifyForCallsIfMuted ?? null });
     }
-    await mergeSyncedContacts(
-      res.contacts,
-      (sc) => sc.aci || sc.e164,
-      (sc, prev) => ({
-        ...prev,
-        uuid: sc.aci || prev.uuid || '',
-        number: sc.e164 || prev.number || '',
-        name: [sc.nicknameGivenName, sc.nicknameFamilyName].filter(Boolean).join(' ') || [sc.givenName, sc.familyName].filter(Boolean).join(' ') || prev.name || sc.username || sc.e164 || sc.aci || '',
-        username: sc.username || prev.username,
-        blocked: sc.blocked ?? prev.blocked ?? false,
-        whitelisted: !!sc.whitelisted,
-        systemContact: !!sc.systemContact,
-        profileKey: sc.profileKey ? toBase64(sc.profileKey) : prev.profileKey,
-      })
-    );
+    await mergeSyncedContacts(res.contacts, (sc) => sc.aci || sc.e164, mergeStorageContact);
   }
 
   if (res.groupsV2.length > 0) {
@@ -209,11 +195,7 @@ export async function handleIncomingSyncMessage(env: IncomingEnvelope, content: 
       if (!c.value.blob) break;
       try {
         const { bytes } = await client.downloadAttachment(c.value.blob);
-        await mergeSyncedContacts(
-          parseContactsSyncBlob(bytes),
-          (sc) => sc.uuid || sc.number,
-          (sc, prev) => ({ ...prev, uuid: sc.uuid || prev.uuid || '', number: sc.number || prev.number || '', name: sc.name || prev.name, expireTimer: sc.expireTimer, blocked: prev.blocked ?? false })
-        );
+        await mergeSyncedContacts(parseContactsSyncBlob(bytes), (sc) => sc.uuid || sc.number, mergeBlobContact);
         host().directoryChanged().catch(() => {});
       } catch (e: any) {
         host().dbg('sync contacts blob failed: ' + (e && e.message));

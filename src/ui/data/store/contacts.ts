@@ -66,19 +66,21 @@ export function altKeyOf(key: string): string | null {
   return null;
 }
 
-/** The best name across the places Signal keeps names: nickname or address book, profile, username, then number. */
+/** The best name across the places Signal keeps names, in Signal-Desktop's order: nickname, address book, profile, username, then number. */
 export function contactName(c: SyncedContact): string {
-  const placeholder = c.name === c.uuid || c.name === c.number;
-  if (c.name && c.name !== SELF_NAME && !placeholder) return c.name;
   const nick = c.nickname || {};
-  if (nick.name) return nick.name;
-  const nn = [nick.given_name, nick.family_name].filter(Boolean).join(' ');
+  const nn = nick.name || [nick.given_name, nick.family_name].filter(Boolean).join(' ');
   if (nn) return nn;
+  if (c.systemName) return c.systemName;
+  const placeholder = c.name === c.uuid || c.name === c.number;
+  const legacy = c.name && c.name !== SELF_NAME && !placeholder ? c.name : '';
+  // Before its first Storage pull a row's nickname may still sit in `name`.
+  if (legacy && c.nickname === undefined) return legacy;
   if (c.profile_name) return c.profile_name;
   const p = c.profile || {};
   const pn = [p.given_name, p.lastname].filter(Boolean).join(' ');
   if (pn) return pn;
-  return c.username || c.number || c.uuid;
+  return legacy || c.username || c.number || c.uuid;
 }
 
 /** Whether Storage Service has told us who we've accepted: only contacts it lists carry `whitelisted`, so before the first pull nobody does. */
