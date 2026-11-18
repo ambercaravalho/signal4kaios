@@ -247,9 +247,17 @@ export class SignalClient {
     }
   }
 
-  private async ensureSession(recipientId: string, deviceId: number): Promise<void> {
-    if (await hasUsableSession(this.store, recipientId, deviceId)) return;
-    await this.fetchAndProcessBundles(recipientId, String(deviceId));
+  /** Builds a session with the device unless a usable one exists; false when the server no longer has the device, whose session is then dropped. */
+  private async ensureSession(recipientId: string, deviceId: number): Promise<boolean> {
+    if (await hasUsableSession(this.store, recipientId, deviceId)) return true;
+    try {
+      await this.fetchAndProcessBundles(recipientId, String(deviceId));
+      return true;
+    } catch (err: any) {
+      if (!err || err.status !== 404) throw err;
+      await deleteSession(this.store, recipientId, deviceId);
+      return false;
+    }
   }
 
   /**
@@ -273,8 +281,10 @@ export class SignalClient {
     for (let attempt = 0; attempt < 4; attempt++) {
       if (devices.length === 0) return false;
       const messages = [];
+      const reachable: number[] = [];
       for (const devId of devices) {
-        await this.ensureSession(recipientId, devId);
+        if (!(await this.ensureSession(recipientId, devId))) continue;
+        reachable.push(devId);
         if (senderCert && accessKey) {
           const sealed = await sealedEncryptForDevice(this.store, local, recipientId, devId, senderCert, plainBytes);
           messages.push({
@@ -292,6 +302,10 @@ export class SignalClient {
             content: toBase64(enc.body),
           });
         }
+      }
+      if (reachable.length < devices.length) {
+        devices = reachable.length ? reachable : await this.fetchAndProcessBundles(recipientId, '*');
+        if (!reachable.length) continue;
       }
 
       try {
@@ -359,7 +373,7 @@ export class SignalClient {
   private async senderKeyDevices(aci: string): Promise<SenderKeyDevice[]> {
     const out: SenderKeyDevice[] = [];
     for (const deviceId of await this.devicesFor(aci)) {
-      await this.ensureSession(aci, deviceId);
+      if (!(await this.ensureSession(aci, deviceId))) continue;
       out.push({ aci, deviceId, registrationId: await sessionRegistrationId(this.store, aci, deviceId) });
     }
     return out;

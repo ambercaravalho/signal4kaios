@@ -3,12 +3,11 @@
 import { signal } from './api';
 import { config } from './config';
 import { dbg } from './log';
-import { scheduleAlarm } from './platform';
 import { holdNotifications, ingestRaw, refreshDirectory, releaseNotifications, setConnection } from './store';
 import { emit } from './store/events';
 import { SaveError } from './store/ingest';
 import { isClockError, type SocketLike } from '../../engine/net/transport';
-import { WAKE_ALARM } from './wake';
+import { scheduleWake, TICK, WAKE_ALARM } from './wake';
 
 const CLOSE_UNAUTHORIZED = 4001;
 const CLOSE_FORBIDDEN = 4003;
@@ -18,6 +17,10 @@ const SOCK_OPEN = 1;
 const HEARTBEAT_MS = 30000;
 const KEEPALIVE_MS = 25000;
 const WAKE_ALARM_MS = 300000;
+/** While Beacon is hidden the phone suspends its CPU for minutes at a time, and Signal closes a socket silent for about 90 seconds; only an alarm wakes the phone to send the keepalive. */
+const HIDDEN_WAKE_MS = 60000;
+/** A keepalive due within this much of a tick goes out on that tick. */
+const TICK_SLACK_MS = 2000;
 const SAVE_RETRY_MIN_MS = 5000;
 const SAVE_RETRY_MAX_MS = 60000;
 const PRE_KEY_CHECK_MS = 12 * 60 * 60 * 1000;
@@ -34,6 +37,11 @@ let saveFailing = false;
 let sock: SocketLike | null = null;
 let attempts = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectDueAt = 0;
+let lastKeepaliveAt = 0;
+let ticking = false;
+let tickRequestedAt = 0;
+let tickId = 0;
 let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 /** Whether nothing has come from the server since the last keepalive went out. */
 let keepaliveUnanswered = false;
@@ -45,6 +53,7 @@ let framesThisSession = 0;
 let drainingQueue = true;
 /** Whether this drain is the first since launch, which stays silent; later ones notify once per chat when they end. */
 let quietDrain = true;
+let launchedHidden = false;
 let drainWork: Array<Promise<unknown>> = [];
 let drainGen = 0;
 let unlinkedHandler: (() => void) | null = null;
@@ -162,8 +171,23 @@ function maybeMaintainPreKeys(): void {
     });
 }
 
-function scheduleWakeAlarm(): void {
-  scheduleAlarm(new Date(Date.now() + WAKE_ALARM_MS), { type: WAKE_ALARM }).catch((e) => dbg('ws: could not schedule wake alarm ' + (e && e.message)));
+function scheduleWakeAlarm(ms = document.hidden ? HIDDEN_WAKE_MS : WAKE_ALARM_MS): void {
+  scheduleWake(ms).catch((e) => dbg('ws: could not schedule wake alarm ' + (e && e.message)));
+}
+
+/** Whether a connection's offline queue replays without notifying. Only the first one after the user opened Beacon is quiet; after a launch in the background nobody has seen those messages yet. */
+export function drainIsQuiet(firstConnection: boolean, hidden: boolean): boolean {
+  return firstConnection && !hidden;
+}
+
+/** Beacon was launched in the background, so the first offline queue notifies like any later one. */
+export function setLaunchedHidden(hidden: boolean): void {
+  launchedHidden = hidden;
+}
+
+/** Bring the wake alarm forward, so that if Beacon is about to be closed the ServiceWorker notices soon. */
+export function wakeSoon(ms: number): void {
+  if (wanted) scheduleWakeAlarm(ms);
 }
 
 function startHeartbeat(): void {
@@ -183,6 +207,8 @@ function scheduleReconnect(): void {
   const base = Math.min(60000, 1000 * Math.pow(2, Math.min(attempts, 6)));
   const delay = base / 2 + Math.floor(Math.random() * (base / 2));
   dbg('ws: reconnect in ' + delay + 'ms (attempt ' + attempts + ')');
+  reconnectDueAt = Date.now() + delay;
+  requestTick(delay);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     connect();
@@ -190,8 +216,9 @@ function scheduleReconnect(): void {
 }
 
 /** A socket can stay open after the network under it changed, so a keepalive the server didn't answer by the next one means the connection is gone. */
-function keepalive(s: SocketLike): void {
-  if (s !== sock) return;
+function keepalive(s: SocketLike, now = Date.now()): void {
+  if (s !== sock || now - lastKeepaliveAt < KEEPALIVE_MS - TICK_SLACK_MS) return;
+  lastKeepaliveAt = now;
   if (keepaliveUnanswered) {
     dbg('ws: keepalive unanswered, reconnecting');
     dropSocket(s);
@@ -291,7 +318,7 @@ export function connect(): void {
   dbg('ws: connecting');
   setConnection('connecting');
   drainingQueue = true;
-  quietDrain = !everConnected;
+  quietDrain = drainIsQuiet(!everConnected, launchedHidden);
 
   try {
     // SECURITY-REVIEW: device credentials go only to Signal's WebSocket endpoint, in the Authorization header, and are never logged or put in a URL. Signal treats query-string credentials as an anonymous socket that gets no messages, so without the pinned client (which can set headers) Beacon doesn't connect.
@@ -331,6 +358,7 @@ export function connect(): void {
     if (firstOpen) replay.then(() => signal.syncStorage()).catch((e: any) => dbg('ws: storage pull failed ' + (e && e.message)));
     if (keepaliveTimer) clearInterval(keepaliveTimer);
     keepaliveUnanswered = false;
+    lastKeepaliveAt = Date.now();
     keepaliveTimer = setInterval(() => keepalive(s), KEEPALIVE_MS);
     problem = null;
     setConnection('open');
@@ -398,9 +426,54 @@ function wakeIfClosed(): void {
   }
 }
 
+/** Does what the timers would have done by now: the keepalive, a due reconnect, or the heartbeat's reconnect. */
+export function pump(now = Date.now()): void {
+  if (!wanted) return;
+  if (sock && sock.readyState === SOCK_OPEN) {
+    keepalive(sock, now);
+    return;
+  }
+  if (state() === 'connecting' || (reconnectTimer && now < reconnectDueAt)) return;
+  if (!reconnectTimer) attempts = 0;
+  connect();
+}
+
+/** Asks for the next tick in `ms`. A sooner one, for a reconnect, replaces the pending one; that one still arrives and pumps, but only the newest continues the chain. */
+function requestTick(ms = KEEPALIVE_MS, now = Date.now()): void {
+  if (!ticking) return;
+  const sooner = ms < KEEPALIVE_MS;
+  if (!sooner && now - tickRequestedAt < KEEPALIVE_MS * 3) return;
+  tickRequestedAt = now;
+  const id = ++tickId;
+  navigator.serviceWorker.ready
+    .then((reg) => {
+      if (reg.active) reg.active.postMessage({ type: TICK, ms, id });
+    })
+    .catch((e) => dbg('ws: could not ask for a tick ' + (e && e.message)));
+}
+
+function onTick(id: unknown): void {
+  if (!ticking) return;
+  pump();
+  if (id !== tickId) return;
+  tickRequestedAt = 0;
+  requestTick();
+}
+
+/** Gecko suspends a background page's timers but still delivers its events, so while Beacon is hidden the ServiceWorker's ticks stand in for them. */
+function setTicking(on: boolean): void {
+  ticking = on && !!navigator.serviceWorker;
+  if (ticking) requestTick();
+}
+
 /** Reconnect when the app returns to the foreground or the ServiceWorker relays a wake alarm. */
 export function installWakeHandlers(): void {
+  // Without a pending alarm, nothing would notice Beacon being closed before its first connection opens.
+  if (wanted) scheduleWakeAlarm();
+  setTicking(document.hidden);
   document.addEventListener('visibilitychange', () => {
+    setTicking(document.hidden);
+    if (wanted) scheduleWakeAlarm();
     if (!document.hidden) wakeIfClosed();
     else if (config.isConfigured()) signal.flushStorageWrites().catch((e: any) => dbg('ws: storage flush failed ' + (e && e.message)));
   });
@@ -413,11 +486,13 @@ export function installWakeHandlers(): void {
   if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
     navigator.serviceWorker.addEventListener('message', (evt) => {
       const data = evt && evt.data;
-      if (data && data.type === WAKE_ALARM) {
-        dbg('ws: wake alarm');
+      if (data && data.type === TICK) onTick(data.id);
+      else if (data && data.type === WAKE_ALARM) {
         wakeIfClosed();
+        pump();
         scheduleWakeAlarm();
         if (wanted) maybeMaintainPreKeys();
+        requestTick();
       }
     });
   }

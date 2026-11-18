@@ -80,7 +80,7 @@ describe('acknowledging messages', () => {
   const put = db.putMessage;
 
   before(async () => {
-    mock.timers.enable({ apis: ['setInterval'] });
+    mock.timers.enable({ apis: ['setInterval', 'Date'], now: Date.now() });
     config.set({ number: '+15550000', aci: 'aci-me', deviceId: 2, deviceToken: 'test-only' });
     await db.ready();
     const s = signal as any;

@@ -164,6 +164,13 @@ pub fn session_record_remote_registration_id(record: &[u8]) -> Result<u32, JsVal
     record.remote_registration_id().map_err(protocol_error)
 }
 
+/// The remote identity key of the current session state, serialized, or undefined without one.
+#[wasm_bindgen(js_name = sessionRecordRemoteIdentityKey)]
+pub fn session_record_remote_identity_key(record: &[u8]) -> Result<Option<Vec<u8>>, JsValue> {
+    let record = parse::<SessionRecord>(record)?;
+    record.remote_identity_key_bytes().map_err(protocol_error)
+}
+
 /// Whether the record has a current session state that can still send (not archived or stale).
 #[wasm_bindgen(js_name = sessionRecordHasCurrentState)]
 pub fn session_record_has_current_state(record: &[u8], now_millis: f64) -> Result<bool, JsValue> {

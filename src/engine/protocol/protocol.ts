@@ -3,7 +3,7 @@
  * Each operation hydrates a short-lived libsignal `ProtocolStore` with exactly the records it needs from the SignalProtocolStore, runs one libsignal call, then writes back whatever libsignal changed (sessions, consumed PreKeys, saved identities, sender keys). Callers must serialize operations that touch the same address; SignalClient does this with a single queue.
  */
 
-import { concatBytes, fromBase64, toBase64, uuidToBytes } from '../bytes';
+import { concatBytes, constantTimeEqual, fromBase64, toBase64, uuidToBytes } from '../bytes';
 import { libsignal } from './libsignal';
 import type { IdentityRecord, KeyPair, SignalProtocolStore, TrustLevel } from './store';
 
@@ -325,11 +325,15 @@ export async function sealedEncryptForDevice(
 }
 
 /** True when a session with `name.deviceId` exists and can still send. */
+/** Whether the session with a device can send: current, not stale, and built with the contact's identity key we hold. A contact's other devices keep their old key after the key changes, which libsignal refuses to encrypt with; Signal-Desktop archives those sessions on the change (`archiveSiblingSessions`), and here they count as unusable, so the send fetches new PreKeys. */
 export async function hasUsableSession(store: SignalProtocolStore, name: string, deviceId: number, now = Date.now()): Promise<boolean> {
   const rec = await store.loadSession(name, deviceId);
   if (!rec) return false;
   try {
-    return libsignal.sessionRecordHasCurrentState(rec, now);
+    if (!libsignal.sessionRecordHasCurrentState(rec, now)) return false;
+    const remote = libsignal.sessionRecordRemoteIdentityKey(rec);
+    const known = await store.getIdentity(name);
+    return !remote || !known || constantTimeEqual(remote, known.publicKey);
   } catch {
     return false;
   }
