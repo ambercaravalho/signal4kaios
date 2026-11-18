@@ -17,6 +17,10 @@ Beacon keeps running in the background, so messages and calls keep arriving. On 
 - **End asks before closing Beacon.** The first press shows a reminder; press End again within 3 seconds to close Beacon. Back on the chat list, or closing the flip, goes to the home screen and keeps Beacon running. On a call, End still hangs up.
 - **New permission:** `background-window`, which KaiOS 3.x uses to reopen Beacon in the background. KaiOS 4.0 doesn't grant it, and installs as before.
 
+### Fixed
+
+- **Calls and messages work again with someone whose safety number changed.** Beacon kept the old keys for that person's other devices, so answering their call, replying, and sending read receipts failed: the call screen closed at once and showed a missed call while the call kept ringing on your other devices. Beacon now sets up new keys for those devices the next time it sends to them.
+
 ## v2.11.3
 
 No more message requests from safety number changes. On v2.11.0 or later, update from Beacon itself: **Options → Update to Beacon 2.11.3** on the chat list. Your chats and settings carry over.
