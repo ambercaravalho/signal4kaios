@@ -84,7 +84,50 @@ While a proxy is set nothing for Signal's hosts goes out directly: the platform 
 
 The chat WebSocket authenticates with an `Authorization: Basic` header on the upgrade request. Signal's server treats query-string credentials as an anonymous socket that never receives messages, which is why only the pinned client can carry the main connection.
 
-A ServiceWorker can't use any of this, because workers have no `TCPSocket`, and the browser `WebSocket` can't set the header. So a closed app can't receive messages: [`sw.js`](../src/app/sw.js) only relays wake alarms to an open window and handles notification taps, besides the page rewrite below. See [the user guide](user-guide.md#known-limitations).
+A ServiceWorker can't use any of this, because workers have no `TCPSocket`, and the browser `WebSocket` can't set the header. So a closed app can't receive messages, and Beacon instead works to stay running in the background and to come back when it's closed (next section). See [the user guide](user-guide.md#known-limitations).
+
+### Staying alive in the background
+
+Only the open app can hold Signal's connection, so 3.0.0 keeps the whole app running, with [`sw.js`](../src/app/sw.js) as its supervisor:
+
+```mermaid
+flowchart TD
+  alarm["Wake alarm, 1 min hidden or 5 min shown, rescheduled on every wake"] --> sw["sw.js systemmessage"]
+  sw --> alive{"Window open?"}
+  alive -->|yes| relay["postMessage s4k-wake: keepalive, or reconnect if closed"]
+  alive -->|no| hidden{"openWindow #bg, disposition background"}
+  hidden -->|"opened (KaiOS 3.x)"| boot["Boots hidden, connects, notifies for the queue, re-arms the alarm"]
+  hidden -->|"throws (KaiOS 4.0)"| notice["One notification: Beacon was closed, select to open"]
+  tick["Hidden page asks for s4k-tick"] --> swt["sw.js setTimeout 25 s"] --> pump["ws.pump(): keepalive, due reconnect"] --> tick
+```
+
+- **Killing.** KaiOS kills a backgrounded app at the first memory pressure: `b2gkillerd` keeps only `bg/try_to_keep` apps (the home screen, the preallocated process, and apps playing audio), and its threshold for plain `bg` apps is unlimited. End and holding Back publish `home` with `kill: true` in the system app; closing the flip, or a short Back on the first screen, goes home without killing.
+- **End** ([`app/exit-guard.ts`](../src/ui/app/exit-guard.ts), called from the router). The system app skips its kill when the app calls `preventDefault()` on `EndCall`, so End anywhere is held back once, with a toast. A second press within 3 seconds goes through. The first press brings the wake alarm forward to 20 seconds, so a Beacon closed that way is noticed quickly. Back on the first screen goes to the system, which goes home without killing, like closing the flip. Holding Back can't be held back: the system's own keydown handler starts a 2-second timer that kills the app whatever the app does. The call screen handles End itself, so it still declines or hangs up.
+- **Suspended timers.** Gecko's `dom.suspend_inactive.enabled` suspends every timer in a page that isn't the active one, unless something holds a page-awake request (only running Web Audio, media sessions, and WebRTC do). Events still arrive. So while Beacon is hidden, [`ws.ts`](../src/ui/data/ws.ts) asks the ServiceWorker for a tick (`s4k-tick`), whose own timers keep running, and the worker answers after 25 seconds. Each tick runs `pump()`, which sends the keepalive or a reconnect that the suspended timers would have, then asks for the next one; each request is a new event, which keeps the worker alive. `keepalive()` skips a keepalive that isn't due, so the interval and the tick can't send two in a row. A socket that closes while hidden asks for a tick due when its reconnect is, so it doesn't wait out the 25 seconds; each request carries an id, and only the newest continues the chain, so two can't run side by side. Ticks don't wake the phone, though: with the screen off it suspends its CPU for up to two minutes at a time, and Signal's server closes a socket that's been quiet for about 90 seconds (code 1001). So while Beacon is hidden the wake alarm comes every minute instead of every five, since an alarm does wake the phone, and each one sends the keepalive if it's due. Incoming data wakes the phone too, so messages on an open socket arrive at once.
+- **Wake alarm.** The alarm is armed when Beacon starts and rescheduled on every wake, so it is always pending while Beacon runs. It carries the closed notice's wording, because the worker has no strings of its own. With no window, the worker tries `clients.openWindow('/index.html#bg', { disposition: 'background' })`. KaiOS 4.0's `ClientDisposition` has only `auxiliary`, `top-level`, and `attention`, so the call throws there, and its system app opens hidden windows (`BACKGROUND_WINDOW`) only when `device.mvs` is set in the read-only `devicecapability.json`. KaiOS 3.x lists `background-window` as a core permission, which the manifest asks for; it's unverified on a 3.x phone. When the relaunch fails, the worker shows one tagged notification and lets the alarm chain end until Beacon opens again; selecting it opens Beacon through the usual `notificationclick`.
+- **Hidden boot.** `main.tsx` reads `#bg`, drops it from the URL, and tells `ws.ts` that this launch was in the background, so the first offline queue notifies once per chat like any later one, instead of staying quiet as it does when you open Beacon yourself. The screen lock still locks at launch, and the update check waits until Beacon is shown.
+- **Incoming calls.** `Clients.focus()` and `openWindow` are allowed only while the worker handles a system message or a notification click; from a page's `postMessage` both fail with `InvalidAccessError`. So a call that starts ringing while Beacon is hidden schedules an alarm due at once (`s4k-focus`), and the worker focuses the existing window, which shows the call screen. `openWindow` on the running app's own URL would reload it and end the call.
+
+Measured on a TCL T440W (KaiOS 4.0, Gecko 123), November 2026:
+
+| Test | Result |
+| --- | --- |
+| Alarm while Beacon is closed | Wakes the worker, about a second late at most |
+| `alarmManager` inside the worker | Works; an alarm the worker sets fires and reaches it |
+| `openWindow` with `disposition: 'background'` | `TypeError`: not a `ClientDisposition` value |
+| `openWindow` with `disposition: 'attention'` from an alarm | Opens a visible attention window over everything, without a tap |
+| `openWindow` to the home screen's URL | `TypeError: Unable to open window`; an app can't send itself home |
+| `openWindow`, `focus()` from a page's `postMessage` | `InvalidAccessError` |
+| `focus()` from an alarm, Beacon in the background | Brings the same window forward, state kept |
+| `preventDefault()` on End | Beacon stays open in the foreground |
+| `preventDefault()` on held Back | Killed after 2 seconds anyway |
+| Unknown permissions in the manifest (`background-window`) | Install works; the permission isn't granted |
+| Socket with Beacon hidden and the screen off, before ticks | Closed after about 80 seconds with no keepalive, and the 1-second reconnect timer never fired |
+| The same with ticks, about 20 hours | Beacon still running in the same process. Ticks arrived every 25 seconds while the phone was awake and up to 2 minutes apart while it slept; the server's close (1001) was noticed at the next tick and the socket reconnected at the one after. A message sent meanwhile arrived over the socket and notified with the screen off |
+| Wake alarm every minute while hidden, screen off, first 5 minutes | Alarms on time to the second, ticks every 25 seconds, no closes; the 20 hours before, with only ticks, had 44 closes (all 1001), each after 90 to 119 seconds without a tick |
+| End twice, then wait | Beacon closed; the notice appeared about 20 seconds later; selecting it opened Beacon, which reconnected |
+
+The phone was on USB power, so the screen-off tests don't show how deep sleep changes this. With the CPU asleep, neither the tick nor the keepalive runs; data arriving on the socket wakes the phone, and the wake alarm is the backstop. The remaining gap on 4.0 is `b2gkillerd`: a hidden Beacon is still killed under memory pressure, and only the reopen notice recovers it.
 
 ### WebAssembly on KaiOS 4.0
 
@@ -101,10 +144,10 @@ src/
     build/                esbuild output (gitignored): app.js, app.css, and backup.js
     assets/icons/         beacon.svg and the launcher PNGs rendered from it
     vendor/               libsignal_wasm_bg.wasm
-    sw.js                 ServiceWorker: KaiOS 4.0 WebAssembly policy, wake alarms, notification taps
+    sw.js                 ServiceWorker: KaiOS 4.0 WebAssembly policy, background supervisor and ticks, notification taps
   ui/                     the app (Preact + TypeScript)
     main.tsx              startup: theme, engine host, ServiceWorker, first screen
-    app/                  router, focus and key handling, hooks, theme
+    app/                  router, focus and key handling, the End guard, hooks, theme
     components/           shared building blocks (lists, dialogs, softkeys, QR, emoji)
     components/chat/      chat bubbles, message options, and the chat screen's session, composer, and key hooks
     screens/              one module per screen or group of related screens
@@ -138,7 +181,7 @@ The app is a single Preact tree built for Gecko 84, the oldest engine it support
 | Piece | Role |
 | --- | --- |
 | [`app/router.tsx`](../src/ui/app/router.tsx) | A screen stack. `router.push` opens a screen, `router.overlay` opens a menu or dialog above it and resolves a promise with the choice, `pop`/`replace`/`reset` move back. Screens below the top stay mounted, so going back keeps their state and scroll position |
-| `useKeys`, `useSoftkeys` | Keys go to the top entry, innermost handler first. Each entry declares its softkey labels, and the left one defaults to **Back** on pushed screens |
+| `useKeys`, `useSoftkeys` | Keys go to the top entry, innermost handler first. Each entry declares its softkey labels, and the left one defaults to **Back** on pushed screens. End that no handler takes goes to the [exit guard](#staying-alive-in-the-background) |
 | [`components/RowList.tsx`](../src/ui/components/RowList.tsx) | The KaiOS list most screens are built from: rows with optional section headers, toggles, and per-row center labels |
 | [`data/store.ts`](../src/ui/data/store.ts) | Conversations and messages in IndexedDB, plus an event hub, implemented in [`data/store/`](../src/ui/data/store). Screens subscribe with `useStoreEvents` and re-render on the events they care about |
 | [`strings.ts`](../src/ui/strings.ts) | Every user-facing string. `S` must stay free of protocol jargon (a test enforces this); `DEBUG` holds the Settings > Debug wording |

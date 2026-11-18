@@ -25,7 +25,10 @@ Beacon follows the KaiOS layout: the bar at the bottom names what the left softk
 | **OK** | Open the chat | **Send** from the message box, or open a message's options |
 | **Left softkey** | **New chat** | **Back**, or **Cancel** a reply or edit |
 | **Right softkey** | **Options** | **Options** |
-| **Back** | Close Beacon | Delete a character while typing, otherwise go back |
+| **Back** | Go to the home screen, with Beacon still running | Delete a character while typing, otherwise go back |
+| **End** | Close Beacon, after a second press | Close Beacon, after a second press |
+
+Closing Beacon stops new messages and calls until you open it again, so End asks for a second press first. To leave Beacon running, press Back on the chats list or close the flip instead; it keeps its connection in the background.
 
 > [!TIP]
 > In a list, the focused row is highlighted in blue. Long names scroll sideways when focused.
@@ -218,7 +221,16 @@ With Beacon in the background, new messages raise a notification unless the chat
 
 Reactions and the muted-chat choices are shared with your main phone and other devices.
 
-Keep Beacon open in the background to get notifications. Nothing is lost when it's closed: Signal holds your messages until Beacon connects again, and opening it delivers them. Beacon also reconnects on its own when the connection drops.
+Beacon has to be running to get notifications and calls, because Signal only accepts its own signed-in connection. Close the flip, or press Back on the chats list, to leave it running in the background; End closes it, after a second press. Beacon reconnects on its own when the connection drops.
+
+If the phone closes Beacon anyway, for example to free memory or because Back was held down, Beacon notices within a few minutes:
+
+- On KaiOS 4.0 a notification says **Beacon was closed**. Select it to open Beacon again.
+- On KaiOS 3.0 and 3.1 Beacon tries to reopen itself in the background first, and shows the notification only if that doesn't work.
+
+When Beacon reopens in the background, it notifies you for the messages that arrived while it was closed. Nothing is lost either way: Signal holds your messages until Beacon connects again.
+
+A call that comes in while Beacon is in the background brings Beacon forward, ringing, so you can answer it.
 
 ## What lives on the phone
 
@@ -251,8 +263,10 @@ These work only partly:
 | Action | What happens now |
 | --- | --- |
 | "Contact joined Signal" alerts | Not shown. Beacon looks a number up with Signal only when you start a chat with it, not your whole address book. |
-| Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open. Leave Beacon running in the background for notifications ([details](architecture.md#network)). |
+| Notifications while Beacon is closed | None. Signal only accepts Beacon's own signed-in connection, which a closed app can't open. Beacon stays running in the background when you close the flip, and tells you when the phone closed it ([details](architecture.md#staying-alive-in-the-background)). |
 | Calls while Beacon is closed | They don't ring here, for the same reason. Your main phone still rings, and once Beacon opens, a call you didn't answer shows as **Missed voice call**. |
+| Holding Back | Holding Back for two seconds closes Beacon without asking: KaiOS doesn't let apps stop it. The **Beacon was closed** notice follows within a few minutes. |
+| Battery in the background | To keep its connection with the screen off, Beacon wakes the phone about once a minute, so the battery runs down faster with Beacon running than without it. |
 | Playing long voice messages | Recording works up to 15 minutes, but playback loads the whole message at once, so a long one can take a moment to start. |
 | Link previews for local addresses | Links to your own network, like `192.168.1.1` or a `.local` name, get no preview. A public web address that leads to one still gets a preview, because Beacon can't look addresses up itself. |
 | Screen lock wait after wrong PINs | The wait only counts down while Beacon is open. |

@@ -125,7 +125,7 @@ function clearAlarms(am: B2gAlarmManager, type: string | undefined): Promise<voi
 }
 
 /** Schedule a one-shot wake alarm, replacing any pending alarm of the same `data.type`: alarms outlive the page, so adding without removing piles them up. */
-export function scheduleAlarm(date: Date, data: { type: string }): Promise<unknown> {
+export function scheduleAlarm(date: Date, data: { type: string; [key: string]: unknown }): Promise<unknown> {
   const api = b2g();
   const am = api && api.alarmManager;
   if (!am || !am.add) return Promise.reject(new Error('alarms unavailable'));

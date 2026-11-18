@@ -1,4 +1,5 @@
 import { render } from 'preact';
+import { EXIT_CONFIRM_MS, installExitGuard } from './app/exit-guard';
 import { router, RouterView } from './app/router';
 import { applyTheme } from './app/theme';
 import { SoftkeyBar } from './components/Screen';
@@ -15,7 +16,7 @@ import { applyProxy } from './data/proxy';
 import * as screenLock from './data/screen-lock';
 import * as store from './data/store';
 import { deleteInstalledUpdates, maybeCheckForUpdate, noteLaunchVersion } from './data/updates';
-import { setupWake, WAKE_ALARM, WAKE_CACHE } from './data/wake';
+import { closeStoppedNotice, setupWake, WAKE_ALARM, WAKE_CACHE } from './data/wake';
 import { reloadUnderServiceWorker } from './data/wasm-reload';
 import * as ws from './data/ws';
 import { fmt, S } from './strings';
@@ -30,6 +31,21 @@ import './theme/index.css';
 
 const PENDING_CONV_KEY = '/__s4k_pending_conv';
 const PENDING_MAX_AGE_MS = 60000;
+/** How soon after a warned End or Back the wake alarm checks whether Beacon is still running. */
+const QUIT_WAKE_MS = 20000;
+
+/** The ServiceWorker reopens a closed Beacon in the background as `index.html#bg` where KaiOS allows it. The hash is dropped so a reload later counts as a normal launch. */
+function takeHiddenLaunch(): boolean {
+  if (location.hash !== '#bg') return false;
+  try {
+    history.replaceState(null, '', location.pathname + location.search);
+  } catch {
+    // the hash only matters for this launch
+  }
+  return true;
+}
+
+const launchedHidden = takeHiddenLaunch();
 
 function openConversation(convId: string | null | undefined): void {
   // A chat opened over the call screen would hide the call with no way back to it, and while an ended call is still on screen the lock isn't checked yet.
@@ -82,7 +98,7 @@ function registerServiceWorker(): void {
 
 /** Look for a newer Beacon once the chats are up, then whenever the app comes back to the foreground or wakes; `maybeCheckForUpdate` keeps it to about once a day. */
 function installUpdateChecks(): void {
-  maybeCheckForUpdate();
+  if (!document.hidden) maybeCheckForUpdate();
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) maybeCheckForUpdate();
   });
@@ -125,8 +141,14 @@ function start(): void {
     return;
   }
   store.onNotificationClick(openConversation);
+  closeStoppedNotice();
   store.init().then(() => {
     installCallScreen();
+    installExitGuard({
+      warn: () => toast(S.exitAgain, EXIT_CONFIRM_MS),
+      arm: () => ws.wakeSoon(QUIT_WAKE_MS),
+    });
+    ws.setLaunchedHidden(launchedHidden);
     ws.connect();
     ws.installWakeHandlers();
     openPendingConversation();
@@ -139,7 +161,7 @@ function start(): void {
 }
 
 function boot(): void {
-  dbg('boot');
+  dbg(launchedHidden ? 'boot (in the background)' : 'boot');
   applyTheme();
   applyProxy();
   installEngineHost();

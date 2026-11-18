@@ -38,6 +38,9 @@
       "alarms": {
         "description": "Periodically wake to reconnect and catch up on messages"
       },
+      "background-window": {
+        "description": "Reopen in the background after the phone closes Beacon, so messages and calls keep arriving"
+      },
       "video-capture": {
         "description": "Use the camera to scan QR codes"
       },

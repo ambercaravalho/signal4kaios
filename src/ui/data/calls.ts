@@ -1,4 +1,4 @@
-/* The app's side of a voice call: it rings, keeps the phone awake, runs the microphone and speaker while the call is live, and tells the call screen what to show. The engine keeps the call itself. */
+/* The app's side of a voice call: it rings (bringing Beacon forward from the background), keeps the phone awake, runs the microphone and speaker while the call is live, and tells the call screen what to show. The engine keeps the call itself. */
 
 import type { CallState } from '../../engine';
 import { isUuid } from '../../engine/validate';
@@ -7,6 +7,7 @@ import { CallAudioIO } from './call-audio';
 import { CallTone } from './call-tones';
 import { dbg } from './log';
 import { chatFor, contactByKey, dismissNotifications, notifyIncomingCall, shouldNotify } from './store';
+import { bringToFront } from './wake';
 import type { Conversation } from './types';
 
 /** Why the call couldn't go on, beyond the engine's end reasons. */
@@ -30,6 +31,7 @@ let ignoredId: string | null = null;
 let silencedId: string | null = null;
 let answeringId: string | null = null;
 let notifiedConv: string | null = null;
+let raisedId: string | null = null;
 let cpuLock: WakeLock | null = null;
 let screenLock: WakeLock | null = null;
 
@@ -167,7 +169,12 @@ function syncTone(s: CallState | null): void {
   const conv = s ? callConversation(s.peer) : undefined;
   const ringing = !!s && s.direction === 'incoming' && s.phase === 'incoming' && s.callId !== answeringId;
   if (ringing) {
-    if (s!.callId !== silencedId && (!conv || shouldNotify(conv, { call: true }))) tone.start('ring', 'ringer', true);
+    const rings = s!.callId !== silencedId && (!conv || shouldNotify(conv, { call: true }));
+    if (rings) tone.start('ring', 'ringer', true);
+    if (rings && document.hidden && raisedId !== s!.callId) {
+      raisedId = s!.callId;
+      bringToFront();
+    }
     if (conv && document.hidden && notifiedConv !== conv.id) {
       notifyIncomingCall(conv);
       notifiedConv = conv.id;

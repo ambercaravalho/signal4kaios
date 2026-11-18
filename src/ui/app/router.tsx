@@ -1,10 +1,11 @@
 /* One stack of screens and overlays. Every entry stays mounted so scroll position and focus survive going back; only the top screen (and overlays above it) are shown, and only the top entry gets keys and softkeys.
 
-   KaiOS keys: the Back key arrives as Backspace and closes the app unless prevented. Back deletes inside a non-empty text field and otherwise goes up a level; SoftLeft also goes back on pushed screens unless the screen claims it. */
+   KaiOS keys: the Back key arrives as Backspace, and on the first screen the system takes it and goes home. Back deletes inside a non-empty text field and otherwise goes up a level; SoftLeft also goes back on pushed screens unless the screen claims it. End closes the app too, so it needs a second press (see `exit-guard.ts`). */
 
 import { Component, ComponentType, createContext } from 'preact';
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { S } from '../strings';
+import { guardExit } from './exit-guard';
 
 export type KeyHandler = (e: KeyboardEvent) => boolean | void;
 
@@ -188,6 +189,10 @@ function onKeyDown(evt: KeyboardEvent): void {
     }
   }
   const canGoBack = stack.length > 1;
+  if (evt.key === 'EndCall') {
+    if (guardExit(evt)) evt.preventDefault();
+    return;
+  }
   if (evt.key === 'SoftLeft' && canGoBack) {
     evt.preventDefault();
     router.pop();
@@ -259,6 +264,11 @@ export function RouterView() {
       ))}
     </div>
   );
+}
+
+/** For tests: a key press as RouterView's listener sees it. */
+export function _keyDownForTest(evt: KeyboardEvent): void {
+  onKeyDown(evt);
 }
 
 /** For render tests: the stack's current entries. */
