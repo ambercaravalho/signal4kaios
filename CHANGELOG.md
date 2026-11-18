@@ -2,6 +2,21 @@
 
 Each `## v<version>` section becomes the notes of that GitHub Release; the release workflow fails if the tag has no section here.
 
+## v3.0.0
+
+Beacon keeps running in the background, so messages and calls keep arriving. On v2.11.0 or later, update from Beacon itself: **Options → Update to Beacon 3.0.0** on the chat list. Your chats and settings carry over.
+
+### Added
+
+- **Beacon stays connected in the background.** Close the flip, or press Back on the chat list, to leave Beacon running; it keeps its connection to Signal with the screen off, so notifications and calls arrive as they do with Beacon open. Before, the phone paused Beacon's connection within a minute or two of the screen turning off, and messages waited until you opened it. To keep the connection, Beacon wakes the phone about once a minute while it's in the background, which uses some battery.
+- **Incoming calls bring Beacon forward.** A call that comes in while Beacon is in the background shows the call screen, ringing, so you can answer it.
+- **A notification when Beacon was closed.** If the phone closes Beacon, for example to free memory, a **Beacon was closed** notification appears within a few minutes; select it to open Beacon again. On KaiOS 3.0 and 3.1, where the phone allows it, Beacon first reopens itself in the background instead, and notifies you for the messages that arrived while it was closed.
+
+### Changed
+
+- **End asks before closing Beacon.** The first press shows a reminder; press End again within 3 seconds to close Beacon. Back on the chat list, or closing the flip, goes to the home screen and keeps Beacon running. On a call, End still hangs up.
+- **New permission:** `background-window`, which KaiOS 3.x uses to reopen Beacon in the background. KaiOS 4.0 doesn't grant it, and installs as before.
+
 ## v2.11.3
 
 No more message requests from safety number changes. On v2.11.0 or later, update from Beacon itself: **Options → Update to Beacon 2.11.3** on the chat list. Your chats and settings carry over.
